@@ -76,6 +76,7 @@ public partial class Joueur : CharacterBody3D
     /// <summary>Clic gauche : charge pour pose (court) ou lancer (long).</summary>
     private bool _gaucheMaintenu = false;
     private float _tempsChargeGauche = 0f;
+    private AudioStreamPlayer3D _audioCoupeArbre;
 
     public override void _Ready()
     {
@@ -502,6 +503,52 @@ public partial class Joueur : CharacterBody3D
         visuel.MaterialOverride = ItemPhysique.CreerMaterielProcedural(idObjet == 11, chimique);
     }
 
+    private static ArbreVivant ObtenirArbreDepuisCollider(Node col)
+    {
+        for (Node n = col; n != null; n = n.GetParent())
+            if (n is ArbreVivant a) return a;
+        return null;
+    }
+
+    private void JouerSonEtEffetCoupeArbre(Vector3 pos)
+    {
+        if (_audioCoupeArbre == null)
+        {
+            _audioCoupeArbre = new AudioStreamPlayer3D { Bus = "Master", VolumeDb = -3f, MaxDistance = 25f };
+            var wav = new AudioStreamWav { MixRate = 22050, Stereo = false, Format = AudioStreamWav.FormatEnum.Format16Bits };
+            const int samples = 2205;
+            var data = new byte[samples * 2];
+            for (int i = 0; i < samples; i++)
+            {
+                float t = (float)i / samples;
+                short s = (short)(16000 * Mathf.Exp(-t * 8) * Mathf.Sin(t * 80) * (0.5f + GD.Randf() * 0.5f));
+                data[i * 2] = (byte)(s & 0xFF);
+                data[i * 2 + 1] = (byte)((s >> 8) & 0xFF);
+            }
+            wav.Data = data;
+            _audioCoupeArbre.Stream = wav;
+            GetTree().CurrentScene.AddChild(_audioCoupeArbre);
+        }
+        _audioCoupeArbre.GlobalPosition = pos;
+        _audioCoupeArbre.Play();
+
+        var container = new Node3D { Name = "EffetCoupeArbre" };
+        container.GlobalPosition = pos;
+        var matCopeaux = new StandardMaterial3D { AlbedoColor = new Color(0.45f, 0.28f, 0.1f), Roughness = 0.9f };
+        for (int i = 0; i < 8; i++)
+        {
+            var mi = new MeshInstance3D
+            {
+                Mesh = new BoxMesh { Size = new Vector3(0.06f, 0.03f, 0.04f) * (0.7f + GD.Randf() * 0.6f) },
+                MaterialOverride = matCopeaux,
+                Position = new Vector3((GD.Randf() - 0.5f) * 0.2f, GD.Randf() * 0.1f, (GD.Randf() - 0.5f) * 0.2f)
+            };
+            container.AddChild(mi);
+        }
+        GetTree().CurrentScene.AddChild(container);
+        var timer = container.GetTree().CreateTimer(0.35);
+        timer.Timeout += () => container.QueueFree();
+    }
 
     /// <summary>Phase 1 pure : minage du terrain Marching Cubes uniquement. Clic gauche.</summary>
     private void ExecuterMinageVoxel()
@@ -510,13 +557,37 @@ public partial class Joueur : CharacterBody3D
         if (!_rayon.IsColliding()) return;
         Object colliderObj = _rayon.GetCollider();
         Node objetTouche = colliderObj as Node;
+        // ArbreVivant : coupe avec pierre ou silex — branches et bûches tombent au sol
+        ArbreVivant arbre = ObtenirArbreDepuisCollider(objetTouche);
+        if (arbre != null)
+        {
+            var main = MainGaucheEstActive ? MainGauche : MainDroite;
+            bool outilTranchant = main.ID == 10 || main.ID == 11 || main.ID == 12;
+            if (!outilTranchant) return;
+
+            float degatsArbre = 5.0f;
+            if (!main.EstVide)
+            {
+                if (main.EstUnEclat && main.MeshEclat != null)
+                {
+                    Aabb boite = main.MeshEclat.GetAabb();
+                    float epaisseur = Mathf.Min(boite.Size.X, Mathf.Min(boite.Size.Y, boite.Size.Z));
+                    degatsArbre *= Mathf.Clamp(0.2f / Mathf.Max(0.005f, epaisseur), 1.0f, 40.0f);
+                }
+                else if (main.ID == 11) degatsArbre *= 2.5f;
+            }
+            Vector3 pointImpact = _rayon.GetCollisionPoint();
+            arbre.SubirDegats(pointImpact, degatsArbre);
+            JouerSonEtEffetCoupeArbre(pointImpact);
+            return;
+        }
         // Si on touche un objet physique valide, on annule le minage
         if (objetTouche != null && (objetTouche is ItemPhysique || objetTouche is RigidBody3D || objetTouche.IsInGroup("BlocsPoses"))) return;
 
         // Si objetTouche est null, cela signifie qu'on a touché le terrain bas-niveau ! ON CONTINUE LE MINAGE.
-        Vector3 pointImpact = _rayon.GetCollisionPoint();
+        Vector3 pointImpactVoxel = _rayon.GetCollisionPoint();
         Vector3 normaleImpact = _rayon.GetCollisionNormal();
-        Vector3 pointDeSondage = pointImpact - (normaleImpact * 0.1f);
+        Vector3 pointDeSondage = pointImpactVoxel - (normaleImpact * 0.1f);
 
         int idExtrait = _gestionnaireMonde?.ObtenirMatiereExacte(pointDeSondage) ?? 1;
         // Toujours terrain (1-9) pour que la pose refusionne avec le sol ; jamais 10/11/12/999 (bloc vert).
@@ -525,7 +596,26 @@ public partial class Joueur : CharacterBody3D
         if (MainGaucheEstActive && !MainGauche.EstVide && !MainDroite.EstVide) return;
         if (!MainGaucheEstActive && !MainDroite.EstVide && !MainGauche.EstVide) return;
 
-        _gestionnaireMonde?.AppliquerDestructionGlobale(pointImpact, RAYON_SCULPTURE);
+        float forceDegats = 5.0f;
+        SlotInventaire mainActive = MainGaucheEstActive ? MainGauche : MainDroite;
+
+        // THÉORÈME DE LA LAME : L'épaisseur dicte le tranchant
+        if (mainActive.EstUnEclat && mainActive.MeshEclat != null)
+        {
+            Aabb boite = mainActive.MeshEclat.GetAabb();
+            float epaisseur = Mathf.Min(boite.Size.X, Mathf.Min(boite.Size.Y, boite.Size.Z));
+
+            float multiplicateur = 0.2f / Mathf.Max(0.005f, epaisseur);
+            forceDegats *= Mathf.Clamp(multiplicateur, 1.0f, 40.0f);
+
+            GD.Print($"ZERO-K : Lame détectée. Épaisseur: {epaisseur:F3}m | Tranchant: x{multiplicateur:F1}");
+        }
+        else if (mainActive.ID == 11) // Silex brut
+        {
+            forceDegats *= 2.5f;
+        }
+
+        _gestionnaireMonde?.AppliquerDestructionGlobale(pointImpactVoxel, RAYON_SCULPTURE, forceDegats);
 
         var nouveauSlot = new SlotInventaire { ID = idExtrait, IndexMorphologique = 0, IndexChimique = 0 };
         if (MainGaucheEstActive)
@@ -824,7 +914,7 @@ public partial class Joueur : CharacterBody3D
                 Name = "ItemPhysique"
             };
             item.AddChild(new MeshInstance3D { Name = "MeshInstance3D", Mesh = mainActive.MeshEclat });
-            item.AddChild(new CollisionShape3D { Name = "CollisionShape3D", Shape = mainActive.MeshEclat.CreateConvexShape(true, false) });
+            item.AddChild(new CollisionShape3D { Name = "CollisionShape3D", Shape = ItemPhysique.CreerShapeCollisionConvexeRobuste(mainActive.MeshEclat) });
             corps = item;
         }
         else if (id == 10 || id == 12) // Petite Pierre ou Pierre Moyenne (ItemPhysique = RigidBody3D)
@@ -899,18 +989,17 @@ public partial class Joueur : CharacterBody3D
 
         if (!spawnPret)
         {
+            // BLOCAGE TOTAL : pas de gravité, pas de déplacement. Évite de traverser le sol avant que la collision soit prête.
             _tempsAttenteSpawn += (float)delta;
-            if (_tempsAttenteSpawn < 4f)
-                velocity.Y = Mathf.MoveToward(velocity.Y, 0, 2f * (float)delta);
-            else
-                velocity += GetGravity() * (float)delta;
+            velocity = Vector3.Zero;
+            Velocity = velocity;
+            MoveAndSlide();
+            return;
         }
-        else
-        {
-            _tempsAttenteSpawn = 0f;
-            if (!IsOnFloor())
-                velocity += GetGravity() * (float)delta;
-        }
+
+        _tempsAttenteSpawn = 0f;
+        if (!IsOnFloor())
+            velocity += GetGravity() * (float)delta;
 
         if (Input.IsActionJustPressed("ui_accept") && IsOnFloor())
             velocity.Y = JumpVelocity;

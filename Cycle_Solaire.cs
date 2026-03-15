@@ -4,12 +4,17 @@ using System;
 /// <summary>Cycle solaire/lunaire basé sur UtcNow + décalage du fuseau horaire. Contrôle soleil, lune et atmosphère.</summary>
 public partial class Cycle_Solaire : Node
 {
+	/// <summary>Émis à chaque passage à minuit (nouveau jour). Croissance des arbres.</summary>
+	[Signal] public delegate void NouveauJourEventHandler();
+
 	[Export] private DirectionalLight3D _soleil;
 	[Export] private DirectionalLight3D _lune; // Deuxième lampe (bleutée, ombre activée)
 	[Export] private WorldEnvironment _environnement; // Pour brouillard et ambiance
 
 	/// <summary>Décalage en heures de la dimension actuelle. Monde 1 = 0, Monde 2 = +6, etc.</summary>
 	private double _decalageMondeHeures = 0.0;
+	/// <summary>Pour détecter le passage minuit (nouveau jour).</summary>
+	private double _pourcentageJourneePrecedent = -1.0;
 
 	/// <summary>RPC appelé par le Serveur une seule fois quand le joueur spawn ou traverse un portail.</summary>
 	[Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = true)]
@@ -48,6 +53,11 @@ public partial class Cycle_Solaire : Node
 		DateTime heureDansCeMonde = DateTime.UtcNow.AddHours(_decalageMondeHeures);
 		TimeSpan heureActuelle = heureDansCeMonde.TimeOfDay;
 		double pourcentageJournee = heureActuelle.TotalHours / 24.0;
+
+		// Détection passage minuit → signal NouveauJour (croissance arbres)
+		if (_pourcentageJourneePrecedent >= 0.98 && pourcentageJournee < 0.02)
+			EmitSignal("NouveauJour");
+		_pourcentageJourneePrecedent = pourcentageJournee;
 
 		// Calcul de l'angle X (Midi = -90°)
 		float angleX = 90f - (float)(pourcentageJournee * 360.0);

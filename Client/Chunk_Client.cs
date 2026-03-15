@@ -961,14 +961,22 @@ void fragment() {
 					vertList[10] = Interp(verts[2], verts[6], vals[2], vals[6]);
 					vertList[11] = Interp(verts[3], verts[7], vals[3], vals[7]);
 
-					byte idMat = MatD(x, y, z);
-					if (idMat == 0)
+					// LECTURE DES 8 ATOMES DU CUBE — texture du coin solide (évite herbe sur murs/arbres)
+					byte[] mats = new byte[8];
+					mats[0] = MatD(x, y, z); mats[1] = MatD(x + 1, y, z);
+					mats[2] = MatD(x + 1, y + 1, z); mats[3] = MatD(x, y + 1, z);
+					mats[4] = MatD(x, y, z + 1); mats[5] = MatD(x + 1, y, z + 1);
+					mats[6] = MatD(x + 1, y + 1, z + 1); mats[7] = MatD(x, y + 1, z + 1);
+					byte idMat = 0;
+					for (int i = 0; i < 8; i++)
 					{
-						int sy = y;
-						while (sy > 0 && MatD(x, sy, z) == 0) sy--;
-						idMat = MatD(x, sy, z);
-						if (idMat == 0) idMat = 2;
+						if (vals[i] > Isolevel && mats[i] > 0)
+						{
+							idMat = mats[i];
+							break;
+						}
 					}
+					if (idMat == 0) idMat = 2;
 
 					// Espace GLOBAL du monde — évite le tiling biomique (couleurs temp/hum).
 					float xGlobal = baseX + x;
@@ -1164,14 +1172,22 @@ void fragment() {
 						vertList[10] = Interp(verts[2], verts[6], vals[2], vals[6]);
 						vertList[11] = Interp(verts[3], verts[7], vals[3], vals[7]);
 
-						byte idMat = MatD(x, y, z);
-						if (idMat == 0)
+						// LECTURE DES 8 ATOMES DU CUBE — texture du coin solide (évite herbe sur murs/arbres)
+						byte[] mats = new byte[8];
+						mats[0] = MatD(x, y, z); mats[1] = MatD(x + 1, y, z);
+						mats[2] = MatD(x + 1, y + 1, z); mats[3] = MatD(x, y + 1, z);
+						mats[4] = MatD(x, y, z + 1); mats[5] = MatD(x + 1, y, z + 1);
+						mats[6] = MatD(x + 1, y + 1, z + 1); mats[7] = MatD(x, y + 1, z + 1);
+						byte idMat = 0;
+						for (int i = 0; i < 8; i++)
 						{
-							int sy = y;
-							while (sy > 0 && MatD(x, sy, z) == 0) sy--;
-							idMat = MatD(x, sy, z);
-							if (idMat == 0) idMat = 2;
+							if (vals[i] > Isolevel && mats[i] > 0)
+							{
+								idMat = mats[i];
+								break;
+							}
 						}
+						if (idMat == 0) idMat = 2;
 
 						float xGlobal = baseX + x;
 						float zGlobal = baseZ + z;
@@ -1524,14 +1540,22 @@ void fragment() {
 						vertList[9] = Interp(verts[1], verts[5], vals[1], vals[5]);
 						vertList[10] = Interp(verts[2], verts[6], vals[2], vals[6]);
 						vertList[11] = Interp(verts[3], verts[7], vals[3], vals[7]);
-						byte idMat = MatD(x, y, z);
-						if (idMat == 0)
+						// LECTURE DES 8 ATOMES DU CUBE — texture du coin solide (évite herbe sur murs/arbres)
+						byte[] mats = new byte[8];
+						mats[0] = MatD(x, y, z); mats[1] = MatD(x + 1, y, z);
+						mats[2] = MatD(x + 1, y + 1, z); mats[3] = MatD(x, y + 1, z);
+						mats[4] = MatD(x, y, z + 1); mats[5] = MatD(x + 1, y, z + 1);
+						mats[6] = MatD(x + 1, y + 1, z + 1); mats[7] = MatD(x, y + 1, z + 1);
+						byte idMat = 0;
+						for (int i = 0; i < 8; i++)
 						{
-							int sy = y;
-							while (sy > 0 && MatD(x, sy, z) == 0) sy--;
-							idMat = MatD(x, sy, z);
-							if (idMat == 0) idMat = 2;
+							if (vals[i] > IsolevelData && mats[i] > 0)
+							{
+								idMat = mats[i];
+								break;
+							}
 						}
+						if (idMat == 0) idMat = 2;
 						float xGlobal = baseX + x, zGlobal = baseZ + z;
 						float temp = noiseT?.GetNoise2D(xGlobal, zGlobal) ?? 0f;
 						float hum = noiseH?.GetNoise2D(xGlobal, zGlobal) ?? 0f;

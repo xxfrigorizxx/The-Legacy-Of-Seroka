@@ -39,6 +39,9 @@ public partial class Chunk_Serveur : RefCounted
 	/// <summary>Registre de flore : position globale → type (1 = Buisson Plein, 2 = Buisson Vide). Jamais de modification voxel.</summary>
 	public Dictionary<Vector3I, byte> InventaireFlore { get; } = new Dictionary<Vector3I, byte>();
 
+	/// <summary>Registre d'arbres L-System : racine (position base) → (stade 0-3, seed). Croissance 1 stade/jour.</summary>
+	public Dictionary<Vector3I, DonneesArbre> InventaireArbres { get; } = new Dictionary<Vector3I, DonneesArbre>();
+
 	private Action<Vector3, byte> _callbackBlocChutant;
 	private Func<Vector2I, bool> _chunkEstCharge;
 	private Action<Vector3> _reveillerEau;
@@ -223,7 +226,43 @@ public partial class Chunk_Serveur : RefCounted
 					}
 				}
 			}
+
+			// Pass L-System : injection des Chênes (voxels bois ID 30, feuilles ID 31)
+			InjecterArbresLSystem();
 			// RÈGLE : Chunk procédural non touché par le joueur → jamais sauvegardé (régénération à la demande).
+		}
+	}
+
+	/// <summary>Enregistre les positions d'arbres (ArbreVivant 3D) — sans injection voxel. Monde_Serveur les instancie.</summary>
+	private void InjecterArbresLSystem()
+	{
+		const float chanceArbre = 0.06f;
+		const int espacementMin = 4;
+		for (int x = 2; x < TailleChunk - 2; x += espacementMin)
+		for (int z = 2; z < TailleChunk - 2; z += espacementMin)
+		{
+			int xGlobal = ChunkOffsetX * TailleChunk + x;
+			int zGlobal = ChunkOffsetZ * TailleChunk + z;
+			if (!TerrainAssezPlat(xGlobal, zGlobal)) continue;
+
+			int hauteurSurface = CalculerHauteurTerrain(xGlobal, zGlobal);
+			if (hauteurSurface < 0 || hauteurSurface >= HauteurMax - 1) continue;
+			if (hauteurSurface <= 2) continue;
+
+			lock (_verrouVoxel)
+			{
+				if (_materials[x, hauteurSurface, z] != 1) continue; // Herbe uniquement
+			}
+
+			float humidite = _noiseHumidite.GetNoise2D(xGlobal * 0.03f, zGlobal * 0.03f);
+			if ((humidite + 1f) * 0.5f < 0.2f) continue;
+			if (DeterministicRand(xGlobal * 1.7f, zGlobal * 2.3f) >= chanceArbre) continue;
+
+			var racine = new Vector3I(xGlobal, hauteurSurface + 1, zGlobal);
+			uint seedArbre = (uint)((xGlobal * 73856093) ^ (zGlobal * 19349663));
+			// Âges 1–10 à la génération (pas que des bébés)
+			int stage = (int)(seedArbre % 10);
+			InventaireArbres[racine] = new DonneesArbre { Stage = (byte)stage, Seed = seedArbre };
 		}
 	}
 
@@ -527,7 +566,7 @@ public partial class Chunk_Serveur : RefCounted
 	private const byte ID_ITEM_BUISSON_PLEIN = 10;
 	private const byte ID_ITEM_BUISSON_VIDE = 11;
 
-	public void DetruireVoxel(Vector3 pointImpactGlobal, float rayonExplosion, Action<List<int>> onSectionsAffectees = null)
+	public void DetruireVoxel(Vector3 pointImpactGlobal, float rayonExplosion, float forceDegats = 5.0f, Action<List<int>> onSectionsAffectees = null)
 	{
 		Vector3 pointLocal = pointImpactGlobal - PositionMonde;
 		var positionsDetruites = new List<Vector3I>();
@@ -565,7 +604,7 @@ public partial class Chunk_Serveur : RefCounted
 						if (dx * dx + dy * dy + dz * dz <= rayon2)
 						{
 							bool etaitSolide = _densities[x, y, z] > Isolevel;
-							_densities[x, y, z] = Mathf.Max(_densities[x, y, z] - 5.0f, -1.0f); // Plancher absolu : le voxel ne peut pas être "plus que vide"
+							_densities[x, y, z] = Mathf.Max(_densities[x, y, z] - forceDegats, -1.0f); // Plancher absolu : le voxel ne peut pas être "plus que vide"
 							modifie = true;
 							if (etaitSolide) positionsDetruites.Add(new Vector3I(x, y, z));
 						}
@@ -575,11 +614,14 @@ public partial class Chunk_Serveur : RefCounted
 			foreach (var pos in positionsDetruites) VerifierStabilite(pos);
 		}
 
+		int baseX = ChunkOffsetX * TailleChunk;
+		int baseZ = ChunkOffsetZ * TailleChunk;
+
 		foreach (var pos in positionsDetruites)
 		{
 			_reveillerEau?.Invoke(PositionMonde + new Vector3(pos.X, pos.Y, pos.Z));
-			int gx = Mathf.FloorToInt(PositionMonde.X) + pos.X;
-			int gz = Mathf.FloorToInt(PositionMonde.Z) + pos.Z;
+			int gx = baseX + pos.X;
+			int gz = baseZ + pos.Z;
 			var posGlobal = new Vector3I(gx, pos.Y, gz);
 			_onVoxelModifie?.Invoke(posGlobal, 0);
 		}
@@ -783,12 +825,21 @@ public partial class Chunk_Serveur : RefCounted
 			}
 			else
 			{
-				_densities[lx, ly, lz] = 10.0f;
+				_densities[lx, ly, lz] = (id == 30) ? 50.0f : 10.0f; // Le bois (ID 30) a 50 HP !
 				_materials[lx, ly, lz] = id;
 				if (_densitiesEau != null) _densitiesEau[lx, ly, lz] = -1.0f;
 			}
 		}
 		AuditerGraviteFlore();
+	}
+
+	/// <summary>Met à jour un voxel local ET notifie le client (croissance arbres).</summary>
+	public void ModifierVoxelEtNotifier(int lx, int ly, int lz, byte id)
+	{
+		SetVoxelLocal(lx, ly, lz, id);
+		_estModifie = true;
+		var posGlobal = new Vector3I(ChunkOffsetX * TailleChunk + lx, ly, ChunkOffsetZ * TailleChunk + lz);
+		_onVoxelModifie?.Invoke(posGlobal, id);
 	}
 
 	public void FaucherFlore(Vector3 pointImpactGlobal, float rayon)

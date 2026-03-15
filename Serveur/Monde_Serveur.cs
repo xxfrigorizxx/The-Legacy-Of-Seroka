@@ -32,6 +32,7 @@ public partial class Monde_Serveur : Node
 	private static readonly Vector3I[] DirReveil = { new Vector3I(0, 1, 0), new Vector3I(0, -1, 0), new Vector3I(1, 0, 0), new Vector3I(-1, 0, 0), new Vector3I(0, 0, 1), new Vector3I(0, 0, -1) };
 
 	private Node _parentPourBlocsChutants;
+	private Node _parentPourArbres;
 	private Action<Vector2I, List<int>> _onChunkModifie;
 	private Action<Vector2I, DonneesChunk> _onEnvoyerChunk;
 	private Action<Vector2I, Dictionary<Vector3I, byte>> _onFloreModifie;
@@ -76,9 +77,10 @@ public partial class Monde_Serveur : Node
 	private const int MaxChunksDechargeParTick = 2;
 	private List<Vector2I> _chunksEnAttenteDecharge = new List<Vector2I>();
 
-	public void Initialiser(Node parentPourBlocsChutants, Action<Vector2I, List<int>> onChunkModifie, Action<Vector2I, DonneesChunk> onEnvoyerChunk = null, Action<Vector2I, Dictionary<Vector3I, byte>> onFloreModifie = null, Action<Vector3I, byte> onVoxelModifie = null, Action<Vector2I> onOrdonnerDestructionChunk = null, Func<Vector3> obtenirPositionJoueur = null)
+	public void Initialiser(Node parentPourBlocsChutants, Node parentPourArbres, Action<Vector2I, List<int>> onChunkModifie, Action<Vector2I, DonneesChunk> onEnvoyerChunk = null, Action<Vector2I, Dictionary<Vector3I, byte>> onFloreModifie = null, Action<Vector3I, byte> onVoxelModifie = null, Action<Vector2I> onOrdonnerDestructionChunk = null, Func<Vector3> obtenirPositionJoueur = null)
 	{
 		_parentPourBlocsChutants = parentPourBlocsChutants;
+		_parentPourArbres = parentPourArbres;
 		_onChunkModifie = onChunkModifie;
 		_onEnvoyerChunk = onEnvoyerChunk;
 		_onFloreModifie = onFloreModifie;
@@ -104,6 +106,7 @@ public partial class Monde_Serveur : Node
 			{
 				chunk.SauvegarderChunkSurDisque();
 				SauvegarderPierresChunk(coord);
+				SauvegarderArbresChunk(coord);
 				chunksSauves++;
 			}
 		}
@@ -147,6 +150,7 @@ public partial class Monde_Serveur : Node
 				continue; // Chunk déjà ressuscité du disque — ignorer le résultat procédural.
 			if (!_chunks.ContainsKey(result.coord))
 				_chunks[result.coord] = result.chunk;
+			SpawnerArbresChunk(result.coord, result.chunk);
 			// Envoi client uniquement APRÈS stase remplie, sinon LibererRochesChunk trouve une liste vide
 			DeclencherEnsemencement(result.coord, result.chunk, TailleChunk, (coord, ch) =>
 				_fileEnvoiReseau.Enqueue(new ColisChunk { Coord = coord, Donnees = ch.ObtenirDonneesPourClient() }));
@@ -209,8 +213,9 @@ public partial class Monde_Serveur : Node
 					continue;
 				}
 
-				// BRANCHE COMMUNE : Chunk ressuscité. Pierres : chargement sauvegardées si fichier existe, sinon procédural. Spawn uniquement quand chunk demandé (visible écran).
+				// BRANCHE COMMUNE : Chunk ressuscité. Pierres + Arbres. Spawn quand chunk demandé (visible écran).
 				_chunks[chunkCible] = chunkActuel;
+				SpawnerArbresChunk(chunkCible, chunkActuel);
 				if (!ChargerEtSpawnerPierresChunk(chunkCible))
 				{
 					// Attendre que l'ensemencement asynchrone finisse AVANT d'envoyer le chunk au réseau
@@ -408,6 +413,7 @@ public partial class Monde_Serveur : Node
 			GD.PrintErr($"ZERO-K REJET : Chunk {coord} — AppliquerTableauBytes a échoué. Régénération forcée.");
 			return null;
 		}
+		ChargerArbresChunk(coord, chunk);
 		return chunk;
 	}
 
@@ -431,6 +437,31 @@ public partial class Monde_Serveur : Node
 		var bloc = BlocChutant.Creer(pos, mat, matTerrain);
 		_parentPourBlocsChutants.AddChild(bloc);
 		bloc.GlobalPosition = pos;
+	}
+
+	/// <summary>Spawn branches et bûches qui tombent au sol quand un arbre est coupé.</summary>
+	public void SpawnDebrisArbre(Vector3 baseArbre, int ageEnJours, uint seed)
+	{
+		if (_parentPourBlocsChutants == null) return;
+		var rng = new RandomNumberGenerator();
+		rng.Seed = (ulong)(Mathf.Abs(baseArbre.X) * 73856 + Mathf.Abs(baseArbre.Z) * 19349 + seed);
+		int nbBranches = Mathf.Clamp(ageEnJours * 2 + (int)(rng.Randf() * 4), 2, 12);
+		int nbBuches = Mathf.Clamp(ageEnJours / 2 + (int)(rng.Randf() * 2), 1, 6);
+		float offsetRayon = 0.8f + ageEnJours * 0.1f;
+		for (int i = 0; i < nbBranches; i++)
+		{
+			float angle = (float)i / nbBranches * Mathf.Tau + rng.Randf() * 0.5f;
+			float r = offsetRayon * (0.5f + rng.Randf() * 0.5f);
+			Vector3 pos = baseArbre + new Vector3(Mathf.Cos(angle) * r, 0.5f + rng.Randf() * 0.3f, Mathf.Sin(angle) * r);
+			SpawnBlocChutant(pos, BlocChutant.ID_BRANCHE);
+		}
+		for (int i = 0; i < nbBuches; i++)
+		{
+			float angle = (float)i / nbBuches * Mathf.Tau + rng.Randf() * 0.8f;
+			float r = offsetRayon * (0.3f + rng.Randf() * 0.4f);
+			Vector3 pos = baseArbre + new Vector3(Mathf.Cos(angle) * r, 0.6f + rng.Randf() * 0.4f, Mathf.Sin(angle) * r);
+			SpawnBlocChutant(pos, BlocChutant.ID_BOIS);
+		}
 	}
 
 	private const float NIVEAU_EAU = 103f;  // +1 m
@@ -719,6 +750,141 @@ public partial class Monde_Serveur : Node
 		catch (Exception ex) { GD.PrintErr($"ZERO-K : Erreur chargement pierres chunk {coord} : {ex.Message}"); return false; }
 	}
 
+	/// <summary>Sauvegarde les ArbreVivant dans ce chunk. Fichier chunk_X_Y_arbres.bin.</summary>
+	private void SauvegarderArbresChunk(Vector2I coord)
+	{
+		if (_parentPourArbres == null) return;
+		float xMin = coord.X * TailleChunk;
+		float xMax = (coord.X + 1) * TailleChunk;
+		float zMin = coord.Y * TailleChunk;
+		float zMax = (coord.Y + 1) * TailleChunk;
+		var arbres = new List<(Vector3 pos, int age)>();
+		foreach (Node n in _parentPourArbres.GetChildren())
+		{
+			if (n is not ArbreVivant arbre) continue;
+			Vector3 p = (arbre as Node3D).GlobalPosition;
+			if (p.X >= xMin && p.X < xMax && p.Z >= zMin && p.Z < zMax)
+				arbres.Add((p, arbre.AgeEnJours));
+		}
+		if (arbres.Count == 0) return;
+		string nom = GameState.Instance?.NomMondeActuel ?? "MonMonde";
+		string dossier = ProjectSettings.GlobalizePath($"user://saves/{nom}/chunks/");
+		Directory.CreateDirectory(dossier);
+		string chemin = Path.Combine(dossier, $"chunk_{coord.X}_{coord.Y}_arbres.bin");
+		try
+		{
+			using (var w = new BinaryWriter(File.Open(chemin, FileMode.Create)))
+			{
+				w.Write(0x5A4B3251); // MAGIC V2 = sauvegarde temps
+				int jourActuel = GameState.Instance != null ? GameState.Instance.JourAbsolu : 0;
+				w.Write(jourActuel);
+				w.Write(arbres.Count);
+				foreach (var (pos, age) in arbres)
+				{
+					w.Write((int)pos.X); w.Write((int)pos.Y); w.Write((int)pos.Z);
+					w.Write(age); // Âge brut (int, croissance infinie)
+				}
+			}
+		}
+		catch (Exception ex) { GD.PrintErr($"ZERO-K : Erreur sauvegarde arbres chunk {coord} : {ex.Message}"); }
+	}
+
+	/// <summary>Spawn les ArbreVivant 3D pour ce chunk (procédural ou chargé).</summary>
+	private void SpawnerArbresChunk(Vector2I coord, Chunk_Serveur chunk)
+	{
+		if (_parentPourArbres == null || chunk.InventaireArbres.Count == 0) return;
+		foreach (var kv in chunk.InventaireArbres)
+		{
+			// Base collée au sol (Y - 0.5 pour éviter troncs flottants)
+			Vector3 pos = new Vector3(kv.Key.X + 0.5f, kv.Key.Y - 0.5f, kv.Key.Z + 0.5f);
+			int age = Mathf.Max(1, kv.Value.Stage + 1);
+			var arbre = new ArbreVivant
+			{
+				AgeEnJours = age,
+				ResistanceActuelle = 50f * age,
+				Seed = kv.Value.Seed
+			};
+			_parentPourArbres.AddChild(arbre);
+			arbre.GlobalPosition = pos;
+		}
+	}
+
+	/// <summary>Charge et spawn les arbres depuis disque. Rattrape la croissance du temps passé hors-ligne.</summary>
+	private void ChargerArbresChunk(Vector2I coord, Chunk_Serveur chunk)
+	{
+		if (_parentPourArbres == null) return;
+		string nom = GameState.Instance?.NomMondeActuel ?? "MonMonde";
+		string chemin = ProjectSettings.GlobalizePath($"user://saves/{nom}/chunks/chunk_{coord.X}_{coord.Y}_arbres.bin");
+		if (!File.Exists(chemin)) return;
+		try
+		{
+			using (var r = new BinaryReader(File.Open(chemin, FileMode.Open, System.IO.FileAccess.Read, FileShare.Read)))
+			{
+				int magic = r.ReadInt32();
+				int jourDeSauvegarde = 0;
+				if (magic == 0x5A4B3251) // V2 avec temps
+					jourDeSauvegarde = r.ReadInt32();
+				else if (magic != 0x5A4B3250)
+					return; // Format inconnu
+
+				int jourActuel = GameState.Instance != null ? GameState.Instance.JourAbsolu : 0;
+				int joursEcoules = Mathf.Max(0, jourActuel - jourDeSauvegarde);
+				int count = r.ReadInt32();
+
+				for (int i = 0; i < count; i++)
+				{
+					int gx = r.ReadInt32(), gy = r.ReadInt32(), gz = r.ReadInt32();
+					int ageSauvegarde;
+					if (magic == 0x5A4B3251)
+						ageSauvegarde = r.ReadInt32();
+					else
+					{
+						byte stage = r.ReadByte();
+						r.ReadUInt32(); // seed (legacy)
+						ageSauvegarde = stage + 1; // Ancien format Stage 0-4 → age 1-5
+					}
+
+					Vector3 pos = new Vector3(gx + 0.5f, gy - 0.5f, gz + 0.5f);
+					uint seedArbre = (uint)((gx * 73856093) ^ (gz * 19349663));
+					var arbre = new ArbreVivant
+					{
+						AgeEnJours = Mathf.Max(1, ageSauvegarde),
+						ResistanceActuelle = 50f * Mathf.Max(1, ageSauvegarde),
+						Seed = seedArbre
+					};
+					_parentPourArbres.AddChild(arbre);
+					arbre.GlobalPosition = pos;
+					if (joursEcoules > 0)
+						arbre.RattraperCroissance(joursEcoules, pos);
+				}
+			}
+		}
+		catch (Exception ex) { GD.PrintErr($"ZERO-K : Erreur chargement arbres chunk {coord} : {ex.Message}"); }
+	}
+
+	/// <summary>Retire du monde les ArbreVivant dont la position est dans le chunk (décharge).</summary>
+	private void RetirerArbresChunk(Vector2I coord)
+	{
+		if (_parentPourArbres == null) return;
+		float xMin = coord.X * TailleChunk;
+		float xMax = (coord.X + 1) * TailleChunk;
+		float zMin = coord.Y * TailleChunk;
+		float zMax = (coord.Y + 1) * TailleChunk;
+		var aRetirer = new List<Node>();
+		foreach (Node n in _parentPourArbres.GetChildren())
+		{
+			if (n is not ArbreVivant) continue;
+			Vector3 p = (n as Node3D)?.GlobalPosition ?? Vector3.Zero;
+			if (p.X >= xMin && p.X < xMax && p.Z >= zMin && p.Z < zMax)
+				aRetirer.Add(n);
+		}
+		foreach (var n in aRetirer)
+		{
+			_parentPourArbres.RemoveChild(n);
+			n.QueueFree();
+		}
+	}
+
 	/// <summary>Retire du monde les pierres/silex dont la position est dans le chunk ; remet dans le pool de la taille si possible.</summary>
 	private void RetirerPierresChunk(Vector2I coord)
 	{
@@ -758,7 +924,19 @@ public partial class Monde_Serveur : Node
 		}
 	}
 
-	public void AppliquerDestructionGlobale(Vector3 pointImpact, float rayon, int peerDemandeur = -1)
+	/// <summary>Croissance des arbres 3D : VieillirUnJour sur chaque ArbreVivant. Appelé au changement de jour (minuit).</summary>
+	public void FairePousserArbresDuJour()
+	{
+		if (_parentPourArbres == null) return;
+		foreach (Node n in _parentPourArbres.GetChildren())
+		{
+			if (n is ArbreVivant arbre)
+				arbre.VieillirUnJour();
+		}
+		GD.Print("ZERO-K : Croissance des arbres du jour appliquée.");
+	}
+
+	public void AppliquerDestructionGlobale(Vector3 pointImpact, float rayon, float forceDegats = 5.0f, int peerDemandeur = -1)
 	{
 		_modificationEnCours = true;
 		int cxMin = Gestionnaire_Monde.WorldToChunkCoord(pointImpact.X - rayon, pointImpact.Z, TailleChunk).X;
@@ -771,7 +949,7 @@ public partial class Monde_Serveur : Node
 			{
 				Vector2I coord = new Vector2I(cx, cz);
 				var chunk = ObtenirOuCreerChunk(coord);
-				chunk.DetruireVoxel(pointImpact, rayon);
+				chunk.DetruireVoxel(pointImpact, rayon, forceDegats);
 			}
 	}
 
@@ -950,7 +1128,9 @@ public partial class Monde_Serveur : Node
 			{
 				chunk.SauvegarderChunkSurDisque();
 				SauvegarderPierresChunk(coord);
+				SauvegarderArbresChunk(coord);
 				RetirerPierresChunk(coord);
+				RetirerArbresChunk(coord);
 				_chunks.Remove(coord);
 				_onOrdonnerDestructionChunk(coord);
 				traites++;

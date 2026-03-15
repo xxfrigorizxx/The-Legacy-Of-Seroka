@@ -35,6 +35,8 @@ public partial class Gestionnaire_Monde : Node3D
 	private Monde_Client _mondeClient;
 	private NetworkManager _networkManager;
 	private Label _labelCoords;
+	/// <summary>Overlay "Chargement du monde..." affiché tant que la collision du chunk de spawn n'est pas prête.</summary>
+	private CanvasLayer _overlayChargement;
 
 	// Legacy
 	private List<Vector2I> _chunksACharger = new List<Vector2I>();
@@ -212,6 +214,21 @@ public partial class Gestionnaire_Monde : Node3D
 
 		CreerMenuPause();
 
+		// Overlay "Chargement du monde..." — empêche de traverser le sol avant que la collision soit prête
+		_overlayChargement = new CanvasLayer { Layer = 50 };
+		var panelChargement = new PanelContainer();
+		panelChargement.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+		var styleChargement = new StyleBoxFlat();
+		styleChargement.BgColor = new Color(0.05f, 0.05f, 0.1f, 0.9f);
+		styleChargement.SetCornerRadiusAll(8);
+		styleChargement.SetContentMarginAll(24);
+		panelChargement.AddThemeStyleboxOverride("panel", styleChargement);
+		var lblChargement = new Label { Text = "Chargement du monde...", HorizontalAlignment = HorizontalAlignment.Center };
+		lblChargement.AddThemeFontSizeOverride("font_size", 22);
+		panelChargement.AddChild(lblChargement);
+		_overlayChargement.AddChild(panelChargement);
+		AddChild(_overlayChargement);
+
 		// Forge automatique du matériau eau (bypass de l'éditeur) — sanctuarisation : le GC ne le détruira pas car lié au nœud.
 		var shaderEau = GD.Load<Shader>("res://EauTriplanar.gdshader");
 		if (shaderEau != null)
@@ -338,12 +355,16 @@ public partial class Gestionnaire_Monde : Node3D
 			_joueur,
 			GetNode<GameState>("/root/GameState").SeedTerrainActuel,
 			coord => _mondeServeur.EnregistrerDemandeChunk(coord),
-			(pointImpact, rayon) => _mondeServeur.AppliquerDestructionGlobale(pointImpact, rayon),
+			(pointImpact, rayon, forceDegats) => _mondeServeur.AppliquerDestructionGlobale(pointImpact, rayon, forceDegats),
 			(pointImpact, normale, rayon, idMatiere) => _mondeServeur.AppliquerCreationGlobale(pointImpact, normale, rayon, idMatiere)
 		);
 
+		var nodeArbres = new Node3D { Name = "Arbres" };
+		AddChild(nodeArbres);
+
 		_mondeServeur.Initialiser(
 			this,
+			nodeArbres,
 			(coord, sections) => _mondeClient.RecevoirChunkModifie(coord, sections),
 			(coord, donnees) => _mondeClient.RecevoirDonneesChunk(coord, donnees),
 			(coord, inventaireFlore) => _mondeClient.RecevoirFloreModifie(coord, inventaireFlore),
@@ -363,6 +384,17 @@ public partial class Gestionnaire_Monde : Node3D
 		);
 		AddChild(_mondeServeur);
 		AddChild(_mondeClient);
+
+		// Croissance des arbres + jour absolu au passage minuit
+		var cycleSolaire = GetParent()?.GetNodeOrNull<Cycle_Solaire>("CycleSolaire");
+		if (cycleSolaire != null)
+		{
+			cycleSolaire.Connect("NouveauJour", Callable.From(() =>
+			{
+				GameState.Instance?.IncrementerJourAbsolu();
+				_mondeServeur.FairePousserArbresDuJour();
+			}));
+		}
 
 		// Matrice visqueuse : Area3D océan (Y < 103) impose damp + gravité réduite (Archimède)
 		CreerAreaOcean();
@@ -418,6 +450,10 @@ public partial class Gestionnaire_Monde : Node3D
 
 	public override void _Process(double delta)
 	{
+		// Masquer l'overlay "Chargement du monde..." dès que la collision du chunk de spawn est prête
+		if (_overlayChargement != null && _overlayChargement.Visible && EstSpawnPret())
+			_overlayChargement.Visible = false;
+
 		// Mise à jour des coordonnées affichées en haut à droite
 		if (_labelCoords != null && _joueur != null && _joueur.IsInsideTree())
 		{
@@ -511,16 +547,16 @@ public partial class Gestionnaire_Monde : Node3D
 		return WorldToChunkCoord(_joueur.GlobalPosition, TailleChunk);
 	}
 
-	public void AppliquerDestructionGlobale(Vector3 pointImpact, float rayon)
+	public void AppliquerDestructionGlobale(Vector3 pointImpact, float rayon, float forceDegats = 5.0f)
 	{
 		if (UseArchitectureReseau)
-			_mondeClient?.AppliquerDestructionGlobale(pointImpact, rayon);
+			_mondeClient?.AppliquerDestructionGlobale(pointImpact, rayon, forceDegats);
 		else
 		{
 			foreach (var kv in _chunks)
 			{
 				var g = kv.Value as Generateur_Voxel;
-				g?.DetruireVoxel(pointImpact, rayon);
+				g?.DetruireVoxel(pointImpact, rayon, forceDegats);
 			}
 		}
 	}
@@ -551,7 +587,13 @@ public partial class Gestionnaire_Monde : Node3D
 	{
 		if (UseArchitectureReseau && _mondeServeur != null)
 			return _mondeServeur.ObtenirMatiereExacte(positionGlobale);
-		return AnalyserMatiereAuPoint(positionGlobale, Vector3.Up); // Fallback legacy
+		return AnalyserMatiereAuPoint(positionGlobale, Vector3.Up);
+	}
+
+	/// <summary>Appelé quand un arbre est coupé : spawn branches et bûches qui tombent au sol.</summary>
+	public void DemanderSpawnDebrisArbre(Vector3 baseArbre, int ageEnJours, uint seed)
+	{
+		_mondeServeur?.SpawnDebrisArbre(baseArbre, ageEnJours, seed);
 	}
 
 	/// <summary>Oracle géologique (legacy) : déduit l'ID depuis altitude/normale. Utiliser ObtenirMatiereExacte en mode réseau.</summary>

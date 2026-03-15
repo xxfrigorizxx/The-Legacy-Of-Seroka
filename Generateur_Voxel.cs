@@ -440,7 +440,7 @@ public partial class Generateur_Voxel : Node3D
 		return _sectionsPhysiques[section]?.Shape != null;
 	}
 
-	public void DetruireVoxel(Vector3 pointImpactGlobal, float rayonExplosion)
+	public void DetruireVoxel(Vector3 pointImpactGlobal, float rayonExplosion, float forceDegats = 5.0f)
 	{
 		Vector3 pointLocal = pointImpactGlobal - GlobalPosition;
 		var positionsDetruites = new System.Collections.Generic.List<Vector3I>();
@@ -466,7 +466,7 @@ public partial class Generateur_Voxel : Node3D
 					if (dist2 <= rayon2)
 					{
 						bool etaitSolide = _densities[x, y, z] > Isolevel;
-						_densities[x, y, z] = Mathf.Max(_densities[x, y, z] - 5.0f, -1.0f); // Plancher absolu
+						_densities[x, y, z] = Mathf.Max(_densities[x, y, z] - forceDegats, -1.0f); // Plancher absolu
 						modifie = true;
 						if (etaitSolide)
 							positionsDetruites.Add(new Vector3I(x, y, z));

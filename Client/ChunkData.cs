@@ -89,7 +89,7 @@ public class ChunkData
 		}
 		else
 		{
-			DensitiesFlat[Idx(lx, ly, lz)] = 10f;
+			DensitiesFlat[Idx(lx, ly, lz)] = (id == 30) ? 50f : 10f; // Bois (ID 30) a 50 HP
 			MaterialsFlat[Idx(lx, ly, lz)] = id;
 			if (DensitiesEauFlat != null) DensitiesEauFlat[Idx(lx, ly, lz)] = -1f;
 		}

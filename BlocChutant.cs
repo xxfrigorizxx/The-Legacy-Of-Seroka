@@ -5,6 +5,10 @@ public partial class BlocChutant : RigidBody3D
 	private const byte ID_BUISSON_PLEIN = 10;
 	private const byte ID_BUISSON_VIDE = 11;
 	private const byte ID_FIBRE_HERBE = 15;
+	/// <summary>Bois (bûche) — LSystem Tronc.</summary>
+	public const byte ID_BOIS = 30;
+	/// <summary>Branche — bois fin, tombe quand on coupe.</summary>
+	public const byte ID_BRANCHE = 31;
 
 	/// <summary>Crée un BlocChutant. Le parent doit l'ajouter à la scène, puis définir GlobalPosition immédiatement après.</summary>
 	public static BlocChutant Creer(Vector3 positionMonde, byte idMateriau, Material matTerrain)
@@ -22,6 +26,28 @@ public partial class BlocChutant : RigidBody3D
 
 		switch (idMateriau)
 		{
+			case ID_BOIS:
+			case ID_BRANCHE:
+				{
+					bool estBranche = idMateriau == ID_BRANCHE;
+					float rayon = estBranche ? 0.08f : 0.2f;
+					float hauteur = estBranche ? 0.6f : 0.5f;
+					meshInstance.Mesh = _ConstruireMeshCylindre(rayon, hauteur);
+					var bruitEcorce = new FastNoiseLite { Seed = 4242 };
+					bruitEcorce.NoiseType = FastNoiseLite.NoiseTypeEnum.Simplex;
+					bruitEcorce.FractalType = FastNoiseLite.FractalTypeEnum.Fbm;
+					bruitEcorce.Frequency = 0.08f;
+					var texEcorce = new NoiseTexture2D { Width = 128, Height = 128, Noise = bruitEcorce };
+					meshInstance.MaterialOverride = new StandardMaterial3D
+					{
+						AlbedoColor = new Color(0.52f, 0.32f, 0.14f),
+						AlbedoTexture = texEcorce,
+						Roughness = 0.9f,
+						Metallic = 0.02f
+					};
+					meshInstance.Rotation = new Vector3(Mathf.Pi * 0.5f, 0, 0); // Cylindre couché (bûche)
+				}
+				break;
 			case ID_BUISSON_PLEIN:
 				meshInstance.Mesh = _ExtraireMeshBuisson("res://Modeles/Botanique/Buisson_Plein.glb");
 				meshInstance.Scale = new Vector3(0.008f, 0.008f, 0.008f);
@@ -47,8 +73,8 @@ public partial class BlocChutant : RigidBody3D
 				break;
 		}
 
-		// Buissons : garder le matériau du GLB. Fibre : déjà ajouté (brins). Terrain : override avec matTerrain.
-		if (idMateriau != ID_BUISSON_PLEIN && idMateriau != ID_BUISSON_VIDE && idMateriau != ID_FIBRE_HERBE && matTerrain != null)
+		// Buissons/bois : garder leur matériau. Fibre : déjà ajouté. Autres (terrain etc.) : override matTerrain.
+		if (idMateriau != ID_BUISSON_PLEIN && idMateriau != ID_BUISSON_VIDE && idMateriau != ID_FIBRE_HERBE && idMateriau != ID_BOIS && idMateriau != ID_BRANCHE && matTerrain != null)
 			meshInstance.MaterialOverride = (Material)matTerrain.Duplicate();
 		if (idMateriau != ID_FIBRE_HERBE)
 			AddChild(meshInstance);
@@ -57,10 +83,19 @@ public partial class BlocChutant : RigidBody3D
 		var collision = new CollisionShape3D();
 		bool estBuisson = idMateriau == ID_BUISSON_PLEIN || idMateriau == ID_BUISSON_VIDE;
 		bool estFibre = idMateriau == ID_FIBRE_HERBE;
+		bool estBois = idMateriau == ID_BOIS || idMateriau == ID_BRANCHE;
 		if (estFibre)
 		{
 			collision.Shape = new BoxShape3D { Size = new Vector3(0.1f, 0.4f, 0.1f) };
 			collision.Position = new Vector3(0.05f, 0.2f, 0.05f);
+		}
+		else if (estBois)
+		{
+			float r = idMateriau == ID_BRANCHE ? 0.1f : 0.25f;
+			float h = idMateriau == ID_BRANCHE ? 0.7f : 0.55f;
+			collision.Shape = new CylinderShape3D { Radius = r, Height = h };
+			collision.Position = new Vector3(0, 0, 0);
+			collision.Rotation = new Vector3(Mathf.Pi * 0.5f, 0, 0);
 		}
 		else if (estBuisson)
 		{
@@ -96,6 +131,55 @@ public partial class BlocChutant : RigidBody3D
 			if (m != null) return m;
 		}
 		return null;
+	}
+
+	private static Mesh _ConstruireMeshCylindre(float rayon, float hauteur)
+	{
+		const int cotes = 12;
+		var st = new SurfaceTool();
+		st.Begin(Mesh.PrimitiveType.Triangles);
+		float halfH = hauteur * 0.5f;
+		for (int i = 0; i < cotes; i++)
+		{
+			float a0 = (float)i / cotes * Mathf.Tau;
+			float a1 = (float)(i + 1) / cotes * Mathf.Tau;
+			Vector3 v0 = new Vector3(Mathf.Cos(a0) * rayon, halfH, Mathf.Sin(a0) * rayon);
+			Vector3 v1 = new Vector3(Mathf.Cos(a1) * rayon, halfH, Mathf.Sin(a1) * rayon);
+			Vector3 v2 = new Vector3(Mathf.Cos(a0) * rayon, -halfH, Mathf.Sin(a0) * rayon);
+			Vector3 v3 = new Vector3(Mathf.Cos(a1) * rayon, -halfH, Mathf.Sin(a1) * rayon);
+			Vector3 n = new Vector3(Mathf.Cos((a0 + a1) * 0.5f), 0, Mathf.Sin((a0 + a1) * 0.5f));
+			st.SetNormal(n); st.AddVertex(v0);
+			st.SetNormal(n); st.AddVertex(v1);
+			st.SetNormal(n); st.AddVertex(v3);
+			st.SetNormal(n); st.AddVertex(v0);
+			st.SetNormal(n); st.AddVertex(v3);
+			st.SetNormal(n); st.AddVertex(v2);
+		}
+		Vector3 nTop = Vector3.Up, nBot = Vector3.Down;
+		for (int i = 0; i < cotes; i++)
+		{
+			float a0 = (float)i / cotes * Mathf.Tau;
+			float a1 = (float)(i + 1) / cotes * Mathf.Tau;
+			Vector3 c = new Vector3(0, halfH, 0);
+			Vector3 p0 = new Vector3(Mathf.Cos(a0) * rayon, halfH, Mathf.Sin(a0) * rayon);
+			Vector3 p1 = new Vector3(Mathf.Cos(a1) * rayon, halfH, Mathf.Sin(a1) * rayon);
+			st.SetNormal(nTop); st.AddVertex(c);
+			st.SetNormal(nTop); st.AddVertex(p0);
+			st.SetNormal(nTop); st.AddVertex(p1);
+		}
+		for (int i = 0; i < cotes; i++)
+		{
+			float a0 = (float)i / cotes * Mathf.Tau;
+			float a1 = (float)(i + 1) / cotes * Mathf.Tau;
+			Vector3 c = new Vector3(0, -halfH, 0);
+			Vector3 p0 = new Vector3(Mathf.Cos(a0) * rayon, -halfH, Mathf.Sin(a0) * rayon);
+			Vector3 p1 = new Vector3(Mathf.Cos(a1) * rayon, -halfH, Mathf.Sin(a1) * rayon);
+			st.SetNormal(nBot); st.AddVertex(c);
+			st.SetNormal(nBot); st.AddVertex(p1);
+			st.SetNormal(nBot); st.AddVertex(p0);
+		}
+		st.GenerateNormals();
+		return st.Commit();
 	}
 
 	private static Mesh _ConstruireMeshCube(byte idMateriau)

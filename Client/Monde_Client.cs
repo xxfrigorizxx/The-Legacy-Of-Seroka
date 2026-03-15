@@ -13,7 +13,7 @@ public partial class Monde_Client : Node3D
 	[Export] public int RenderDistance = 200;
 	[Export] public int MaxChunksParFrame = 4;
 	/// <summary>En chunks : au-delà de ce rayon, seule la physique est mise en dormance (BodySetSpace vide). Le visuel reste affiché tant que le chunk est dans RenderDistance.</summary>
-	[Export] public int RayonDormancePhysique = 2;
+		[Export] public int RayonDormancePhysique = 4;
 
 	private ConcurrentQueue<Action> _misesAJourMainThread = new ConcurrentQueue<Action>();
 	public ConcurrentQueue<Action> _misesAJourUrgentes = new ConcurrentQueue<Action>();
@@ -40,7 +40,7 @@ public partial class Monde_Client : Node3D
 	private bool _modificationEnCours;
 
 	private Action<Vector2I> _enregistrerDemandeChunk;
-	private Action<Vector3, float> _demanderDestruction;
+	private Action<Vector3, float, float> _demanderDestruction;
 	private Action<Vector3, Vector3, float, int> _demanderCreation;
 	private int _seedTerrain;
 
@@ -56,7 +56,7 @@ public partial class Monde_Client : Node3D
 	}
 
 	public void Initialiser(CharacterBody3D joueur, int seed, Action<Vector2I> enregistrerDemandeChunk,
-		Action<Vector3, float> demanderDestruction, Action<Vector3, Vector3, float, int> demanderCreation)
+		Action<Vector3, float, float> demanderDestruction, Action<Vector3, Vector3, float, int> demanderCreation)
 	{
 		_joueur = joueur;
 		_seedTerrain = seed;
@@ -217,14 +217,13 @@ public partial class Monde_Client : Node3D
 		}
 	}
 
-	/// <summary>Réserve le chunk de spawn (et ses 8 voisins) en tête de file pour éviter chute libre au démarrage.</summary>
+	/// <summary>Réserve la grille 5x5 autour du spawn en tête de file pour éviter chute libre au démarrage.</summary>
 	public void ReserverChunkSpawnPrioritaire(Vector2I coordSpawn)
 	{
-		var prioritaire = new List<Vector2I> { coordSpawn };
-		for (int dx = -1; dx <= 1; dx++)
-			for (int dz = -1; dz <= 1; dz++)
-				if (dx != 0 || dz != 0)
-					prioritaire.Add(new Vector2I(coordSpawn.X + dx, coordSpawn.Y + dz));
+		var prioritaire = new List<Vector2I>();
+		for (int dx = -2; dx <= 2; dx++)
+			for (int dz = -2; dz <= 2; dz++)
+				prioritaire.Add(new Vector2I(coordSpawn.X + dx, coordSpawn.Y + dz));
 		_chunksACharger.InsertRange(0, prioritaire);
 		_ancienChunkJoueur = coordSpawn;
 	}
@@ -249,7 +248,7 @@ public partial class Monde_Client : Node3D
 				return da.CompareTo(db);
 			});
 			// Solidifier plusieurs chunks autour du joueur pour éviter de passer à travers (surtout en s'éloignant du spawn).
-			const int MaxSolidificationsProche = 6;
+			const int MaxSolidificationsProche = 14;
 			int solidifies = 0;
 			World3D w = GetWorld3D();
 			while (_fileAttenteSolidification.Count > 0 && solidifies < MaxSolidificationsProche)
@@ -266,14 +265,16 @@ public partial class Monde_Client : Node3D
 			}
 		}
 
-		// GOULOT D'ÉTRANGLEMENT : au plus UNE lourde opération d'intégration par frame (mesh, collision, flore). Garantit 60 FPS même si 10 chunks sont prêts.
-		if (_fileIntegrationMainThread.TryDequeue(out var integration))
+		// GOULOT : au plus 4 intégrations par frame pour que le sol soit prêt quand on se déplace.
+		int integrations = 0;
+		while (integrations < 4 && _fileIntegrationMainThread.TryDequeue(out var integration))
 		{
 			try { integration.Invoke(); }
 			catch (ObjectDisposedException) { /* Chunk déjà supprimé */ }
 			catch (System.Exception ex) { GD.PrintErr("Monde_Client intégration: ", ex.Message); }
-			return;
+			integrations++;
 		}
+		if (integrations > 0) return;
 
 		// FORGE RESTREINTE : lancer au plus MaxTravailleurs calculs en arrière-plan (tri par distance au joueur).
 		Vector2I obsChunk = ObtenirCoordonneesChunkJoueur();
@@ -355,18 +356,17 @@ public partial class Monde_Client : Node3D
 			ActualiserDormanceChunks(chunkObservationActuel.X, chunkObservationActuel.Y);
 		}
 
-		// Priorité : si le chunk sous le joueur n'est pas encore chargé, le mettre en tête pour qu'il s'affiche (évite "noir" au-delà du spawn)
+		// Priorité : grille 5x5 autour du joueur en tête de file pour que le sol soit prêt quand on se déplace
 		Vector2I chunkPieds = Gestionnaire_Monde.WorldToChunkCoord(positionObservation, TailleChunk);
-		if (!_chunksData.ContainsKey(chunkPieds))
+		var prioritaire = new List<Vector2I>();
+		for (int dx = -2; dx <= 2; dx++)
+			for (int dz = -2; dz <= 2; dz++)
+			{
+				var v = new Vector2I(chunkPieds.X + dx, chunkPieds.Y + dz);
+				if (!_chunksData.ContainsKey(v)) prioritaire.Add(v);
+			}
+		if (prioritaire.Count > 0)
 		{
-			var prioritaire = new List<Vector2I> { chunkPieds };
-			for (int dx = -1; dx <= 1; dx++)
-				for (int dz = -1; dz <= 1; dz++)
-					if ((dx != 0 || dz != 0))
-					{
-						var v = new Vector2I(chunkPieds.X + dx, chunkPieds.Y + dz);
-						if (!_chunksData.ContainsKey(v)) prioritaire.Add(v);
-					}
 			_chunksACharger.RemoveAll(c => prioritaire.Contains(c));
 			_chunksACharger.InsertRange(0, prioritaire);
 		}
@@ -472,9 +472,9 @@ public partial class Monde_Client : Node3D
 		// AAA : pas de reconstruction par section ; on pourrait re-demander le chunk.
 	}
 
-	public void AppliquerDestructionGlobale(Vector3 pointImpact, float rayon)
+	public void AppliquerDestructionGlobale(Vector3 pointImpact, float rayon, float forceDegats = 5.0f)
 	{
-		_demanderDestruction?.Invoke(pointImpact, rayon);
+		_demanderDestruction?.Invoke(pointImpact, rayon, forceDegats);
 	}
 
 	public void AppliquerCreationGlobale(Vector3 pointImpact, Vector3 normale, float rayon, int idMatiere = 1)
@@ -715,12 +715,18 @@ public partial class Monde_Client : Node3D
 		return (data.ObtenirDensiteLocale(lx, posGlobale.Y, lz), true);
 	}
 
-	/// <summary>Vrai si le chunk sous les pieds du joueur a sa collision active (body inséré dans l'espace physique, pas seulement en file).</summary>
+	/// <summary>Vrai si la grille 3x3 de chunks autour du joueur a ses collisions actives. Évite de tomber dans le vide en se déplaçant.</summary>
 	public bool ChunkSousPiedsAPret()
 	{
 		if (_joueur == null) return false;
 		Vector2I c = Gestionnaire_Monde.WorldToChunkCoord(_joueur.GlobalPosition, TailleChunk);
-		if (!_chunksData.TryGetValue(c, out var data)) return false;
-		return data.PhysicsBodyRID.IsValid && !data.Dormant && !data.EstEnFileSolidification;
+		for (int dx = -1; dx <= 1; dx++)
+			for (int dz = -1; dz <= 1; dz++)
+			{
+				var v = new Vector2I(c.X + dx, c.Y + dz);
+				if (!_chunksData.TryGetValue(v, out var data)) return false;
+				if (!data.PhysicsBodyRID.IsValid || data.Dormant || data.EstEnFileSolidification) return false;
+			}
+		return true;
 	}
 }

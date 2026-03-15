@@ -12,6 +12,9 @@ public partial class GameState : Node
 	/// <summary>Nom du monde actuel (dossier dans user://saves/). TOUJOURS utilisé pour chunks.</summary>
 	public string NomMondeActuel { get; private set; } = "MonMonde";
 
+	/// <summary>Jour absolu du monde (incrémenté à minuit). Persisté dans world_time.dat.</summary>
+	public int JourAbsolu { get; private set; }
+
 	public override void _Ready()
 	{
 		Instance = this;
@@ -60,7 +63,8 @@ public partial class GameState : Node
 		}
 		NomMondeActuel = nomMonde;
 		SeedTerrainActuel = seed;
-		GD.Print($"ZERO-K : Monde chargé : {nomMonde} (seed {seed})");
+		ChargerJourAbsolu(nomMonde);
+		GD.Print($"ZERO-K : Monde chargé : {nomMonde} (seed {seed}, jour {JourAbsolu})");
 		return true;
 	}
 
@@ -86,6 +90,37 @@ public partial class GameState : Node
 		string chemin = Path.Combine(dossier, "world_meta.dat");
 		using var writer = new BinaryWriter(File.Open(chemin, FileMode.Create));
 		writer.Write(seed);
+	}
+
+	private void SauvegarderJourAbsolu(string nom)
+	{
+		try
+		{
+			string chemin = Path.Combine(ProjectSettings.GlobalizePath($"user://saves/{nom}"), "world_time.dat");
+			using var w = new BinaryWriter(File.Open(chemin, FileMode.Create));
+			w.Write(JourAbsolu);
+		}
+		catch (Exception ex) { GD.PrintErr($"ZERO-K : Erreur sauvegarde jour : {ex.Message}"); }
+	}
+
+	private void ChargerJourAbsolu(string nom)
+	{
+		string chemin = Path.Combine(ProjectSettings.GlobalizePath($"user://saves/{nom}"), "world_time.dat");
+		if (!File.Exists(chemin)) { JourAbsolu = 0; return; }
+		try
+		{
+			using var r = new BinaryReader(File.Open(chemin, FileMode.Open, System.IO.FileAccess.Read, FileShare.Read));
+			JourAbsolu = Mathf.Max(0, r.ReadInt32());
+		}
+		catch (Exception ex) { GD.PrintErr($"ZERO-K : Erreur lecture jour : {ex.Message}"); JourAbsolu = 0; }
+	}
+
+	/// <summary>Incmente le jour absolu (appelé à minuit). Sauvegarde immédiate.</summary>
+	public void IncrementerJourAbsolu()
+	{
+		JourAbsolu++;
+		if (!string.IsNullOrEmpty(NomMondeActuel))
+			SauvegarderJourAbsolu(NomMondeActuel);
 	}
 
 	/// <summary>Sauvegarde la position du joueur pour ce monde. Appelé à la déconnexion / quitter.</summary>

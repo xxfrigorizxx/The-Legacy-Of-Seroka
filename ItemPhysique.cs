@@ -84,8 +84,8 @@ public partial class ItemPhysique : RigidBody3D
 		// LE BOUCLIER : Si c'est un éclat coupé procéduralement, on ne génère RIEN depuis le cache.
 		if (EstUnEclat)
 		{
-			// RÉVEIL PHYSIQUE : Il faut activer ses sens pour qu'il puisse re-casser en le jetant !
-			if (ID_Objet != 11)
+			// RÉVEIL PHYSIQUE : activer ses sens. SpawnChunksPrefabriques connecte déjà → éviter double connexion.
+			if (ID_Objet != 11 && !_surImpactConnecte)
 			{
 				ContactMonitor = true;
 				MaxContactsReported = 1;
@@ -116,7 +116,7 @@ public partial class ItemPhysique : RigidBody3D
 		ResistanceActuelle = TableGeologique[idxChim].ResistanceFuture;
 
 		// Activation des senseurs de choc (Silex id 11 = immobile, pas de BodyEntered)
-		if (ID_Objet != 11)
+		if (ID_Objet != 11 && !_surImpactConnecte)
 		{
 			ContactMonitor = true;
 			MaxContactsReported = 1;
@@ -924,30 +924,6 @@ public partial class ItemPhysique : RigidBody3D
 		for (int i = 0; i < n; i++)
 			pointsArriere[i] = pointsFragment[i] - normalPlan * epaisseur;
 
-		// UV normalisées [0,1] avec repère global (tangentU, tangentV) → texture cohérente, plus de faces noires.
-		float minU = float.MaxValue, maxU = float.MinValue, minV = float.MaxValue, maxV = float.MinValue;
-		foreach (Vector3 p in pointsFragment)
-		{
-			Vector3 d = p - centre;
-			float pu = d.Dot(tangentU), pv = d.Dot(tangentV);
-			if (pu < minU) minU = pu; if (pu > maxU) maxU = pu;
-			if (pv < minV) minV = pv; if (pv > maxV) maxV = pv;
-		}
-		foreach (Vector3 p in pointsArriere)
-		{
-			Vector3 d = p - centre;
-			float pu = d.Dot(tangentU), pv = d.Dot(tangentV);
-			if (pu < minU) minU = pu; if (pu > maxU) maxU = pu;
-			if (pv < minV) minV = pv; if (pv > maxV) maxV = pv;
-		}
-		float rangeU = Mathf.Max(0.001f, maxU - minU), rangeV = Mathf.Max(0.001f, maxV - minV);
-		Vector2 UVNorm(Vector3 pt)
-		{
-			Vector3 d = pt - centre;
-			float pu = (d.Dot(tangentU) - minU) / rangeU, pv = (d.Dot(tangentV) - minV) / rangeV;
-			return new Vector2(Mathf.Clamp(pu, 0f, 1f), Mathf.Clamp(pv, 0f, 1f));
-		}
-
 		var st = new SurfaceTool();
 		st.Begin(Mesh.PrimitiveType.Triangles);
 		bool aDesSommetsAvecUV = false;
@@ -1300,27 +1276,15 @@ public partial class ItemPhysique : RigidBody3D
 		return new Vector2(u, v);
 	}
 
-	/// <summary>Crée une shape de collision convexe sans faire échouer Jolt (trop de sommets / triangles trop petits). Fallback = box depuis AABB.</summary>
-	private static Shape3D CreerShapeCollisionConvexeRobuste(ArrayMesh mesh)
+	/// <summary>Crée une shape de collision sans faire échouer Jolt ("initial triangle area too small"). BoxShape3D depuis AABB = toujours valide. Public pour éclats (Joueur).</summary>
+	public static Shape3D CreerShapeCollisionConvexeRobuste(Mesh mesh)
 	{
 		if (mesh == null) return new BoxShape3D { Size = Vector3.One * 0.2f };
-		Vector3[] faces = mesh.GetFaces();
-		// Jolt : "Could not find a suitable initial triangle because its area was too small" si mesh trop détaillé ou dégénéré
-		const int maxSommetsPourConvexe = 1024; // 12×8 sphère ≈ 576, garde une marge
-		if (faces != null && faces.Length <= maxSommetsPourConvexe)
-		{
-			try
-			{
-				Shape3D shape = mesh.CreateConvexShape(true, false);
-				if (shape != null) return shape;
-			}
-			catch { /* fallback */ }
-		}
 		Aabb aabb = mesh.GetAabb();
 		Vector3 size = aabb.Size;
-		if (size.X < 0.01f) size.X = 0.1f;
-		if (size.Y < 0.01f) size.Y = 0.1f;
-		if (size.Z < 0.01f) size.Z = 0.1f;
+		if (size.X < 0.02f) size.X = 0.1f;
+		if (size.Y < 0.02f) size.Y = 0.1f;
+		if (size.Z < 0.02f) size.Z = 0.1f;
 		return new BoxShape3D { Size = size };
 	}
 

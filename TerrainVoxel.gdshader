@@ -46,16 +46,25 @@ void fragment() {
 	// On crée un chaos de +/- 0.4 sur l'ID aux frontières des matériaux
 	float edge_noise = (noise(world_pos.xz * 4.0) - 0.5) * 0.8;
 	float material_id = round(raw_id + edge_noise);
-	material_id = clamp(material_id, 0.0, 9.0); // Sécurité anti-crash
+	// Limite 31 pour inclure Tronc (30) et Feuille (31) — éviter que le bois devienne Glace (9)
+	material_id = clamp(material_id, 0.0, 31.0);
+
+	// Tronc Chêne (ID 30) et Feuilles (ID 31) : couleurs fixes (évite dépassement texture_array limitée à 0-9)
+	bool is_bois = (material_id >= 29.5 && material_id < 30.5);
+	bool is_feuilles = (material_id >= 30.5);
+	float tex_layer = clamp(material_id, 0.0, 9.0);
 
 	// Projection Triplanaire standard
 	vec2 uv_x = uv1_triplanar_pos.zy;
 	vec2 uv_y = uv1_triplanar_pos.xz;
 	vec2 uv_z = uv1_triplanar_pos.xy;
-	vec4 tex_x = texture(texture_array, vec3(uv_x, material_id));
-	vec4 tex_y = texture(texture_array, vec3(uv_y, material_id));
-	vec4 tex_z = texture(texture_array, vec3(uv_z, material_id));
+	vec4 tex_x = texture(texture_array, vec3(uv_x, tex_layer));
+	vec4 tex_y = texture(texture_array, vec3(uv_y, tex_layer));
+	vec4 tex_z = texture(texture_array, vec3(uv_z, tex_layer));
 	vec4 albedo_tex = tex_x * uv1_power_normal.x + tex_y * uv1_power_normal.y + tex_z * uv1_power_normal.z;
+
+	if (is_bois) albedo_tex.rgb = vec3(0.4, 0.28, 0.18);
+	if (is_feuilles) albedo_tex.rgb = vec3(0.25, 0.55, 0.22);
 	// 2. MACRO-VARIATION ANTI-DAMIER (Bruit à basse fréquence)
 	// Crée des zones d'ombres et de lumières géantes sur le terrain
 	float macro_noise = noise(world_pos.xz * 0.05);
