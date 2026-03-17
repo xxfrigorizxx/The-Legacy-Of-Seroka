@@ -1053,16 +1053,37 @@ public partial class Monde_Serveur : Node
 		return Generateur_Voxel.ObtenirHauteurTerrainMonde(worldX, worldZ, seed);
 	}
 
-	/// <summary>Oracle géologique : lecture directe de l'ADN (_materials) au lieu de deviner. Aligné avec le Shader.</summary>
+	/// <summary>Oracle géologique : sonde les 8 coins du cube Marching Cubes pour isoler la matière solide (évite fallback gazon quand on lit l'air).</summary>
 	public int ObtenirMatiereExacte(Vector3 positionGlobale)
 	{
 		int gx = Mathf.FloorToInt(positionGlobale.X);
 		int gy = Mathf.FloorToInt(positionGlobale.Y);
 		int gz = Mathf.FloorToInt(positionGlobale.Z);
-		var r = ObtenirChunkEtLocal(new Vector3I(gx, gy, gz));
-		if (!r.HasValue) return 1;
-		byte mat = r.Value.chunk.ObtenirMatiereAtLocal(r.Value.local.X, r.Value.local.Y, r.Value.local.Z);
-		return mat > 0 ? mat : 1;
+
+		int matiereTrouvee = 1;
+		bool trouveSolide = false;
+
+		for (int dx = 0; dx <= 1; dx++)
+		{
+			for (int dy = 0; dy <= 1; dy++)
+			{
+				for (int dz = 0; dz <= 1; dz++)
+				{
+					var r = ObtenirChunkEtLocal(new Vector3I(gx + dx, gy + dy, gz + dz));
+					if (r.HasValue && r.Value.chunk.EstVoxelSolide(r.Value.local.X, r.Value.local.Y, r.Value.local.Z))
+					{
+						byte mat = r.Value.chunk.ObtenirMatiereAtLocal(r.Value.local.X, r.Value.local.Y, r.Value.local.Z);
+						if (mat > 0)
+						{
+							matiereTrouvee = mat;
+							trouveSolide = true;
+							if (mat != 1) return mat;
+						}
+					}
+				}
+			}
+		}
+		return trouveSolide ? matiereTrouvee : 1;
 	}
 
 	private float DistanceCarreeAuJoueur(Vector2I chunk, Vector3 posObservation)

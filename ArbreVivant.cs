@@ -5,10 +5,13 @@ using System.Collections.Generic;
 /// <remarks>Hérite de StaticBody3D. Remplaçant des arbres voxels.</remarks>
 public partial class ArbreVivant : StaticBody3D
 {
+	private List<Vector3> _coupesLocales = new List<Vector3>();
+
 	private struct TortueEtat
 	{
 		public Transform3D Transform;
 		public float Epaisseur;
+		public bool EstCoupe;
 	}
 
 	public int AgeEnJours = 1;
@@ -17,6 +20,13 @@ public partial class ArbreVivant : StaticBody3D
 	public uint Seed = 12345;
 	private const float CHANCE_CROISSANCE = 0.05f; // 1 chance sur 20 de grandir chaque nuit
 
+	/// <summary>Dimensions réelles du tronc (remplis par GenererMaillageArbre). Utilisées pour la bûche et les bâtons au démembrement.</summary>
+	private float _hauteurTroncTotale;
+	private float _rayonTroncBase;
+	private float _rayonTroncSommet;
+	private float _longueurBrancheMoyenne;
+	private float _epaisseurBrancheMoyenne;
+
 	private MeshInstance3D _visuelBois;
 	private MeshInstance3D _visuelFeuillage;
 	private CollisionShape3D _hitbox;
@@ -24,7 +34,7 @@ public partial class ArbreVivant : StaticBody3D
 	private static StandardMaterial3D _cacheMatBois;
 	private static StandardMaterial3D _cacheMatFeuilles;
 
-	private static Material ObtenirMaterielBois()
+	public static Material ObtenirMaterielBois()
 	{
 		if (_cacheMatBois != null) return _cacheMatBois;
 		var bruitEcorce = new FastNoiseLite { Seed = 4242 };
@@ -103,30 +113,109 @@ public partial class ArbreVivant : StaticBody3D
 		}
 	}
 
-	/// <summary>Applique des dégâts (minage avec pierre/silex). Résistance selon épaisseur : branche fine = coupe facile, tronc épais = dur.</summary>
+	/// <summary>Applique des dégâts (minage avec pierre/silex). Vieil arbre (≥3 jours) invulnérable à la pierre épaisse. Branche = amputation + chute physique.</summary>
 	/// <param name="pointImpactMonde">Point d'impact du rayon (en coordonnées monde).</param>
+	/// <param name="directionFrappe">Direction de la frappe (pour faire basculer l'arbre ou la branche).</param>
 	/// <param name="degats">Dégâts de base de l'outil.</param>
-	/// <returns>True si l'arbre est abattu (branches et bûches tombent au sol).</returns>
-	public bool SubirDegats(Vector3 pointImpactMonde, float degats)
+	/// <param name="epaisseurLame">Épaisseur de la lame (détermine si on peut entamer le tronc).</param>
+	/// <returns>0 = Rebond, 1 = Touché (tronc), 2 = Arbre abattu, 3 = Branche amputée.</returns>
+	public int SubirDegats(Vector3 pointImpactMonde, Vector3 directionFrappe, float degats, float epaisseurLame)
 	{
 		Vector3 hitLocal = GlobalTransform.AffineInverse() * pointImpactMonde;
 		float distAxis = Mathf.Sqrt(hitLocal.X * hitLocal.X + hitLocal.Z * hitLocal.Z);
 		float hauteurArbre = (0.6f + AgeEnJours * 0.18f) * 6f * (AgeEnJours <= 2 ? 0.5f : 1f);
 		float yNorm = Mathf.Clamp(hitLocal.Y / Mathf.Max(0.1f, hauteurArbre), 0f, 1f);
-		float epaisseurTronc = 0.2f * (1f - yNorm * 0.6f);
-		float epaisseurEstimee = distAxis < 0.2f ? epaisseurTronc : Mathf.Max(0.03f, 0.15f - distAxis * 0.2f);
-		float multiplicateur = 0.12f / Mathf.Max(0.03f, epaisseurEstimee);
-		float degatsEffectifs = degats * Mathf.Clamp(multiplicateur, 0.5f, 4f);
-		ResistanceActuelle -= degatsEffectifs;
-		if (ResistanceActuelle <= 0f)
+		float epaisseurTronc = 0.2f * (1f - yNorm * 0.6f) * (AgeEnJours * 0.5f);
+
+		bool estLeTronc = distAxis < 0.4f;
+		float epaisseurEstimee = estLeTronc ? epaisseurTronc : 0.05f;
+
+		// RÈGLE 1 : INVULNÉRABILITÉ DES VIEUX ARBRES — pierre épaisse rebondit (silex seul peut entamer).
+		if (AgeEnJours >= 3 && epaisseurLame > 0.05f)
 		{
-			Vector3 baseArbre = GlobalPosition;
-			var gestionnaire = GetParent()?.GetParent() as Gestionnaire_Monde;
-			gestionnaire?.DemanderSpawnDebrisArbre(baseArbre, AgeEnJours, Seed);
-			QueueFree();
-			return true;
+			return 0;
 		}
-		return false;
+
+		// RÈGLE 2 : Pénétration standard P < C
+		if (epaisseurEstimee > epaisseurLame * 4.0f && epaisseurLame > 0.04f)
+		{
+			return 0;
+		}
+
+		if (estLeTronc)
+		{
+			float multiplicateur = 0.12f / Mathf.Max(0.01f, epaisseurEstimee);
+			ResistanceActuelle -= degats * Mathf.Clamp(multiplicateur, 0.1f, 5f);
+			if (ResistanceActuelle <= 0f)
+			{
+				DeclencherChuteArbre(directionFrappe);
+				return 2;
+			}
+			return 1;
+		}
+		else
+		{
+			_coupesLocales.Add(hitLocal);
+			GenererMaillageArbre();
+			DeclencherChuteBranche(pointImpactMonde, directionFrappe);
+			return 3;
+		}
+	}
+
+	private void DeclencherChuteArbre(Vector3 directionFrappe)
+	{
+		RigidBody3D cadavre = new RigidBody3D { Name = "ArbreMort" };
+		cadavre.GlobalTransform = GlobalTransform;
+		cadavre.Mass = 50f + (AgeEnJours * 80f);
+		cadavre.ContinuousCd = true;
+		cadavre.SetMeta("PV", 60f * AgeEnJours);
+		cadavre.SetMeta("Age", AgeEnJours);
+		cadavre.SetMeta("HauteurTronc", _hauteurTroncTotale);
+		cadavre.SetMeta("RayonTroncBase", _rayonTroncBase);
+		cadavre.SetMeta("RayonTroncSommet", _rayonTroncSommet);
+		cadavre.SetMeta("LongueurBrancheMoy", _longueurBrancheMoyenne);
+		cadavre.SetMeta("EpaisseurBrancheMoy", _epaisseurBrancheMoyenne);
+
+		cadavre.AngularDampMode = RigidBody3D.DampMode.Replace;
+		cadavre.AngularDamp = 4.0f;
+		cadavre.LinearDampMode = RigidBody3D.DampMode.Replace;
+		cadavre.LinearDamp = 1.0f;
+
+		MeshInstance3D boisCopy = new MeshInstance3D { Name = "Bois", Mesh = _visuelBois.Mesh, MaterialOverride = _visuelBois.MaterialOverride };
+		MeshInstance3D feuillesCopy = new MeshInstance3D { Name = "Feuillage", Mesh = _visuelFeuillage.Mesh, MaterialOverride = _visuelFeuillage.MaterialOverride };
+		cadavre.AddChild(boisCopy);
+		cadavre.AddChild(feuillesCopy);
+
+		CollisionShape3D hitboxCopy = new CollisionShape3D();
+		if (_visuelBois.Mesh != null && _visuelBois.Mesh.GetFaces().Length > 0)
+		{
+			hitboxCopy.Shape = _visuelBois.Mesh.CreateConvexShape(true, true);
+		}
+		else
+		{
+			hitboxCopy.Shape = new BoxShape3D { Size = Vector3.One };
+		}
+		cadavre.AddChild(hitboxCopy);
+
+		GetParent().AddChild(cadavre);
+
+		cadavre.ApplyCentralImpulse(directionFrappe * (40f * AgeEnJours) + Vector3.Up * 20f);
+
+		QueueFree();
+	}
+
+	private void DeclencherChuteBranche(Vector3 pointImpact, Vector3 directionFrappe)
+	{
+		RigidBody3D brancheMorte = new RigidBody3D { Name = "BrancheMorte" };
+		brancheMorte.GlobalPosition = pointImpact;
+		brancheMorte.Mass = 10f;
+		brancheMorte.ContinuousCd = true;
+
+		brancheMorte.AddChild(new MeshInstance3D { Mesh = new CapsuleMesh { Radius = 0.05f, Height = 0.8f }, MaterialOverride = _visuelBois.MaterialOverride, Rotation = new Vector3(Mathf.Pi * 0.5f, 0, 0) });
+		brancheMorte.AddChild(new CollisionShape3D { Shape = new CapsuleShape3D { Radius = 0.05f, Height = 0.8f }, Rotation = new Vector3(Mathf.Pi * 0.5f, 0, 0) });
+
+		GetParent().AddChild(brancheMorte);
+		brancheMorte.ApplyCentralImpulse(directionFrappe * 5f);
 	}
 
 	private static float Hash(uint seed, int salt)
@@ -159,7 +248,15 @@ public partial class ArbreVivant : StaticBody3D
 		float epaisseurBase = (0.12f + 0.06f * AgeEnJours) * multEpaisseur * scaleAge;
 		float longueurSegment = (0.6f + AgeEnJours * 0.18f) * multLongueur * scaleAge;
 
+		_hauteurTroncTotale = 0f;
+		_rayonTroncBase = epaisseurBase;
+		_rayonTroncSommet = epaisseurBase;
+		float sommeLongueurBranche = 0f;
+		float sommeEpaisseurBranche = 0f;
+		int nbSegmentsBranche = 0;
+
 		bool premierSegmentDeBranche = false;
+		bool estCoupe = false;
 		foreach (char commande in adnFinal)
 		{
 			switch (commande)
@@ -171,9 +268,22 @@ public partial class ArbreVivant : StaticBody3D
 					Vector3 right = tortue.Basis.X.Normalized();
 					Vector3 forward = tortue.Basis.Z.Normalized();
 					tortue = tortue.TranslatedLocal(new Vector3(0, longueurSegment, 0));
+					Vector3 pEnd = tortue.Origin;
 					float rayonFin = epaisseurBase * reductionBranche;
 					float rayonDebut = epaisseurBase;
-					GenererSegmentBranche(stBois, pStart, tortue.Origin, right, forward, rayonDebut, rayonFin);
+					_hauteurTroncTotale += longueurSegment;
+					_rayonTroncSommet = rayonFin;
+					if (!estCoupe)
+					{
+						foreach (Vector3 coupe in _coupesLocales)
+						{
+							if (pStart.DistanceTo(coupe) < 0.8f) { estCoupe = true; break; }
+						}
+					}
+					if (!estCoupe)
+					{
+						GenererSegmentBranche(stBois, pStart, pEnd, right, forward, rayonDebut, rayonFin);
+					}
 					epaisseurBase = rayonFin;
 					break;
 				}
@@ -185,6 +295,7 @@ public partial class ArbreVivant : StaticBody3D
 					Vector3 right = tortue.Basis.X.Normalized();
 					Vector3 forward = tortue.Basis.Z.Normalized();
 					tortue = tortue.TranslatedLocal(new Vector3(0, longueurSegment, 0));
+					Vector3 pEnd = tortue.Origin;
 					float rayonFin = epaisseurBase * reductionBranche;
 					float rayonDebut = epaisseurBase;
 					if (premierSegmentDeBranche)
@@ -193,23 +304,35 @@ public partial class ArbreVivant : StaticBody3D
 						premierSegmentDeBranche = false;
 					}
 					float coef = (commande == 'b') ? 0.7f : 1f;
-					GenererSegmentBranche(stBois, pStart, tortue.Origin, right, forward, rayonDebut * coef, rayonFin * coef);
-					epaisseurBase = rayonFin * coef;
-					// Feuillage LE LONG des branches : 2–3 clusters par segment (style chêne dense)
-					if (pile.Count > 0)
+					nbSegmentsBranche++;
+					sommeLongueurBranche += longueurSegment;
+					sommeEpaisseurBranche += (rayonDebut + rayonFin) * 0.5f * coef;
+					if (!estCoupe)
 					{
-						int hashBase = Mathf.Abs((int)(pStart.X * 7 + pStart.Z * 31 + pStart.Y * 13));
-						Transform3D tStart = new Transform3D(tortue.Basis, pStart);
-						Transform3D tMid = new Transform3D(tortue.Basis, pStart.Lerp(tortue.Origin, 0.5f));
-						Transform3D tEnd = new Transform3D(tortue.Basis, tortue.Origin);
-						GenererFeuillagePetit(stFeuilles, tStart, AgeEnJours);
-						if (Hash(Seed, hashBase) < 0.85f) GenererFeuillagePetit(stFeuilles, tMid, AgeEnJours);
-						GenererFeuillagePetit(stFeuilles, tEnd, AgeEnJours);
+						foreach (Vector3 coupe in _coupesLocales)
+						{
+							if (pStart.DistanceTo(coupe) < 0.8f) { estCoupe = true; break; }
+						}
 					}
+					if (!estCoupe)
+					{
+						GenererSegmentBranche(stBois, pStart, pEnd, right, forward, rayonDebut * coef, rayonFin * coef);
+						if (pile.Count > 0)
+						{
+							int hashBase = Mathf.Abs((int)(pStart.X * 7 + pStart.Z * 31 + pStart.Y * 13));
+							Transform3D tStart = new Transform3D(tortue.Basis, pStart);
+							Transform3D tMid = new Transform3D(tortue.Basis, pStart.Lerp(pEnd, 0.5f));
+							Transform3D tEnd = new Transform3D(tortue.Basis, pEnd);
+							GenererFeuillagePetit(stFeuilles, tStart, AgeEnJours);
+							if (Hash(Seed, hashBase) < 0.85f) GenererFeuillagePetit(stFeuilles, tMid, AgeEnJours);
+							GenererFeuillagePetit(stFeuilles, tEnd, AgeEnJours);
+						}
+					}
+					epaisseurBase = rayonFin * coef;
 					break;
 				}
 				case '[':
-					pile.Push(new TortueEtat { Transform = tortue, Epaisseur = epaisseurBase });
+					pile.Push(new TortueEtat { Transform = tortue, Epaisseur = epaisseurBase, EstCoupe = estCoupe });
 					premierSegmentDeBranche = true;
 					break;
 				case ']':
@@ -217,6 +340,7 @@ public partial class ArbreVivant : StaticBody3D
 					TortueEtat etat = pile.Pop();
 					tortue = etat.Transform;
 					epaisseurBase = etat.Epaisseur;
+					estCoupe = etat.EstCoupe;
 					break;
 				}
 				case '+': tortue = tortue.RotatedLocal(Vector3.Right, angle); break;
@@ -227,13 +351,14 @@ public partial class ArbreVivant : StaticBody3D
 				case 'B':
 					break;
 				case 'L':
-					// CIME : cluster de feuillage massif (pas de bois)
-					GenererFeuillage(stFeuilles, tortue, AgeEnJours);
+					if (!estCoupe) GenererFeuillage(stFeuilles, tortue, AgeEnJours);
 					break;
 			}
 		}
-		// Couronne au sommet
-		GenererFeuillage(stFeuilles, tortue, AgeEnJours);
+		_longueurBrancheMoyenne = nbSegmentsBranche > 0 ? sommeLongueurBranche / nbSegmentsBranche : longueurSegment;
+		_epaisseurBrancheMoyenne = nbSegmentsBranche > 0 ? sommeEpaisseurBranche / nbSegmentsBranche : (epaisseurBase * 0.7f);
+
+		if (!estCoupe) GenererFeuillage(stFeuilles, tortue, AgeEnJours);
 
 		stBois.GenerateNormals();
 		// Pas de GenerateTangents (nécessite UV parfaits, inutile sans normal map)
@@ -258,8 +383,9 @@ public partial class ArbreVivant : StaticBody3D
 		};
 		_visuelFeuillage.MaterialOverride = matFeuille;
 
+		// FIX CRITIQUE : Hitbox exacte pour permettre de marcher sous les branches et viser le tronc.
 		_hitbox.Shape = meshBois != null && meshBois.GetFaces().Length > 0
-			? ItemPhysique.CreerShapeCollisionConvexeRobuste(meshBois)
+			? meshBois.CreateTrimeshShape()
 			: new BoxShape3D { Size = Vector3.One };
 	}
 

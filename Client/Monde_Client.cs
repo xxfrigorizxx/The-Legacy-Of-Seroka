@@ -11,9 +11,9 @@ public partial class Monde_Client : Node3D
 	[Export] public int TailleChunk = 16;
 	[Export] public int HauteurMax = 720;  // Montagnes jusqu'à 700
 	[Export] public int RenderDistance = 200;
-	[Export] public int MaxChunksParFrame = 4;
-	/// <summary>En chunks : au-delà de ce rayon, seule la physique est mise en dormance (BodySetSpace vide). Le visuel reste affiché tant que le chunk est dans RenderDistance.</summary>
-		[Export] public int RayonDormancePhysique = 4;
+	[Export] public int MaxChunksParFrame = 12;
+	/// <summary>Rayon (en chunks) autour du joueur où les collisions sont actives. Tout dans ce rayon doit être dynamique (réveil immédiat). Au-delà, physique en dormance.</summary>
+		[Export] public int RayonDormancePhysique = 5;
 
 	private ConcurrentQueue<Action> _misesAJourMainThread = new ConcurrentQueue<Action>();
 	public ConcurrentQueue<Action> _misesAJourUrgentes = new ConcurrentQueue<Action>();
@@ -163,27 +163,18 @@ public partial class Monde_Client : Node3D
 			_fileAttenteSolidification.Add(data);
 			data.EstEnFileSolidification = true;
 		}
-		// Chunk sous les pieds du joueur : solidifier tout de suite pour ne jamais traverser la map.
+		// Réveil constant : tout chunk dans un rayon de 5 chunks du joueur est solidifié tout de suite (jamais dans le vide).
+		const int RayonReveilChunks = 5;
 		if (_joueur != null)
 		{
 			Vector2I cJoueur = Gestionnaire_Monde.WorldToChunkCoord(_joueur.GlobalPosition, TailleChunk);
-			if (data.Coordonnees == cJoueur && data.PhysicsBodyRID.IsValid)
+			int dx = Mathf.Abs(data.Coordonnees.X - cJoueur.X);
+			int dz = Mathf.Abs(data.Coordonnees.Y - cJoueur.Y);
+			if (dx <= RayonReveilChunks && dz <= RayonReveilChunks && data.PhysicsBodyRID.IsValid)
 			{
 				_fileAttenteSolidification.Remove(data);
 				data.EstEnFileSolidification = false;
 				PhysicsServer3D.Singleton.BodySetSpace(data.PhysicsBodyRID, world.Space);
-			}
-			else
-			{
-				// Solidifier les chunks à distance 2 (couronne autour du joueur) pour ne pas passer à travers au loin
-				int dx = Mathf.Abs(data.Coordonnees.X - cJoueur.X);
-				int dz = Mathf.Abs(data.Coordonnees.Y - cJoueur.Y);
-				if (dx <= 2 && dz <= 2 && data.PhysicsBodyRID.IsValid)
-				{
-					_fileAttenteSolidification.Remove(data);
-					data.EstEnFileSolidification = false;
-					PhysicsServer3D.Singleton.BodySetSpace(data.PhysicsBodyRID, world.Space);
-				}
 			}
 		}
 
@@ -217,13 +208,20 @@ public partial class Monde_Client : Node3D
 		}
 	}
 
-	/// <summary>Réserve la grille 5x5 autour du spawn en tête de file pour éviter chute libre au démarrage.</summary>
+	/// <summary>Réserve tout le rayon RenderDistance (même distance que en jeu) autour du spawn, trié par distance, en tête de file. Le chargement du début utilise ainsi la même distance que le joueur.</summary>
 	public void ReserverChunkSpawnPrioritaire(Vector2I coordSpawn)
 	{
 		var prioritaire = new List<Vector2I>();
-		for (int dx = -2; dx <= 2; dx++)
-			for (int dz = -2; dz <= 2; dz++)
+		for (int dx = -RenderDistance; dx <= RenderDistance; dx++)
+			for (int dz = -RenderDistance; dz <= RenderDistance; dz++)
 				prioritaire.Add(new Vector2I(coordSpawn.X + dx, coordSpawn.Y + dz));
+		Vector2 centre = new Vector2(coordSpawn.X, coordSpawn.Y);
+		prioritaire.Sort((a, b) =>
+		{
+			float da = new Vector2(a.X, a.Y).DistanceSquaredTo(centre);
+			float db = new Vector2(b.X, b.Y).DistanceSquaredTo(centre);
+			return da.CompareTo(db);
+		});
 		_chunksACharger.InsertRange(0, prioritaire);
 		_ancienChunkJoueur = coordSpawn;
 	}
@@ -237,7 +235,62 @@ public partial class Monde_Client : Node3D
 	{
 		if (!IsInsideTree()) return; // GARROT SPATIAL : pas de manipulation de chunks si l'arbre s'effondre.
 
-		// GOULOT DE SOLIDIFICATION PHYSIQUE : priorité au chunk sous les pieds du joueur pour éviter de traverser la map.
+		// PRIORITÉ 1 : Collisions autour du joueur (rayon 5 chunks) — AVANT TOUT pour ne jamais tomber dans le vide.
+		const int RayonReveilChunks = 5;
+		if (_joueur != null && _fileAttenteSolidification.Count > 0)
+		{
+			Vector2I cJoueur = ObtenirCoordonneesChunkJoueur();
+			World3D w = GetWorld3D();
+			for (int dx = -RayonReveilChunks; dx <= RayonReveilChunks && w != null; dx++)
+				for (int dz = -RayonReveilChunks; dz <= RayonReveilChunks; dz++)
+				{
+					var c = new Vector2I(cJoueur.X + dx, cJoueur.Y + dz);
+					int idx = _fileAttenteSolidification.FindIndex(d => d.Coordonnees == c);
+					if (idx >= 0)
+					{
+						ChunkData d = _fileAttenteSolidification[idx];
+						_fileAttenteSolidification.RemoveAt(idx);
+						d.EstEnFileSolidification = false;
+						if (d.PhysicsBodyRID.IsValid)
+							PhysicsServer3D.Singleton.BodySetSpace(d.PhysicsBodyRID, w.Space);
+					}
+				}
+		}
+
+		// 2) Intégrations : pendant le chargement on peut en faire plus (pas de freeze), en jeu 1/frame.
+		bool enChargement = !ChunkSousPiedsAPret();
+		int maxIntegrations = enChargement ? 12 : 1;
+		int integrations = 0;
+		while (integrations < maxIntegrations && _fileIntegrationMainThread.TryDequeue(out var integration))
+		{
+			try { integration.Invoke(); }
+			catch (ObjectDisposedException) { /* Chunk déjà supprimé */ }
+			catch (System.Exception ex) { GD.PrintErr("Monde_Client intégration: ", ex.Message); }
+			integrations++;
+		}
+
+		// 3) Re-solidifier le rayon 5 autour du joueur (chunks qui viennent d'être intégrés cette frame).
+		if (_joueur != null && _fileAttenteSolidification.Count > 0)
+		{
+			Vector2I cJoueur = ObtenirCoordonneesChunkJoueur();
+			World3D w = GetWorld3D();
+			for (int dx = -RayonReveilChunks; dx <= RayonReveilChunks && w != null; dx++)
+				for (int dz = -RayonReveilChunks; dz <= RayonReveilChunks; dz++)
+				{
+					var c = new Vector2I(cJoueur.X + dx, cJoueur.Y + dz);
+					int idx = _fileAttenteSolidification.FindIndex(d => d.Coordonnees == c);
+					if (idx >= 0)
+					{
+						ChunkData d = _fileAttenteSolidification[idx];
+						_fileAttenteSolidification.RemoveAt(idx);
+						d.EstEnFileSolidification = false;
+						if (d.PhysicsBodyRID.IsValid)
+							PhysicsServer3D.Singleton.BodySetSpace(d.PhysicsBodyRID, w.Space);
+					}
+				}
+		}
+
+		// 4) Solidification du reste de la file : pendant le chargement plus par frame, en jeu 1/frame.
 		if (_fileAttenteSolidification.Count > 0)
 		{
 			Vector2I coordObsSolidif = ObtenirCoordonneesChunkJoueur();
@@ -247,11 +300,10 @@ public partial class Monde_Client : Node3D
 				int db = (b.Coordonnees.X - coordObsSolidif.X) * (b.Coordonnees.X - coordObsSolidif.X) + (b.Coordonnees.Y - coordObsSolidif.Y) * (b.Coordonnees.Y - coordObsSolidif.Y);
 				return da.CompareTo(db);
 			});
-			// Solidifier plusieurs chunks autour du joueur pour éviter de passer à travers (surtout en s'éloignant du spawn).
-			const int MaxSolidificationsProche = 14;
+			int maxSolidifications = enChargement ? 14 : 1;
 			int solidifies = 0;
 			World3D w = GetWorld3D();
-			while (_fileAttenteSolidification.Count > 0 && solidifies < MaxSolidificationsProche)
+			while (_fileAttenteSolidification.Count > 0 && solidifies < maxSolidifications)
 			{
 				ChunkData chunkASolidifier = _fileAttenteSolidification[0];
 				_fileAttenteSolidification.RemoveAt(0);
@@ -261,20 +313,8 @@ public partial class Monde_Client : Node3D
 				if (dx <= RayonDormancePhysique && dz <= RayonDormancePhysique && chunkASolidifier.PhysicsBodyRID.IsValid && w != null)
 					PhysicsServer3D.Singleton.BodySetSpace(chunkASolidifier.PhysicsBodyRID, w.Space);
 				solidifies++;
-				// Ne pas limiter à "distance 1" : vider la file jusqu'à 6 chunks pour que le sol soit prêt dès qu'on s'éloigne du spawn
 			}
 		}
-
-		// GOULOT : au plus 4 intégrations par frame pour que le sol soit prêt quand on se déplace.
-		int integrations = 0;
-		while (integrations < 4 && _fileIntegrationMainThread.TryDequeue(out var integration))
-		{
-			try { integration.Invoke(); }
-			catch (ObjectDisposedException) { /* Chunk déjà supprimé */ }
-			catch (System.Exception ex) { GD.PrintErr("Monde_Client intégration: ", ex.Message); }
-			integrations++;
-		}
-		if (integrations > 0) return;
 
 		// FORGE RESTREINTE : lancer au plus MaxTravailleurs calculs en arrière-plan (tri par distance au joueur).
 		Vector2I obsChunk = ObtenirCoordonneesChunkJoueur();
@@ -356,11 +396,11 @@ public partial class Monde_Client : Node3D
 			ActualiserDormanceChunks(chunkObservationActuel.X, chunkObservationActuel.Y);
 		}
 
-		// Priorité : grille 5x5 autour du joueur en tête de file pour que le sol soit prêt quand on se déplace
+		// Priorité : grille 7x7 autour du joueur pour que le sol soit chargé côté client avant d’y arriver (évite chute dans le vide).
 		Vector2I chunkPieds = Gestionnaire_Monde.WorldToChunkCoord(positionObservation, TailleChunk);
 		var prioritaire = new List<Vector2I>();
-		for (int dx = -2; dx <= 2; dx++)
-			for (int dz = -2; dz <= 2; dz++)
+		for (int dx = -4; dx <= 4; dx++)
+			for (int dz = -4; dz <= 4; dz++)
 			{
 				var v = new Vector2I(chunkPieds.X + dx, chunkPieds.Y + dz);
 				if (!_chunksData.ContainsKey(v)) prioritaire.Add(v);
@@ -373,9 +413,11 @@ public partial class Monde_Client : Node3D
 
 		if (_modificationEnCours) return;
 
-		// 3. Requêtes : extraction radiale + purge obsolètes
+		// 3. Requêtes : extraction radiale + purge obsolètes. Si le chunk sous les pieds n'est pas chargé, on demande plus de chunks (catch-up côté client).
 		PurgerChunksObsolètesDeLaFile(positionObservation);
-		for (int n = 0; n < MaxChunksParFrame && _chunksACharger.Count > 0; n++)
+		bool chunkPiedsManquant = !_chunksData.ContainsKey(chunkPieds);
+		int nbRequetes = chunkPiedsManquant ? Mathf.Min(MaxChunksParFrame * 3, 32) : MaxChunksParFrame;
+		for (int n = 0; n < nbRequetes && _chunksACharger.Count > 0; n++)
 		{
 			Vector2I chunkCible = ExtraireChunkLePlusProche(_chunksACharger, positionObservation);
 			float distCarree = DistanceCarreeAuJoueur(chunkCible, positionObservation);
@@ -664,7 +706,7 @@ public partial class Monde_Client : Node3D
 		// Le dépilage est fait dans _PhysicsProcess (usine en continu, 60 TPS)
 	}
 
-	/// <summary>Dormance physique uniquement : le visuel (RenderingServer) ne doit JAMAIS être désactivé tant que le chunk est dans RenderDistance. Au-delà de RayonDormancePhysique, on retire uniquement le corps physique du space. Au réveil, le chunk est mis en file de solidification (pas d'éveil massif).</summary>
+	/// <summary>Dormance physique : tout dans un rayon de RayonDormancePhysique chunks autour du joueur doit avoir les collisions actives (dynamique). Au réveil, on réactive immédiatement le body pour ne jamais traverser le sol.</summary>
 	private void ActualiserDormanceChunks(int obsChunkX, int obsChunkZ)
 	{
 		World3D world = GetWorld3D();
@@ -691,11 +733,12 @@ public partial class Monde_Client : Node3D
 				}
 				else
 				{
-					// Réveil : ne pas donner l'espace immédiatement (évite pic Broadphase). Mise en file.
-					if (!data.EstEnFileSolidification)
+					// Réveil dynamique : activer les collisions tout de suite dans le rayon (pas de file).
+					PhysicsServer3D.Singleton.BodySetSpace(data.PhysicsBodyRID, space);
+					if (data.EstEnFileSolidification)
 					{
-						_fileAttenteSolidification.Add(data);
-						data.EstEnFileSolidification = true;
+						_fileAttenteSolidification.Remove(data);
+						data.EstEnFileSolidification = false;
 					}
 				}
 			}
@@ -715,13 +758,14 @@ public partial class Monde_Client : Node3D
 		return (data.ObtenirDensiteLocale(lx, posGlobale.Y, lz), true);
 	}
 
-	/// <summary>Vrai si la grille 3x3 de chunks autour du joueur a ses collisions actives. Évite de tomber dans le vide en se déplaçant.</summary>
+	/// <summary>Vrai si la grille rayon 5 chunks autour du joueur a ses collisions actives. Évite de tomber dans le vide.</summary>
 	public bool ChunkSousPiedsAPret()
 	{
+		const int RayonChunks = 5;
 		if (_joueur == null) return false;
 		Vector2I c = Gestionnaire_Monde.WorldToChunkCoord(_joueur.GlobalPosition, TailleChunk);
-		for (int dx = -1; dx <= 1; dx++)
-			for (int dz = -1; dz <= 1; dz++)
+		for (int dx = -RayonChunks; dx <= RayonChunks; dx++)
+			for (int dz = -RayonChunks; dz <= RayonChunks; dz++)
 			{
 				var v = new Vector2I(c.X + dx, c.Y + dz);
 				if (!_chunksData.TryGetValue(v, out var data)) return false;

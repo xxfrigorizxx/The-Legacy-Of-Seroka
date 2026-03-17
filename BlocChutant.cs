@@ -9,6 +9,8 @@ public partial class BlocChutant : RigidBody3D
 	public const byte ID_BOIS = 30;
 	/// <summary>Branche — bois fin, tombe quand on coupe.</summary>
 	public const byte ID_BRANCHE = 31;
+	/// <summary>Feuillage arraché (même mesh visuel que les feuilles d'arbre, pas de l'herbe).</summary>
+	public const byte ID_FEUILLE_ARRACHEE = 34;
 
 	/// <summary>Crée un BlocChutant. Le parent doit l'ajouter à la scène, puis définir GlobalPosition immédiatement après.</summary>
 	public static BlocChutant Creer(Vector3 positionMonde, byte idMateriau, Material matTerrain)
@@ -18,6 +20,33 @@ public partial class BlocChutant : RigidBody3D
 		bloc._ConstruireVisuelEtCollision(idMateriau, matTerrain);
 		// GlobalPosition nécessite is_inside_tree() == true : à définir par l'appelant après AddChild().
 		return bloc;
+	}
+
+	/// <summary>Crée un BlocChutant feuillage (même visuel que les feuilles d'arbre). Utiliser quand on arrache le feuillage d'un arbre.</summary>
+	public static BlocChutant CreerFeuillageArrache(Vector3 positionMonde, Material matFeuilles)
+	{
+		var bloc = new BlocChutant();
+		bloc.SetMeta("ID_Matiere", (int)ID_FEUILLE_ARRACHEE);
+		bloc._ConstruireVisuelFeuillage(matFeuilles);
+		return bloc;
+	}
+
+	private void _ConstruireVisuelFeuillage(Material matFeuilles)
+	{
+		// Petit cluster de feuilles (quads ovales) — même style que le feuillage d'arbre, pas des brins d'herbe.
+		Material mat = matFeuilles != null ? (Material)matFeuilles.Duplicate() : new StandardMaterial3D { AlbedoColor = new Color(0.2f, 0.55f, 0.15f), Roughness = 0.95f, Metallic = 0f };
+		float l = 0.18f;
+		float w = 0.12f;
+		for (int i = 0; i < 3; i++)
+		{
+			var q = new QuadMesh { Size = new Vector2(w, l) };
+			var mi = new MeshInstance3D { Mesh = q, MaterialOverride = mat };
+			mi.Position = new Vector3((i - 1) * 0.04f, l * 0.5f, (i % 2) * 0.02f);
+			mi.Rotation = new Vector3(0.1f * (i - 1), 0.15f * i, 0.08f * (i - 1));
+			AddChild(mi);
+		}
+		var collision = new CollisionShape3D { Shape = new BoxShape3D { Size = new Vector3(0.15f, l, 0.15f) }, Position = new Vector3(0, l * 0.5f, 0) };
+		AddChild(collision);
 	}
 
 	private void _ConstruireVisuelEtCollision(byte idMateriau, Material matTerrain)

@@ -46,6 +46,8 @@ public partial class ItemPhysique : RigidBody3D
 	public bool EstUnEclat = false;
 	/// <summary>Nombre de fractures subies (0 = roche intacte). Au-delà de 5, le fragment devient poudre et disparaît.</summary>
 	public int NiveauFracture = 0;
+	/// <summary>Essence de bois (0 = chêne). Pour bûche (30) et bâton (32) : propriétés depuis le profil chêne ; en prévision des futurs arbres.</summary>
+	public byte IndexBotanique = 0;
 
 	/// <summary>Banque d'ADN : accès public pour rendu en main et UI inventaire.</summary>
 	public static IReadOnlyList<Mesh> CacheMeshCaillou => _cacheMeshCaillou;
@@ -102,6 +104,16 @@ public partial class ItemPhysique : RigidBody3D
 			ResistanceActuelle = 1f;
 			return;
 		}
+		// Bûche (30) et Bâton (32) : propriétés depuis le profil botanique (chêne, pin, …) pour bien spécifier l'essence.
+		if (ID_Objet == 30 || ID_Objet == 32)
+		{
+			ProfilBotanique p = LSystem_Botanique.ObtenirProfil(IndexBotanique);
+			float volBuche = 10f;
+			float volBaton = 0.6f;
+			Mass = ID_Objet == 30 ? (volBuche * p.MasseDensite) : (volBaton * p.MasseDensite);
+			ResistanceActuelle = ID_Objet == 30 ? (p.ResistanceHache * 0.075f) : (p.ResistanceHache * 0.015f);
+			return;
+		}
 
 		AppliquerMateriel(visuel);
 
@@ -147,6 +159,37 @@ public partial class ItemPhysique : RigidBody3D
 		}
 
 		RotationDegrees = new Vector3(GD.RandRange(0, 360), GD.RandRange(0, 360), GD.RandRange(0, 360));
+	}
+
+	/// <summary>Bûche (30) et bâton (32) de chêne : flottent à la surface. +1,10 m de portance pour ne plus être sous l'eau.</summary>
+	public override void _PhysicsProcess(double delta)
+	{
+		if (ID_Objet != 30 && ID_Objet != 32) return;
+		const float NIVEAU_EAU = 103f;
+		const float OFFSET_FLOTTABILITE = 1.10f; // Monter le bois de 1,10 m pour qu'il flotte bien à la surface
+		const float G_EAU = 4f; // Gravité dans l'Area océan (Archimède)
+		float y = GlobalPosition.Y;
+		if (y >= NIVEAU_EAU + OFFSET_FLOTTABILITE) return;
+
+		// Masse totale à soutenir : le bois + tout ce qui est en contact (joueur, etc.) pour que ça réagisse à la masse.
+		float massePortee = 0f;
+		foreach (Node body in GetCollidingBodies())
+		{
+			if (body is RigidBody3D rb)
+				massePortee += rb.Mass;
+			else if (body is CharacterBody3D)
+				massePortee += 60f; // Joueur ~60 kg
+		}
+
+		// Poussée d'Archimède : niveau de référence décalé de +1,10 m pour que le bois flotte au-dessus de l'eau.
+		float niveauRef = NIVEAU_EAU + OFFSET_FLOTTABILITE;
+		float enfoncement = Mathf.Max(0f, niveauRef - y);
+		float poussee = enfoncement * Mass * 38f;
+		ApplyCentralForce(Vector3.Up * poussee);
+
+		// Réaction à la masse : le poids des corps en contact pousse le bois vers le bas.
+		if (massePortee > 0f)
+			ApplyCentralForce(Vector3.Down * (massePortee * G_EAU));
 	}
 
 	// ----- MOTEUR DE FRACTURE (SurImpactPhysique → Fracturer → SpawnEclatVrai) -----
@@ -229,7 +272,19 @@ public partial class ItemPhysique : RigidBody3D
 
 		Vector3 normaleCoupe;
 		if (directionVueMonde.HasValue && directionVueMonde.Value.LengthSquared() > 0.01f)
-			normaleCoupe = (GlobalTransform.Basis.Inverse() * directionVueMonde.Value).Normalized();
+		{
+			Vector3 dirVueLocal = (GlobalTransform.Basis.Inverse() * directionVueMonde.Value).Normalized();
+			// Anatomie de la roche : coupe selon l'endroit où on tape (plus au hasard).
+			Aabb aabb = monVisuel.Mesh.GetAabb();
+			Vector3 size = aabb.Size;
+			float ex = size.X * Scale.X; float ey = size.Y * Scale.Y; float ez = size.Z * Scale.Z;
+			Vector3 axisMin = ex <= ey && ex <= ez ? Vector3.Right : (ey <= ex && ey <= ez ? Vector3.Up : Vector3.Back);
+			Vector3 axisMax = ex >= ey && ex >= ez ? Vector3.Right : (ey >= ex && ey >= ez ? Vector3.Up : Vector3.Back);
+			float dotMin = Mathf.Abs(dirVueLocal.Dot(axisMin));
+			float dotMax = Mathf.Abs(dirVueLocal.Dot(axisMax));
+			// Tape sur l'épaisseur (face plate) → 2 morceaux plus petits, plus épais, ronds. Tape sur le côté mince → 2 morceaux plus minces.
+			normaleCoupe = (dotMin >= dotMax) ? axisMin : axisMax;
+		}
 		else
 			normaleCoupe = new Vector3((float)GD.Randf() - 0.5f, (float)GD.Randf() - 0.5f, (float)GD.Randf() - 0.5f).Normalized();
 

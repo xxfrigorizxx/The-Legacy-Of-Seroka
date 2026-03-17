@@ -1,14 +1,23 @@
 using Godot;
 using System.Collections.Generic;
 
-/// <summary>ADN de la matière organique : régit la physique du bois (flottabilité, résistance à la hache).</summary>
+/// <summary>ADN de la matière organique : régit la physique du bois (flottabilité, combustion, résistance).</summary>
 public struct ProfilBotanique
 {
 	public string Nom;
 	public byte ID_Tronc;
 	public byte ID_Feuille;
-	public float MasseDensite;   // Ex: 0.75 (flotte), 1.2 (coule)
-	public float ResistanceHache; // Points de vie du bloc
+
+	/// <summary>Densité par rapport à l'eau (1.0). &lt; 1.0 flotte, &gt; 1.0 coule.</summary>
+	public float MasseDensite;
+	/// <summary>Points de vie du bloc face à une lame.</summary>
+	public float ResistanceHache;
+	/// <summary>Temps de combustion en secondes par unité de volume.</summary>
+	public float Combustibilite;
+	/// <summary>Température générée par la combustion (utile pour la forge plus tard).</summary>
+	public float ChaleurDegagee;
+	/// <summary>0 = Cassant (verre), 1 = Très flexible (Arc/Tressage possible sans casser).</summary>
+	public float Flexibilite;
 }
 
 /// <summary>Données d'un arbre pour InventaireArbres (stade 0=plançon, 1-3=croissance, 3=mature).</summary>
@@ -22,15 +31,30 @@ public struct DonneesArbre
 /// <remarks>Chêne réaliste : tronc épais, branches en spirale, feuillage en dôme. Croissance paramétrée par stade.</remarks>
 public static class LSystem_Botanique
 {
-	/// <summary>Le Chêne : Dense, majestueux, branches noueuses.</summary>
 	public static readonly ProfilBotanique Chene = new ProfilBotanique
 	{
 		Nom = "Chêne",
 		ID_Tronc = 30,
 		ID_Feuille = 31,
-		MasseDensite = 0.75f,
-		ResistanceHache = 150f
+		MasseDensite = 0.85f,
+		ResistanceHache = 200f,
+		Combustibilite = 300f,
+		ChaleurDegagee = 800f,
+		Flexibilite = 0.2f
 	};
+
+	/// <summary>Index du chêne dans TableBotanique. Tout le bois actuel vient du chêne ; en prévision des futurs arbres (autre index).</summary>
+	public const byte IndexChene = 0;
+
+	/// <summary>Table des essences. Pour l'instant uniquement le chêne (0). Permet d'ajouter d'autres arbres plus tard avec des attributs différents.</summary>
+	public static readonly ProfilBotanique[] TableBotanique = { Chene };
+
+	/// <summary>Retourne le profil botanique pour l'index d'espèce (0 = chêne). Clamp si hors bornes.</summary>
+	public static ProfilBotanique ObtenirProfil(byte indexEspece)
+	{
+		int i = Mathf.Clamp(indexEspece, 0, TableBotanique.Length - 1);
+		return TableBotanique[i];
+	}
 
 	/// <summary>Stades de croissance : 0=plançon (1 iter), 1=jeune (2 iter), 2=adulte (3 iter), 3=mature (4 iter).</summary>
 	public const int STADE_MAX = 3;
