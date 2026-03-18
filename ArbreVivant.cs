@@ -113,39 +113,43 @@ public partial class ArbreVivant : StaticBody3D
 		}
 	}
 
-	/// <summary>Applique des dégâts (minage avec pierre/silex). Vieil arbre (≥3 jours) invulnérable à la pierre épaisse. Branche = amputation + chute physique.</summary>
+	/// <summary>Applique des dégâts (minage avec pierre/silex). Loi du Rebond : force sous le seuil = zéro dégât.</summary>
 	/// <param name="pointImpactMonde">Point d'impact du rayon (en coordonnées monde).</param>
 	/// <param name="directionFrappe">Direction de la frappe (pour faire basculer l'arbre ou la branche).</param>
-	/// <param name="degats">Dégâts de base de l'outil.</param>
+	/// <param name="forceImpact">Force d'impact cinétique (masse × vitesse × tranchant).</param>
 	/// <param name="epaisseurLame">Épaisseur de la lame (détermine si on peut entamer le tronc).</param>
 	/// <returns>0 = Rebond, 1 = Touché (tronc), 2 = Arbre abattu, 3 = Branche amputée.</returns>
-	public int SubirDegats(Vector3 pointImpactMonde, Vector3 directionFrappe, float degats, float epaisseurLame)
+	public int SubirDegats(Vector3 pointImpactMonde, Vector3 directionFrappe, float forceImpact, float epaisseurLame)
 	{
+		// Jeunes arbres (tier 1–2) : seuil plus bas pour outils taillés / mains nues
+		float seuilRuptureBotanique = AgeEnJours <= 2
+			? (20f + AgeEnJours * 12f)
+			: (30f + AgeEnJours * 15f);
+		if (forceImpact < seuilRuptureBotanique)
+			return 0;
+
 		Vector3 hitLocal = GlobalTransform.AffineInverse() * pointImpactMonde;
 		float distAxis = Mathf.Sqrt(hitLocal.X * hitLocal.X + hitLocal.Z * hitLocal.Z);
-		float hauteurArbre = (0.6f + AgeEnJours * 0.18f) * 6f * (AgeEnJours <= 2 ? 0.5f : 1f);
-		float yNorm = Mathf.Clamp(hitLocal.Y / Mathf.Max(0.1f, hauteurArbre), 0f, 1f);
-		float epaisseurTronc = 0.2f * (1f - yNorm * 0.6f) * (AgeEnJours * 0.5f);
+		// Hauteur réelle du tronc (segments « T ») : sinon l’ancienne formule sous-estime y → tronc trop « épais » → rebond sur 2e/3e tiers
+		float hTronc = Mathf.Max(0.25f, _hauteurTroncTotale);
+		float hNormTronc = Mathf.Clamp(hitLocal.Y / hTronc, 0f, 1f);
+		float epaisseurTronc = 0.2f * (1f - hNormTronc * 0.6f) * (AgeEnJours * 0.5f);
 
-		bool estLeTronc = distAxis < 0.4f;
+		// Les 3 premiers tiers du tronc : zone d’axe élargie pour pouvoir entailler toute la hauteur utile du fût
+		float rayonAxe = hNormTronc < 1f / 3f ? 0.52f : (hNormTronc < 2f / 3f ? 0.46f : 0.40f);
+		bool estLeTronc = hitLocal.Y <= hTronc * 1.05f && distAxis < rayonAxe;
 		float epaisseurEstimee = estLeTronc ? epaisseurTronc : 0.05f;
 
-		// RÈGLE 1 : INVULNÉRABILITÉ DES VIEUX ARBRES — pierre épaisse rebondit (silex seul peut entamer).
 		if (AgeEnJours >= 3 && epaisseurLame > 0.05f)
-		{
 			return 0;
-		}
 
-		// RÈGLE 2 : Pénétration standard P < C
 		if (epaisseurEstimee > epaisseurLame * 4.0f && epaisseurLame > 0.04f)
-		{
 			return 0;
-		}
 
 		if (estLeTronc)
 		{
 			float multiplicateur = 0.12f / Mathf.Max(0.01f, epaisseurEstimee);
-			ResistanceActuelle -= degats * Mathf.Clamp(multiplicateur, 0.1f, 5f);
+			ResistanceActuelle -= forceImpact * Mathf.Clamp(multiplicateur, 0.1f, 5f);
 			if (ResistanceActuelle <= 0f)
 			{
 				DeclencherChuteArbre(directionFrappe);

@@ -86,7 +86,9 @@ public partial class ItemPhysique : RigidBody3D
 		// LE BOUCLIER : Si c'est un éclat coupé procéduralement, on ne génère RIEN depuis le cache.
 		if (EstUnEclat)
 		{
-			// RÉVEIL PHYSIQUE : activer ses sens. SpawnChunksPrefabriques connecte déjà → éviter double connexion.
+			int ch = Mathf.Clamp(IndexChimique, 0, TableGeologique.Length - 1);
+			if (ID_Objet == 10 || ID_Objet == 11 || ID_Objet == 12)
+				visuel.MaterialOverride = CreerMaterielProcedural(ID_Objet == 11, ch);
 			if (ID_Objet != 11 && !_surImpactConnecte)
 			{
 				ContactMonitor = true;
@@ -108,10 +110,37 @@ public partial class ItemPhysique : RigidBody3D
 		if (ID_Objet == 30 || ID_Objet == 32)
 		{
 			ProfilBotanique p = LSystem_Botanique.ObtenirProfil(IndexBotanique);
-			float volBuche = 10f;
-			float volBaton = 0.6f;
-			Mass = ID_Objet == 30 ? (volBuche * p.MasseDensite) : (volBaton * p.MasseDensite);
-			ResistanceActuelle = ID_Objet == 30 ? (p.ResistanceHache * 0.075f) : (p.ResistanceHache * 0.015f);
+			float densiteKgM3 = 620f * (p.MasseDensite / 0.85f);
+			float volRef, vol;
+			Vector3 sc0 = Scale;
+			if (sc0.LengthSquared() < 1e-8f) sc0 = Vector3.One;
+			if (visuel.Mesh is CylinderMesh cyl)
+			{
+				float rr = cyl.TopRadius;
+				float hh = cyl.Height;
+				vol = Mathf.Pi * rr * rr * hh * sc0.X * sc0.Y * sc0.Z;
+				volRef = ID_Objet == 30 ? (Mathf.Pi * 0.12f * 0.12f * 0.6f) : (Mathf.Pi * 0.02f * 0.02f * 0.5f);
+			}
+			else
+			{
+				volRef = ID_Objet == 30 ? (Mathf.Pi * 0.12f * 0.12f * 0.6f) : (Mathf.Pi * 0.02f * 0.02f * 0.5f);
+				vol = volRef * sc0.X * sc0.Y * sc0.Z;
+			}
+			if (ID_Objet == 30)
+			{
+				volRef = Mathf.Pi * 0.12f * 0.12f * 0.6f;
+				ResistanceActuelle = p.ResistanceHache * 0.075f * Mathf.Clamp(Mathf.Pow(vol / volRef, 0.35f), 0.28f, 3.2f);
+			}
+			else
+			{
+				volRef = Mathf.Pi * 0.02f * 0.02f * 0.5f;
+				ResistanceActuelle = p.ResistanceHache * 0.015f * Mathf.Clamp(Mathf.Pow(vol / volRef, 0.35f), 0.2f, 2.5f);
+			}
+			Mass = Mathf.Max(0.015f, vol * densiteKgM3);
+			PhysicsMaterialOverride = new PhysicsMaterial { Bounce = 0.08f, Friction = 0.85f };
+			ContactMonitor = true;
+			MaxContactsReported = 12;
+			Scale = Vector3.One;
 			return;
 		}
 
@@ -161,35 +190,70 @@ public partial class ItemPhysique : RigidBody3D
 		RotationDegrees = new Vector3(GD.RandRange(0, 360), GD.RandRange(0, 360), GD.RandRange(0, 360));
 	}
 
-	/// <summary>Bûche (30) et bâton (32) de chêne : flottent à la surface. +1,10 m de portance pour ne plus être sous l'eau.</summary>
+	/// <summary>Bûche (30) et bâton (32) : flottent près de la surface. Bûche : référence −0,10 m vs ancien offset (moins « surélevée »).</summary>
 	public override void _PhysicsProcess(double delta)
 	{
 		if (ID_Objet != 30 && ID_Objet != 32) return;
 		const float NIVEAU_EAU = 103f;
-		const float OFFSET_FLOTTABILITE = 1.10f; // Monter le bois de 1,10 m pour qu'il flotte bien à la surface
-		const float G_EAU = 4f; // Gravité dans l'Area océan (Archimède)
+		// Cible ~surface de l’eau (pas +1 m : le corps ne doit pas « voler » au-dessus)
+		float offsetFlottaison = ID_Objet == 30 ? 0.05f : 0.08f;
+		const float G_EAU = 4f;
+		float dt = (float)delta;
 		float y = GlobalPosition.Y;
-		if (y >= NIVEAU_EAU + OFFSET_FLOTTABILITE) return;
+		if (y >= NIVEAU_EAU + offsetFlottaison) return;
 
-		// Masse totale à soutenir : le bois + tout ce qui est en contact (joueur, etc.) pour que ça réagisse à la masse.
 		float massePortee = 0f;
 		foreach (Node body in GetCollidingBodies())
 		{
 			if (body is RigidBody3D rb)
 				massePortee += rb.Mass;
 			else if (body is CharacterBody3D)
-				massePortee += 60f; // Joueur ~60 kg
+				massePortee += 60f;
 		}
 
-		// Poussée d'Archimède : niveau de référence décalé de +1,10 m pour que le bois flotte au-dessus de l'eau.
-		float niveauRef = NIVEAU_EAU + OFFSET_FLOTTABILITE;
+		float niveauRef = NIVEAU_EAU + offsetFlottaison;
 		float enfoncement = Mathf.Max(0f, niveauRef - y);
-		float poussee = enfoncement * Mass * 38f;
+		float kPoussee = ID_Objet == 30 ? 14f : 22f;
+		float poussee = enfoncement * Mass * kPoussee;
 		ApplyCentralForce(Vector3.Up * poussee);
 
-		// Réaction à la masse : le poids des corps en contact pousse le bois vers le bas.
 		if (massePortee > 0f)
 			ApplyCentralForce(Vector3.Down * (massePortee * G_EAU));
+
+		// Amortissement vertical (évite rebonds type trampoline à la surface)
+		float vy = LinearVelocity.Y;
+		if (Mathf.Abs(vy) > 0.02f)
+			ApplyCentralForce(Vector3.Up * (-vy * Mass * (ID_Objet == 30 ? 7f : 5f)));
+		Vector3 vH = LinearVelocity;
+		vH.Y = 0f;
+		if (vH.LengthSquared() > 0.25f)
+			ApplyCentralForce(-vH.Normalized() * Mass * 0.8f * (ID_Objet == 30 ? 1.2f : 1f));
+	}
+
+	/// <summary>Seuil de rupture (Loi du Rebond). En dessous de cette force d'impact, dégâts strictement zéro.</summary>
+	public float ObtenirSeuilRupture()
+	{
+		if (ID_Objet == 11) return 80f; // Silex très dur
+		if (ID_Objet >= 10 && ID_Objet <= 14) return 50f; // Roche standard
+		if (ID_Objet == 30 || ID_Objet == 32) return 40f; // Bois mort durci
+		return 10f; // Matières souples ou organiques
+	}
+
+	/// <summary>Applique les dégâts selon la Loi du Rebond : en dessous du seuil, zéro dégât.</summary>
+	/// <returns>0 = Rebond (Zéro dégât), 1 = Endommagé, 2 = Fracturé/Détruit</returns>
+	public int SubirDegats(float forceImpact, Vector3 dirVue, Vector3 pointImpact)
+	{
+		float seuil = ObtenirSeuilRupture();
+		if (forceImpact < seuil)
+			return 0;
+
+		ResistanceActuelle -= forceImpact;
+		if (ResistanceActuelle <= 0)
+		{
+			FracturerPublic(dirVue, pointImpact);
+			return 2;
+		}
+		return 1;
 	}
 
 	// ----- MOTEUR DE FRACTURE (SurImpactPhysique → Fracturer → SpawnEclatVrai) -----
