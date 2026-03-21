@@ -1003,6 +1003,20 @@ public partial class Monde_Serveur : Node
 		return r.HasValue && r.Value.chunk.EstVoxelEau(r.Value.local.X, r.Value.local.Y, r.Value.local.Z);
 	}
 
+	/// <summary>Vérifie un petit voisinage 3³ : bûche/bâton peuvent chevaucher plusieurs voxels.</summary>
+	public bool EstPointDansEau(Vector3 positionGlobale)
+	{
+		int gx = Mathf.FloorToInt(positionGlobale.X);
+		int gy = Mathf.FloorToInt(positionGlobale.Y);
+		int gz = Mathf.FloorToInt(positionGlobale.Z);
+		for (int dx = -1; dx <= 1; dx++)
+			for (int dy = -1; dy <= 1; dy++)
+				for (int dz = -1; dz <= 1; dz++)
+					if (EstVoxelEau(new Vector3I(gx + dx, gy + dy, gz + dz)))
+						return true;
+		return false;
+	}
+
 	private bool EstVoxelAir(Vector3I pos)
 	{
 		var r = ObtenirChunkEtLocal(pos);

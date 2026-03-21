@@ -179,6 +179,8 @@ public partial class ArbreVivant : StaticBody3D
 		cadavre.SetMeta("RayonTroncSommet", _rayonTroncSommet);
 		cadavre.SetMeta("LongueurBrancheMoy", _longueurBrancheMoyenne);
 		cadavre.SetMeta("EpaisseurBrancheMoy", _epaisseurBrancheMoyenne);
+		// Essence (pour masse / résistance des bûches — aujourd’hui chêne ; même index que LSystem).
+		cadavre.SetMeta("IndexBotanique", (int)LSystem_Botanique.IndexChene);
 
 		cadavre.AngularDampMode = RigidBody3D.DampMode.Replace;
 		cadavre.AngularDamp = 4.0f;

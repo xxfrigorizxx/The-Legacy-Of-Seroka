@@ -1309,8 +1309,24 @@ void fragment() {
 		data.TailleChunk = donnees.TailleChunk;
 		data.HauteurMax = donnees.HauteurMax;
 
-		// Génération flore à la création du chunk : surface = voxel solide avec vide au-dessus (gazon partout où c'est possible)
-		data.InventaireFlore = GenererInventaireFloreDepuisSurface(data);
+		// Flore : ne pas réécraser un inventaire déjà synchronisé (fauchage, gravité). Sinon la surface herbe (ID 1) régénère
+		// des brins là où le joueur vient de couper — le MultiMesh restait animé alors que l'item est déjà spawné.
+		Dictionary<Vector3I, byte> floreAvant = null;
+		if (data.InventaireFlore != null)
+			floreAvant = new Dictionary<Vector3I, byte>(data.InventaireFlore);
+		var genere = GenererInventaireFloreDepuisSurface(data);
+		if (floreAvant == null)
+			data.InventaireFlore = genere;
+		else
+		{
+			var fusion = new Dictionary<Vector3I, byte>();
+			foreach (var kv in genere)
+			{
+				if (floreAvant.TryGetValue(kv.Key, out byte type))
+					fusion[kv.Key] = type;
+			}
+			data.InventaireFlore = fusion;
+		}
 
 		var payloads = new List<SectionPayload>(NB_SECTIONS);
 		for (int i = 0; i < NB_SECTIONS; i++)
@@ -1343,7 +1359,14 @@ void fragment() {
 		if (_cacheMeshGazon == null) _cacheMeshGazon = GenererMeshGazonProcedural();
 		Mesh meshGazon = _cacheMeshGazon;
 		if (meshGazon == null) return;
-		nodeGazon.Multimesh = instances.Count == 0 ? null : CreerMultiMeshGazon(instances, meshGazon);
+		if (instances.Count == 0)
+		{
+			nodeGazon.Multimesh = null;
+			nodeGazon.Visible = false;
+			return;
+		}
+		nodeGazon.Visible = true;
+		nodeGazon.Multimesh = CreerMultiMeshGazon(instances, meshGazon);
 	}
 
 	private static MultiMesh CreerMultiMeshGazon(List<(Transform3D t, Color c)> instances, Mesh meshGazon)

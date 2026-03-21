@@ -67,6 +67,17 @@ public partial class ItemPhysique : RigidBody3D
 
 	/// <summary>True si BodyEntered a été connecté par nous (évite "disconnect nonexistent" à la fracture).</summary>
 	private bool _surImpactConnecte = false;
+	/// <summary>Cache pour flottaison : eau voxel via le gestionnaire (évite la bande Y qui cassait le sol sec).</summary>
+	private Gestionnaire_Monde _gestionnaireMondeCache;
+
+	private Gestionnaire_Monde ObtenirGestionnaireMonde()
+	{
+		if (_gestionnaireMondeCache != null && GodotObject.IsInstanceValid(_gestionnaireMondeCache))
+			return _gestionnaireMondeCache;
+		Node p = GetParent();
+		_gestionnaireMondeCache = p?.GetNodeOrNull<Gestionnaire_Monde>("Gestionnaire_Monde");
+		return _gestionnaireMondeCache;
+	}
 
 	public override void _Ready()
 	{
@@ -89,6 +100,8 @@ public partial class ItemPhysique : RigidBody3D
 			int ch = Mathf.Clamp(IndexChimique, 0, TableGeologique.Length - 1);
 			if (ID_Objet == 10 || ID_Objet == 11 || ID_Objet == 12)
 				visuel.MaterialOverride = CreerMaterielProcedural(ID_Objet == 11, ch);
+			else if (ID_Objet == 30 || ID_Objet == 32)
+				visuel.MaterialOverride = ArbreVivant.ObtenirMaterielBois();
 			if (ID_Objet != 11 && !_surImpactConnecte)
 			{
 				ContactMonitor = true;
@@ -110,7 +123,8 @@ public partial class ItemPhysique : RigidBody3D
 		if (ID_Objet == 30 || ID_Objet == 32)
 		{
 			ProfilBotanique p = LSystem_Botanique.ObtenirProfil(IndexBotanique);
-			float densiteKgM3 = 620f * (p.MasseDensite / 0.85f);
+			// Bois vert / cellulosique : un peu moins dense que l’eau (1000) pour flotter crédiblement une fois sec/humide jeu.
+			float densiteKgM3 = 520f * (p.MasseDensite / 0.85f);
 			float volRef, vol;
 			Vector3 sc0 = Scale;
 			if (sc0.LengthSquared() < 1e-8f) sc0 = Vector3.One;
@@ -119,6 +133,13 @@ public partial class ItemPhysique : RigidBody3D
 				float rr = cyl.TopRadius;
 				float hh = cyl.Height;
 				vol = Mathf.Pi * rr * rr * hh * sc0.X * sc0.Y * sc0.Z;
+				volRef = ID_Objet == 30 ? (Mathf.Pi * 0.12f * 0.12f * 0.6f) : (Mathf.Pi * 0.02f * 0.02f * 0.5f);
+			}
+			else if (visuel.Mesh != null)
+			{
+				// Bûche/bâton sculpté (ArrayMesh) : volume depuis AABB pour masse cohérente avec la forme
+				Vector3 sz = visuel.Mesh.GetAabb().Size;
+				vol = Mathf.Abs(sz.X * sz.Y * sz.Z);
 				volRef = ID_Objet == 30 ? (Mathf.Pi * 0.12f * 0.12f * 0.6f) : (Mathf.Pi * 0.02f * 0.02f * 0.5f);
 			}
 			else
@@ -190,17 +211,38 @@ public partial class ItemPhysique : RigidBody3D
 		RotationDegrees = new Vector3(GD.RandRange(0, 360), GD.RandRange(0, 360), GD.RandRange(0, 360));
 	}
 
-	/// <summary>Bûche (30) et bâton (32) : flottent près de la surface. Bûche : référence −0,10 m vs ancien offset (moins « surélevée »).</summary>
+	/// <summary>Bûche (30) / bâton (32) : flottent dans l’eau voxel si l’essence est moins dense que l’eau (ex. chêne 0,85).
+	/// Pas de flottaison sur terre : évite les forces géantes qui faisaient traverser le sol.</summary>
 	public override void _PhysicsProcess(double delta)
 	{
 		if (ID_Objet != 30 && ID_Objet != 32) return;
+		ProfilBotanique profil = LSystem_Botanique.ObtenirProfil(IndexBotanique);
+		if (profil.MasseDensite >= 1f) return;
+
+		Gestionnaire_Monde gm = ObtenirGestionnaireMonde();
+		if (gm == null || !gm.EstPointDansEau(GlobalPosition)) return;
+
 		const float NIVEAU_EAU = 103f;
-		// Cible ~surface de l’eau (pas +1 m : le corps ne doit pas « voler » au-dessus)
-		float offsetFlottaison = ID_Objet == 30 ? 0.05f : 0.08f;
+		const float RHO_EAU = 1000f;
 		const float G_EAU = 4f;
-		float dt = (float)delta;
 		float y = GlobalPosition.Y;
-		if (y >= NIVEAU_EAU + offsetFlottaison) return;
+
+		float rayonEff = ID_Objet == 30 ? 0.12f : 0.02f;
+		float longueurEff = ID_Objet == 30 ? 0.6f : 0.5f;
+		foreach (Node c in GetChildren())
+		{
+			if (c is MeshInstance3D mi && mi.Mesh is CylinderMesh cy)
+			{
+				rayonEff = Mathf.Max(rayonEff, cy.TopRadius);
+				longueurEff = Mathf.Max(longueurEff, cy.Height);
+				break;
+			}
+		}
+
+		// Centre du corps un peu au-dessus du plan d’eau : cylindre couché → le rayon domine le tirant d’eau visible
+		float offsetSurface = Mathf.Clamp(rayonEff * 0.55f + longueurEff * 0.08f, 0.06f, 0.65f);
+		float niveauRef = NIVEAU_EAU + offsetSurface;
+		if (y >= niveauRef + 0.35f) return;
 
 		float massePortee = 0f;
 		foreach (Node body in GetCollidingBodies())
@@ -211,19 +253,21 @@ public partial class ItemPhysique : RigidBody3D
 				massePortee += 60f;
 		}
 
-		float niveauRef = NIVEAU_EAU + offsetFlottaison;
-		float enfoncement = Mathf.Max(0f, niveauRef - y);
-		float kPoussee = ID_Objet == 30 ? 14f : 22f;
-		float poussee = enfoncement * Mass * kPoussee;
-		ApplyCentralForce(Vector3.Up * poussee);
+		float vol = Mathf.Pi * rayonEff * rayonEff * longueurEff;
+		float poidsEau = vol * RHO_EAU * 0.0085f;
+		float excesFlot = Mathf.Max(0f, poidsEau - Mass * G_EAU * 0.22f);
+		ApplyCentralForce(Vector3.Up * excesFlot);
+
+		float enfoncement = Mathf.Clamp(niveauRef - y, 0f, 0.42f);
+		float kPoussee = ID_Objet == 30 ? 38f : 48f;
+		ApplyCentralForce(Vector3.Up * (enfoncement * Mass * kPoussee));
 
 		if (massePortee > 0f)
 			ApplyCentralForce(Vector3.Down * (massePortee * G_EAU));
 
-		// Amortissement vertical (évite rebonds type trampoline à la surface)
 		float vy = LinearVelocity.Y;
 		if (Mathf.Abs(vy) > 0.02f)
-			ApplyCentralForce(Vector3.Up * (-vy * Mass * (ID_Objet == 30 ? 7f : 5f)));
+			ApplyCentralForce(Vector3.Up * (-vy * Mass * (ID_Objet == 30 ? 8f : 6f)));
 		Vector3 vH = LinearVelocity;
 		vH.Y = 0f;
 		if (vH.LengthSquared() > 0.25f)
@@ -1393,6 +1437,42 @@ public partial class ItemPhysique : RigidBody3D
 		float u = 0.5f + Mathf.Atan2(d.Z, d.X) / (2f * Mathf.Pi);
 		float v = 0.5f - Mathf.Asin(Mathf.Clamp(d.Y, -1f, 1f)) / Mathf.Pi;
 		return new Vector2(u, v);
+	}
+
+	/// <summary>Méta sur ItemPhysique : ScaleEclat inventaire quand le mesh posé est « cuit » (bake) en monde à l’échelle 1.</summary>
+	public const string MetaScaleEclatInventaire = "ScaleEclatInventaire";
+
+	/// <summary>Duplique le mesh en multipliant chaque sommet par <paramref name="scale"/> (non uniforme). Le RigidBody peut rester (1,1,1) pour une physique stable.</summary>
+	public static ArrayMesh DupliquerMeshBakeEchelle(Mesh mesh, Vector3 scale)
+	{
+		if (mesh == null) return null;
+		if ((scale - Vector3.One).LengthSquared() < 1e-12f) return null;
+		Vector3[] faces = mesh.GetFaces();
+		if (faces == null || faces.Length < 9) return null;
+		var st = new SurfaceTool();
+		st.Begin(Mesh.PrimitiveType.Triangles);
+		for (int i = 0; i < faces.Length; i += 3)
+		{
+			Vector3 a = new Vector3(faces[i].X * scale.X, faces[i].Y * scale.Y, faces[i].Z * scale.Z);
+			Vector3 b = new Vector3(faces[i + 1].X * scale.X, faces[i + 1].Y * scale.Y, faces[i + 1].Z * scale.Z);
+			Vector3 c = new Vector3(faces[i + 2].X * scale.X, faces[i + 2].Y * scale.Y, faces[i + 2].Z * scale.Z);
+			Vector3 cr = (b - a).Cross(c - a);
+			if (cr.LengthSquared() < 1e-12f) continue;
+			Vector3 n = cr.Normalized();
+			// GenerateTangents() exige des UV (erreur Godot sinon).
+			void AddVert(Vector3 v)
+			{
+				st.SetNormal(n);
+				st.SetUV(new Vector2(v.X * 0.5f + v.Z * 0.5f, v.Y * 0.5f));
+				st.AddVertex(v);
+			}
+			AddVert(a);
+			AddVert(b);
+			AddVert(c);
+		}
+		st.GenerateTangents();
+		ArrayMesh arr = st.Commit();
+		return arr != null && arr.GetSurfaceCount() > 0 ? arr : null;
 	}
 
 	/// <summary>Crée une shape de collision sans faire échouer Jolt ("initial triangle area too small"). BoxShape3D depuis AABB = toujours valide. Public pour éclats (Joueur).</summary>

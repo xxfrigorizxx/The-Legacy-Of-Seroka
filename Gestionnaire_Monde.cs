@@ -11,7 +11,8 @@ public partial class Gestionnaire_Monde : Node3D
 	[Export] public int HauteurMax = 720;  // Montagnes jusqu'à 700
 	[Export] public int SeedTerrain = 19847;
 	[Export] public int RenderDistance = 200;
-	[Export] public int MaxChunksParFrame = 4;
+	/// <summary>Requêtes réseau / chargement par frame côté client. Monde gigantesque : 4 est trop lent pour que le sol et les collisions suivent la marche.</summary>
+	[Export] public int MaxChunksParFrame = 12;
 	/// <summary>Fuseau horaire du Monde 1. Québec = -5, Paris = +1, UTC = 0.</summary>
 	[Export] public double FuseauHoraireHeures = -5;
 	[Export] public bool PreGenererAuDemarrage = false;
@@ -588,6 +589,22 @@ public partial class Gestionnaire_Monde : Node3D
 		if (UseArchitectureReseau && _mondeServeur != null)
 			return _mondeServeur.ObtenirMatiereExacte(positionGlobale);
 		return AnalyserMatiereAuPoint(positionGlobale, Vector3.Up);
+	}
+
+	/// <summary>True si l’eau voxel est présente près du point (bûche de chêne : flotter seulement ici, pas sur la terre ferme).</summary>
+	public bool EstPointDansEau(Vector3 positionGlobale)
+	{
+		if (UseArchitectureReseau && _mondeServeur != null)
+			return _mondeServeur.EstPointDansEau(positionGlobale);
+		int gx = Mathf.FloorToInt(positionGlobale.X);
+		int gy = Mathf.FloorToInt(positionGlobale.Y);
+		int gz = Mathf.FloorToInt(positionGlobale.Z);
+		for (int dx = -1; dx <= 1; dx++)
+			for (int dy = -1; dy <= 1; dy++)
+				for (int dz = -1; dz <= 1; dz++)
+					if (EstVoxelEauLegacy(new Vector3I(gx + dx, gy + dy, gz + dz)))
+						return true;
+		return false;
 	}
 
 	/// <summary>Appelé quand un arbre est coupé : spawn branches et bûches qui tombent au sol.</summary>
