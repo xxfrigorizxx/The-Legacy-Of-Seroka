@@ -19,6 +19,10 @@ config/icon="res://icon.svg"
 
 GameState="*res://GameState.cs"
 
+[debug]
+
+settings/profiler/max_timestamp_query_elements=4096
+
 [dotnet]
 
 project/assembly_name="Zero-K - Frozen Legacy"

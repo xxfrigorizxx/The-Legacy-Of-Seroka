@@ -48,6 +48,8 @@ public partial class ItemPhysique : RigidBody3D
 	public int NiveauFracture = 0;
 	/// <summary>Essence de bois (0 = chêne). Pour bûche (30) et bâton (32) : propriétés depuis le profil chêne ; en prévision des futurs arbres.</summary>
 	public byte IndexBotanique = 0;
+	/// <summary>Assemblage CAO identique à <see cref="SlotInventaire.GenomeAssemblage"/> (outil forgé ID 100).</summary>
+	public string GenomeAssemblage = "";
 
 	/// <summary>Banque d'ADN : accès public pour rendu en main et UI inventaire.</summary>
 	public static IReadOnlyList<Mesh> CacheMeshCaillou => _cacheMeshCaillou;

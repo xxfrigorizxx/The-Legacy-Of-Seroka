@@ -38,6 +38,7 @@ public partial class Gestionnaire_Monde : Node3D
 	private Label _labelCoords;
 	/// <summary>Overlay "Chargement du monde..." affiché tant que la collision du chunk de spawn n'est pas prête.</summary>
 	private CanvasLayer _overlayChargement;
+	private double _secondesOverlayChargement;
 
 	// Legacy
 	private List<Vector2I> _chunksACharger = new List<Vector2I>();
@@ -229,6 +230,7 @@ public partial class Gestionnaire_Monde : Node3D
 		panelChargement.AddChild(lblChargement);
 		_overlayChargement.AddChild(panelChargement);
 		AddChild(_overlayChargement);
+		_secondesOverlayChargement = 0;
 
 		// Forge automatique du matériau eau (bypass de l'éditeur) — sanctuarisation : le GC ne le détruira pas car lié au nœud.
 		var shaderEau = GD.Load<Shader>("res://EauTriplanar.gdshader");
@@ -451,9 +453,17 @@ public partial class Gestionnaire_Monde : Node3D
 
 	public override void _Process(double delta)
 	{
-		// Masquer l'overlay "Chargement du monde..." dès que la collision du chunk de spawn est prête
-		if (_overlayChargement != null && _overlayChargement.Visible && EstSpawnPret())
-			_overlayChargement.Visible = false;
+		// Masquer l'overlay quand le sol minimal sous les pieds est prêt, ou après timeout (évite chargement infini si file / grille trop large).
+		if (_overlayChargement != null && _overlayChargement.Visible)
+		{
+			_secondesOverlayChargement += delta;
+			if (EstSpawnPret() || _secondesOverlayChargement >= 90.0)
+			{
+				if (!EstSpawnPret() && _secondesOverlayChargement >= 90.0)
+					GD.PrintErr("ZERO-K : Timeout chargement monde (>90 s) — overlay masqué. Vérifiez réseau / Monde_Client si le sol manque.");
+				_overlayChargement.Visible = false;
+			}
+		}
 
 		// Mise à jour des coordonnées affichées en haut à droite
 		if (_labelCoords != null && _joueur != null && _joueur.IsInsideTree())

@@ -1,4 +1,5 @@
 using Godot;
+using System;
 using System.Collections.Generic;
 
 /// <summary>Entité 3D d'arbre procédurale (L-System volumétrique). Branches continues, feuillage, croissance temporelle.</summary>
@@ -168,8 +169,8 @@ public partial class ArbreVivant : StaticBody3D
 
 	private void DeclencherChuteArbre(Vector3 directionFrappe)
 	{
+		Transform3D poseArbre = GlobalTransform;
 		RigidBody3D cadavre = new RigidBody3D { Name = "ArbreMort" };
-		cadavre.GlobalTransform = GlobalTransform;
 		cadavre.Mass = 50f + (AgeEnJours * 80f);
 		cadavre.ContinuousCd = true;
 		cadavre.SetMeta("PV", 60f * AgeEnJours);
@@ -193,17 +194,44 @@ public partial class ArbreVivant : StaticBody3D
 		cadavre.AddChild(feuillesCopy);
 
 		CollisionShape3D hitboxCopy = new CollisionShape3D();
-		if (_visuelBois.Mesh != null && _visuelBois.Mesh.GetFaces().Length > 0)
+		Mesh meshArbre = _visuelBois.Mesh;
+
+		if (AgeEnJours > 10)
 		{
-			hitboxCopy.Shape = _visuelBois.Mesh.CreateConvexShape(true, true);
+			GD.Print("ZERO-K : Arbre titanesque détecté. Utilisation d'un cylindre de collision pour éviter l'effondrement quantique.");
+			var cylindreDeSecours = new CylinderShape3D
+			{
+				Radius = 0.2f + (AgeEnJours * 0.05f),
+				Height = 1.0f + (AgeEnJours * 0.5f)
+			};
+			hitboxCopy.Shape = cylindreDeSecours;
+			hitboxCopy.Position = new Vector3(0, cylindreDeSecours.Height / 2f, 0);
 		}
 		else
 		{
-			hitboxCopy.Shape = new BoxShape3D { Size = Vector3.One };
+			Shape3D choix = null;
+			if (meshArbre != null)
+			{
+				try
+				{
+					if (meshArbre.GetFaces().Length > 0)
+						choix = meshArbre.CreateConvexShape(true, true);
+				}
+				catch (Exception ex)
+				{
+					GD.PrintErr($"ZERO-K : Convex arbre échoué ({ex.Message}). Boîte englobante de secours.");
+					choix = null;
+				}
+			}
+			if (choix == null)
+				choix = ItemPhysique.CreerShapeCollisionConvexeRobuste(meshArbre);
+			hitboxCopy.Shape = choix;
 		}
+
 		cadavre.AddChild(hitboxCopy);
 
 		GetParent().AddChild(cadavre);
+		cadavre.GlobalTransform = poseArbre;
 
 		cadavre.ApplyCentralImpulse(directionFrappe * (40f * AgeEnJours) + Vector3.Up * 20f);
 
@@ -213,7 +241,6 @@ public partial class ArbreVivant : StaticBody3D
 	private void DeclencherChuteBranche(Vector3 pointImpact, Vector3 directionFrappe)
 	{
 		RigidBody3D brancheMorte = new RigidBody3D { Name = "BrancheMorte" };
-		brancheMorte.GlobalPosition = pointImpact;
 		brancheMorte.Mass = 10f;
 		brancheMorte.ContinuousCd = true;
 
@@ -221,6 +248,7 @@ public partial class ArbreVivant : StaticBody3D
 		brancheMorte.AddChild(new CollisionShape3D { Shape = new CapsuleShape3D { Radius = 0.05f, Height = 0.8f }, Rotation = new Vector3(Mathf.Pi * 0.5f, 0, 0) });
 
 		GetParent().AddChild(brancheMorte);
+		brancheMorte.GlobalPosition = pointImpact;
 		brancheMorte.ApplyCentralImpulse(directionFrappe * 5f);
 	}
 

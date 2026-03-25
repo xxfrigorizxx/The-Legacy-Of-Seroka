@@ -14,6 +14,8 @@ public partial class Monde_Client : Node3D
 	[Export] public int MaxChunksParFrame = 12;
 	/// <summary>Rayon (en chunks) autour du joueur où les collisions sont actives. Tout dans ce rayon doit être dynamique (réveil immédiat). Au-delà, physique en dormance. 8 chunks ≈ 128 m (évite trous de collision en bordure).</summary>
 	[Export] public int RayonDormancePhysique = 8;
+	/// <summary>Demi-côté (chunks) pour lever l’overlay « Chargement du monde » : 2 = grille 5×5. Ne pas exiger tout le rayon de dormance (17×17) au démarrage sinon chargement quasi infini.</summary>
+	[Export] public int RayonGrilleMinSpawnPret = 2;
 	/// <summary>Chunks demandés en plus du rayon physique (file prioritaire). Le sol doit être chargé avant que tu n’entres dans la grille ChunkSousPiedsAPret.</summary>
 	[Export] public int MargePreloadChunks = 4;
 	/// <summary>Anticipation du déplacement (s) : une 2ᵉ zone de priorité autour de la position future pour marches longues dans une direction.</summary>
@@ -220,12 +222,14 @@ public partial class Monde_Client : Node3D
 		}
 	}
 
-	/// <summary>Réserve tout le rayon RenderDistance (même distance que en jeu) autour du spawn, trié par distance, en tête de file. Le chargement du début utilise ainsi la même distance que le joueur.</summary>
+	/// <summary>Réserve une fenêtre raisonnable autour du spawn (pas RenderDistance entier : 200² chunks = blocage / liste énorme / chargement infini).</summary>
 	public void ReserverChunkSpawnPrioritaire(Vector2I coordSpawn)
 	{
+		// Cap strict : au plus ce qu’il faut pour la dormance + marge ; le radar remplira le reste progressivement.
+		int rayonSpawn = Mathf.Min(RenderDistance, Mathf.Max(RayonDormancePhysique + MargePreloadChunks + 8, 12));
 		var prioritaire = new List<Vector2I>();
-		for (int dx = -RenderDistance; dx <= RenderDistance; dx++)
-			for (int dz = -RenderDistance; dz <= RenderDistance; dz++)
+		for (int dx = -rayonSpawn; dx <= rayonSpawn; dx++)
+			for (int dz = -rayonSpawn; dz <= rayonSpawn; dz++)
 				prioritaire.Add(new Vector2I(coordSpawn.X + dx, coordSpawn.Y + dz));
 		Vector2 centre = new Vector2(coordSpawn.X, coordSpawn.Y);
 		prioritaire.Sort((a, b) =>
@@ -795,13 +799,14 @@ public partial class Monde_Client : Node3D
 		return (data.ObtenirDensiteLocale(lx, posGlobale.Y, lz), true);
 	}
 
-	/// <summary>Vrai si la grille autour du point d'observation (alignée dormance / solidification) a ses collisions actives.</summary>
+	/// <summary>Vrai si une grille réduite sous les pieds a ses collisions actives (le rayon complet de dormance se remplit ensuite en jeu).</summary>
 	public bool ChunkSousPiedsAPret()
 	{
 		if (_joueur == null) return false;
 		Vector2I c = Gestionnaire_Monde.WorldToChunkCoord(ObtenirPositionObservation(), TailleChunk);
-		for (int dx = -RayonDormancePhysique; dx <= RayonDormancePhysique; dx++)
-			for (int dz = -RayonDormancePhysique; dz <= RayonDormancePhysique; dz++)
+		int rg = Mathf.Clamp(RayonGrilleMinSpawnPret, 0, RayonDormancePhysique);
+		for (int dx = -rg; dx <= rg; dx++)
+			for (int dz = -rg; dz <= rg; dz++)
 			{
 				var v = new Vector2I(c.X + dx, c.Y + dz);
 				if (!_chunksData.TryGetValue(v, out var data)) return false;

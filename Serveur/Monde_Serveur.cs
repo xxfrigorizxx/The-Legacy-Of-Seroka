@@ -666,12 +666,31 @@ public partial class Monde_Serveur : Node
 			if (item == null) continue;
 			int id = item.ID_Objet;
 			if (id != ID_PETITE_PIERRE && id != ID_PIERRE_MOYENNE && id != ID_GROSSE_PIERRE && id != ID_TRES_GROSSE_PIERRE && id != ID_SILEX) continue;
-			float distCarre = rb.GlobalPosition.DistanceSquaredTo(posJoueur);
+			if (!TryGetPositionMonde(rb, out Vector3 posRb)) continue;
+			float distCarre = posRb.DistanceSquaredTo(posJoueur);
 			if (distCarre <= rayonCarre)
 				rb.Freeze = false; // Réveiller : gravité + terrain solide
 			else
 				rb.Freeze = true;  // Endormir hors 2 chunks : évite chute dans le vide
 		}
+	}
+
+	/// <summary>Évite l’erreur Godot <c>!is_inside_tree()</c> sur GlobalPosition (ex. sauvegarde pendant <c>_ExitTree</c>).</summary>
+	private static bool TryGetPositionMonde(Node3D node, out Vector3 worldPos)
+	{
+		worldPos = default;
+		if (node == null) return false;
+		if (node.IsInsideTree())
+		{
+			worldPos = node.GlobalPosition;
+			return true;
+		}
+		if (node.GetParent() is Node3D parent && parent.IsInsideTree())
+		{
+			worldPos = parent.GlobalTransform * node.Position;
+			return true;
+		}
+		return false;
 	}
 
 	/// <summary>Sauvegarde les pierres et silex (IDs 10-14) avec IndexCacheMemoire et IndexChimique.</summary>
@@ -690,7 +709,7 @@ public partial class Monde_Serveur : Node
 			if (item.EstEclatFracture) continue; // Éclats de fracture : pas sauvegardés (créés à l'instant, supprimés quand chunk déchargé).
 			int id = item.ID_Objet;
 			if (id < 10 || id > 14) continue;
-			Vector3 pos = (child as Node3D)?.GlobalPosition ?? Vector3.Zero;
+			if (child is not Node3D n3 || !TryGetPositionMonde(n3, out Vector3 pos)) continue;
 			if (pos.X >= xMin && pos.X < xMax && pos.Z >= zMin && pos.Z < zMax)
 				pierres.Add((pos, id, Mathf.Max(0, item.IndexCacheMemoire), Mathf.Max(0, item.IndexChimique)));
 		}
@@ -762,7 +781,7 @@ public partial class Monde_Serveur : Node
 		foreach (Node n in _parentPourArbres.GetChildren())
 		{
 			if (n is not ArbreVivant arbre) continue;
-			Vector3 p = (arbre as Node3D).GlobalPosition;
+			if (!TryGetPositionMonde(arbre, out Vector3 p)) continue;
 			if (p.X >= xMin && p.X < xMax && p.Z >= zMin && p.Z < zMax)
 				arbres.Add((p, arbre.AgeEnJours));
 		}
@@ -874,7 +893,7 @@ public partial class Monde_Serveur : Node
 		foreach (Node n in _parentPourArbres.GetChildren())
 		{
 			if (n is not ArbreVivant) continue;
-			Vector3 p = (n as Node3D)?.GlobalPosition ?? Vector3.Zero;
+			if (n is not Node3D n3 || !TryGetPositionMonde(n3, out Vector3 p)) continue;
 			if (p.X >= xMin && p.X < xMax && p.Z >= zMin && p.Z < zMax)
 				aRetirer.Add(n);
 		}
@@ -899,7 +918,7 @@ public partial class Monde_Serveur : Node
 			var item = child as ItemPhysique ?? child.GetNodeOrNull<ItemPhysique>("ItemPhysique");
 			if (item == null) continue;
 			if (item.ID_Objet < 10 || item.ID_Objet > 14) continue;
-			Vector3 pos = (child as Node3D)?.GlobalPosition ?? Vector3.Zero;
+			if (child is not Node3D n3p || !TryGetPositionMonde(n3p, out Vector3 pos)) continue;
 			if (pos.X >= xMin && pos.X < xMax && pos.Z >= zMin && pos.Z < zMax)
 				aRetirer.Add(child);
 		}
