@@ -286,6 +286,21 @@ public partial class Gestionnaire_Monde : Node3D
 	private Panel _panelPause;
 	private bool _pauseVisible;
 
+	/// <summary>Même logique que le bouton Sauvegarder du menu pause et de l’inventaire (position + monde / chunks).</summary>
+	public void SauvegarderManuelDepuisMenu()
+	{
+		if (_joueur != null)
+			GameState.Instance?.SauvegarderPositionJoueur(_joueur.GlobalPosition);
+		if (UseArchitectureReseau)
+			_mondeServeur?.SauvegarderMondeEntier();
+		else
+		{
+			foreach (var kv in _chunks)
+				(kv.Value as Generateur_Voxel)?.Sauvegarder(kv.Key);
+		}
+		GD.Print("ZERO-K : Sauvegarde manuelle effectuée.");
+	}
+
 	private void CreerMenuPause()
 	{
 		var layer = new CanvasLayer { Layer = 100, ProcessMode = ProcessModeEnum.Always };
@@ -310,16 +325,18 @@ public partial class Gestionnaire_Monde : Node3D
 		btnResume.Pressed += () => { ToggleMenuPause(); };
 		vbox.AddChild(btnResume);
 		var btnSave = new Button { Text = "Sauvegarder" };
-		btnSave.Pressed += () =>
-		{
-			if (_joueur != null)
-				GameState.Instance?.SauvegarderPositionJoueur(_joueur.GlobalPosition);
-			_mondeServeur?.SauvegarderMondeEntier();
-			GD.Print("ZERO-K : Sauvegarde manuelle effectuée.");
-		};
+		btnSave.Pressed += SauvegarderManuelDepuisMenu;
 		vbox.AddChild(btnSave);
-		var btnQuit = new Button { Text = "Quitter" };
-		btnQuit.Pressed += () => GetTree().ChangeSceneToFile("res://menu_principal.tscn");
+		var btnMenu = new Button { Text = "Menu principal" };
+		btnMenu.Pressed += () =>
+		{
+			ToggleMenuPause();
+			GetTree().Paused = false;
+			GetTree().ChangeSceneToFile("res://menu_principal.tscn");
+		};
+		vbox.AddChild(btnMenu);
+		var btnQuit = new Button { Text = "Quitter le jeu" };
+		btnQuit.Pressed += () => GetTree().Quit();
 		vbox.AddChild(btnQuit);
 		layer.AddChild(_panelPause);
 		_panelPause.Visible = false;

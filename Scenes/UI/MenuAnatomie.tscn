@@ -1,0 +1,2219 @@
+[gd_scene format=3 uid="uid://dl40p4ugqc1lg"]
+
+[ext_resource type="Script" uid="uid://b4hfitwxaj7ai" path="res://MenuAnatomie.cs" id="1_script"]
+
+[sub_resource type="StyleBoxFlat" id="StyleJauneOnglet"]
+content_margin_left = 8.0
+content_margin_top = 8.0
+content_margin_right = 8.0
+content_margin_bottom = 8.0
+bg_color = Color(0, 0, 0, 1)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.945098, 0.827451, 0.113725, 1)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
+[sub_resource type="StyleBoxFlat" id="StyleRougeCorps"]
+content_margin_left = 4.0
+content_margin_top = 4.0
+content_margin_right = 4.0
+content_margin_bottom = 4.0
+bg_color = Color(0.360784, 0.105882, 0.105882, 1)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.65, 0.25, 0.25, 1)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
+[sub_resource type="StyleBoxFlat" id="StyleVueJoueur"]
+content_margin_left = 8.0
+content_margin_top = 8.0
+content_margin_right = 8.0
+content_margin_bottom = 8.0
+bg_color = Color(0, 0, 0, 1)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.5, 0.35, 0.65, 1)
+corner_radius_top_left = 6
+corner_radius_top_right = 6
+corner_radius_bottom_right = 6
+corner_radius_bottom_left = 6
+
+[sub_resource type="StyleBoxFlat" id="StyleCadreCraft"]
+content_margin_left = 6.0
+content_margin_top = 6.0
+content_margin_right = 6.0
+content_margin_bottom = 6.0
+bg_color = Color(0.06, 0.12, 0.06, 1)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.223529, 0.490196, 0.223529, 1)
+corner_radius_top_left = 5
+corner_radius_top_right = 5
+corner_radius_bottom_right = 5
+corner_radius_bottom_left = 5
+
+[sub_resource type="StyleBoxFlat" id="StyleCellCraft"]
+content_margin_left = 2.0
+content_margin_top = 2.0
+content_margin_right = 2.0
+content_margin_bottom = 2.0
+bg_color = Color(0.105882, 0.235294, 0.105882, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.35, 0.65, 0.35, 1)
+corner_radius_top_left = 3
+corner_radius_top_right = 3
+corner_radius_bottom_right = 3
+corner_radius_bottom_left = 3
+
+[sub_resource type="StyleBoxFlat" id="StyleVertSlot"]
+content_margin_left = 4.0
+content_margin_top = 4.0
+content_margin_right = 4.0
+content_margin_bottom = 4.0
+bg_color = Color(0.105882, 0.235294, 0.105882, 1)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.223529, 0.490196, 0.223529, 1)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
+[sub_resource type="StyleBoxFlat" id="StyleGrisSac"]
+content_margin_left = 2.0
+content_margin_top = 2.0
+content_margin_right = 2.0
+content_margin_bottom = 2.0
+bg_color = Color(0.164706, 0.164706, 0.164706, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.5, 0.5, 0.52, 1)
+corner_radius_top_left = 3
+corner_radius_top_right = 3
+corner_radius_bottom_right = 3
+corner_radius_bottom_left = 3
+
+[node name="MenuAnatomie" type="Control"]
+custom_minimum_size = Vector2(1920, 1080)
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_script")
+MainGaucheSlot = NodePath("MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/LigneMainsCeinture/MainGaucheSlot")
+MainDroiteSlot = NodePath("MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/LigneMainsCeinture/MainDroiteSlot")
+VueJoueurPanel = NodePath("MarginPrincipal/VBoxPrincipal/CorpsHBox/VueJoueurPanel")
+GrilleAssemblage = NodePath("MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/LigneCraft/CadreCraft/GrilleAssemblage")
+FondSombre = NodePath("FondSombre")
+
+[node name="FondSombre" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0, 0, 0, 0.88)
+
+[node name="MarginPrincipal" type="MarginContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+theme_override_constants/margin_left = 24
+theme_override_constants/margin_top = 20
+theme_override_constants/margin_right = 24
+theme_override_constants/margin_bottom = 20
+
+[node name="VBoxPrincipal" type="VBoxContainer" parent="MarginPrincipal"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 14
+
+[node name="BarreOnglets" type="HBoxContainer" parent="MarginPrincipal/VBoxPrincipal"]
+custom_minimum_size = Vector2(0, 56)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
+[node name="Onglet0" type="Panel" parent="MarginPrincipal/VBoxPrincipal/BarreOnglets"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/panel = SubResource("StyleJauneOnglet")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/BarreOnglets/Onglet0"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 13
+text = "Interface Future"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 2
+
+[node name="Onglet1" type="Panel" parent="MarginPrincipal/VBoxPrincipal/BarreOnglets"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/panel = SubResource("StyleJauneOnglet")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/BarreOnglets/Onglet1"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 13
+text = "Interface Future"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 2
+
+[node name="Onglet2" type="Panel" parent="MarginPrincipal/VBoxPrincipal/BarreOnglets"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/panel = SubResource("StyleJauneOnglet")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/BarreOnglets/Onglet2"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 13
+text = "Interface Future"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 2
+
+[node name="Onglet3" type="Panel" parent="MarginPrincipal/VBoxPrincipal/BarreOnglets"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/panel = SubResource("StyleJauneOnglet")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/BarreOnglets/Onglet3"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 13
+text = "Interface Future"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 2
+
+[node name="Onglet4" type="Panel" parent="MarginPrincipal/VBoxPrincipal/BarreOnglets"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/panel = SubResource("StyleJauneOnglet")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/BarreOnglets/Onglet4"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 13
+text = "Interface Future"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 2
+
+[node name="Onglet5" type="Panel" parent="MarginPrincipal/VBoxPrincipal/BarreOnglets"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/panel = SubResource("StyleJauneOnglet")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/BarreOnglets/Onglet5"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 13
+text = "Interface Future"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 2
+
+[node name="Onglet6" type="Panel" parent="MarginPrincipal/VBoxPrincipal/BarreOnglets"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/panel = SubResource("StyleJauneOnglet")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/BarreOnglets/Onglet6"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 13
+text = "Interface Future"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 2
+
+[node name="Onglet7" type="Panel" parent="MarginPrincipal/VBoxPrincipal/BarreOnglets"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/panel = SubResource("StyleJauneOnglet")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/BarreOnglets/Onglet7"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 13
+text = "Interface Future"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 2
+
+[node name="Onglet8" type="Panel" parent="MarginPrincipal/VBoxPrincipal/BarreOnglets"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/panel = SubResource("StyleJauneOnglet")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/BarreOnglets/Onglet8"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 13
+text = "Interface Future"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 2
+
+[node name="Onglet9" type="Panel" parent="MarginPrincipal/VBoxPrincipal/BarreOnglets"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/panel = SubResource("StyleJauneOnglet")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/BarreOnglets/Onglet9"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 13
+text = "Interface Future"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 2
+
+[node name="Onglet10" type="Panel" parent="MarginPrincipal/VBoxPrincipal/BarreOnglets"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/panel = SubResource("StyleJauneOnglet")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/BarreOnglets/Onglet10"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 13
+text = "Interface Future"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 2
+
+[node name="Onglet11" type="Panel" parent="MarginPrincipal/VBoxPrincipal/BarreOnglets"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/panel = SubResource("StyleJauneOnglet")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/BarreOnglets/Onglet11"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 13
+text = "Interface Future"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 2
+
+[node name="CorpsHBox" type="HBoxContainer" parent="MarginPrincipal/VBoxPrincipal"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 20
+alignment = 0
+
+[node name="GrilleEquipCorps" type="GridContainer" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox"]
+layout_mode = 2
+size_flags_horizontal = 0
+size_flags_vertical = 3
+theme_override_constants/h_separation = 6
+theme_override_constants/v_separation = 6
+columns = 2
+
+[node name="Equip0" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/GrilleEquipCorps"]
+custom_minimum_size = Vector2(68, 68)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleRougeCorps")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/GrilleEquipCorps/Equip0"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Équipement Corps"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Equip1" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/GrilleEquipCorps"]
+custom_minimum_size = Vector2(68, 68)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleRougeCorps")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/GrilleEquipCorps/Equip1"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Équipement Corps"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Equip2" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/GrilleEquipCorps"]
+custom_minimum_size = Vector2(68, 68)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleRougeCorps")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/GrilleEquipCorps/Equip2"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Équipement Corps"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Equip3" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/GrilleEquipCorps"]
+custom_minimum_size = Vector2(68, 68)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleRougeCorps")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/GrilleEquipCorps/Equip3"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Équipement Corps"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Equip4" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/GrilleEquipCorps"]
+custom_minimum_size = Vector2(68, 68)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleRougeCorps")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/GrilleEquipCorps/Equip4"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Équipement Corps"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Equip5" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/GrilleEquipCorps"]
+custom_minimum_size = Vector2(68, 68)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleRougeCorps")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/GrilleEquipCorps/Equip5"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Équipement Corps"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Equip6" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/GrilleEquipCorps"]
+custom_minimum_size = Vector2(68, 68)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleRougeCorps")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/GrilleEquipCorps/Equip6"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Équipement Corps"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Equip7" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/GrilleEquipCorps"]
+custom_minimum_size = Vector2(68, 68)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleRougeCorps")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/GrilleEquipCorps/Equip7"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Équipement Corps"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Equip8" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/GrilleEquipCorps"]
+custom_minimum_size = Vector2(68, 68)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleRougeCorps")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/GrilleEquipCorps/Equip8"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Équipement Corps"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Equip9" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/GrilleEquipCorps"]
+custom_minimum_size = Vector2(68, 68)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleRougeCorps")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/GrilleEquipCorps/Equip9"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Équipement Corps"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Equip10" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/GrilleEquipCorps"]
+custom_minimum_size = Vector2(68, 68)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleRougeCorps")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/GrilleEquipCorps/Equip10"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Équipement Corps"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Equip11" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/GrilleEquipCorps"]
+custom_minimum_size = Vector2(68, 68)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleRougeCorps")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/GrilleEquipCorps/Equip11"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Équipement Corps"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="VueJoueurPanel" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox"]
+custom_minimum_size = Vector2(440, 660)
+layout_mode = 2
+size_flags_horizontal = 0
+size_flags_vertical = 3
+theme_override_styles/panel = SubResource("StyleVueJoueur")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/VueJoueurPanel"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_colors/font_color = Color(0.55, 0.52, 0.62, 1)
+theme_override_font_sizes/font_size = 12
+text = "Modèle 3D Joueur (Face)"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 2
+
+[node name="ZoneDroite" type="VBoxContainer" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 10
+
+[node name="LigneCraft" type="HBoxContainer" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 12
+alignment = 0
+
+[node name="CadreCraft" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/LigneCraft"]
+custom_minimum_size = Vector2(168, 168)
+layout_mode = 2
+size_flags_horizontal = 0
+theme_override_styles/panel = SubResource("StyleCadreCraft")
+
+[node name="GrilleAssemblage" type="GridContainer" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/LigneCraft/CadreCraft"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 8.0
+offset_top = 8.0
+offset_right = -8.0
+offset_bottom = -8.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/h_separation = 4
+theme_override_constants/v_separation = 4
+columns = 2
+
+[node name="AssemblageCell0" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/LigneCraft/CadreCraft/GrilleAssemblage"]
+custom_minimum_size = Vector2(72, 72)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_styles/panel = SubResource("StyleCellCraft")
+
+[node name="AssemblageCell1" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/LigneCraft/CadreCraft/GrilleAssemblage"]
+custom_minimum_size = Vector2(72, 72)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_styles/panel = SubResource("StyleCellCraft")
+
+[node name="AssemblageCell2" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/LigneCraft/CadreCraft/GrilleAssemblage"]
+custom_minimum_size = Vector2(72, 72)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_styles/panel = SubResource("StyleCellCraft")
+
+[node name="AssemblageCell3" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/LigneCraft/CadreCraft/GrilleAssemblage"]
+custom_minimum_size = Vector2(72, 72)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_styles/panel = SubResource("StyleCellCraft")
+
+[node name="EspaceCraftSortie" type="Control" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/LigneCraft"]
+custom_minimum_size = Vector2(8, 0)
+layout_mode = 2
+anchors_preset = 0
+
+[node name="CraftSortie" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/LigneCraft"]
+custom_minimum_size = Vector2(80, 80)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleVertSlot")
+
+[node name="GrilleSac" type="GridContainer" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 0
+theme_override_constants/h_separation = 5
+theme_override_constants/v_separation = 5
+columns = 12
+
+[node name="Sac0" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(56, 56)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac0"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac1" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(56, 56)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac1"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac2" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(56, 56)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac2"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac3" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(56, 56)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac3"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac4" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(56, 56)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac4"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac5" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(56, 56)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac5"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac6" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(56, 56)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac6"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac7" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(56, 56)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac7"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac8" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(56, 56)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac8"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac9" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(56, 56)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac9"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac10" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(56, 56)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac10"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac11" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(56, 56)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac11"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac12" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(56, 56)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac12"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac13" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(56, 56)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac13"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac14" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(56, 56)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac14"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac15" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(56, 56)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac15"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac16" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(56, 56)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac16"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac17" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(56, 56)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac17"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac18" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(56, 56)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac18"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac19" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(56, 56)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac19"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac20" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(56, 56)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac20"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac21" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(56, 56)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac21"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac22" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(56, 56)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac22"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac23" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(56, 56)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac23"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac24" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(56, 56)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac24"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac25" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(56, 56)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac25"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac26" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(56, 56)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac26"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac27" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(56, 56)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac27"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac28" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(56, 56)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac28"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac29" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(56, 56)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac29"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac30" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(56, 56)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac30"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac31" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(56, 56)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac31"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac32" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(56, 56)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac32"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac33" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(56, 56)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac33"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac34" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(56, 56)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac34"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac35" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(56, 56)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac35"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac36" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac36"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac37" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac37"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac38" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac38"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac39" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac39"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac40" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac40"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac41" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac41"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac42" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac42"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac43" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac43"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac44" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac44"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac45" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac45"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac46" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac46"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac47" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac47"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac48" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac48"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac49" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac49"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac50" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac50"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac51" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac51"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac52" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac52"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac53" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac53"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac54" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac54"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac55" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac55"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac56" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac56"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac57" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac57"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac58" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac58"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac59" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac59"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac60" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac60"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac61" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac61"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac62" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac62"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac63" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac63"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac64" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac64"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac65" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac65"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac66" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac66"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac67" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac67"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac68" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac68"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac69" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac69"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac70" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac70"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="Sac71" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac"]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac/Sac71"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Sac Slot"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="LigneMainsCeinture" type="HBoxContainer" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+alignment = 1
+
+[node name="CeintureGaucheConteneur" type="HBoxContainer" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/LigneMainsCeinture"]
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="CeintG0" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/LigneMainsCeinture/CeintureGaucheConteneur"]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/LigneMainsCeinture/CeintureGaucheConteneur/CeintG0"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 7
+text = "Ceinte"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="CeintG1" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/LigneMainsCeinture/CeintureGaucheConteneur"]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/LigneMainsCeinture/CeintureGaucheConteneur/CeintG1"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 7
+text = "Ceinte"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="MainGaucheSlot" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/LigneMainsCeinture"]
+custom_minimum_size = Vector2(84, 84)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleVertSlot")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/LigneMainsCeinture/MainGaucheSlot"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 13
+text = "G"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+
+[node name="MainDroiteSlot" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/LigneMainsCeinture"]
+custom_minimum_size = Vector2(84, 84)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleVertSlot")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/LigneMainsCeinture/MainDroiteSlot"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 13
+text = "D"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+
+[node name="CeintureDroiteConteneur" type="HBoxContainer" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/LigneMainsCeinture"]
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="CeintD0" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/LigneMainsCeinture/CeintureDroiteConteneur"]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/LigneMainsCeinture/CeintureDroiteConteneur/CeintD0"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 7
+text = "Ceinte"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="CeintD1" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/LigneMainsCeinture/CeintureDroiteConteneur"]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleGrisSac")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/LigneMainsCeinture/CeintureDroiteConteneur/CeintD1"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 7
+text = "Ceinte"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true

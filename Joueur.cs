@@ -54,6 +54,14 @@ public partial class Joueur : CharacterBody3D
     /// <summary>Méta et slots : même clé pour l’établi CAO et les corps posés.</summary>
     public const string MetaGenomeAssemblage = "GenomeAssemblage";
 
+    /// <summary>Sac à dos équipable : débloque la grille inventaire du menu anatomie (<see cref="AStockageSacOuCeintureEquipe"/>).</summary>
+    public const int IdObjetSacDos = 101;
+    /// <summary>Ceinture à poches équipable : débloque la même grille.</summary>
+    public const int IdObjetCeinturePoches = 102;
+
+    /// <summary>True si cet ID est un contenant porté qui ouvre la grille « sac » dans l’UI.</summary>
+    public static bool EstObjetQuiDebloqueGrilleSac(int id) => id == IdObjetSacDos || id == IdObjetCeinturePoches;
+
     /// <summary>Stats des outils forgés (CAO) : clé = <see cref="HashGenomeStable"/> du genome si présent, sinon GetHashCode du mesh (héritage).</summary>
     public struct StatsOutilForge
     {
@@ -91,6 +99,70 @@ public partial class Joueur : CharacterBody3D
         return mainActive.MeshEclat.GetHashCode();
     }
 
+    /// <summary>Nom lisible pour l’UI (menu anatomie, inventaire) à partir du slot en main.</summary>
+    public static string ObtenirNomObjet(SlotInventaire slot)
+    {
+        if (slot.EstVide)
+            return "";
+        int id = slot.ID;
+        if (id >= 10 && id <= 14)
+        {
+            var table = ItemPhysique.TableGeologique;
+            int idx = slot.IndexChimique;
+            if (idx >= 0 && idx < table.Length)
+                return table[idx].Nom;
+            return id switch
+            {
+                10 => "Petite pierre",
+                11 => "Silex",
+                12 => "Pierre moyenne",
+                13 => "Grosse pierre",
+                14 => "Très grosse pierre",
+                _ => "Pierre"
+            };
+        }
+        if (id == 100)
+        {
+            int clef = ClefRegistreOutilForge(slot);
+            if (clef != 0 && RegistreOutilsForges.TryGetValue(clef, out var st) && !string.IsNullOrEmpty(st.Nom))
+                return st.Nom;
+            return "Outil forgé";
+        }
+        if (id == IdObjetSacDos) return "Sac à dos";
+        if (id == IdObjetCeinturePoches) return "Ceinture à poches";
+        if (ObtenirProfilFlexible(id, out var flex))
+            return flex.Nom;
+        if (id == 20)
+        {
+            bool a = ObtenirProfilFlexible(slot.IndexChimique, out var pa);
+            bool b = ObtenirProfilFlexible(slot.IndexMorphologique, out var pb);
+            if (a && b)
+                return $"{pa.Nom}+{pb.Nom}";
+            if (a)
+                return pa.Nom;
+            if (b)
+                return pb.Nom;
+            return "Corde";
+        }
+        return id switch
+        {
+            1 => "Terre",
+            2 => "Roche",
+            3 => "Sable",
+            4 => "Neige",
+            5 => "Neige / glace",
+            6 => "Terre aride",
+            7 => "Boue",
+            8 => "Terre tropicale",
+            9 => "Terre gelée",
+            30 => "Bûche",
+            32 => "Bâton",
+            34 => "Feuillage",
+            999 => "Végétation",
+            _ => $"Objet #{id}"
+        };
+    }
+
     public enum TypeMouvementFrappe { Estoc, DeHautEnBas, DeBasEnHaut, GaucheADroite, DroiteAGauche }
 
     public const float Speed = 5.0f;
@@ -105,8 +177,53 @@ public partial class Joueur : CharacterBody3D
     /// <summary>Mains avec ADN morphologique : la pierre conserve sa forme exacte.</summary>
     public SlotInventaire MainGauche = new SlotInventaire();
     public SlotInventaire MainDroite = new SlotInventaire();
-    /// <summary>True = Slot gauche sélectionné (Main Active), False = Slot droit</summary>
-    public bool MainGaucheEstActive = true;
+    /// <summary>True = main gauche active, false = main droite.</summary>
+    // FIX CRITIQUE : La main droite est la main dominante par défaut (logique humaine standard)
+    public bool MainGaucheEstActive = false;
+
+    /// <summary>Sac au dos équipé (slot dédié, pas les mains). Assigner via <see cref="AssignerEquipementSacDos"/>.</summary>
+    public SlotInventaire EquipementSacDos = new SlotInventaire();
+    /// <summary>Ceinture à poches équipée.</summary>
+    public SlotInventaire EquipementCeinture = new SlotInventaire();
+
+    /// <summary>Grille 2×2 de l’inventaire (Q) : assemblage / craft futur ; indices 0–1 ligne du haut, 2–3 ligne du bas.</summary>
+    public SlotInventaire[] GrilleCraft2x2 = new SlotInventaire[4];
+
+    /// <summary>True si la grille « sac » du menu anatomie doit s’afficher (sac ou ceinture à poches équipé).</summary>
+    public bool AStockageSacOuCeintureEquipe() =>
+        (!EquipementSacDos.EstVide && EstObjetQuiDebloqueGrilleSac(EquipementSacDos.ID)) ||
+        (!EquipementCeinture.EstVide && EstObjetQuiDebloqueGrilleSac(EquipementCeinture.ID));
+
+    /// <summary>Équipe un sac ; passer un slot vide pour retirer (ou utiliser <see cref="RetirerEquipementSacDos"/>).</summary>
+    public void AssignerEquipementSacDos(SlotInventaire slot)
+    {
+        EquipementSacDos = slot;
+        NotifierChangementEquipementCorps();
+    }
+
+    public void RetirerEquipementSacDos()
+    {
+        EquipementSacDos = new SlotInventaire();
+        NotifierChangementEquipementCorps();
+    }
+
+    public void AssignerEquipementCeinture(SlotInventaire slot)
+    {
+        EquipementCeinture = slot;
+        NotifierChangementEquipementCorps();
+    }
+
+    public void RetirerEquipementCeinture()
+    {
+        EquipementCeinture = new SlotInventaire();
+        NotifierChangementEquipementCorps();
+    }
+
+    private void NotifierChangementEquipementCorps()
+    {
+        if (_menuAnatomie != null && _menuAnatomie.EstOuvert)
+            _menuAnatomie.RafraichirMenu();
+    }
 
     private Camera3D _camera;
     private RayCast3D _rayon;
@@ -137,6 +254,8 @@ public partial class Joueur : CharacterBody3D
     private Tween _tweenFrappe;
     private AudioStreamPlayer3D _audioCoupeArbre;
     private Modelisateur_UI _modelisateur;
+    private MenuAnatomie _menuAnatomie;
+    private Control _racineMenuAnatomieViewport;
 
     public override void _Ready()
     {
@@ -157,6 +276,26 @@ public partial class Joueur : CharacterBody3D
         CallDeferred(nameof(BrancherModelisateurCAO));
 
         RafraichirHUD();
+
+        PackedScene sceneMenu = GD.Load<PackedScene>("res://Scenes/UI/MenuAnatomie.tscn");
+        if (sceneMenu != null)
+        {
+            _menuAnatomie = sceneMenu.Instantiate<MenuAnatomie>();
+            var layerAnatomie = new CanvasLayer { Layer = 100, Name = "LayerAnatomie" };
+            // Un Control sous CanvasLayer sans parent Control n’obtient pas la taille du viewport → UI réduite à un coin.
+            var racineViewport = new Control { Name = "RacineMenuAnatomieViewport" };
+            racineViewport.MouseFilter = Control.MouseFilterEnum.Ignore;
+            _racineMenuAnatomieViewport = racineViewport;
+            AddChild(layerAnatomie);
+            layerAnatomie.AddChild(racineViewport);
+            // Le menu s’initialise en _Ready : si le parent est encore 0×0, tout l’UI reste coincé au coin.
+            AjusterRacineMenuAnatomieViewport();
+            racineViewport.AddChild(_menuAnatomie);
+            _menuAnatomie.Initialiser(this);
+            CallDeferred(nameof(AjusterRacineMenuAnatomieViewport));
+            if (GetViewport() != null)
+                GetViewport().SizeChanged += OnViewportTailleMenuAnatomie;
+        }
     }
 
     private void BrancherModelisateurCAO()
@@ -166,6 +305,24 @@ public partial class Joueur : CharacterBody3D
         if (parent == null) return;
         parent.AddChild(_modelisateur);
         _modelisateur.Initialiser(this);
+    }
+
+    /// <summary>Le parent CanvasLayer n’a pas de rectangle : sans ça, ancres FullRect = 0×0 et tout l’UI part en coin.</summary>
+    private void AjusterRacineMenuAnatomieViewport()
+    {
+        if (_racineMenuAnatomieViewport == null || !GodotObject.IsInstanceValid(_racineMenuAnatomieViewport) || GetViewport() == null)
+            return;
+        Rect2 vr = GetViewport().GetVisibleRect();
+        if (vr.Size.X < 1f || vr.Size.Y < 1f)
+            return;
+        _racineMenuAnatomieViewport.SetAnchorsPreset(Control.LayoutPreset.TopLeft);
+        _racineMenuAnatomieViewport.Position = Vector2.Zero;
+        _racineMenuAnatomieViewport.Size = vr.Size;
+    }
+
+    private void OnViewportTailleMenuAnatomie()
+    {
+        AjusterRacineMenuAnatomieViewport();
     }
 
     /// <summary>MeshInstance3D attaché à la caméra pour afficher l'objet tenu en main (forme exacte).</summary>
@@ -196,8 +353,8 @@ public partial class Joueur : CharacterBody3D
         var viewport = new SubViewport();
         viewport.Size = new Vector2I(64, 64);
         viewport.RenderTargetUpdateMode = SubViewport.UpdateMode.WhenVisible;
-        // Isolation : chaque slot a son propre World3D (plus de fusion / superposition visuelle entre les previews).
         viewport.World3D = new World3D();
+        viewport.TransparentBg = true;
         container.AddChild(viewport);
 
         var cam = new Camera3D();
@@ -221,11 +378,25 @@ public partial class Joueur : CharacterBody3D
 
     public override void _Input(InputEvent @event)
     {
-        // Menu CAO : bloquer minage, lancer, E, Tab, relâchements de clic, etc. — seul Q ferme (ou rouvre si on duplique la logique).
+        if (_menuAnatomie != null && @event.IsActionPressed("inventaire"))
+        {
+            _menuAnatomie.BasculerVisibilite();
+            RafraichirHUD();
+            GetViewport().SetInputAsHandled();
+            return;
+        }
+
+        if (_menuAnatomie != null && _menuAnatomie.EstOuvert)
+        {
+            if (@event is InputEventMouseButton || @event is InputEventMouseMotion)
+                return;
+        }
+
+        // Menu CAO (stub) : bloquer le jeu ; Échap ferme — plus de touche K.
         bool caoOuvert = _modelisateur != null && _modelisateur.EstOuvert;
         if (caoOuvert)
         {
-            if (@event is InputEventKey keyEvent && keyEvent.Pressed && !keyEvent.Echo && keyEvent.Keycode == Key.Q)
+            if (@event is InputEventKey keyEvent && keyEvent.Pressed && !keyEvent.Echo && keyEvent.Keycode == Key.Escape)
             {
                 if (_modelisateur == null || !_modelisateur.SaisieTexteEnCours)
                 {
@@ -299,19 +470,13 @@ public partial class Joueur : CharacterBody3D
         {
             MainGaucheEstActive = !MainGaucheEstActive;
             RafraichirHUD();
-            GD.Print(MainGaucheEstActive ? "ZERO-K : Main Gauche sélectionnée." : "ZERO-K : Main Droite sélectionnée.");
+            _menuAnatomie?.RafraichirMenu();
+            GD.Print(MainGaucheEstActive ? "ZERO-K : Main Gauche sélectionnée (Tab)." : "ZERO-K : Main Droite sélectionnée (Tab).");
         }
         else if (@event is InputEventKey keyEvent)
         {
             if (keyEvent.Pressed && !keyEvent.Echo)
             {
-                if (keyEvent.Keycode == Key.Q)
-                {
-                    if (_modelisateur == null || !_modelisateur.SaisieTexteEnCours)
-                        _modelisateur?.BasculerVisibilite();
-                    return;
-                }
-
                 if (keyEvent.Keycode == Key.T) ExecuterTressage();
                 if (keyEvent.Keycode == Key.R)
                 {
@@ -358,6 +523,9 @@ public partial class Joueur : CharacterBody3D
     public override void _UnhandledInput(InputEvent @event)
     {
         if (_modelisateur != null && _modelisateur.EstOuvert)
+            return;
+
+        if (_menuAnatomie != null && _menuAnatomie.EstOuvert)
             return;
 
         if (@event is InputEventMouseMotion mouseMotion)
@@ -512,6 +680,8 @@ public partial class Joueur : CharacterBody3D
         MettreAJourObjetEnMain();
         MettreAJourPreviewsSlots();
         MettreAJourVisibilitePreviews();
+        if (_menuAnatomie != null && _menuAnatomie.EstOuvert)
+            _menuAnatomie.RafraichirMenu();
     }
 
     /// <summary>Assigne le Mesh exact de la main active au MeshInstance3D devant la caméra.</summary>
@@ -544,6 +714,8 @@ public partial class Joueur : CharacterBody3D
             if (main.ID == 10 || main.ID == 11 || main.ID == 12)
                 AppliquerMaterielObjet(_objetEnMain, main.ID, main.IndexChimique, 0, 0);
             else if (main.ID == 30 || main.ID == 32)
+                AppliquerMaterielObjet(_objetEnMain, main.ID, main.IndexChimique, 0, 0);
+            else if (main.ID >= 1 && main.ID <= 9)
                 AppliquerMaterielObjet(_objetEnMain, main.ID, main.IndexChimique, 0, 0);
             else
                 _objetEnMain.MaterialOverride = null;
@@ -586,12 +758,20 @@ public partial class Joueur : CharacterBody3D
                 AppliquerMaterielObjet(meshNode, slot.ID, slot.IndexChimique, 0, 0);
             else if (slot.ID == 30 || slot.ID == 32)
                 AppliquerMaterielObjet(meshNode, slot.ID, slot.IndexChimique, 0, 0);
+            else if (slot.ID >= 1 && slot.ID <= 9)
+                AppliquerMaterielObjet(meshNode, slot.ID, slot.IndexChimique, 0, 0);
             else
                 meshNode.MaterialOverride = null;
         }
         else if (m != null)
             AppliquerMaterielObjet(meshNode, slot.ID, slot.IndexChimique, slot.ID == 20 ? slot.IndexMorphologique : 0, slot.ID == 20 ? slot.NiveauFracture : 0);
     }
+
+    /// <summary>True si le slot doit afficher un mesh 3D dans l’UI (HUD ou menu anatomie).</summary>
+    public bool InventaireSlotAunVisuel3D(SlotInventaire s) => !s.EstVide && EstObjetAvecVisuel(s.ID);
+
+    /// <summary>Même rendu que les previews HUD, pour les panels G/D du menu anatomie.</summary>
+    public void SynchroniserPreviewSlotMenu(MeshInstance3D meshNode, SlotInventaire slot) => MettreAJourPreviewSlot(meshNode, slot);
 
     /// <summary>Cache le SubViewport quand pas d'objet avec visuel (pierre, fibre, corde), pour laisser voir la couleur du slot.</summary>
     private void MettreAJourVisibilitePreviews()
@@ -609,8 +789,12 @@ public partial class Joueur : CharacterBody3D
         return s.ID == 100 && s.EstUnEclat && s.MeshEclat != null;
     }
 
-    /// <summary>True si l'objet a un mesh à afficher en main / preview (pierre, silex, fibre, corde).</summary>
-    private static bool EstObjetAvecVisuel(int id) => id == 10 || id == 11 || id == 12 || id == 15 || id == 16 || id == 17 || id == 20 || id == 30 || id == 32 || id == 34 || id == 100;
+    /// <summary>True si l'objet a un mesh à afficher en main / preview.</summary>
+    private static bool EstObjetAvecVisuel(int id)
+    {
+        if (id >= 1 && id <= 9) return true;
+        return id == 10 || id == 11 || id == 12 || id == 15 || id == 16 || id == 17 || id == 20 || id == 30 || id == 32 || id == 34 || id == 100;
+    }
 
     private static bool EstMatiereFlexible(int id)
     {
@@ -830,6 +1014,8 @@ public partial class Joueur : CharacterBody3D
         else if (id == 30) return new CylinderMesh { TopRadius = 0.12f, BottomRadius = 0.12f, Height = 0.6f };
         else if (id == 32) return new CylinderMesh { TopRadius = 0.02f, BottomRadius = 0.02f, Height = 0.5f };
         else if (id == 34) return new QuadMesh { Size = new Vector2(0.12f, 0.18f) }; // Feuilles (même style que feuillage arbre)
+        if (id >= 1 && id <= 9)
+            return new BoxMesh { Size = new Vector3(0.2f, 0.2f, 0.2f) };
         return null;
     }
 
@@ -851,6 +1037,11 @@ public partial class Joueur : CharacterBody3D
         if (idObjet == 20) { visuel.MaterialOverride = ObtenirMaterielCorde(indexChimique, indexMorphologique, niveauTressage); return; }
         if (idObjet == 30 || idObjet == 32) { visuel.MaterialOverride = ArbreVivant.ObtenirMaterielBois(); return; }
         if (idObjet == 34) { visuel.MaterialOverride = new StandardMaterial3D { AlbedoColor = new Color(0.2f, 0.55f, 0.15f), Roughness = 0.95f, Metallic = 0f }; return; }
+        if (idObjet >= 1 && idObjet <= 9)
+        {
+            visuel.MaterialOverride = new StandardMaterial3D { AlbedoColor = new Color(0.42f, 0.3f, 0.2f), Roughness = 1f, Metallic = 0f };
+            return;
+        }
         int chimique = Mathf.Clamp(indexChimique, 0, ItemPhysique.TableGeologique.Length - 1);
         visuel.MaterialOverride = ItemPhysique.CreerMaterielProcedural(idObjet == 11, chimique);
     }

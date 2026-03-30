@@ -57,4 +57,4 @@ text = "Charger Monde"
 
 [node name="BtnQuit" type="Button" parent="VBoxContainer" unique_id=1369786139]
 layout_mode = 2
-text = "Quitter"
+text = "Quitter le jeu"
