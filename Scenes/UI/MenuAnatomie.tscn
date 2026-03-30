@@ -127,6 +127,7 @@ MainGaucheSlot = NodePath("MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/Li
 MainDroiteSlot = NodePath("MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/LigneMainsCeinture/MainDroiteSlot")
 VueJoueurPanel = NodePath("MarginPrincipal/VBoxPrincipal/CorpsHBox/VueJoueurPanel")
 GrilleAssemblage = NodePath("MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/LigneCraft/CadreCraft/GrilleAssemblage")
+SlotResultatCraft = NodePath("MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/LigneCraft/CraftSortie")
 FondSombre = NodePath("FondSombre")
 
 [node name="FondSombre" type="ColorRect" parent="."]

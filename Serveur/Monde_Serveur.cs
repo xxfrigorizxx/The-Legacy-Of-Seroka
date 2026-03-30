@@ -468,7 +468,6 @@ public partial class Monde_Serveur : Node
 	private const float DECALAGE_SPAWN_VERTICAL = 1.2f; // Légèrement au-dessus du terrain à la génération, tombe quand réveillé
 	/// <summary>Rayon en chunks : pierres gelées s'activent quand le joueur entre dans cette zone (comme le gazon). Chunk garanti chargé.</summary>
 	private const int RAYON_ACTIVATION_PIERRES_CHUNKS = 2;
-	private const int ID_PETITE_PIERRE = 10;
 
 	/// <summary>Délai de synchronisation : attend 2 frames physiques, puis enfile sur le tapis roulant (ordre spatial logique). Si onStasePrete est fourni (chunk procédural), on enqueue l'envoi client seulement après la stase → évite LibererRochesChunk à vide.</summary>
 	private async void DeclencherEnsemencement(Vector2I chunkCoord, Chunk_Serveur chunk, float tailleChunk, Action<Vector2I, Chunk_Serveur> onStasePrete = null)
@@ -477,38 +476,34 @@ public partial class Monde_Serveur : Node
 		await ToSignal(GetTree(), SceneTree.SignalName.PhysicsFrame);
 		var positionsFiltrees = CollecterPositionsEnsemencement(chunkCoord, chunk, tailleChunk);
 		var aEnfiler = new List<(Vector3 pos, int id, int indexCache, int indexChimique)>();
-		foreach (var (pos, id) in positionsFiltrees)
-			aEnfiler.Add((pos, id, -1, -1));
+		foreach (var p in positionsFiltrees)
+			aEnfiler.Add((p.pos, p.idMat, p.idxMorph, p.taille));
 		MettreRochesEnStase(chunkCoord, aEnfiler);
 		onStasePrete?.Invoke(chunkCoord, chunk);
 	}
 
-	private const int ID_SILEX = 11;
-	private const int ID_PIERRE_MOYENNE = 12;
-	private const int ID_GROSSE_PIERRE = 13;
-	private const int ID_TRES_GROSSE_PIERRE = 14;
-
-	/// <summary>Pré-crée les pools par taille (chunk en génération lance le dé → on prend une du pool de cette taille).</summary>
+	/// <summary>Pré-crée les pools par matière rocheuse (40–49).</summary>
 	private void CreerPoolsRochesParTaille()
 	{
 		if (_parentPourBlocsChutants == null) return;
-		int[] ids = { ID_PETITE_PIERRE, ID_SILEX, ID_PIERRE_MOYENNE, ID_GROSSE_PIERRE, ID_TRES_GROSSE_PIERRE };
-		foreach (int id in ids)
+		int n = 0;
+		for (int id = ItemPhysique.IdRocheMatiereMin; id <= ItemPhysique.IdRocheMatiereMax; id++)
 		{
 			_poolsRochesParTaille[id] = new List<RigidBody3D>();
 			for (int i = 0; i < TaillePoolParType; i++)
 			{
-				var rb = CreerNouvelleRoche(id, -1, -1);
+				var rb = CreerNouvelleRoche(id, 0, 2);
 				_poolsRochesParTaille[id].Add(rb);
 			}
+			n++;
 		}
-		GD.Print($"ZERO-K : Pools roches par taille créés ({ids.Length} x {TaillePoolParType}).");
+		GD.Print($"ZERO-K : Pools roches par matière créés ({n} x {TaillePoolParType}).");
 	}
 
-	/// <summary>Collecte les positions et IDs à ensemencer (sans instancier).</summary>
-	private List<(Vector3 pos, int id)> CollecterPositionsEnsemencement(Vector2I chunkCoord, Chunk_Serveur chunk, float tailleChunk)
+	/// <summary>Collecte positions, ID matière (40–49), morph (-1 = tirage), taille (0–4).</summary>
+	private List<(Vector3 pos, int idMat, int idxMorph, int taille)> CollecterPositionsEnsemencement(Vector2I chunkCoord, Chunk_Serveur chunk, float tailleChunk)
 	{
-		var liste = new List<(Vector3 pos, int id)>();
+		var liste = new List<(Vector3 pos, int idMat, int idxMorph, int taille)>();
 		var rng = new RandomNumberGenerator();
 		rng.Seed = (ulong)(chunkCoord.X * 73856093 + chunkCoord.Y * 19349663 + SeedTerrain);
 
@@ -531,25 +526,28 @@ public partial class Monde_Serveur : Node
 
 				if (idMatiere == 3 && pointImpact.Y < NIVEAU_EAU)
 				{
-					liste.Add((pointDeSpawnSecurise, ID_SILEX));
+					liste.Add((pointDeSpawnSecurise, ItemPhysique.IdRocheMatiereMin + ItemPhysique.IndexChimiqueSilex, -1, 1));
 					continue;
 				}
 
-				int idTailleChoisie = 0;
+				int tailleSpawn = 0;
 				float proba = rng.Randf();
-				if (idMatiere == 1 || idMatiere == 3) idTailleChoisie = ID_PETITE_PIERRE;
-				else if (idMatiere == 7 || idMatiere == 8) idTailleChoisie = (proba > 0.4f) ? ID_PETITE_PIERRE : ID_PIERRE_MOYENNE;
-				else if (idMatiere == 5 || idMatiere == 6) idTailleChoisie = (proba > 0.5f) ? ID_PETITE_PIERRE : ID_PIERRE_MOYENNE;
+				if (idMatiere == 1 || idMatiere == 3) tailleSpawn = 1;
+				else if (idMatiere == 7 || idMatiere == 8) tailleSpawn = (proba > 0.4f) ? 1 : 2;
+				else if (idMatiere == 5 || idMatiere == 6) tailleSpawn = (proba > 0.5f) ? 1 : 2;
 				else if (idMatiere == 2)
 				{
-					if (proba < 0.40f) idTailleChoisie = ID_PETITE_PIERRE;
-					else if (proba < 0.70f) idTailleChoisie = ID_PIERRE_MOYENNE;
-					else if (proba < 0.90f) idTailleChoisie = ID_GROSSE_PIERRE;
-					else idTailleChoisie = ID_TRES_GROSSE_PIERRE;
+					if (proba < 0.40f) tailleSpawn = 1;
+					else if (proba < 0.70f) tailleSpawn = 2;
+					else if (proba < 0.90f) tailleSpawn = 3;
+					else tailleSpawn = 4;
 				}
 
-				if (idTailleChoisie != 0)
-					liste.Add((pointDeSpawnSecurise, idTailleChoisie));
+				if (tailleSpawn != 0)
+				{
+					int chimIdx = rng.RandiRange(0, ItemPhysique.TableGeologique.Length - 1);
+					liste.Add((pointDeSpawnSecurise, ItemPhysique.IdRocheMatiereMin + chimIdx, -1, tailleSpawn));
+				}
 			}
 		}
 		return liste;
@@ -595,7 +593,7 @@ public partial class Monde_Serveur : Node
 			_filePierresAInstancier.Enqueue((p.pos, p.id, p.indexCache, p.indexChimique));
 	}
 
-	/// <summary>Roches liées au chunk : à la génération le chunk lance le dé → taille → on prend une du pool de cette taille (sinon on en crée une). IndexCache -1 = proche (formes douces), -2 = loin (formes cassées).</summary>
+	/// <summary>Roches matière 40–49 : <paramref name="indexCache"/> = morph (-1/-2 = tirage), <paramref name="indexChimique"/> = <see cref="ItemPhysique.IndexTailleRoche"/> (0–4).</summary>
 	private void GenererItemPhysique(Vector3 position, int idObjet, int indexCache = -1, int indexChimique = -1)
 	{
 		if (_parentPourBlocsChutants == null) return;
@@ -607,8 +605,14 @@ public partial class Monde_Serveur : Node
 			if (rb != null)
 			{
 				rb.ID_Objet = idObjet;
-				rb.IndexCacheMemoire = indexCache;
-				rb.IndexChimique = indexChimique;
+				if (indexCache == -2)
+					rb.IndexCacheMemoire = GD.RandRange(2, 3);
+				else if (indexCache < 0)
+					rb.IndexCacheMemoire = GD.RandRange(0, 3);
+				else
+					rb.IndexCacheMemoire = Mathf.Clamp(indexCache, 0, 3);
+				rb.IndexTailleRoche = indexChimique >= 0 ? Mathf.Clamp(indexChimique, 0, 4) : 2;
+				rb.IndexChimique = ItemPhysique.IndexChimiqueDepuisIdRoche(idObjet);
 				rb.ReappliquerApparence();
 				rb.Freeze = true; // Stase : ReveillerPierresDansRayon dégèle à 2 chunks (terrain solide)
 			}
@@ -629,24 +633,30 @@ public partial class Monde_Serveur : Node
 	}
 
 	/// <summary>Crée une roche neuve (ItemPhysique = RigidBody3D racine). N'est pas ajoutée au parent.</summary>
-	private ItemPhysique CreerNouvelleRoche(int idObjet, int indexCache, int indexChimique)
+	private ItemPhysique CreerNouvelleRoche(int idObjet, int indexCache, int indexTailleOuChim)
 	{
-		float rayon = idObjet == ID_SILEX ? 0.12f
-			: idObjet == ID_PETITE_PIERRE ? 0.15f
-			: idObjet == ID_PIERRE_MOYENNE ? 0.25f
-			: idObjet == ID_GROSSE_PIERRE ? 0.4f
-			: 0.6f;
-		float hauteur = idObjet == ID_SILEX ? 0.24f : rayon * 2f;
-
-		var item = new ItemPhysique { ID_Objet = idObjet, IndexCacheMemoire = indexCache, IndexChimique = indexChimique, Name = "ItemPhysique" };
+		int morph;
+		if (indexCache == -2)
+			morph = GD.RandRange(2, 3);
+		else if (indexCache < 0)
+			morph = GD.RandRange(0, 3);
+		else
+			morph = Mathf.Clamp(indexCache, 0, 3);
+		int taille = indexTailleOuChim >= 0 ? Mathf.Clamp(indexTailleOuChim, 0, 4) : 2;
+		float rayon = ItemPhysique.RayonBaseRochesJoueur(taille);
+		var item = new ItemPhysique
+		{
+			ID_Objet = idObjet,
+			IndexCacheMemoire = morph,
+			IndexTailleRoche = taille,
+			IndexChimique = ItemPhysique.IndexChimiqueDepuisIdRoche(idObjet),
+			Name = "ItemPhysique",
+			Scale = ItemPhysique.EchelleMorphologieRoche(morph)
+		};
 		item.Mass = 1.0f;
 		item.PhysicsMaterialOverride = new PhysicsMaterial { Friction = 0.6f, Bounce = 0.1f };
-		// Freeze géré par ReveillerPierresDansRayon (2 chunks) pour éviter chute dans le vide
-
-		Mesh meshBase = idObjet == ID_SILEX ? new PrismMesh { Size = new Vector3(0.2f, 0.15f, 0.25f) } : new SphereMesh { Radius = rayon, Height = hauteur };
-		Shape3D shapeBase = idObjet == ID_SILEX ? new BoxShape3D { Size = new Vector3(0.2f, 0.15f, 0.25f) } : new SphereShape3D { Radius = rayon };
-		item.AddChild(new MeshInstance3D { Mesh = meshBase });
-		item.AddChild(new CollisionShape3D { Shape = shapeBase });
+		item.AddChild(new MeshInstance3D { Mesh = new SphereMesh { Radius = rayon, Height = rayon * 2f } });
+		item.AddChild(new CollisionShape3D { Shape = new SphereShape3D { Radius = rayon } });
 		return item;
 	}
 
@@ -665,7 +675,7 @@ public partial class Monde_Serveur : Node
 			var item = rb as ItemPhysique ?? rb.GetNodeOrNull<ItemPhysique>("ItemPhysique");
 			if (item == null) continue;
 			int id = item.ID_Objet;
-			if (id != ID_PETITE_PIERRE && id != ID_PIERRE_MOYENNE && id != ID_GROSSE_PIERRE && id != ID_TRES_GROSSE_PIERRE && id != ID_SILEX) continue;
+			if (!ItemPhysique.EstIdRocheMatiere(id)) continue;
 			if (!TryGetPositionMonde(rb, out Vector3 posRb)) continue;
 			float distCarre = posRb.DistanceSquaredTo(posJoueur);
 			if (distCarre <= rayonCarre)
@@ -693,7 +703,7 @@ public partial class Monde_Serveur : Node
 		return false;
 	}
 
-	/// <summary>Sauvegarde les pierres et silex (IDs 10-14) avec IndexCacheMemoire et IndexChimique.</summary>
+	/// <summary>Sauvegarde les roches matière (40–49) : morph dans index, taille dans chimique (octet).</summary>
 	private void SauvegarderPierresChunk(Vector2I coord)
 	{
 		if (_parentPourBlocsChutants == null) return;
@@ -708,10 +718,10 @@ public partial class Monde_Serveur : Node
 			if (item == null) continue;
 			if (item.EstEclatFracture) continue; // Éclats de fracture : pas sauvegardés (créés à l'instant, supprimés quand chunk déchargé).
 			int id = item.ID_Objet;
-			if (id < 10 || id > 14) continue;
+			if (!ItemPhysique.EstIdRocheMatiere(id)) continue;
 			if (child is not Node3D n3 || !TryGetPositionMonde(n3, out Vector3 pos)) continue;
 			if (pos.X >= xMin && pos.X < xMax && pos.Z >= zMin && pos.Z < zMax)
-				pierres.Add((pos, id, Mathf.Max(0, item.IndexCacheMemoire), Mathf.Max(0, item.IndexChimique)));
+				pierres.Add((pos, id, Mathf.Clamp(item.IndexCacheMemoire, 0, 3), Mathf.Clamp(item.IndexTailleRoche, 0, 4)));
 		}
 		if (pierres.Count == 0) return;
 		string nom = GameState.Instance?.NomMondeActuel ?? "MonMonde";
@@ -760,6 +770,15 @@ public partial class Monde_Serveur : Node
 					int indexCache = formatV2 || formatV3 ? r.ReadByte() : -1;
 					int indexChimique = formatV3 ? r.ReadByte() : -1;
 					if (id >= 10 && id <= 14)
+					{
+						int chim = Mathf.Clamp(indexChimique, 0, ItemPhysique.TableGeologique.Length - 1);
+						if (id == 11) chim = ItemPhysique.IndexChimiqueSilex;
+						int tailleMigr = id switch { 10 => 1, 11 => 1, 12 => 2, 13 => 3, 14 => 4, _ => 2 };
+						id = ItemPhysique.IdRocheMatiereMin + chim;
+						indexChimique = tailleMigr;
+						if (indexCache >= 0) indexCache %= 4;
+					}
+					if (ItemPhysique.EstIdRocheMatiere(id))
 						pierres.Add((new Vector3(x, y, z), id, indexCache, indexChimique));
 				}
 			}
@@ -917,7 +936,7 @@ public partial class Monde_Serveur : Node
 		{
 			var item = child as ItemPhysique ?? child.GetNodeOrNull<ItemPhysique>("ItemPhysique");
 			if (item == null) continue;
-			if (item.ID_Objet < 10 || item.ID_Objet > 14) continue;
+			if (!ItemPhysique.EstIdRocheMatiere(item.ID_Objet)) continue;
 			if (child is not Node3D n3p || !TryGetPositionMonde(n3p, out Vector3 pos)) continue;
 			if (pos.X >= xMin && pos.X < xMax && pos.Z >= zMin && pos.Z < zMax)
 				aRetirer.Add(child);
@@ -933,7 +952,7 @@ public partial class Monde_Serveur : Node
 				n.QueueFree();
 				continue;
 			}
-			if (n is RigidBody3D rb && id >= 10 && id <= 14 && _poolsRochesParTaille.TryGetValue(id, out var pool) && pool.Count < TaillePoolParType)
+			if (n is RigidBody3D rb && ItemPhysique.EstIdRocheMatiere(id) && _poolsRochesParTaille.TryGetValue(id, out var pool) && pool.Count < TaillePoolParType)
 			{
 				rb.Freeze = true; // En pool = figé pour réutilisation ; dégelé à la sortie (GenererItemPhysique)
 				pool.Add(rb);

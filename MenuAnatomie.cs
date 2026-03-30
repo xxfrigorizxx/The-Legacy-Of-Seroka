@@ -17,6 +17,7 @@ public partial class MenuAnatomie : Control
 	[Export] public Panel InterfaceFutureSlot;
 	[Export] public Panel SacSlot;
 	[Export] public Panel EquipementCorpsSlot;
+	[Export] public Panel SlotResultatCraft;
 
 	private Label _lblMainGauche;
 	private Label _lblMainDroite;
@@ -31,14 +32,19 @@ public partial class MenuAnatomie : Control
 	private Label[] _lblCraft;
 	private MeshInstance3D[] _meshPreviewCraft;
 	private SubViewportContainer[] _vpCraft;
+	private SubViewportContainer _vpResultatCraft;
+	private MeshInstance3D _meshPreviewResultatCraft;
+	private Label _lblResultatCraft;
 
 	private const string CheminGrilleSac = "MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac";
 	private const string CheminMainGauche = "MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/LigneMainsCeinture/MainGaucheSlot";
 	private const string CheminMainDroite = "MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/LigneMainsCeinture/MainDroiteSlot";
 	private const string CheminGrilleAssemblage = "MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/LigneCraft/CadreCraft/GrilleAssemblage";
+	private const string CheminSlotResultatCraft = "MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/LigneCraft/CraftSortie";
 
 	private bool _clicsMainsConnectes;
 	private bool _clicsCraftConnectes;
+	private bool _clicsSlotResultatCraftConnecte;
 	private bool _barreOngletsJeuConfiguree;
 
 	private const string CheminBarreOnglets = "MarginPrincipal/VBoxPrincipal/BarreOnglets";
@@ -61,6 +67,9 @@ public partial class MenuAnatomie : Control
 	private SubViewportContainer _vpCurseurSouris;
 	private MeshInstance3D _meshCurseurSouris;
 	private Label _lblCurseurSouris;
+	/// <summary>Infobulle près du curseur : nom exact du slot survolé (débogage des noms / ADN).</summary>
+	private Panel _panneauInfobulleSlot;
+	private Label _lblInfobulleSlot;
 
 	private void ResoudreReferencesSlotsMains()
 	{
@@ -75,6 +84,13 @@ public partial class MenuAnatomie : Control
 		if (GrilleAssemblage != null && GodotObject.IsInstanceValid(GrilleAssemblage)) return;
 		GrilleAssemblage = GetNodeOrNull<GridContainer>(CheminGrilleAssemblage)
 			?? FindChild("GrilleAssemblage", true, false) as GridContainer;
+	}
+
+	private void ResoudreSlotResultatCraft()
+	{
+		if (SlotResultatCraft != null && GodotObject.IsInstanceValid(SlotResultatCraft)) return;
+		SlotResultatCraft = GetNodeOrNull<Panel>(CheminSlotResultatCraft)
+			?? FindChild("CraftSortie", true, false) as Panel;
 	}
 
 	private GridContainer ObtenirGrilleSac()
@@ -156,6 +172,7 @@ public partial class MenuAnatomie : Control
 		if (Engine.IsEditorHint()) return;
 		ResoudreReferencesSlotsMains();
 		ResoudreGrilleAssemblage();
+		ResoudreSlotResultatCraft();
 		void Branche(Panel pan, Control.GuiInputEventHandler fn)
 		{
 			if (pan == null) return;
@@ -180,6 +197,11 @@ public partial class MenuAnatomie : Control
 					Branche(cp, e => TraiterClicInventaire(e, 2, idx));
 			}
 		}
+		if (!_clicsSlotResultatCraftConnecte && SlotResultatCraft != null)
+		{
+			_clicsSlotResultatCraftConnecte = true;
+			Branche(SlotResultatCraft, e => TraiterClicInventaire(e, 3));
+		}
 	}
 
 	private void TraiterClicInventaire(InputEvent e, int mode, int craftIdx = -1)
@@ -187,14 +209,30 @@ public partial class MenuAnatomie : Control
 		if (_joueurRef == null) return;
 		if (e is not InputEventMouseButton mb || !mb.Pressed || mb.ButtonIndex != MouseButton.Left)
 			return;
+
 		if (mode == 0)
 			EchangerCurseurAvec(ref _joueurRef.MainGauche);
 		else if (mode == 1)
 			EchangerCurseurAvec(ref _joueurRef.MainDroite);
-		else if (mode == 2 && craftIdx >= 0 && craftIdx < 4 && _joueurRef.GrilleCraft2x2 != null && craftIdx < _joueurRef.GrilleCraft2x2.Length)
+		else if (mode == 2 && craftIdx >= 0 && craftIdx < 4 && _joueurRef.GrilleCraft2x2 != null)
+		{
 			EchangerCurseurAvec(ref _joueurRef.GrilleCraft2x2[craftIdx]);
+			_joueurRef.VerifierRecettes();
+		}
+		else if (mode == 3)
+		{
+			if (_curseurMenu.EstVide && !_joueurRef.SlotResultatCraft.EstVide)
+			{
+				_curseurMenu = _joueurRef.SlotResultatCraft;
+				_joueurRef.ConsommerIngredientsCraft();
+				_joueurRef.VerifierRecettes();
+			}
+			else
+				return;
+		}
 		else
 			return;
+
 		GetViewport()?.SetInputAsHandled();
 		_joueurRef.RafraichirHUD();
 	}
@@ -347,17 +385,133 @@ public partial class MenuAnatomie : Control
 
 	public override void _Process(double delta)
 	{
-		if (Engine.IsEditorHint() || !EstOuvert || _ecranBarreCourant != ModeEcranBarreMenu.Inventaire
-			|| _conteneurFlottantCurseur == null || !_conteneurFlottantCurseur.Visible)
+		if (Engine.IsEditorHint() || !EstOuvert || _ecranBarreCourant != ModeEcranBarreMenu.Inventaire)
 			return;
-		Vector2 demi = _conteneurFlottantCurseur.Size * 0.5f;
-		_conteneurFlottantCurseur.GlobalPosition = GetGlobalMousePosition() - demi;
+		MettreAJourInfobulleSourisInventaire();
+		if (_conteneurFlottantCurseur != null && _conteneurFlottantCurseur.Visible)
+		{
+			Vector2 demi = _conteneurFlottantCurseur.Size * 0.5f;
+			_conteneurFlottantCurseur.GlobalPosition = GetGlobalMousePosition() - demi;
+		}
+	}
+
+	private void AssurerInfobulleInventaire()
+	{
+		if (_panneauInfobulleSlot != null && GodotObject.IsInstanceValid(_panneauInfobulleSlot)) return;
+		_panneauInfobulleSlot = new Panel
+		{
+			Name = "InfobulleNomSlot",
+			MouseFilter = Control.MouseFilterEnum.Ignore,
+			Visible = false,
+			ZIndex = 640
+		};
+		_lblInfobulleSlot = new Label
+		{
+			MouseFilter = Control.MouseFilterEnum.Ignore,
+			AutowrapMode = TextServer.AutowrapMode.WordSmart,
+			HorizontalAlignment = HorizontalAlignment.Left,
+			VerticalAlignment = VerticalAlignment.Top
+		};
+		_lblInfobulleSlot.AddThemeFontSizeOverride("font_size", 13);
+		_lblInfobulleSlot.AddThemeColorOverride("font_outline_color", Colors.Black);
+		_lblInfobulleSlot.AddThemeConstantOverride("outline_size", 2);
+		_lblInfobulleSlot.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+		_lblInfobulleSlot.OffsetLeft = 8;
+		_lblInfobulleSlot.OffsetTop = 6;
+		_lblInfobulleSlot.OffsetRight = -8;
+		_lblInfobulleSlot.OffsetBottom = -6;
+		_panneauInfobulleSlot.AddChild(_lblInfobulleSlot);
+		AddChild(_panneauInfobulleSlot);
+		MoveChild(_panneauInfobulleSlot, GetChildCount() - 1);
+	}
+
+	private bool TryObtenirSlotSousControleSouris(Control h, out SlotInventaire slot)
+	{
+		slot = default;
+		if (h == null || _joueurRef == null) return false;
+		ResoudreReferencesSlotsMains();
+		ResoudreGrilleAssemblage();
+		ResoudreSlotResultatCraft();
+
+		if (MainGaucheSlot != null && GodotObject.IsInstanceValid(MainGaucheSlot)
+			&& (h == MainGaucheSlot || MainGaucheSlot.IsAncestorOf(h)))
+		{
+			slot = _joueurRef.MainGauche;
+			return true;
+		}
+		if (MainDroiteSlot != null && GodotObject.IsInstanceValid(MainDroiteSlot)
+			&& (h == MainDroiteSlot || MainDroiteSlot.IsAncestorOf(h)))
+		{
+			slot = _joueurRef.MainDroite;
+			return true;
+		}
+		if (SlotResultatCraft != null && GodotObject.IsInstanceValid(SlotResultatCraft)
+			&& (h == SlotResultatCraft || SlotResultatCraft.IsAncestorOf(h)))
+		{
+			slot = _joueurRef.SlotResultatCraft;
+			return true;
+		}
+		if (GrilleAssemblage != null && GodotObject.IsInstanceValid(GrilleAssemblage) && GrilleAssemblage.IsAncestorOf(h))
+		{
+			for (Control cur = h; cur != null; cur = cur.GetParent() as Control)
+			{
+				if (cur.GetParent() == GrilleAssemblage && cur is Panel)
+				{
+					int idx = cur.GetIndex();
+					if (_joueurRef.GrilleCraft2x2 != null && idx >= 0 && idx < _joueurRef.GrilleCraft2x2.Length)
+					{
+						slot = _joueurRef.GrilleCraft2x2[idx];
+						return true;
+					}
+					break;
+				}
+			}
+		}
+		return false;
+	}
+
+	private void MettreAJourInfobulleSourisInventaire()
+	{
+		if (Engine.IsEditorHint() || _joueurRef == null)
+			return;
+		AssurerInfobulleInventaire();
+		var vp = GetViewport();
+		Control h = vp?.GuiGetHoveredControl();
+		if (h == null || !TryObtenirSlotSousControleSouris(h, out SlotInventaire sl) || sl.EstVide)
+		{
+			if (_panneauInfobulleSlot != null)
+				_panneauInfobulleSlot.Visible = false;
+			return;
+		}
+		string nom = Joueur.ObtenirNomObjet(sl);
+		if (string.IsNullOrEmpty(nom))
+		{
+			_panneauInfobulleSlot.Visible = false;
+			return;
+		}
+		_lblInfobulleSlot.Text = nom;
+		const float maxL = 300f;
+		Vector2 ms = _lblInfobulleSlot.GetMinimumSize();
+		ms.X = Mathf.Min(Mathf.Max(ms.X, 80f), maxL);
+		ms.Y = Mathf.Max(ms.Y, 22f);
+		_panneauInfobulleSlot.CustomMinimumSize = ms + new Vector2(16f, 12f);
+		_panneauInfobulleSlot.Size = _panneauInfobulleSlot.CustomMinimumSize;
+		Vector2 posSouris = GetGlobalMousePosition();
+		Rect2 vr = GetViewport().GetVisibleRect();
+		Vector2 p = posSouris + new Vector2(14f, 18f);
+		if (p.X + _panneauInfobulleSlot.Size.X > vr.Position.X + vr.Size.X)
+			p.X = posSouris.X - _panneauInfobulleSlot.Size.X - 10f;
+		if (p.Y + _panneauInfobulleSlot.Size.Y > vr.Position.Y + vr.Size.Y)
+			p.Y = posSouris.Y - _panneauInfobulleSlot.Size.Y - 10f;
+		_panneauInfobulleSlot.GlobalPosition = p;
+		_panneauInfobulleSlot.Visible = true;
 	}
 
 	private void RafraichirCellulesCraft()
 	{
 		if (_joueurRef == null || GrilleAssemblage == null) return;
 		AssurerPreviewsCraft();
+		_joueurRef.VerifierRecettes();
 		for (int i = 0; i < 4 && _joueurRef.GrilleCraft2x2 != null && i < _joueurRef.GrilleCraft2x2.Length; i++)
 		{
 			var s = _joueurRef.GrilleCraft2x2[i];
@@ -382,6 +536,38 @@ public partial class MenuAnatomie : Control
 				string nom = Joueur.ObtenirNomObjet(s);
 				_lblCraft[i].Text = string.IsNullOrEmpty(nom) ? " " : nom;
 				_lblCraft[i].Visible = !vis || !vpOk;
+			}
+		}
+
+		ResoudreSlotResultatCraft();
+		if (SlotResultatCraft != null)
+		{
+			if (_vpResultatCraft == null && GodotObject.IsInstanceValid(SlotResultatCraft))
+			{
+				_meshPreviewResultatCraft = CreerViewportPreviewDansSlot(SlotResultatCraft, "VpResultatCraft", out _vpResultatCraft);
+				_lblResultatCraft = TrouverOuCreerLabel(SlotResultatCraft, " ");
+			}
+
+			var sRes = _joueurRef.SlotResultatCraft;
+			bool visRes = _joueurRef.InventaireSlotAunVisuel3D(sRes);
+			bool vpResOk = _vpResultatCraft != null && GodotObject.IsInstanceValid(_vpResultatCraft);
+
+			if (vpResOk)
+			{
+				_vpResultatCraft.Visible = visRes;
+				if (visRes && _meshPreviewResultatCraft != null)
+					_joueurRef.SynchroniserPreviewSlotMenu(_meshPreviewResultatCraft, sRes);
+				else if (_meshPreviewResultatCraft != null)
+				{
+					_meshPreviewResultatCraft.Mesh = null;
+					_meshPreviewResultatCraft.MaterialOverride = null;
+				}
+			}
+			if (_lblResultatCraft != null)
+			{
+				string nomRes = Joueur.ObtenirNomObjet(sRes);
+				_lblResultatCraft.Text = string.IsNullOrEmpty(nomRes) ? " " : nomRes;
+				_lblResultatCraft.Visible = !visRes || !vpResOk;
 			}
 		}
 	}
@@ -740,6 +926,9 @@ public partial class MenuAnatomie : Control
 
 		if (!EstOuvert)
 			ResoudreCurseurAvantFermeture();
+
+		if (!EstOuvert && _panneauInfobulleSlot != null)
+			_panneauInfobulleSlot.Visible = false;
 
 		Input.MouseMode = EstOuvert ? Input.MouseModeEnum.Visible : Input.MouseModeEnum.Captured;
 		if (!Engine.IsEditorHint())

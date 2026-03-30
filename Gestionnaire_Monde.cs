@@ -245,11 +245,25 @@ public partial class Gestionnaire_Monde : Node3D
 
 	public override void _Input(InputEvent @event)
 	{
-		if (@event.IsActionPressed("ui_cancel"))
-		{
+		if (!@event.IsActionPressed("ui_cancel"))
+			return;
+		bool invOuvert = _joueur is Joueur jo && jo.MenuAnatomieOuvert();
+		if (invOuvert && !_pauseVisible)
+			ForcerOuvertureMenuPause();
+		else
 			ToggleMenuPause();
-			GetViewport().SetInputAsHandled();
-		}
+		GetViewport().SetInputAsHandled();
+	}
+
+	/// <summary>Ouvre le menu pause et met le jeu en pause, sans fermer l’inventaire (Échap pendant Q).</summary>
+	public void ForcerOuvertureMenuPause()
+	{
+		if (_panelPause == null) CreerMenuPause();
+		if (_pauseVisible) return;
+		_pauseVisible = true;
+		_panelPause.Visible = true;
+		GetTree().Paused = true;
+		Input.MouseMode = Input.MouseModeEnum.Visible;
 	}
 
 	public override void _Notification(int what)
@@ -303,7 +317,8 @@ public partial class Gestionnaire_Monde : Node3D
 
 	private void CreerMenuPause()
 	{
-		var layer = new CanvasLayer { Layer = 100, ProcessMode = ProcessModeEnum.Always };
+		// Au-dessus de l’inventaire (calque 100 sur le joueur).
+		var layer = new CanvasLayer { Layer = 101, ProcessMode = ProcessModeEnum.Always };
 		AddChild(layer);
 		_panelPause = new Panel();
 		_panelPause.SetAnchorsPreset(Control.LayoutPreset.Center);

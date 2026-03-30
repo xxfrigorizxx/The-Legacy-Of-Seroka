@@ -14,10 +14,39 @@ public struct ProfilMineral
 }
 
 /// <summary>ADN de l'objet libre : identifie ce que le Raycast du joueur ramasse.
-/// 10 = Petite Pierre, 11 = Silex, 12 = Pierre Moyenne, 13 = Grosse Pierre, 14 = Très Grosse Pierre.
+/// Matières rocheuses : IDs <see cref="IdRocheMatiereMin"/>–<see cref="IdRocheMatiereMax"/> (granit=40, …, silex=<c>40+IndexChimiqueSilex</c>). Taille = <see cref="IndexTailleRoche"/>, forme = <see cref="IndexCacheMemoire"/> (0–3).
 /// Hérite de RigidBody3D pour ContactMonitor / BodyEntered (physique de rupture).</summary>
 public partial class ItemPhysique : RigidBody3D
 {
+	public const int IdRocheMatiereMin = 40;
+	public const int IdRocheMatiereMax = 49;
+	/// <summary>Indice dans <see cref="TableGeologique"/> pour le silex (ID objet = <c>40 + IndexChimiqueSilex</c>).</summary>
+	public const int IndexChimiqueSilex = 5;
+
+	public static bool EstIdRocheMatiere(int id) => id >= IdRocheMatiereMin && id <= IdRocheMatiereMax;
+
+	public static int IndexChimiqueDepuisIdRoche(int id) => Mathf.Clamp(id - IdRocheMatiereMin, 0, TableGeologique.Length - 1);
+
+	public static bool EstMatiereSilexParIdObjet(int id) => EstIdRocheMatiere(id) && IndexChimiqueDepuisIdRoche(id) == IndexChimiqueSilex;
+
+	public static float RayonBaseRochesJoueur(int indexTaille) => indexTaille switch
+	{
+		0 => 0.08f,
+		1 => 0.15f,
+		2 => 0.25f,
+		3 => 0.40f,
+		4 => 0.65f,
+		_ => 0.2f
+	};
+
+	public static Vector3 EchelleMorphologieRoche(int morph) => morph switch
+	{
+		1 => new Vector3(1f, 0.4f, 1f),
+		2 => new Vector3(1f, 0.7f, 1.4f),
+		3 => new Vector3(0.6f, 1.3f, 0.6f),
+		_ => Vector3.One
+	};
+
 	/// <summary>Table géologique : compositions minérales réelles (couleur, rugosité, future résistance).</summary>
 	public static readonly ProfilMineral[] TableGeologique = new ProfilMineral[]
 	{
@@ -50,6 +79,8 @@ public partial class ItemPhysique : RigidBody3D
 	public byte IndexBotanique = 0;
 	/// <summary>Assemblage CAO identique à <see cref="SlotInventaire.GenomeAssemblage"/> (outil forgé ID 100).</summary>
 	public string GenomeAssemblage = "";
+	/// <summary>Grosseur pour roches matière (40–49) : 0=Mini … 4=Énorme. Aligné sur <see cref="SlotInventaire.IndexTaille"/>.</summary>
+	public int IndexTailleRoche = 2;
 
 	/// <summary>Banque d'ADN : accès public pour rendu en main et UI inventaire.</summary>
 	public static IReadOnlyList<Mesh> CacheMeshCaillou => _cacheMeshCaillou;
@@ -93,18 +124,20 @@ public partial class ItemPhysique : RigidBody3D
 		}
 		if (visuel == null || hitbox == null) return;
 
-		if (IndexChimique == -1)
+		if (EstIdRocheMatiere(ID_Objet))
+			IndexChimique = IndexChimiqueDepuisIdRoche(ID_Objet);
+		else if (IndexChimique == -1)
 			IndexChimique = GD.RandRange(0, TableGeologique.Length - 1);
 
 		// LE BOUCLIER : Si c'est un éclat coupé procéduralement, on ne génère RIEN depuis le cache.
 		if (EstUnEclat)
 		{
 			int ch = Mathf.Clamp(IndexChimique, 0, TableGeologique.Length - 1);
-			if (ID_Objet == 10 || ID_Objet == 11 || ID_Objet == 12)
-				visuel.MaterialOverride = CreerMaterielProcedural(ID_Objet == 11, ch);
+			if (EstIdRocheMatiere(ID_Objet))
+				visuel.MaterialOverride = CreerMaterielProcedural(EstMatiereSilexParIdObjet(ID_Objet), ch);
 			else if (ID_Objet == 30 || ID_Objet == 32)
 				visuel.MaterialOverride = ArbreVivant.ObtenirMaterielBois();
-			if (ID_Objet != 11 && !_surImpactConnecte)
+			if (!EstMatiereSilexParIdObjet(ID_Objet) && !_surImpactConnecte)
 			{
 				ContactMonitor = true;
 				MaxContactsReported = 1;
@@ -167,20 +200,44 @@ public partial class ItemPhysique : RigidBody3D
 			return;
 		}
 
+		if (EstIdRocheMatiere(ID_Objet))
+		{
+			IndexTailleRoche = Mathf.Clamp(IndexTailleRoche, 0, 4);
+			if (IndexCacheMemoire < 0)
+				IndexCacheMemoire = GD.RandRange(0, 3);
+			IndexCacheMemoire = Mathf.Clamp(IndexCacheMemoire, 0, 3);
+			IndexChimique = IndexChimiqueDepuisIdRoche(ID_Objet);
+			float r = RayonBaseRochesJoueur(IndexTailleRoche);
+			Scale = EchelleMorphologieRoche(IndexCacheMemoire);
+			visuel.Mesh = new SphereMesh { Radius = r, Height = r * 2f };
+			hitbox.Shape = new SphereShape3D { Radius = r };
+			AppliquerMateriel(visuel);
+			int idxChimR = IndexChimiqueDepuisIdRoche(ID_Objet);
+			ResistanceActuelle = TableGeologique[idxChimR].ResistanceFuture;
+			float vol = 4f / 3f * Mathf.Pi * r * r * r;
+			Mass = Mathf.Max(0.04f, vol * 2200f * Mathf.Abs(Scale.X * Scale.Y * Scale.Z));
+			if (!EstMatiereSilexParIdObjet(ID_Objet) && !_surImpactConnecte)
+			{
+				ContactMonitor = true;
+				MaxContactsReported = 1;
+				BodyEntered += SurImpactPhysique;
+				_surImpactConnecte = true;
+			}
+			RotationDegrees = new Vector3(GD.RandRange(0, 360), GD.RandRange(0, 360), GD.RandRange(0, 360));
+			return;
+		}
+
 		AppliquerMateriel(visuel);
 
 		// MODIFICATION CRITIQUE : Si IndexCacheMemoire déjà défini (objet relâché par le joueur), on NE TIRE PAS au hasard.
 		if (IndexCacheMemoire == -1)
-			IndexCacheMemoire = ID_Objet == 11
-				? PreparerCacheEtTirerIndex(true)
-				: PreparerCacheEtTirerIndex(false);
+			IndexCacheMemoire = PreparerCacheEtTirerIndex(false);
 
 		// Biomécanique : résistance aux chocs (pour physique de rupture)
 		int idxChim = Mathf.Clamp(IndexChimique, 0, TableGeologique.Length - 1);
 		ResistanceActuelle = TableGeologique[idxChim].ResistanceFuture;
 
-		// Activation des senseurs de choc (Silex id 11 = immobile, pas de BodyEntered)
-		if (ID_Objet != 11 && !_surImpactConnecte)
+		if (!_surImpactConnecte)
 		{
 			ContactMonitor = true;
 			MaxContactsReported = 1;
@@ -188,27 +245,13 @@ public partial class ItemPhysique : RigidBody3D
 			_surImpactConnecte = true;
 		}
 
-		// Appliquer la forme EXACTE depuis le cache
 		int idx = Mathf.Clamp(IndexCacheMemoire, 0, int.MaxValue);
-		if (ID_Objet == 11)
+		if (idx < _cacheMeshCaillou.Count)
 		{
-			if (idx < _cacheMeshSilex.Count)
-			{
-				visuel.Mesh = _cacheMeshSilex[idx];
-				hitbox.Shape = _cacheCollisionSilex[idx];
-			}
+			visuel.Mesh = _cacheMeshCaillou[idx];
+			hitbox.Shape = _cacheCollisionCaillou[idx];
 		}
-		else
-		{
-			if (idx < _cacheMeshCaillou.Count)
-			{
-				visuel.Mesh = _cacheMeshCaillou[idx];
-				hitbox.Shape = _cacheCollisionCaillou[idx];
-			}
-			// Mise à l'échelle selon la taille (cache = unité 0.15)
-			float scale = ID_Objet == 10 ? 1f : ID_Objet == 12 ? 0.25f / 0.15f : ID_Objet == 13 ? 0.4f / 0.15f : 0.6f / 0.15f;
-			Scale = new Vector3(scale, scale, scale);
-		}
+		Scale = Vector3.One;
 
 		RotationDegrees = new Vector3(GD.RandRange(0, 360), GD.RandRange(0, 360), GD.RandRange(0, 360));
 	}
@@ -279,8 +322,8 @@ public partial class ItemPhysique : RigidBody3D
 	/// <summary>Seuil de rupture (Loi du Rebond). En dessous de cette force d'impact, dégâts strictement zéro.</summary>
 	public float ObtenirSeuilRupture()
 	{
-		if (ID_Objet == 11) return 80f; // Silex très dur
-		if (ID_Objet >= 10 && ID_Objet <= 14) return 50f; // Roche standard
+		if (EstMatiereSilexParIdObjet(ID_Objet)) return 80f;
+		if (EstIdRocheMatiere(ID_Objet)) return 50f;
 		if (ID_Objet == 30 || ID_Objet == 32) return 40f; // Bois mort durci
 		return 10f; // Matières souples ou organiques
 	}
@@ -333,7 +376,7 @@ public partial class ItemPhysique : RigidBody3D
 		float degatsSubis = (energieCinetique * dureteAdverse) / Mathf.Max(0.01f, maDurete);
 		ResistanceActuelle -= degatsSubis;
 
-		if (!frappeLeSol && TableGeologique[idxMoi].Nom == "Silex" && dureteAdverse > 70f && energieCinetique > 30f)
+		if (!frappeLeSol && EstMatiereSilexParIdObjet(ID_Objet) && dureteAdverse > 70f && energieCinetique > 30f)
 			GenererParticulesEtincelle();
 
 		// 5. La fracture
@@ -408,7 +451,7 @@ public partial class ItemPhysique : RigidBody3D
 		// Priorité : morceaux préfabriqués variés + triplanar (géométrie propre, plus de pointes/noir)
 		if (SpawnChunksPrefabriques(impactPos, normalMonde, masseFragment))
 		{
-			if (ID_Objet != 11 && _surImpactConnecte) { BodyEntered -= SurImpactPhysique; _surImpactConnecte = false; }
+			if (!EstMatiereSilexParIdObjet(ID_Objet) && _surImpactConnecte) { BodyEntered -= SurImpactPhysique; _surImpactConnecte = false; }
 			QueueFree(); // LA MÈRE EST DÉTRUITE ICI. AUCUNE EXCEPTION.
 			return;
 		}
@@ -417,7 +460,7 @@ public partial class ItemPhysique : RigidBody3D
 		Material matRoche = monVisuel.MaterialOverride ?? (monVisuel.Mesh.GetSurfaceCount() > 0 ? monVisuel.Mesh.SurfaceGetMaterial(0) : null);
 		if (matRoche != null && monVisuel.Mesh is ArrayMesh arrMesh && DecouperMeshEtSpawnerMoities(arrMesh, planCoupe, impactPos, normalMonde, masseFragment, matRoche, Scale))
 		{
-			if (ID_Objet != 11 && _surImpactConnecte) { BodyEntered -= SurImpactPhysique; _surImpactConnecte = false; }
+			if (!EstMatiereSilexParIdObjet(ID_Objet) && _surImpactConnecte) { BodyEntered -= SurImpactPhysique; _surImpactConnecte = false; }
 			QueueFree(); // LA MÈRE EST DÉTRUITE ICI. AUCUNE EXCEPTION.
 			return;
 		}
@@ -453,14 +496,17 @@ public partial class ItemPhysique : RigidBody3D
 		Vector3[] facesB = ptsB.Count >= 4 ? OrdonnerPointsDansPlan(ptsB, planCoupe) : PointsFallbackFragment(planCoupe, -1);
 		SpawnEclatVrai(facesA, masseFragment, impactPos + (normalMonde * 0.03f), normaleCoupe);
 		SpawnEclatVrai(facesB, masseFragment, impactPos - (normalMonde * 0.03f), -normaleCoupe);
-		if (ID_Objet != 11 && _surImpactConnecte) { BodyEntered -= SurImpactPhysique; _surImpactConnecte = false; }
+		if (!EstMatiereSilexParIdObjet(ID_Objet) && _surImpactConnecte) { BodyEntered -= SurImpactPhysique; _surImpactConnecte = false; }
 		QueueFree(); // LA MÈRE EST DÉTRUITE ICI. AUCUNE EXCEPTION. AUCUN RECYCLAGE.
 	}
 
 	/// <summary>Spawn 2 morceaux préfabriqués depuis le cache (formes variées) + triplanar. Géométrie propre, plus de pointes ni faces noires. Retourne true si succès.</summary>
 	private bool SpawnChunksPrefabriques(Vector3 impactPos, Vector3 normalMonde, float masseFragment)
 	{
-		bool estSilex = (ID_Objet == 11);
+		// Roches matière (40–49) : pas de morceaux génériques du cache — coupe réelle / contour pour garder forme + échelle ADN.
+		if (EstIdRocheMatiere(ID_Objet))
+			return false;
+		bool estSilex = EstMatiereSilexParIdObjet(ID_Objet);
 		var cacheMesh = estSilex ? _cacheMeshSilex : _cacheMeshCaillou;
 		var cacheCollision = estSilex ? _cacheCollisionSilex : _cacheCollisionCaillou;
 		lock (cacheMesh)
@@ -484,6 +530,8 @@ public partial class ItemPhysique : RigidBody3D
 				frag.NiveauFracture = NiveauFracture + 1;
 				frag.ID_Objet = ID_Objet;
 				frag.IndexChimique = IndexChimique;
+				frag.IndexTailleRoche = IndexTailleRoche;
+				frag.IndexCacheMemoire = Mathf.Clamp(IndexCacheMemoire, 0, 3);
 				frag.Mass = masseFragment;
 				int idxCh = Mathf.Clamp(IndexChimique, 0, TableGeologique.Length - 1);
 				frag.ResistanceActuelle = TableGeologique[idxCh].ResistanceFuture * (masseFragment / 50f);
@@ -500,7 +548,7 @@ public partial class ItemPhysique : RigidBody3D
 				visuel.MaterialOverride = mat;
 				frag.AddChild(visuel);
 				frag.AddChild(new CollisionShape3D { Shape = s ?? new BoxShape3D { Size = new Vector3(0.12f, 0.12f, 0.12f) } });
-				if (frag.ID_Objet != 11) { frag.ContactMonitor = true; frag.MaxContactsReported = 1; frag.BodyEntered += frag.SurImpactPhysique; frag._surImpactConnecte = true; }
+				if (!EstMatiereSilexParIdObjet(frag.ID_Objet)) { frag.ContactMonitor = true; frag.MaxContactsReported = 1; frag.BodyEntered += frag.SurImpactPhysique; frag._surImpactConnecte = true; }
 				frag.Name = "ItemPhysique";
 				frag.AddToGroup("BlocsPoses");
 				frag.SetMeta("ID_Matiere", frag.ID_Objet);
@@ -902,6 +950,8 @@ public partial class ItemPhysique : RigidBody3D
 		moitie.NiveauFracture = NiveauFracture + 1;
 		moitie.ID_Objet = ID_Objet;
 		moitie.IndexChimique = IndexChimique;
+		moitie.IndexTailleRoche = IndexTailleRoche;
+		moitie.IndexCacheMemoire = Mathf.Clamp(IndexCacheMemoire, 0, 3);
 		moitie.Mass = nouvelleMasse;
 		int idxCh = Mathf.Clamp(IndexChimique, 0, TableGeologique.Length - 1);
 		moitie.ResistanceActuelle = TableGeologique[idxCh].ResistanceFuture * (nouvelleMasse / 50f);
@@ -913,7 +963,7 @@ public partial class ItemPhysique : RigidBody3D
 		visuel.Mesh = meshMoitie;
 		visuel.CastShadow = GeometryInstance3D.ShadowCastingSetting.On;
 		// Matériau procédural pour morceaux fracturés : triplanar MONDE (texture cohérente, plus de surfaces noires/blanches unies), très mat.
-		StandardMaterial3D matMoitie = (StandardMaterial3D)CreerMaterielProcedural(ID_Objet == 11, IndexChimique, pourEclat: false).Duplicate(true);
+		StandardMaterial3D matMoitie = (StandardMaterial3D)CreerMaterielProcedural(EstMatiereSilexParIdObjet(ID_Objet), IndexChimique, pourEclat: false).Duplicate(true);
 		matMoitie.CullMode = BaseMaterial3D.CullModeEnum.Disabled;
 		matMoitie.Roughness = 0.95f;
 		matMoitie.NormalEnabled = false;
@@ -928,7 +978,7 @@ public partial class ItemPhysique : RigidBody3D
 		hitbox.Shape = shape;
 		moitie.AddChild(hitbox);
 
-		if (moitie.ID_Objet != 11) { moitie.ContactMonitor = true; moitie.MaxContactsReported = 1; moitie.BodyEntered += moitie.SurImpactPhysique; moitie._surImpactConnecte = true; }
+		if (!EstMatiereSilexParIdObjet(moitie.ID_Objet)) { moitie.ContactMonitor = true; moitie.MaxContactsReported = 1; moitie.BodyEntered += moitie.SurImpactPhysique; moitie._surImpactConnecte = true; }
 		moitie.Name = "ItemPhysique";
 		moitie.AddToGroup("BlocsPoses");
 		moitie.SetMeta("ID_Matiere", moitie.ID_Objet);
@@ -1161,12 +1211,14 @@ public partial class ItemPhysique : RigidBody3D
 		eclat.NiveauFracture = NiveauFracture + 1;
 		eclat.ID_Objet = ID_Objet;
 		eclat.IndexChimique = IndexChimique;
+		eclat.IndexTailleRoche = IndexTailleRoche;
+		eclat.IndexCacheMemoire = Mathf.Clamp(IndexCacheMemoire, 0, 3);
 		eclat.Mass = nouvelleMasse;
 		int idxCh = Mathf.Clamp(IndexChimique, 0, TableGeologique.Length - 1);
 		eclat.ResistanceActuelle = TableGeologique[idxCh].ResistanceFuture * (nouvelleMasse / 50f);
 		eclat.ContinuousCd = true;
 
-		bool estSilex = (ID_Objet == 11);
+		bool estSilex = EstMatiereSilexParIdObjet(ID_Objet);
 		Shape3D shapeCollision = CreerShapeCollisionConvexeRobuste(meshFragment);
 		if (shapeCollision == null)
 			shapeCollision = new BoxShape3D { Size = new Vector3(0.08f, 0.08f, 0.08f) };
@@ -1195,7 +1247,7 @@ public partial class ItemPhysique : RigidBody3D
 		hitbox.Shape = shapeCollision;
 		eclat.AddChild(hitbox);
 
-		if (eclat.ID_Objet != 11)
+		if (!EstMatiereSilexParIdObjet(eclat.ID_Objet))
 		{
 			eclat.ContactMonitor = true;
 			eclat.MaxContactsReported = 1;
@@ -1292,24 +1344,34 @@ public partial class ItemPhysique : RigidBody3D
 			else if (child is CollisionShape3D cs) hitbox = cs;
 		}
 		if (visuel == null || hitbox == null) return;
+		if (EstIdRocheMatiere(ID_Objet))
+		{
+			IndexChimique = IndexChimiqueDepuisIdRoche(ID_Objet);
+			IndexTailleRoche = Mathf.Clamp(IndexTailleRoche, 0, 4);
+			if (IndexCacheMemoire < 0)
+				IndexCacheMemoire = GD.RandRange(0, 3);
+			IndexCacheMemoire = Mathf.Clamp(IndexCacheMemoire, 0, 3);
+			float r = RayonBaseRochesJoueur(IndexTailleRoche);
+			Scale = EchelleMorphologieRoche(IndexCacheMemoire);
+			visuel.Mesh = new SphereMesh { Radius = r, Height = r * 2f };
+			hitbox.Shape = new SphereShape3D { Radius = r };
+			AppliquerMateriel(visuel);
+			int ich = IndexChimiqueDepuisIdRoche(ID_Objet);
+			ResistanceActuelle = TableGeologique[ich].ResistanceFuture;
+			float vol = 4f / 3f * Mathf.Pi * r * r * r;
+			Mass = Mathf.Max(0.04f, vol * 2200f * Mathf.Abs(Scale.X * Scale.Y * Scale.Z));
+			return;
+		}
 		if (IndexChimique < 0) IndexChimique = GD.RandRange(0, TableGeologique.Length - 1);
 		AppliquerMateriel(visuel);
 		if (IndexCacheMemoire < 0)
 		{
 			bool formesCassées = (IndexCacheMemoire == -2);
-			IndexCacheMemoire = ID_Objet == 11 ? PreparerCacheEtTirerIndex(true, formesCassées) : PreparerCacheEtTirerIndex(false, formesCassées);
+			IndexCacheMemoire = PreparerCacheEtTirerIndex(false, formesCassées);
 		}
 		int idx = Mathf.Clamp(IndexCacheMemoire, 0, int.MaxValue);
-		if (ID_Objet == 11)
-		{
-			if (idx < _cacheMeshSilex.Count) { visuel.Mesh = _cacheMeshSilex[idx]; hitbox.Shape = _cacheCollisionSilex[idx]; }
-		}
-		else
-		{
-			if (idx < _cacheMeshCaillou.Count) { visuel.Mesh = _cacheMeshCaillou[idx]; hitbox.Shape = _cacheCollisionCaillou[idx]; }
-			float scale = ID_Objet == 10 ? 1f : ID_Objet == 12 ? 0.25f / 0.15f : ID_Objet == 13 ? 0.4f / 0.15f : 0.6f / 0.15f;
-			Scale = new Vector3(scale, scale, scale);
-		}
+		if (idx < _cacheMeshCaillou.Count) { visuel.Mesh = _cacheMeshCaillou[idx]; hitbox.Shape = _cacheCollisionCaillou[idx]; }
+		Scale = Vector3.One;
 	}
 
 	private int PreparerCacheEtTirerIndex(bool estSilex, bool formesCassées = false)
@@ -1339,7 +1401,7 @@ public partial class ItemPhysique : RigidBody3D
 
 	private void AppliquerMateriel(MeshInstance3D visuel)
 	{
-		visuel.MaterialOverride = CreerMaterielProcedural(ID_Objet == 11, IndexChimique);
+		visuel.MaterialOverride = CreerMaterielProcedural(EstMatiereSilexParIdObjet(ID_Objet), IndexChimique);
 	}
 
 	/// <summary>Retourne le mesh du premier MeshInstance3D enfant (pour éclats et ramassage).</summary>
