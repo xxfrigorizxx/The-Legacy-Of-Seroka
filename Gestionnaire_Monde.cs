@@ -619,10 +619,13 @@ public partial class Gestionnaire_Monde : Node3D
 		}
 	}
 
+	/// <summary>Relaie vers <see cref="Monde_Serveur.AppliquerFauchageGlobal"/> : chaque <see cref="Chunk_Serveur.FaucherFlore"/> retire la flore dans le rayon, appelle le callback pour spawner fibres (15) / buissons, puis notifie le client pour les meshes gazon.</summary>
 	public void AppliquerFauchageGlobal(Vector3 pointImpact, float rayon)
 	{
 		if (UseArchitectureReseau)
 			_mondeServeur?.AppliquerFauchageGlobal(pointImpact, rayon);
+		else
+			GD.Print("ZERO-K : Le fauchage (gazon, fibres) n'existe qu'en mode chunks serveur. Réactivez UseArchitectureReseau sur le Gestionnaire_Monde.");
 	}
 
 	/// <summary>Oracle géologique : lecture directe de l'ADN (_materials) depuis le Serveur. Évite la dissonance visuelle (mine terre → reçoit pierre).</summary>

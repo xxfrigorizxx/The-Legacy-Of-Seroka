@@ -845,13 +845,19 @@ public partial class Chunk_Serveur : RefCounted
 	public void FaucherFlore(Vector3 pointImpactGlobal, float rayon)
 	{
 		float rayon2 = rayon * rayon;
+		const float demiEpaisseurVerticale = 5f; // Le raycast sol peut avoir un Y légèrement différent du voxel surface → la 3D pure ratée trop souvent.
 		var floreDetruite = new List<KeyValuePair<Vector3I, byte>>();
 
 		foreach (var kv in InventaireFlore)
 		{
-			Vector3 posFlore = new Vector3(kv.Key.X + 0.5f, kv.Key.Y + 0.5f, kv.Key.Z + 0.5f);
-			if (posFlore.DistanceSquaredTo(pointImpactGlobal) <= rayon2)
-				floreDetruite.Add(kv);
+			float dx = (kv.Key.X + 0.5f) - pointImpactGlobal.X;
+			float dz = (kv.Key.Z + 0.5f) - pointImpactGlobal.Z;
+			if (dx * dx + dz * dz > rayon2)
+				continue;
+			float dy = Mathf.Abs((kv.Key.Y + 0.5f) - pointImpactGlobal.Y);
+			if (dy > demiEpaisseurVerticale)
+				continue;
+			floreDetruite.Add(kv);
 		}
 		if (floreDetruite.Count == 0) return;
 

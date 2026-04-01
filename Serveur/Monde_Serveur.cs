@@ -436,7 +436,9 @@ public partial class Monde_Serveur : Node
 		var matTerrain = MaterielTerrain ?? GD.Load<Material>("res://Manteau_Planetaire.tres");
 		var bloc = BlocChutant.Creer(pos, mat, matTerrain);
 		_parentPourBlocsChutants.AddChild(bloc);
-		bloc.GlobalPosition = pos;
+		// Fibres (fauchage) : léger décalage vers le haut pour éviter d’être coincées dans le sol / la collision.
+		Vector3 posPose = mat == 15 ? pos + new Vector3(0f, 0.12f, 0f) : pos;
+		bloc.GlobalPosition = posPose;
 	}
 
 	/// <summary>Spawn branches et bûches qui tombent au sol quand un arbre est coupé.</summary>
@@ -651,10 +653,11 @@ public partial class Monde_Serveur : Node
 			IndexTailleRoche = taille,
 			IndexChimique = ItemPhysique.IndexChimiqueDepuisIdRoche(idObjet),
 			Name = "ItemPhysique",
-			Scale = ItemPhysique.EchelleMorphologieRoche(morph)
+			// Morphologie appliquée sur le MeshInstance3D dans ItemPhysique._Ready (Jolt : pas d’échelle non uniforme sur RigidBody3D).
+			Scale = Vector3.One
 		};
 		item.Mass = 1.0f;
-		item.PhysicsMaterialOverride = new PhysicsMaterial { Friction = 0.6f, Bounce = 0.1f };
+		// Friction / amortissement : ItemPhysique._Ready → AppliquerPhysiqueRochePortee (évite conflit avec matériau 0,6).
 		item.AddChild(new MeshInstance3D { Mesh = new SphereMesh { Radius = rayon, Height = rayon * 2f } });
 		item.AddChild(new CollisionShape3D { Shape = new SphereShape3D { Radius = rayon } });
 		return item;

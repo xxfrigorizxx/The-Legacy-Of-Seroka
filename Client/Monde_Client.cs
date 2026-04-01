@@ -568,10 +568,36 @@ public partial class Monde_Client : Node3D
 	/// <summary>Mise à jour flore : le serveur a purgé du gazon (minage, gravité, fauchage). On met à jour l'inventaire et le rendu gazon pour que les brins disparaissent.</summary>
 	public void RecevoirFloreModifie(Vector2I coordChunk, Dictionary<Vector3I, byte> inventaireFlore)
 	{
-		if (!_chunksData.TryGetValue(coordChunk, out var data)) return;
+		RecevoirFloreModifieAvecRetry(coordChunk, inventaireFlore, 0);
+	}
+
+	private void RecevoirFloreModifieAvecRetry(Vector2I coordChunk, Dictionary<Vector3I, byte> inventaireFlore, int tentative)
+	{
+		if (!_chunksData.TryGetValue(coordChunk, out var data))
+		{
+			if (tentative < 12)
+				Callable.From(() => RecevoirFloreModifieAvecRetry(coordChunk, inventaireFlore, tentative + 1)).CallDeferred();
+			return;
+		}
+
 		data.InventaireFlore = inventaireFlore ?? new Dictionary<Vector3I, byte>();
+		Vector3 posObs = ObtenirPositionObservation();
+
 		if (data._nodeGazon is MultiMeshInstance3D nodeGazon)
-			Chunk_Client.MettreAJourGazonPourChunkData(data, ObtenirPositionObservation(), nodeGazon);
+		{
+			Chunk_Client.MettreAJourGazonPourChunkData(data, posObs, nodeGazon);
+			return;
+		}
+
+		if (data.InventaireFlore.Count > 0)
+		{
+			var node = Chunk_Client.CreerNoeudGazonPourChunkData(data, posObs, TailleChunk);
+			if (node != null)
+			{
+				AddChild(node);
+				data._nodeGazon = node;
+			}
+		}
 	}
 
 	public void RecevoirChunkModifie(Vector2I coordChunk, List<int> sectionsAffectees)
