@@ -842,7 +842,7 @@ public partial class Monde_Serveur : Node
 			var arbre = new ArbreVivant
 			{
 				AgeEnJours = age,
-				ResistanceActuelle = 50f * age,
+				ResistanceActuelle = ArbreVivant.ResistanceMaxPourAge(age),
 				Seed = kv.Value.Seed
 			};
 			_parentPourArbres.AddChild(arbre);
@@ -887,10 +887,11 @@ public partial class Monde_Serveur : Node
 
 					Vector3 pos = new Vector3(gx + 0.5f, gy - 0.5f, gz + 0.5f);
 					uint seedArbre = (uint)((gx * 73856093) ^ (gz * 19349663));
+					int ageCharge = Mathf.Max(1, ageSauvegarde);
 					var arbre = new ArbreVivant
 					{
-						AgeEnJours = Mathf.Max(1, ageSauvegarde),
-						ResistanceActuelle = 50f * Mathf.Max(1, ageSauvegarde),
+						AgeEnJours = ageCharge,
+						ResistanceActuelle = ArbreVivant.ResistanceMaxPourAge(ageCharge),
 						Seed = seedArbre
 					};
 					_parentPourArbres.AddChild(arbre);

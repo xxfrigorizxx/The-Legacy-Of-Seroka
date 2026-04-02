@@ -2,6 +2,96 @@ using Godot;
 
 public partial class BlocChutant : RigidBody3D
 {
+	private static float VolumeDepuisShape(Shape3D s)
+	{
+		switch (s)
+		{
+			case BoxShape3D b:
+				return Mathf.Abs(b.Size.X * b.Size.Y * b.Size.Z);
+			case SphereShape3D sp:
+				return 4f / 3f * Mathf.Pi * sp.Radius * sp.Radius * sp.Radius;
+			case CylinderShape3D cy:
+				return Mathf.Pi * cy.Radius * cy.Radius * cy.Height;
+			case CapsuleShape3D ca:
+			{
+				float h = Mathf.Max(0f, ca.Height - 2f * ca.Radius);
+				return Mathf.Pi * ca.Radius * ca.Radius * h + 4f / 3f * Mathf.Pi * ca.Radius * ca.Radius * ca.Radius;
+			}
+			default:
+				return 0.125f;
+		}
+	}
+
+	private float EstimerVolumeCollisionTotale()
+	{
+		float v = 0f;
+		foreach (Node c in GetChildren())
+		{
+			if (c is CollisionShape3D cs && cs.Shape != null)
+				v += VolumeDepuisShape(cs.Shape);
+		}
+		return Mathf.Max(1e-6f, v);
+	}
+
+	public override void _Ready()
+	{
+		CollisionLayer = 1;
+		CollisionMask = 1;
+		ContinuousCd = true;
+		LinearDampMode = RigidBody3D.DampMode.Replace;
+		AngularDampMode = RigidBody3D.DampMode.Replace;
+
+		int mid = 0;
+		if (HasMeta("ID_Matiere"))
+			mid = GetMeta("ID_Matiere").AsInt32();
+
+		float vol = EstimerVolumeCollisionTotale();
+		float densiteKgM3 = 1600f;
+		var pm = new PhysicsMaterial { Friction = 0.72f, Bounce = 0.08f };
+		float linD = 0.12f;
+		float angD = 0.55f;
+
+		switch ((byte)mid)
+		{
+			case ID_BOIS:
+				densiteKgM3 = 520f;
+				pm = new PhysicsMaterial { Friction = 0.78f, Bounce = 0.16f };
+				linD = 0.07f;
+				angD = 0.42f;
+				break;
+			case ID_BRANCHE:
+				densiteKgM3 = 480f;
+				pm = new PhysicsMaterial { Friction = 0.76f, Bounce = 0.14f };
+				linD = 0.08f;
+				angD = 0.38f;
+				break;
+			case ID_FIBRE_HERBE:
+				densiteKgM3 = 120f;
+				pm = new PhysicsMaterial { Friction = 0.88f, Bounce = 0.2f };
+				linD = 0.45f;
+				angD = 1.05f;
+				break;
+			case ID_BUISSON_PLEIN:
+			case ID_BUISSON_VIDE:
+				densiteKgM3 = 200f;
+				pm = new PhysicsMaterial { Friction = 0.82f, Bounce = 0.1f };
+				linD = 0.35f;
+				angD = 0.85f;
+				break;
+			case ID_FEUILLE_ARRACHEE:
+				densiteKgM3 = 90f;
+				pm = new PhysicsMaterial { Friction = 0.92f, Bounce = 0.06f };
+				linD = 0.55f;
+				angD = 1.15f;
+				break;
+		}
+
+		Mass = Mathf.Clamp(vol * densiteKgM3, 0.02f, 500f);
+		PhysicsMaterialOverride = pm;
+		LinearDamp = linD;
+		AngularDamp = angD;
+	}
+
 	private const byte ID_BUISSON_PLEIN = 10;
 	private const byte ID_BUISSON_VIDE = 11;
 	private const byte ID_FIBRE_HERBE = 15;

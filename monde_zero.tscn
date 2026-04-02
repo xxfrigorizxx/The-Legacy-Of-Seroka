@@ -49,11 +49,11 @@ fog_sun_scatter = 0.09
 fog_density = 0.2702
 fog_sky_affect = 0.116
 volumetric_fog_enabled = true
-volumetric_fog_density = 0.052
-volumetric_fog_albedo = Color(0.27439457, 0.27439454, 0.27439454, 1)
+volumetric_fog_density = 0.0349
+volumetric_fog_albedo = Color(0.27299985, 0.2765208, 0.26430112, 1)
 volumetric_fog_length = 42.12
-volumetric_fog_detail_spread = 1.3518761
-volumetric_fog_sky_affect = 0.189
+volumetric_fog_detail_spread = 1.8467174
+volumetric_fog_sky_affect = 0.116
 volumetric_fog_temporal_reprojection_enabled = false
 adjustment_contrast = 1.25
 
@@ -62,7 +62,6 @@ adjustment_contrast = 1.25
 [node name="Gestionnaire_Monde" type="Node3D" parent="." unique_id=2015054098]
 script = ExtResource("3_monde")
 RenderDistance = 10
-FuseauHoraireHeures = -11.0
 RayonPreGeneration = 1
 MaterielTerrain = ExtResource("14_manteau")
 
@@ -122,6 +121,7 @@ transform = Transform3D(0.7959773, 0.5956492, -0.10780654, 0.029654216, 0.139512
 light_color = Color(0.99999887, 0.99166626, 0.6266634, 1)
 light_energy = 2.355
 light_angular_distance = 2.54
+light_specular = 1.194
 
 [node name="Lune" type="DirectionalLight3D" parent="." unique_id=545490241]
 transform = Transform3D(0.79597723, -0.5956493, -0.10780642, 0.02965417, -0.13951197, 0.98977625, -0.6045998, -0.7910363, -0.09338486, 0, 13.034426, 0)

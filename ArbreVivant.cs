@@ -16,7 +16,14 @@ public partial class ArbreVivant : StaticBody3D
 	}
 
 	public int AgeEnJours = 1;
-	public float ResistanceActuelle = 50f;
+	public float ResistanceActuelle = 53.5f;
+
+	/// <summary>PV max du fût vivant : croît linéairement + quadratiquement avec l’âge (grands arbres beaucoup plus tenaces).</summary>
+	public static float ResistanceMaxPourAge(int ageEnJours)
+	{
+		ageEnJours = Mathf.Max(1, ageEnJours);
+		return 50f * ageEnJours + 3.5f * ageEnJours * ageEnJours;
+	}
 	/// <summary>Graine pour variabilité des angles/longueurs (évite arbres identiques).</summary>
 	public uint Seed = 12345;
 	private const float CHANCE_CROISSANCE = 0.05f; // 1 chance sur 20 de grandir chaque nuit
@@ -33,6 +40,7 @@ public partial class ArbreVivant : StaticBody3D
 	private CollisionShape3D _hitbox;
 
 	private static StandardMaterial3D _cacheMatBois;
+	private static StandardMaterial3D _cacheMatBoisTriplanar;
 	private static StandardMaterial3D _cacheMatFeuilles;
 
 	public static Material ObtenirMaterielBois()
@@ -51,6 +59,21 @@ public partial class ArbreVivant : StaticBody3D
 			Metallic = 0.02f
 		};
 		return _cacheMatBois;
+	}
+
+	/// <summary>Même texture que le tronc, triplanar monde (ignore les UV locaux dégénérés) + teinte aubier.</summary>
+	public static Material ObtenirMaterielBoisTriplanar()
+	{
+		if (_cacheMatBoisTriplanar != null) return _cacheMatBoisTriplanar;
+		ObtenirMaterielBois();
+		_cacheMatBoisTriplanar = (StandardMaterial3D)_cacheMatBois.Duplicate();
+		_cacheMatBoisTriplanar.Uv1Triplanar = true;
+		_cacheMatBoisTriplanar.Uv1WorldTriplanar = true;
+		_cacheMatBoisTriplanar.Uv1TriplanarSharpness = 2f;
+		_cacheMatBoisTriplanar.AlbedoColor = new Color(0.65f, 0.45f, 0.25f);
+		// Désactive le backface culling (éclats / faces de coupe visibles même si winding imparfait).
+		_cacheMatBoisTriplanar.CullMode = BaseMaterial3D.CullModeEnum.Disabled;
+		return _cacheMatBoisTriplanar;
 	}
 
 	private static Material ObtenirMaterielFeuilles()
@@ -86,7 +109,7 @@ public partial class ArbreVivant : StaticBody3D
 		if (GD.Randf() <= CHANCE_CROISSANCE)
 		{
 			AgeEnJours++;
-			ResistanceActuelle = 50f * AgeEnJours;
+			ResistanceActuelle = ResistanceMaxPourAge(AgeEnJours);
 			GenererMaillageArbre();
 		}
 	}
@@ -109,7 +132,7 @@ public partial class ArbreVivant : StaticBody3D
 		if (succesCroissance > 0)
 		{
 			AgeEnJours += succesCroissance;
-			ResistanceActuelle = 50f * AgeEnJours;
+			ResistanceActuelle = ResistanceMaxPourAge(AgeEnJours);
 			GenererMaillageArbre();
 		}
 	}
@@ -119,13 +142,16 @@ public partial class ArbreVivant : StaticBody3D
 	/// <param name="directionFrappe">Direction de la frappe (pour faire basculer l'arbre ou la branche).</param>
 	/// <param name="forceImpact">Force d'impact cinétique (masse × vitesse × tranchant).</param>
 	/// <param name="epaisseurLame">Épaisseur de la lame (détermine si on peut entamer le tronc).</param>
+	/// <param name="hachettePrimitive106">Hachette assemblée : contourne la limite « lame fine seulement » sur tronc mature et mord mieux sur gros fût.</param>
 	/// <returns>0 = Rebond, 1 = Touché (tronc), 2 = Arbre abattu, 3 = Branche amputée.</returns>
-	public int SubirDegats(Vector3 pointImpactMonde, Vector3 directionFrappe, float forceImpact, float epaisseurLame)
+	public int SubirDegats(Vector3 pointImpactMonde, Vector3 directionFrappe, float forceImpact, float epaisseurLame, bool hachettePrimitive106 = false)
 	{
-		// Jeunes arbres (tier 1–2) : seuil plus bas pour outils taillés / mains nues
+		// Jeunes arbres (tier 1–2) : seuil plus bas pour outils taillés / mains nues. Vieux : un peu plus d’inertie requise.
 		float seuilRuptureBotanique = AgeEnJours <= 2
 			? (20f + AgeEnJours * 12f)
-			: (30f + AgeEnJours * 15f);
+			: (30f + AgeEnJours * 15f + 0.4f * AgeEnJours * AgeEnJours);
+		if (hachettePrimitive106)
+			seuilRuptureBotanique *= 0.82f;
 		if (forceImpact < seuilRuptureBotanique)
 			return 0;
 
@@ -141,15 +167,18 @@ public partial class ArbreVivant : StaticBody3D
 		bool estLeTronc = hitLocal.Y <= hTronc * 1.05f && distAxis < rayonAxe;
 		float epaisseurEstimee = estLeTronc ? epaisseurTronc : 0.05f;
 
-		if (AgeEnJours >= 3 && epaisseurLame > 0.05f)
+		// Roc / lame très épaisse : pas de taille fine sur tronc mature — sauf vraie hachette (tranchant + masse).
+		if (!hachettePrimitive106 && AgeEnJours >= 3 && epaisseurLame > 0.05f)
 			return 0;
 
-		if (epaisseurEstimee > epaisseurLame * 4.0f && epaisseurLame > 0.04f)
+		if (!hachettePrimitive106 && epaisseurEstimee > epaisseurLame * 4.0f && epaisseurLame > 0.04f)
 			return 0;
 
 		if (estLeTronc)
 		{
 			float multiplicateur = 0.12f / Mathf.Max(0.01f, epaisseurEstimee);
+			if (hachettePrimitive106)
+				multiplicateur *= 1.22f;
 			ResistanceActuelle -= forceImpact * Mathf.Clamp(multiplicateur, 0.1f, 5f);
 			if (ResistanceActuelle <= 0f)
 			{
@@ -173,6 +202,9 @@ public partial class ArbreVivant : StaticBody3D
 		RigidBody3D cadavre = new RigidBody3D { Name = "ArbreMort" };
 		cadavre.Mass = 50f + (AgeEnJours * 80f);
 		cadavre.ContinuousCd = true;
+		cadavre.CollisionLayer = 1;
+		cadavre.CollisionMask = 1;
+		cadavre.PhysicsMaterialOverride = new PhysicsMaterial { Friction = 0.8f, Bounce = 0.08f };
 		cadavre.SetMeta("PV", 60f * AgeEnJours);
 		cadavre.SetMeta("Age", AgeEnJours);
 		cadavre.SetMeta("HauteurTronc", _hauteurTroncTotale);
@@ -182,6 +214,10 @@ public partial class ArbreVivant : StaticBody3D
 		cadavre.SetMeta("EpaisseurBrancheMoy", _epaisseurBrancheMoyenne);
 		// Essence (pour masse / résistance des bûches — aujourd’hui chêne ; même index que LSystem).
 		cadavre.SetMeta("IndexBotanique", (int)LSystem_Botanique.IndexChene);
+		int segmentsTronc = Mathf.Max(1, Mathf.CeilToInt(_hauteurTroncTotale / 1.0f));
+		cadavre.SetMeta("SegmentsRestants", segmentsTronc);
+		cadavre.SetMeta("SegmentsInitiaux", segmentsTronc);
+		cadavre.SetMeta("BranchesRestantes", 2 + AgeEnJours);
 
 		cadavre.AngularDampMode = RigidBody3D.DampMode.Replace;
 		cadavre.AngularDamp = 4.0f;
@@ -241,11 +277,28 @@ public partial class ArbreVivant : StaticBody3D
 	private void DeclencherChuteBranche(Vector3 pointImpact, Vector3 directionFrappe)
 	{
 		RigidBody3D brancheMorte = new RigidBody3D { Name = "BrancheMorte" };
-		brancheMorte.Mass = 10f;
+		float volBr = Mathf.Pi * 0.05f * 0.05f * 0.8f;
+		brancheMorte.Mass = Mathf.Max(0.2f, volBr * 500f);
 		brancheMorte.ContinuousCd = true;
+		brancheMorte.CollisionLayer = 1;
+		brancheMorte.CollisionMask = 1;
+		brancheMorte.PhysicsMaterialOverride = new PhysicsMaterial { Friction = 0.78f, Bounce = 0.14f };
+		brancheMorte.LinearDampMode = RigidBody3D.DampMode.Replace;
+		brancheMorte.LinearDamp = 0.08f;
+		brancheMorte.AngularDampMode = RigidBody3D.DampMode.Replace;
+		brancheMorte.AngularDamp = 0.35f;
 
-		brancheMorte.AddChild(new MeshInstance3D { Mesh = new CapsuleMesh { Radius = 0.05f, Height = 0.8f }, MaterialOverride = _visuelBois.MaterialOverride, Rotation = new Vector3(Mathf.Pi * 0.5f, 0, 0) });
-		brancheMorte.AddChild(new CollisionShape3D { Shape = new CapsuleShape3D { Radius = 0.05f, Height = 0.8f }, Rotation = new Vector3(Mathf.Pi * 0.5f, 0, 0) });
+		brancheMorte.AddChild(new MeshInstance3D
+		{
+			Mesh = new CylinderMesh { TopRadius = 0.04f, BottomRadius = 0.05f, Height = 0.8f },
+			MaterialOverride = _visuelBois.MaterialOverride,
+			Rotation = new Vector3(Mathf.Pi * 0.5f, 0, 0)
+		});
+		brancheMorte.AddChild(new CollisionShape3D
+		{
+			Shape = new CylinderShape3D { Radius = 0.05f, Height = 0.8f },
+			Rotation = new Vector3(Mathf.Pi * 0.5f, 0, 0)
+		});
 
 		GetParent().AddChild(brancheMorte);
 		brancheMorte.GlobalPosition = pointImpact;
