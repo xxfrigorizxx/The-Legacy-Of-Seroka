@@ -210,6 +210,18 @@ public partial class ItemPhysique : RigidBody3D
 		return _gestionnaireMondeCache;
 	}
 
+	private static MeshInstance3D TrouverPremierMeshInstanceAvecMesh(Node n)
+	{
+		if (n is MeshInstance3D mi && mi.Mesh != null)
+			return mi;
+		foreach (Node c in n.GetChildren())
+		{
+			MeshInstance3D r = TrouverPremierMeshInstanceAvecMesh(c);
+			if (r != null) return r;
+		}
+		return null;
+	}
+
 	public override void _Ready()
 	{
 		// CORRECTION CRITIQUE : Chercher dans THIS, pas dans GetParent()
@@ -220,6 +232,21 @@ public partial class ItemPhysique : RigidBody3D
 			if (child is MeshInstance3D mi) visuel = mi;
 			else if (child is CollisionShape3D cs) hitbox = cs;
 		}
+
+		if ((ID_Objet == 20 || ID_Objet == 21) && visuel == null)
+			visuel = TrouverPremierMeshInstanceAvecMesh(this);
+
+		if (ID_Objet == 200)
+		{
+			Mass = 2800f;
+			GravityScale = 0f;
+			ResistanceActuelle = 80f;
+			Scale = Vector3.One;
+			Freeze = true;
+			FreezeMode = FreezeModeEnum.Static;
+			return;
+		}
+
 		if (visuel == null || hitbox == null) return;
 
 		if (EstIdRocheMatiere(ID_Objet))
@@ -247,10 +274,10 @@ public partial class ItemPhysique : RigidBody3D
 			return;
 		}
 
-		// Fibre (15) et Tressage (20) : mesh et matériau déjà assignés par Joueur.CreerBlocPose / BlocChutant. Ne pas écraser par le cache roche.
-		if (ID_Objet == 15 || ID_Objet == 20)
+		// Fibre (15), corde (20), tissu (21) : mesh et matériau déjà assignés par Joueur.CreerBlocPose / BlocChutant.
+		if (ID_Objet == 15 || ID_Objet == 20 || ID_Objet == 21)
 		{
-			Mass = 0.08f;
+			Mass = ID_Objet == 21 ? 0.1f : 0.08f;
 			ResistanceActuelle = 1f;
 			return;
 		}

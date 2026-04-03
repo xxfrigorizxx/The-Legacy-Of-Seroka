@@ -657,7 +657,7 @@ theme_override_constants/separation = 12
 alignment = 0
 
 [node name="CadreCraft" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/LigneCraft"]
-custom_minimum_size = Vector2(168, 168)
+custom_minimum_size = Vector2(240, 240)
 layout_mode = 2
 size_flags_horizontal = 0
 theme_override_styles/panel = SubResource("StyleCadreCraft")
@@ -675,7 +675,7 @@ grow_horizontal = 2
 grow_vertical = 2
 theme_override_constants/h_separation = 4
 theme_override_constants/v_separation = 4
-columns = 2
+columns = 3
 
 [node name="AssemblageCell0" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/LigneCraft/CadreCraft/GrilleAssemblage"]
 custom_minimum_size = Vector2(72, 72)
@@ -699,6 +699,41 @@ size_flags_vertical = 3
 theme_override_styles/panel = SubResource("StyleCellCraft")
 
 [node name="AssemblageCell3" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/LigneCraft/CadreCraft/GrilleAssemblage"]
+custom_minimum_size = Vector2(72, 72)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_styles/panel = SubResource("StyleCellCraft")
+
+[node name="AssemblageCell4" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/LigneCraft/CadreCraft/GrilleAssemblage"]
+custom_minimum_size = Vector2(72, 72)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_styles/panel = SubResource("StyleCellCraft")
+
+[node name="AssemblageCell5" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/LigneCraft/CadreCraft/GrilleAssemblage"]
+custom_minimum_size = Vector2(72, 72)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_styles/panel = SubResource("StyleCellCraft")
+
+[node name="AssemblageCell6" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/LigneCraft/CadreCraft/GrilleAssemblage"]
+custom_minimum_size = Vector2(72, 72)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_styles/panel = SubResource("StyleCellCraft")
+
+[node name="AssemblageCell7" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/LigneCraft/CadreCraft/GrilleAssemblage"]
+custom_minimum_size = Vector2(72, 72)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_styles/panel = SubResource("StyleCellCraft")
+
+[node name="AssemblageCell8" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/LigneCraft/CadreCraft/GrilleAssemblage"]
 custom_minimum_size = Vector2(72, 72)
 layout_mode = 2
 size_flags_horizontal = 3

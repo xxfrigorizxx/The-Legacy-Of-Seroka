@@ -189,7 +189,7 @@ public partial class MenuAnatomie : Control
 		{
 			_clicsCraftConnectes = true;
 			GrilleAssemblage.MouseFilter = Control.MouseFilterEnum.Ignore;
-			int n = Mathf.Min(GrilleAssemblage.GetChildCount(), 4);
+			int n = GrilleAssemblage.GetChildCount();
 			for (int i = 0; i < n; i++)
 			{
 				int idx = i;
@@ -214,9 +214,11 @@ public partial class MenuAnatomie : Control
 			EchangerCurseurAvec(ref _joueurRef.MainGauche);
 		else if (mode == 1)
 			EchangerCurseurAvec(ref _joueurRef.MainDroite);
-		else if (mode == 2 && craftIdx >= 0 && craftIdx < 4 && _joueurRef.GrilleCraft2x2 != null)
+		else if (mode == 2 && craftIdx >= 0 && _joueurRef.GrilleCraft3x3 != null && craftIdx < _joueurRef.GrilleCraft3x3.Length)
 		{
-			EchangerCurseurAvec(ref _joueurRef.GrilleCraft2x2[craftIdx]);
+			if (!_joueurRef.CraftGrille3x3AuTable && craftIdx >= 4)
+				return;
+			EchangerCurseurAvec(ref _joueurRef.GrilleCraft3x3[craftIdx]);
 			_joueurRef.VerifierRecettes();
 		}
 		else if (mode == 3)
@@ -257,13 +259,14 @@ public partial class MenuAnatomie : Control
 			_joueurRef.MainDroite = _curseurMenu;
 			_curseurMenu = new SlotInventaire();
 		}
-		else if (_joueurRef.GrilleCraft2x2 != null)
+		else if (_joueurRef.GrilleCraft3x3 != null)
 		{
 			bool place = false;
-			for (int i = 0; i < 4 && i < _joueurRef.GrilleCraft2x2.Length; i++)
+			int maxI = _joueurRef.CraftGrille3x3AuTable ? _joueurRef.GrilleCraft3x3.Length : 4;
+			for (int i = 0; i < maxI; i++)
 			{
-				if (!_joueurRef.GrilleCraft2x2[i].EstVide) continue;
-				_joueurRef.GrilleCraft2x2[i] = _curseurMenu;
+				if (!_joueurRef.GrilleCraft3x3[i].EstVide) continue;
+				_joueurRef.GrilleCraft3x3[i] = _curseurMenu;
 				place = true;
 				break;
 			}
@@ -293,12 +296,21 @@ public partial class MenuAnatomie : Control
 		if (Engine.IsEditorHint()) return;
 		ResoudreGrilleAssemblage();
 		if (GrilleAssemblage == null) return;
-		if (_vpCraft != null && _vpCraft.Length == 4 && _vpCraft[0] != null && GodotObject.IsInstanceValid(_vpCraft[0]))
+		int nChild = GrilleAssemblage.GetChildCount();
+		if (_vpCraft != null && _vpCraft.Length != nChild)
+		{
+			_vpCraft = null;
+			_meshPreviewCraft = null;
+			_lblCraft = null;
+			_clicsCraftConnectes = false;
+			CallDeferred(nameof(ConnecterClicsInventaire));
+		}
+		if (_vpCraft != null && nChild > 0 && _vpCraft[0] != null && GodotObject.IsInstanceValid(_vpCraft[0]))
 			return;
-		_meshPreviewCraft = new MeshInstance3D[4];
-		_vpCraft = new SubViewportContainer[4];
-		_lblCraft = new Label[4];
-		for (int i = 0; i < 4 && i < GrilleAssemblage.GetChildCount(); i++)
+		_meshPreviewCraft = new MeshInstance3D[nChild];
+		_vpCraft = new SubViewportContainer[nChild];
+		_lblCraft = new Label[nChild];
+		for (int i = 0; i < nChild; i++)
 		{
 			if (GrilleAssemblage.GetChild(i) is not Panel p) continue;
 			_meshPreviewCraft[i] = CreerViewportPreviewDansSlot(p, $"VpCraft{i}", out _vpCraft[i]);
@@ -376,7 +388,7 @@ public partial class MenuAnatomie : Control
 		}
 		if (_lblCurseurSouris != null)
 		{
-			string nom = Joueur.ObtenirNomObjet(_curseurMenu);
+			string nom = Atlas_Matiere.ObtenirNomObjet(_curseurMenu);
 			_lblCurseurSouris.Text = string.IsNullOrEmpty(nom) ? " " : nom;
 			_lblCurseurSouris.Visible = !vis || !vpOk;
 		}
@@ -458,9 +470,11 @@ public partial class MenuAnatomie : Control
 				if (cur.GetParent() == GrilleAssemblage && cur is Panel)
 				{
 					int idx = cur.GetIndex();
-					if (_joueurRef.GrilleCraft2x2 != null && idx >= 0 && idx < _joueurRef.GrilleCraft2x2.Length)
+					if (!_joueurRef.CraftGrille3x3AuTable && idx >= 4)
+						break;
+					if (_joueurRef.GrilleCraft3x3 != null && idx >= 0 && idx < _joueurRef.GrilleCraft3x3.Length)
 					{
-						slot = _joueurRef.GrilleCraft2x2[idx];
+						slot = _joueurRef.GrilleCraft3x3[idx];
 						return true;
 					}
 					break;
@@ -483,7 +497,7 @@ public partial class MenuAnatomie : Control
 				_panneauInfobulleSlot.Visible = false;
 			return;
 		}
-		string nom = Joueur.ObtenirNomObjet(sl);
+		string nom = Atlas_Matiere.ObtenirNomObjet(sl);
 		if (string.IsNullOrEmpty(nom))
 		{
 			_panneauInfobulleSlot.Visible = false;
@@ -509,12 +523,12 @@ public partial class MenuAnatomie : Control
 
 	private void RafraichirCellulesCraft()
 	{
-		if (_joueurRef == null || GrilleAssemblage == null) return;
+		if (_joueurRef == null || GrilleAssemblage == null || _joueurRef.GrilleCraft3x3 == null) return;
 		AssurerPreviewsCraft();
 		_joueurRef.VerifierRecettes();
-		for (int i = 0; i < 4 && _joueurRef.GrilleCraft2x2 != null && i < _joueurRef.GrilleCraft2x2.Length; i++)
+		for (int i = 0; i < _joueurRef.GrilleCraft3x3.Length; i++)
 		{
-			var s = _joueurRef.GrilleCraft2x2[i];
+			var s = _joueurRef.GrilleCraft3x3[i];
 			bool vis = _joueurRef.InventaireSlotAunVisuel3D(s);
 			bool vpOk = _vpCraft != null && i < _vpCraft.Length && _vpCraft[i] != null && GodotObject.IsInstanceValid(_vpCraft[i]);
 			if (vpOk)
@@ -533,7 +547,7 @@ public partial class MenuAnatomie : Control
 			}
 			if (_lblCraft != null && i < _lblCraft.Length && _lblCraft[i] != null)
 			{
-				string nom = Joueur.ObtenirNomObjet(s);
+				string nom = Atlas_Matiere.ObtenirNomObjet(s);
 				_lblCraft[i].Text = string.IsNullOrEmpty(nom) ? " " : nom;
 				_lblCraft[i].Visible = !vis || !vpOk;
 			}
@@ -565,7 +579,7 @@ public partial class MenuAnatomie : Control
 			}
 			if (_lblResultatCraft != null)
 			{
-				string nomRes = Joueur.ObtenirNomObjet(sRes);
+				string nomRes = Atlas_Matiere.ObtenirNomObjet(sRes);
 				_lblResultatCraft.Text = string.IsNullOrEmpty(nomRes) ? " " : nomRes;
 				_lblResultatCraft.Visible = !visRes || !vpResOk;
 			}
@@ -777,7 +791,7 @@ public partial class MenuAnatomie : Control
 		// Tailles : celles de MenuAnatomie.tscn (éviter d’écraser → décalage / bande mince).
 
 		if (GrilleAssemblage != null)
-			GrilleAssemblage.Columns = 2;
+			GrilleAssemblage.Columns = 3;
 
 		// 3. SÉCURISATION DES AUTRES SLOTS (nom dans la scène + Export)
 		if (FindChild("InterfaceFutureSlot", true, false) is Control f1) f1.CustomMinimumSize = new Vector2(96, 96);
@@ -925,7 +939,11 @@ public partial class MenuAnatomie : Control
 		Visible = EstOuvert;
 
 		if (!EstOuvert)
+		{
 			ResoudreCurseurAvantFermeture();
+			if (_joueurRef != null)
+				_joueurRef.CraftGrille3x3AuTable = false;
+		}
 
 		if (!EstOuvert && _panneauInfobulleSlot != null)
 			_panneauInfobulleSlot.Visible = false;
@@ -970,7 +988,7 @@ public partial class MenuAnatomie : Control
 		{
 			bool montrerTexteG = !visG || !previewGOk;
 			_lblMainGauche.Visible = montrerTexteG;
-			string nomG = Joueur.ObtenirNomObjet(_joueurRef.MainGauche);
+			string nomG = Atlas_Matiere.ObtenirNomObjet(_joueurRef.MainGauche);
 			_lblMainGauche.Text = string.IsNullOrEmpty(nomG) ? "Main G\n[Vide]" : $"Main G\n[{nomG}]";
 		}
 		AppliquerBordureActive(MainGaucheSlot, _joueurRef.MainGaucheEstActive);
@@ -985,10 +1003,12 @@ public partial class MenuAnatomie : Control
 		{
 			bool montrerTexteD = !visD || !previewDOk;
 			_lblMainDroite.Visible = montrerTexteD;
-			string nomD = Joueur.ObtenirNomObjet(_joueurRef.MainDroite);
+			string nomD = Atlas_Matiere.ObtenirNomObjet(_joueurRef.MainDroite);
 			_lblMainDroite.Text = string.IsNullOrEmpty(nomD) ? "Main D\n[Vide]" : $"Main D\n[{nomD}]";
 		}
 		AppliquerBordureActive(MainDroiteSlot, !_joueurRef.MainGaucheEstActive);
+
+		AppliquerDispositionGrilleCraft();
 
 		if (ObtenirGrilleSac() is GridContainer grilleSac)
 		{
@@ -1004,6 +1024,22 @@ public partial class MenuAnatomie : Control
 
 		RafraichirCellulesCraft();
 		RafraichirAffichageCurseurSouris();
+	}
+
+	/// <summary>Inventaire (Q) : 2×2 visible. Établi (E sur table) : 3×3.</summary>
+	private void AppliquerDispositionGrilleCraft()
+	{
+		ResoudreGrilleAssemblage();
+		if (GrilleAssemblage == null || _joueurRef == null) return;
+		bool etabli = _joueurRef.CraftGrille3x3AuTable;
+		GrilleAssemblage.Columns = etabli ? 3 : 2;
+		for (int i = 0; i < GrilleAssemblage.GetChildCount(); i++)
+		{
+			if (GrilleAssemblage.GetChild(i) is Control c)
+				c.Visible = etabli || i < 4;
+		}
+		if (GrilleAssemblage.GetParent() is Panel cadre)
+			cadre.CustomMinimumSize = etabli ? new Vector2(240, 240) : new Vector2(168, 168);
 	}
 
 	private void AppliquerBordureActive(Panel slot, bool estActif)
