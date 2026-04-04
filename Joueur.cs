@@ -2,12 +2,13 @@ using Godot;
 using System;
 using System.Collections.Generic;
 
-/// <summary>Slot d'inventaire avec ADN morphologique (forme) et chimique (composition).</summary>
-public struct SlotInventaire
-{
-    public int ID;
-    public int IndexMorphologique;
-    public int IndexChimique;
+    /// <summary>Slot d'inventaire avec ADN morphologique (forme) et chimique (composition).</summary>
+    public struct SlotInventaire
+    {
+        public int ID;
+        public int IndexMorphologique;
+        /// <summary>Roche : indice minéral. Bâton (32) : 0 = branche brute, 1 = bâton de chêne façonné (craft, teinte plus pâle).</summary>
+        public int IndexChimique;
     /// <summary>Grosseur roche matière (40–49) : 0=Mini, 1=Petite, 2=Moyenne, 3=Grosse, 4=Énorme.</summary>
     public int IndexTaille;
     /// <summary>True si le slot contient un éclat de fracture (mesh dynamique, pas dans le cache).</summary>
@@ -26,7 +27,7 @@ public struct SlotInventaire
     public float DurabiliteOutilMax;
     /// <summary>Dague primitive : points restants. À 0 l’arme est cassée.</summary>
     public float DurabiliteOutilActuelle;
-    /// <summary>Dague 105 : taille de la roche plate (0–4) utilisée au craft — échelle visuelle de la lame. Défaut 2 si absent.</summary>
+    /// <summary>Dague 105 : taille de la roche en pointe (0–4) utilisée au craft — échelle visuelle de la lame. Défaut 2 si absent.</summary>
     public int IndexTailleLameRoche;
 
     public SlotInventaire()
@@ -128,11 +129,29 @@ public partial class Joueur : CharacterBody3D
     /// <summary>Ceinture à poches équipée.</summary>
     public SlotInventaire EquipementCeinture = new SlotInventaire();
 
-    /// <summary>Stockage craft (9 cases) ; en inventaire (Q) seules 0–3 sont visibles / actives (2×2). Cases 4–8 réservées à l’établi (E sur table ID 200).</summary>
-    public SlotInventaire[] GrilleCraft3x3 = new SlotInventaire[9];
+    /// <summary>Craft 2×2 dans le menu inventaire (Q) — jamais mélangé avec la grille de l’établi posé.</summary>
+    public SlotInventaire[] GrilleCraftPoche = new SlotInventaire[4];
+
+    /// <summary>Atelier (ItemPhysique 200) dont le plan 3×3 est affiché ; null en mode poche.</summary>
+    public ItemPhysique AtelierPlanTravailOuvert;
 
     /// <summary>True si le menu a été ouvert depuis l’atelier posé : recettes et UI en 3×3. False après Q ou fermeture du menu.</summary>
     public bool CraftGrille3x3AuTable { get; set; }
+
+    /// <summary>Grille affichée et utilisée pour les clics craft : plan de l’atelier (9) ou poche (4).</summary>
+    public SlotInventaire[] ObtenirGrilleCraftAffichee()
+    {
+        if (CraftGrille3x3AuTable && AtelierPlanTravailOuvert != null && GodotObject.IsInstanceValid(AtelierPlanTravailOuvert))
+            return AtelierPlanTravailOuvert.GrillePlanTravailAtelier;
+        return GrilleCraftPoche;
+    }
+
+    public ref SlotInventaire RefSlotCraft(int idx)
+    {
+        if (CraftGrille3x3AuTable && AtelierPlanTravailOuvert != null && GodotObject.IsInstanceValid(AtelierPlanTravailOuvert))
+            return ref AtelierPlanTravailOuvert.GrillePlanTravailAtelier[idx];
+        return ref GrilleCraftPoche[idx];
+    }
 
     /// <summary>Slot contenant le résultat d'une recette valide.</summary>
     public SlotInventaire SlotResultatCraft = new SlotInventaire();
@@ -140,18 +159,21 @@ public partial class Joueur : CharacterBody3D
     /// <summary>Analyse la grille craft ; le détail des recettes est dans <see cref="Atlas_Matiere.EvaluerRecette"/>.</summary>
     public void VerifierRecettes()
     {
-        SlotResultatCraft = Atlas_Matiere.EvaluerRecette(GrilleCraft3x3, CraftGrille3x3AuTable);
+        SlotInventaire[] g = ObtenirGrilleCraftAffichee();
+        if (g == null) return;
+        SlotResultatCraft = Atlas_Matiere.EvaluerRecette(g, CraftGrille3x3AuTable);
     }
 
-    /// <summary>Vide la zone craft utilisée (4 cases en poche, 9 à l’établi) après prise du résultat.</summary>
+    /// <summary>Vide la zone craft utilisée (4 cases en poche, 9 sur l’atelier) après prise du résultat.</summary>
     public void ConsommerIngredientsCraft()
     {
-        if (GrilleCraft3x3 == null) return;
-        int n = CraftGrille3x3AuTable ? GrilleCraft3x3.Length : 4;
-        for (int i = 0; i < n && i < GrilleCraft3x3.Length; i++)
+        SlotInventaire[] g = ObtenirGrilleCraftAffichee();
+        if (g == null) return;
+        int n = CraftGrille3x3AuTable ? 9 : 4;
+        for (int i = 0; i < n && i < g.Length; i++)
         {
-            if (!GrilleCraft3x3[i].EstVide)
-                GrilleCraft3x3[i] = new SlotInventaire();
+            if (!g[i].EstVide)
+                g[i] = new SlotInventaire();
         }
     }
 
@@ -448,7 +470,10 @@ public partial class Joueur : CharacterBody3D
         if (_menuAnatomie != null && @event.IsActionPressed("inventaire"))
         {
             if (!_menuAnatomie.EstOuvert)
+            {
                 CraftGrille3x3AuTable = false;
+                AtelierPlanTravailOuvert = null;
+            }
             _menuAnatomie.BasculerVisibilite();
             RafraichirHUD();
             GetViewport().SetInputAsHandled();
@@ -1272,7 +1297,7 @@ public partial class Joueur : CharacterBody3D
         return HashCode.Combine(s.IndexChimique, s.IndexMorphologique, s.NiveauFracture);
     }
 
-    /// <summary>Échelle du GLB dague : référence = roche moyenne (index 2) ; plus grosse roche plate → lame un peu plus massive.</summary>
+    /// <summary>Échelle de la lame dague : référence = roche moyenne (index 2) ; plus grosse roche en pointe → lame un peu plus massive.</summary>
     private static float ObtenirFacteurEchelleLameDague(SlotInventaire slot)
     {
         if (slot.ID != 105) return 1f;
@@ -1861,7 +1886,9 @@ public partial class Joueur : CharacterBody3D
         if (idObjet == 20 || idObjet == 21) { visuel.MaterialOverride = Atlas_Matiere.ObtenirMaterielCorde(indexChimique, indexMorphologique, niveauTressage); return; }
         if (idObjet == 30 || idObjet == 32)
         {
-            visuel.MaterialOverride = ArbreVivant.ObtenirMaterielBoisTriplanar();
+            visuel.MaterialOverride = idObjet == 32 && indexChimique == 1
+                ? ArbreVivant.ObtenirMaterielBoisTriplanarBatonChenEPale()
+                : ArbreVivant.ObtenirMaterielBoisTriplanar();
             return;
         }
         if (idObjet == 34) { visuel.MaterialOverride = new StandardMaterial3D { AlbedoColor = new Color(0.2f, 0.55f, 0.15f), Roughness = 0.95f, Metallic = 0f }; return; }
@@ -2061,19 +2088,20 @@ public partial class Joueur : CharacterBody3D
                 ?? (objetTouche as Node)?.GetParent() as ItemPhysique
                 ?? (objetTouche as Node)?.GetNodeOrNull<ItemPhysique>("ItemPhysique");
 
-            if (itemTouche != null && itemTouche.ID_Objet == 200)
-            {
-                if (Input.IsKeyPressed(Key.Shift))
+                if (itemTouche != null && itemTouche.ID_Objet == 200)
                 {
-                    ExecuterRamassageObjet();
-                    return;
-                }
+                    if (Input.IsKeyPressed(Key.Shift))
+                    {
+                        ExecuterRamassageObjet();
+                        return;
+                    }
 
                 // E (seul) = Ouvrir le plan de travail (Grille 3x3)
                 else
                 {
                     if (_menuAnatomie != null)
                     {
+                        AtelierPlanTravailOuvert = itemTouche;
                         CraftGrille3x3AuTable = true;
                         if (!_menuAnatomie.EstOuvert)
                             _menuAnatomie.BasculerVisibilite();
@@ -2415,9 +2443,9 @@ public partial class Joueur : CharacterBody3D
         if (mainActive.EstVide || !PeutUtiliserFrappe(mainActive))
             return false;
 
-        // Roche plate (morph 1) ou dague — pas la hachette pour le gazon.
+        // Roche plate (1), pointe (3) ou dague — pas la hachette pour le gazon.
         bool estOutilFaucheur = mainActive.ID == 105
-            || (ItemPhysique.EstIdRocheMatiere(mainActive.ID) && mainActive.IndexMorphologique == 1);
+            || (ItemPhysique.EstIdRocheMatiere(mainActive.ID) && (mainActive.IndexMorphologique == 1 || mainActive.IndexMorphologique == 3));
         if (!estOutilFaucheur)
             return false;
 
@@ -2705,9 +2733,9 @@ public partial class Joueur : CharacterBody3D
 
         if (efficacitePelle < 0.6f)
         {
-            // Fauchage : dague (105), roche plate (morpho 1), ou éclat — pas la hachette (106), inadaptée au gazon fin.
+            // Fauchage : dague (105), roche plate (1) ou en pointe (3), ou éclat — pas la hachette (106), inadaptée au gazon fin.
             bool estOutilFaucheur = mainActive.ID == 105
-                || (ItemPhysique.EstIdRocheMatiere(mainActive.ID) && mainActive.IndexMorphologique == 1)
+                || (ItemPhysique.EstIdRocheMatiere(mainActive.ID) && (mainActive.IndexMorphologique == 1 || mainActive.IndexMorphologique == 3))
                 || mainActive.EstUnEclat;
 
             if (estOutilFaucheur)
@@ -2776,7 +2804,7 @@ public partial class Joueur : CharacterBody3D
         {
             bool outilTranchantPourArbre = mainActive.ID == 106
                 || mainActive.EstUnEclat
-                || (ItemPhysique.EstIdRocheMatiere(mainActive.ID) && mainActive.IndexMorphologique == 1); // roche plate
+                || (ItemPhysique.EstIdRocheMatiere(mainActive.ID) && (mainActive.IndexMorphologique == 1 || mainActive.IndexMorphologique == 3));
             if (!outilTranchantPourArbre) return;
 
             float forceCoupe = forceImpact;
@@ -2801,7 +2829,7 @@ public partial class Joueur : CharacterBody3D
             var main = MainGaucheEstActive ? MainGauche : MainDroite;
             bool outilTranchantPourArbre = main.ID == 106
                 || main.EstUnEclat
-                || (ItemPhysique.EstIdRocheMatiere(main.ID) && main.IndexMorphologique == 1); // roche plate
+                || (ItemPhysique.EstIdRocheMatiere(main.ID) && (main.IndexMorphologique == 1 || main.IndexMorphologique == 3));
             if (!outilTranchantPourArbre)
                 return;
 
@@ -2854,10 +2882,10 @@ public partial class Joueur : CharacterBody3D
             // ÉTAPE 3 : LIBÉRATION DU TRONC BRUT UNIQUE
             bool peutLibererTronc = main.ID == 106
                 || main.EstUnEclat
-                || (ItemPhysique.EstIdRocheMatiere(main.ID) && main.IndexMorphologique == 1);
+                || (ItemPhysique.EstIdRocheMatiere(main.ID) && (main.IndexMorphologique == 1 || main.IndexMorphologique == 3));
             if (!peutLibererTronc)
             {
-                GD.Print("ZERO-K : Il faut un tranchant : roche plate, éclat ou hachette.");
+                GD.Print("ZERO-K : Il faut un tranchant : roche plate ou en pointe, éclat ou hachette.");
                 return;
             }
 
@@ -2889,7 +2917,7 @@ public partial class Joueur : CharacterBody3D
             var mainB = MainGaucheEstActive ? MainGauche : MainDroite;
             bool outilTranchantPourArbre = mainB.ID == 106
                 || mainB.EstUnEclat
-                || (ItemPhysique.EstIdRocheMatiere(mainB.ID) && mainB.IndexMorphologique == 1); // roche plate
+                || (ItemPhysique.EstIdRocheMatiere(mainB.ID) && (mainB.IndexMorphologique == 1 || mainB.IndexMorphologique == 3));
             if (!outilTranchantPourArbre) return;
             rbCible.ApplyCentralImpulse(directionFrappe * (10f * force));
             JouerSonEtEffetCoupeArbre(pointImpact);
@@ -2931,14 +2959,56 @@ public partial class Joueur : CharacterBody3D
             if (alignement < 0.5f)
             {
                 // COUPE TRANSVERSALE (Sur la largeur)
+                // Bâtons / branches (32) : toujours couper la longueur en deux (demi puis quart, etc.) — pas la logique tronc 1,2 m.
+                if (item.ID_Objet == 32)
+                {
+                    int tStick = Mathf.Clamp(item.IndexTailleRoche, 0, 4);
+                    CalculerDimensionsBoisPose(32, item.IndexCacheMemoire, tStick, out _, out float baseLenStick, out _, out _);
+                    float scaleZStick = item.HasMeta("ScaleLongueurBois")
+                        ? (float)item.GetMeta("ScaleLongueurBois").AsSingle()
+                        : (item.Scale.Z > 0.1f ? item.Scale.Z : 1f);
+                    float longueurM = baseLenStick * scaleZStick;
+                    const float longueurMinPiece = 0.07f;
+                    if (longueurM * 0.5f < longueurMinPiece)
+                    {
+                        GD.Print("ZERO-K : Ce bâton est déjà trop court pour être coupé en deux à la hache.");
+                        rbCible.ApplyCentralImpulse(dirFrappeObj * impulsionFrappe * 0.5f);
+                        return;
+                    }
+                    float nouveauScaleZ = scaleZStick * 0.5f;
+                    Vector3 sep = directionFrappe.Normalized();
+                    if (sep.LengthSquared() < 1e-6f) sep = rbCible.GlobalTransform.Basis.X;
+                    var moitie = new SlotInventaire
+                    {
+                        ID = 32,
+                        IndexBotanique = item.IndexBotanique,
+                        IndexChimique = item.IndexChimique,
+                        IndexMorphologique = item.IndexCacheMemoire,
+                        IndexTaille = tStick,
+                        ScaleEclat = new Vector3(1f, 1f, nouveauScaleZ),
+                        EstUnEclat = false
+                    };
+                    Vector3 baseElevB = rbCible.GlobalPosition + Vector3.Up * 0.22f;
+                    Node3D pb1 = CreerBlocPose(baseElevB + sep * 0.14f + axeBois * 0.05f, moitie);
+                    Node3D pb2 = CreerBlocPose(baseElevB - sep * 0.14f - axeBois * 0.05f, moitie);
+                    if (pb1 != null) pb1.GlobalRotation = rbCible.GlobalRotation;
+                    if (pb2 != null) pb2.GlobalRotation = rbCible.GlobalRotation;
+                    string msg = nouveauScaleZ < 0.34f
+                        ? "ZERO-K : Vous partagez le bâton en quarts (longueur)."
+                        : "ZERO-K : Vous coupez le bâton en deux (demi-longueur).";
+                    GD.Print(msg);
+                    rbCible.QueueFree();
+                    return;
+                }
+
                 float scaleZActuel = item.HasMeta("ScaleLongueurBois")
                     ? (float)item.GetMeta("ScaleLongueurBois").AsSingle()
                     : (item.Scale.Z > 0.1f ? item.Scale.Z : 1f);
                 float vraieLongueur = (item.IndexTailleRoche == 0 ? 1.2f : 1.0f) * scaleZActuel;
                 // axeBois déjà calculé juste avant alignement.
 
-                // A) Débitage du Tronc Brut Géant (On tranche 1 mètre)
-                if (item.IndexTailleRoche == 0 && vraieLongueur > 1.4f)
+                // A) Débitage du Tronc Brut Géant (On tranche 1 mètre) — bûches (30) uniquement
+                if (item.ID_Objet == 30 && item.IndexTailleRoche == 0 && vraieLongueur > 1.4f)
                 {
                     float longueurRestante = Mathf.Max(0f, vraieLongueur - 1.0f);
                     int nbStandardsTotal = Mathf.Max(1, Mathf.FloorToInt(vraieLongueur / 1.0f));
@@ -2972,8 +3042,8 @@ public partial class Joueur : CharacterBody3D
                     if (pStandard != null) pStandard.GlobalRotation = rbCible.GlobalRotation;
                     if (pReste != null) pReste.GlobalRotation = rbCible.GlobalRotation;
                 }
-                // B) Le Tronc Brut est court (<= 1.4m), il devient Standard.
-                else if (item.IndexTailleRoche == 0)
+                // B) Le Tronc Brut est court (<= 1.4m), il devient Standard. — bûche (30) uniquement
+                else if (item.ID_Objet == 30 && item.IndexTailleRoche == 0)
                 {
                     GD.Print("ZERO-K : Le bout du tronc devient une Bûche Standard pure.");
                     var slotStandard = new SlotInventaire
@@ -2988,8 +3058,8 @@ public partial class Joueur : CharacterBody3D
                     Node3D p = CreerBlocPose(rbCible.GlobalPosition + Vector3.Up * 0.35f, slotStandard);
                     if (p != null) p.GlobalRotation = rbCible.GlobalRotation;
                 }
-                // C) Logique classique pour les Bûches (Standard -> Courte -> Rondin)
-                else
+                // C) Logique classique pour les Bûches (Standard -> Courte -> Rondin) — bûche (30) uniquement
+                else if (item.ID_Objet == 30)
                 {
                     if (item.IndexTailleRoche >= 3)
                     {
@@ -3020,11 +3090,23 @@ public partial class Joueur : CharacterBody3D
                 if (item.IndexTailleRoche == 0)
                 {
                     if (item.ID_Objet == 30)
+                    {
                         GD.Print("ZERO-K : Tronc Brut. Coupez-le sur la largeur d'abord pour le standardiser.");
-                    else
-                        GD.Print("ZERO-K : Brin brut. Coupez-le sur la largeur d'abord pour le standardiser.");
-                    rbCible.ApplyCentralImpulse(dirFrappeObj * impulsionFrappe * 0.5f);
-                    return;
+                        rbCible.ApplyCentralImpulse(dirFrappeObj * impulsionFrappe * 0.5f);
+                        return;
+                    }
+                    if (item.ID_Objet == 32)
+                    {
+                        float szLong = item.HasMeta("ScaleLongueurBois")
+                            ? (float)item.GetMeta("ScaleLongueurBois").AsSingle()
+                            : (item.Scale.Z > 0.1f ? item.Scale.Z : 1f);
+                        if (szLong >= 0.995f)
+                        {
+                            GD.Print("ZERO-K : Branche entière : coupez d’abord en travers (tranchant perpendiculaire à la longueur du bois) pour obtenir des demi-bâtons, puis recommencez pour des quarts.");
+                            rbCible.ApplyCentralImpulse(dirFrappeObj * impulsionFrappe * 0.5f);
+                            return;
+                        }
+                    }
                 }
                 int fenteActuelle = MorphologieBoisDepuisItem(item);
                 if (fenteActuelle >= 3)
@@ -3035,6 +3117,13 @@ public partial class Joueur : CharacterBody3D
                 }
                 int nouvelleFente = fenteActuelle + 1;
                 GD.Print($"ZERO-K : Coupe Longitudinale. Fente à l'étape {nouvelleFente}.");
+                float scaleLongueurFente = 1f;
+                if (item.ID_Objet == 32)
+                {
+                    scaleLongueurFente = item.HasMeta("ScaleLongueurBois")
+                        ? (float)item.GetMeta("ScaleLongueurBois").AsSingle()
+                        : (item.Scale.Z > 0.1f ? item.Scale.Z : 1f);
+                }
                 var boisFendu = new SlotInventaire
                 {
                     ID = item.ID_Objet,
@@ -3042,7 +3131,7 @@ public partial class Joueur : CharacterBody3D
                     IndexMorphologique = nouvelleFente,
                     IndexChimique = item.IndexChimique,
                     IndexTaille = item.IndexTailleRoche,
-                    ScaleEclat = Vector3.One,
+                    ScaleEclat = item.ID_Objet == 32 ? new Vector3(1f, 1f, scaleLongueurFente) : Vector3.One,
                     EstUnEclat = false
                 };
                 Vector3 baseElevLong = rbCible.GlobalPosition + Vector3.Up * 0.4f;
@@ -3201,7 +3290,9 @@ public partial class Joueur : CharacterBody3D
                     ? ItemPhysique.IndexChimiqueDepuisIdRoche(mainActive.ID)
                     : Mathf.Clamp(mainActive.IndexChimique, 0, ItemPhysique.TableGeologique.Length - 1);
                 matVisuel = boisSculpte
-                    ? ArbreVivant.ObtenirMaterielBoisTriplanar()
+                    ? (mainActive.ID == 32 && mainActive.IndexChimique == 1
+                        ? ArbreVivant.ObtenirMaterielBoisTriplanarBatonChenEPale()
+                        : ArbreVivant.ObtenirMaterielBoisTriplanar())
                     : ItemPhysique.CreerMaterielProcedural(ItemPhysique.EstMatiereSilexParIdObjet(mainActive.ID), chimPourRoche);
             }
             item.AddChild(new MeshInstance3D { Name = "MeshInstance3D", Mesh = meshPose, MaterialOverride = matVisuel });
@@ -3432,7 +3523,9 @@ public partial class Joueur : CharacterBody3D
             var meshNode = new MeshInstance3D
             {
                 Mesh = meshObj,
-                MaterialOverride = ArbreVivant.ObtenirMaterielBoisTriplanar()
+                MaterialOverride = id == 32 && mainActive.IndexChimique == 1
+                    ? ArbreVivant.ObtenirMaterielBoisTriplanarBatonChenEPale()
+                    : ArbreVivant.ObtenirMaterielBoisTriplanar()
             };
             meshNode.RotationDegrees = new Vector3(90f, 0f, 0f);
             var colNode = new CollisionShape3D { Shape = colObj };

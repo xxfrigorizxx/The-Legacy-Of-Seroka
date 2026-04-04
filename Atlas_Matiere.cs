@@ -116,9 +116,9 @@ public static class Atlas_Matiere
         };
     }
 
-    public static float CalculerDurabiliteMaxNouvelleDague(SlotInventaire rochePlate, SlotInventaire corde)
+    public static float CalculerDurabiliteMaxNouvelleDague(SlotInventaire rocheLame, SlotInventaire corde)
     {
-        int idxLame = Mathf.Clamp(rochePlate.ID - ItemPhysique.IdRocheMatiereMin, 0, ItemPhysique.TableGeologique.Length - 1);
+        int idxLame = Mathf.Clamp(rocheLame.ID - ItemPhysique.IdRocheMatiereMin, 0, ItemPhysique.TableGeologique.Length - 1);
         float mineral = ItemPhysique.TableGeologique[idxLame].ResistanceFuture;
         ObtenirStatsCorde(corde.IndexChimique, corde.IndexMorphologique, out float durCord, out _);
         float maxDur = mineral * 2.4f + durCord * 12f;
@@ -248,7 +248,15 @@ public static class Atlas_Matiere
             string essence = slot.IndexBotanique == 0 ? "Chêne" : "Bois";
             string longueur = slot.IndexTaille switch { 0 => "Brin brut", 1 => "Bâton standard", 2 => "Demi-bâton", 3 => "Rondin fin", _ => "Morceau" };
             string fente = slot.IndexMorphologique switch { 0 => "", 1 => " (Fendu en 2)", 2 => " (Fendu en 4)", 3 => " (Planchette)", _ => "" };
-            return $"{longueur}{fente} de {essence}";
+            float zL = slot.ScaleEclat.Z;
+            string partLong = "";
+            if (zL > 1e-4f && zL < 0.29f)
+                partLong = "Quart de bâton · ";
+            else if (zL > 1e-4f && zL < 0.53f)
+                partLong = "Demi-bâton · ";
+            if (slot.IndexChimique == 1 && slot.IndexBotanique == LSystem_Botanique.IndexChene)
+                return $"{partLong}Bâton de chêne · {longueur.ToLowerInvariant()}{fente}";
+            return $"{partLong}{longueur}{fente} de {essence}";
         }
         if (id == 20)
         {
@@ -309,6 +317,27 @@ public static class Atlas_Matiere
         if (ingredients.Count == 0)
             return new SlotInventaire();
 
+        // Une seule branche de chêne (bâton 32 brut) dans la grille → bâton de chêne façonné : mêmes taille / morph / ScaleEclat, teinte plus pâle (IndexChimique = 1).
+        if (ingredients.Count == 1)
+        {
+            var br = ingredients[0];
+            if (br.ID == 32 && br.IndexBotanique == LSystem_Botanique.IndexChene && br.IndexChimique == 0)
+            {
+                return new SlotInventaire
+                {
+                    ID = 32,
+                    IndexBotanique = LSystem_Botanique.IndexChene,
+                    IndexChimique = 1,
+                    IndexMorphologique = br.IndexMorphologique,
+                    IndexTaille = br.IndexTaille,
+                    ScaleEclat = br.ScaleEclat,
+                    EstUnEclat = false,
+                    MeshEclat = null,
+                    NiveauFracture = 0
+                };
+            }
+        }
+
         if (ingredients.Count == 2)
         {
             for (int col = 0; col < 2; col++)
@@ -317,9 +346,11 @@ public static class Atlas_Matiere
                 SlotInventaire haut = grille[col];
                 SlotInventaire bas = grille[col + strideColonne];
                 if (haut.EstVide || bas.EstVide) continue;
-                bool estRochePlate = ItemPhysique.EstIdRocheMatiere(haut.ID) && haut.IndexMorphologique == 1;
+                // Dague : uniquement petite roche en pointe (morph 3, taille mini ou petite).
+                bool estPetiteRochePointe = ItemPhysique.EstIdRocheMatiere(haut.ID) && haut.IndexMorphologique == 3
+                    && (haut.IndexTaille == 0 || haut.IndexTaille == 1);
                 bool estCorde = bas.ID == 20;
-                if (estRochePlate && estCorde)
+                if (estPetiteRochePointe && estCorde)
                 {
                     float dMax = CalculerDurabiliteMaxNouvelleDague(haut, bas);
                     return new SlotInventaire
@@ -338,8 +369,10 @@ public static class Atlas_Matiere
             }
         }
 
+        // Hachette : uniquement petite roche plate (morph 1, taille mini ou petite).
         static bool EstSlotRochePlateCraft(SlotInventaire s) =>
-            !s.EstVide && ItemPhysique.EstIdRocheMatiere(s.ID) && s.IndexMorphologique == 1;
+            !s.EstVide && ItemPhysique.EstIdRocheMatiere(s.ID) && s.IndexMorphologique == 1
+            && (s.IndexTaille == 0 || s.IndexTaille == 1);
         static bool EstSlotCordeCraft(SlotInventaire s) => !s.EstVide && s.ID == 20;
         static bool EstSlotBatonCraft(SlotInventaire s) => !s.EstVide && s.ID == 32;
 

@@ -41,6 +41,7 @@ public partial class ArbreVivant : StaticBody3D
 
 	private static StandardMaterial3D _cacheMatBois;
 	private static StandardMaterial3D _cacheMatBoisTriplanar;
+	private static StandardMaterial3D _cacheMatBoisBatonChenEPale;
 	private static StandardMaterial3D _cacheMatFeuilles;
 
 	public static Material ObtenirMaterielBois()
@@ -74,6 +75,17 @@ public partial class ArbreVivant : StaticBody3D
 		// Désactive le backface culling (éclats / faces de coupe visibles même si winding imparfait).
 		_cacheMatBoisTriplanar.CullMode = BaseMaterial3D.CullModeEnum.Disabled;
 		return _cacheMatBoisTriplanar;
+	}
+
+	/// <summary>Bâton de chêne façonné au craft (branche → bâton) : même texture triplanar, albedo plus pâle (aubier / bois travaillé).</summary>
+	public static Material ObtenirMaterielBoisTriplanarBatonChenEPale()
+	{
+		if (_cacheMatBoisBatonChenEPale != null) return _cacheMatBoisBatonChenEPale;
+		ObtenirMaterielBoisTriplanar();
+		_cacheMatBoisBatonChenEPale = (StandardMaterial3D)_cacheMatBoisTriplanar.Duplicate();
+		Color baseC = _cacheMatBoisBatonChenEPale.AlbedoColor;
+		_cacheMatBoisBatonChenEPale.AlbedoColor = baseC.Lerp(new Color(0.92f, 0.86f, 0.78f), 0.38f);
+		return _cacheMatBoisBatonChenEPale;
 	}
 
 	private static Material ObtenirMaterielFeuilles()

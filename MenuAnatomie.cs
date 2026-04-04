@@ -214,11 +214,14 @@ public partial class MenuAnatomie : Control
 			EchangerCurseurAvec(ref _joueurRef.MainGauche);
 		else if (mode == 1)
 			EchangerCurseurAvec(ref _joueurRef.MainDroite);
-		else if (mode == 2 && craftIdx >= 0 && _joueurRef.GrilleCraft3x3 != null && craftIdx < _joueurRef.GrilleCraft3x3.Length)
+		else if (mode == 2 && craftIdx >= 0)
 		{
 			if (!_joueurRef.CraftGrille3x3AuTable && craftIdx >= 4)
 				return;
-			EchangerCurseurAvec(ref _joueurRef.GrilleCraft3x3[craftIdx]);
+			var g = _joueurRef.ObtenirGrilleCraftAffichee();
+			if (g == null || craftIdx >= g.Length)
+				return;
+			EchangerCurseurAvec(ref _joueurRef.RefSlotCraft(craftIdx));
 			_joueurRef.VerifierRecettes();
 		}
 		else if (mode == 3)
@@ -259,16 +262,20 @@ public partial class MenuAnatomie : Control
 			_joueurRef.MainDroite = _curseurMenu;
 			_curseurMenu = new SlotInventaire();
 		}
-		else if (_joueurRef.GrilleCraft3x3 != null)
+		else
 		{
+			var g = _joueurRef.ObtenirGrilleCraftAffichee();
 			bool place = false;
-			int maxI = _joueurRef.CraftGrille3x3AuTable ? _joueurRef.GrilleCraft3x3.Length : 4;
-			for (int i = 0; i < maxI; i++)
+			int maxI = _joueurRef.CraftGrille3x3AuTable ? 9 : 4;
+			if (g != null)
 			{
-				if (!_joueurRef.GrilleCraft3x3[i].EstVide) continue;
-				_joueurRef.GrilleCraft3x3[i] = _curseurMenu;
-				place = true;
-				break;
+				for (int i = 0; i < maxI && i < g.Length; i++)
+				{
+					if (!g[i].EstVide) continue;
+					g[i] = _curseurMenu;
+					place = true;
+					break;
+				}
 			}
 			if (place)
 				_curseurMenu = new SlotInventaire();
@@ -280,13 +287,6 @@ public partial class MenuAnatomie : Control
 					EchangerCurseurAvec(ref _joueurRef.MainDroite);
 				// Garde l’ancien contenu de la main dans le curseur pour la prochaine ouverture.
 			}
-		}
-		else
-		{
-			if (_joueurRef.MainGaucheEstActive)
-				EchangerCurseurAvec(ref _joueurRef.MainGauche);
-			else
-				EchangerCurseurAvec(ref _joueurRef.MainDroite);
 		}
 		_joueurRef.RafraichirHUD();
 	}
@@ -472,9 +472,10 @@ public partial class MenuAnatomie : Control
 					int idx = cur.GetIndex();
 					if (!_joueurRef.CraftGrille3x3AuTable && idx >= 4)
 						break;
-					if (_joueurRef.GrilleCraft3x3 != null && idx >= 0 && idx < _joueurRef.GrilleCraft3x3.Length)
+					var g = _joueurRef.ObtenirGrilleCraftAffichee();
+					if (g != null && idx >= 0 && idx < g.Length)
 					{
-						slot = _joueurRef.GrilleCraft3x3[idx];
+						slot = g[idx];
 						return true;
 					}
 					break;
@@ -523,12 +524,14 @@ public partial class MenuAnatomie : Control
 
 	private void RafraichirCellulesCraft()
 	{
-		if (_joueurRef == null || GrilleAssemblage == null || _joueurRef.GrilleCraft3x3 == null) return;
+		if (_joueurRef == null || GrilleAssemblage == null) return;
 		AssurerPreviewsCraft();
 		_joueurRef.VerifierRecettes();
-		for (int i = 0; i < _joueurRef.GrilleCraft3x3.Length; i++)
+		var gCraft = _joueurRef.ObtenirGrilleCraftAffichee();
+		int nActives = _joueurRef.CraftGrille3x3AuTable ? 9 : 4;
+		for (int i = 0; i < 9; i++)
 		{
-			var s = _joueurRef.GrilleCraft3x3[i];
+			SlotInventaire s = (gCraft != null && i < nActives && i < gCraft.Length) ? gCraft[i] : default;
 			bool vis = _joueurRef.InventaireSlotAunVisuel3D(s);
 			bool vpOk = _vpCraft != null && i < _vpCraft.Length && _vpCraft[i] != null && GodotObject.IsInstanceValid(_vpCraft[i]);
 			if (vpOk)
@@ -942,7 +945,10 @@ public partial class MenuAnatomie : Control
 		{
 			ResoudreCurseurAvantFermeture();
 			if (_joueurRef != null)
+			{
 				_joueurRef.CraftGrille3x3AuTable = false;
+				_joueurRef.AtelierPlanTravailOuvert = null;
+			}
 		}
 
 		if (!EstOuvert && _panneauInfobulleSlot != null)

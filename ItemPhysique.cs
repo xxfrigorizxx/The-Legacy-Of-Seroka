@@ -20,6 +20,8 @@ public partial class ItemPhysique : RigidBody3D
 {
 	public const int IdRocheMatiereMin = 40;
 	public const int IdRocheMatiereMax = 49;
+	/// <summary>Atelier posé (200) : grille 3×3 du plan de travail, indépendante du craft 2×2 de l’inventaire (Q).</summary>
+	public SlotInventaire[] GrillePlanTravailAtelier = new SlotInventaire[9];
 	/// <summary>Indice dans <see cref="TableGeologique"/> pour le silex (ID objet = <c>40 + IndexChimiqueSilex</c>).</summary>
 	public const int IndexChimiqueSilex = 5;
 	/// <summary>Roche créée par le joueur (pose/lancer) : mesh et collision déjà figés, ne pas les remplacer dans _Ready.</summary>
@@ -261,7 +263,9 @@ public partial class ItemPhysique : RigidBody3D
 			if (EstIdRocheMatiere(ID_Objet))
 				visuel.MaterialOverride = CreerMaterielProcedural(EstMatiereSilexParIdObjet(ID_Objet), ch);
 			else if (ID_Objet == 30 || ID_Objet == 32)
-				visuel.MaterialOverride = ArbreVivant.ObtenirMaterielBoisTriplanar();
+				visuel.MaterialOverride = ID_Objet == 32 && IndexChimique == 1
+					? ArbreVivant.ObtenirMaterielBoisTriplanarBatonChenEPale()
+					: ArbreVivant.ObtenirMaterielBoisTriplanar();
 			if (!EstMatiereSilexParIdObjet(ID_Objet) && !_surImpactConnecte)
 			{
 				ContactMonitor = true;
