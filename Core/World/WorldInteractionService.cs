@@ -74,6 +74,27 @@ public partial class Joueur
         ExecuterRamassageObjet();
     }
 
+    private void ConsommerUneUniteMainActive()
+    {
+        ref SlotInventaire s = ref (MainGaucheEstActive ? ref MainGauche : ref MainDroite);
+        if (s.EstVide) return;
+        int q = ObtenirQuantiteSlot(s) - 1;
+        if (q <= 0) s = new SlotInventaire();
+        else s.Quantite = q;
+    }
+
+    private static bool TenterEmpilementComplet(ref SlotInventaire destination, SlotInventaire source)
+    {
+        if (destination.EstVide || source.EstVide) return false;
+        if (!SontEmpilables(destination, source)) return false;
+        int max = ObtenirPileMax(destination);
+        int qDst = ObtenirQuantiteSlot(destination);
+        int qSrc = ObtenirQuantiteSlot(source);
+        if (qDst + qSrc > max) return false;
+        destination.Quantite = qDst + qSrc;
+        return true;
+    }
+
     /// <summary>True si la corde ou la fibre peut « s'étirer » visuellement (ScaleEclat) : les deux brins de la corde doivent être étirables.</summary>
     public static bool ObtenirSlotFlexibleEtirable(SlotInventaire s)
     {
@@ -91,7 +112,7 @@ public partial class Joueur
     /// <summary>Échelle pour l’établi CAO (hors 30/32, gérés à part) : fibres/corde non élastiques = taille naturelle, sans ScaleEclat « étiré ».</summary>
     public static Vector3 ObtenirEchellePieceFlexibleCAO(SlotInventaire slot)
     {
-        bool estFlexOuCorde = slot.ID == 15 || slot.ID == 16 || slot.ID == 17 || slot.ID == 20 || slot.ID == 21;
+        bool estFlexOuCorde = slot.ID == 15 || slot.ID == 16 || slot.ID == 17 || slot.ID == 20 || slot.ID == 21 || slot.ID == IdObjetCeinturePoches || slot.ID == IdObjetPochetteTier0 || slot.ID == IdObjetSacTier0;
         if (estFlexOuCorde && !ObtenirSlotFlexibleEtirable(slot))
             return Vector3.One;
         if (slot.ScaleEclat != Vector3.Zero)
@@ -106,7 +127,7 @@ public partial class Joueur
     {
         if (s.EstVide || s.ID == 0) return false;
         if (s.ID >= 1 && s.ID <= 9 && s.ID != 4) return true;
-        return s.ID == 999 || ItemPhysique.EstIdRocheMatiere(s.ID) || s.ID == 30 || s.ID == 32 || s.ID == 34 || s.ID == 21 || s.ID == 200;
+        return s.ID == 999 || ItemPhysique.EstIdRocheMatiere(s.ID) || s.ID == 30 || s.ID == 32 || s.ID == 34 || s.ID == 21 || s.ID == IdObjetCeinturePoches || s.ID == IdObjetPochetteTier0 || s.ID == IdObjetSacTier0 || s.ID == 200;
     }
 
     /// <summary>Corde (20) : accrocher au point de visée si surface valide (sol, roche, arbre, bloc posé).</summary>
@@ -134,8 +155,7 @@ public partial class Joueur
         var b = Basis.LookingAt(tangent, n).Orthonormalized();
         corps.GlobalTransform = new Transform3D(b, corps.GlobalPosition);
 
-        if (MainGaucheEstActive) MainGauche = default;
-        else MainDroite = default;
+        ConsommerUneUniteMainActive();
         RafraichirHUD();
         GD.Print("ZERO-K : Corde accrochée à la surface (E).");
         return true;
@@ -191,7 +211,8 @@ public partial class Joueur
                     ? ScaleEclatBoisAuRamassage(item)
                     : (item != null ? item.Scale : Vector3.One),
                 IndexBotanique = item != null && (item.ID_Objet == 30 || item.ID_Objet == 32 || item.ID_Objet == 106) ? item.IndexBotanique : LSystem_Botanique.IndexChene,
-                GenomeAssemblage = LireGenomeSurItemPhysique(item)
+                GenomeAssemblage = LireGenomeSurItemPhysique(item),
+                CleConteneur = (item != null && item.HasMeta("CleConteneur")) ? item.GetMeta("CleConteneur").AsString() : ""
             };
             if ((nouveauSlot.ID == 105 || nouveauSlot.ID == 106) && item != null)
                 RemplirDurabiliteOutilDepuisItemPhysique(ref nouveauSlot, item);
@@ -229,7 +250,8 @@ public partial class Joueur
                 NiveauFracture = item.NiveauFracture,
                 ScaleEclat = (item.ID_Objet == 30 || item.ID_Objet == 32) ? ScaleEclatBoisAuRamassage(item) : item.Scale,
                 IndexBotanique = (item.ID_Objet == 30 || item.ID_Objet == 32 || item.ID_Objet == 106 || item.ID_Objet == 200) ? item.IndexBotanique : LSystem_Botanique.IndexChene,
-                GenomeAssemblage = LireGenomeSurItemPhysique(item)
+                GenomeAssemblage = LireGenomeSurItemPhysique(item),
+                CleConteneur = item.HasMeta("CleConteneur") ? item.GetMeta("CleConteneur").AsString() : ""
             };
             if (nouveauSlot.ID == 105 || nouveauSlot.ID == 106)
                 RemplirDurabiliteOutilDepuisItemPhysique(ref nouveauSlot, item);
@@ -260,7 +282,8 @@ public partial class Joueur
                 NiveauFracture = item.NiveauFracture,
                 ScaleEclat = (item.ID_Objet == 30 || item.ID_Objet == 32) ? ScaleEclatBoisAuRamassage(item) : item.Scale,
                 IndexBotanique = (item.ID_Objet == 30 || item.ID_Objet == 32 || item.ID_Objet == 106) ? item.IndexBotanique : LSystem_Botanique.IndexChene,
-                GenomeAssemblage = LireGenomeSurItemPhysique(item)
+                GenomeAssemblage = LireGenomeSurItemPhysique(item),
+                CleConteneur = item.HasMeta("CleConteneur") ? item.GetMeta("CleConteneur").AsString() : ""
             };
             if (nouveauSlot.ID == 105 || nouveauSlot.ID == 106)
                 RemplirDurabiliteOutilDepuisItemPhysique(ref nouveauSlot, item);
@@ -268,15 +291,20 @@ public partial class Joueur
         else
             return;
 
+        nouveauSlot.Quantite = ObtenirQuantiteSlot(nouveauSlot);
         if (MainGaucheEstActive)
         {
-            if (MainGauche.EstVide) MainGauche = nouveauSlot;
+            if (TenterEmpilementComplet(ref MainGauche, nouveauSlot)) { }
+            else if (TenterEmpilementComplet(ref MainDroite, nouveauSlot)) { }
+            else if (MainGauche.EstVide) MainGauche = nouveauSlot;
             else if (MainDroite.EstVide) MainDroite = nouveauSlot;
             else return;
         }
         else
         {
-            if (MainDroite.EstVide) MainDroite = nouveauSlot;
+            if (TenterEmpilementComplet(ref MainDroite, nouveauSlot)) { }
+            else if (TenterEmpilementComplet(ref MainGauche, nouveauSlot)) { }
+            else if (MainDroite.EstVide) MainDroite = nouveauSlot;
             else if (MainGauche.EstVide) MainGauche = nouveauSlot;
             else return;
         }
@@ -342,7 +370,7 @@ public partial class Joueur
         {
             _gestionnaireMonde?.AppliquerCreationGlobale(pointImpact, normaleImpact, RAYON_SCULPTURE, id);
         }
-        else if (id == 999 || ItemPhysique.EstIdRocheMatiere(id) || id == 15 || id == 16 || id == 17 || id == 20 || id == 21 || id == 30 || id == 32 || id == 34 || id == 105 || id == 106 || id == 200)
+        else if (id == 999 || ItemPhysique.EstIdRocheMatiere(id) || id == 15 || id == 16 || id == 17 || id == 20 || id == 21 || id == IdObjetCeinturePoches || id == IdObjetPochetteTier0 || id == IdObjetSacTier0 || id == 30 || id == 32 || id == 34 || id == 105 || id == 106 || id == 200)
         {
             Node3D nePose = CreerBlocPose(pointDeChute, mainActive);
             if (id != 200)
@@ -354,8 +382,7 @@ public partial class Joueur
             return;
         }
 
-        if (MainGaucheEstActive) MainGauche = default;
-        else MainDroite = default;
+        ConsommerUneUniteMainActive();
 
         ReinitialiserRotationManuelle();
         RafraichirHUD();

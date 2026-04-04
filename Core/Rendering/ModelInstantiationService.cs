@@ -8,7 +8,7 @@ public partial class Joueur
     private static bool EstObjetAvecVisuel(int id)
     {
         if (id >= 1 && id <= 9) return true;
-        return ItemPhysique.EstIdRocheMatiere(id) || id == 15 || id == 16 || id == 17 || id == 20 || id == 21 || id == 30 || id == 32 || id == 34 || id == 100 || id == 105 || id == 106 || id == 200;
+        return ItemPhysique.EstIdRocheMatiere(id) || id == 15 || id == 16 || id == 17 || id == 20 || id == 21 || id == Joueur.IdObjetCeinturePoches || id == Joueur.IdObjetPochetteTier0 || id == Joueur.IdObjetSacTier0 || id == 30 || id == 32 || id == 34 || id == 100 || id == 105 || id == 106 || id == 200;
     }
 
     public static void NettoyerModelesEnfants(Node3D parent)
@@ -25,6 +25,12 @@ public partial class Joueur
             parent.RemoveMeta(MetaSignatureCorde20);
         if (parent.HasMeta(MetaSignatureTissu21))
             parent.RemoveMeta(MetaSignatureTissu21);
+        if (parent.HasMeta(MetaSignatureCeinture102))
+            parent.RemoveMeta(MetaSignatureCeinture102);
+        if (parent.HasMeta(MetaSignaturePochette103))
+            parent.RemoveMeta(MetaSignaturePochette103);
+        if (parent.HasMeta(MetaSignatureSac101))
+            parent.RemoveMeta(MetaSignatureSac101);
     }
 
     private static Aabb TransformerAabb(Transform3D t, Aabb a)
@@ -145,6 +151,24 @@ public partial class Joueur
     {
         if (s.ID != 21) return -1;
         return HashCode.Combine(s.IndexChimique, s.IndexMorphologique, s.NiveauFracture);
+    }
+
+    private static int SignatureSlotCeinture102(SlotInventaire s)
+    {
+        if (s.ID != Joueur.IdObjetCeinturePoches) return -1;
+        return HashCode.Combine(s.IndexChimique, s.IndexMorphologique, s.NiveauFracture);
+    }
+
+    private static int SignatureSlotPochette103(SlotInventaire s)
+    {
+        if (s.ID != Joueur.IdObjetPochetteTier0) return -1;
+        return HashCode.Combine(s.IndexChimique, s.IndexMorphologique, s.NiveauFracture);
+    }
+
+    private static int SignatureSlotSac101(SlotInventaire s)
+    {
+        if (s.ID != Joueur.IdObjetSacTier0) return -1;
+        return HashCode.Combine(s.IndexChimique, s.IndexMorphologique, s.NiveauFracture, s.CleConteneur ?? "");
     }
 
     /// <summary>Échelle de la lame dague : référence = roche moyenne (index 2) ; plus grosse roche en pointe → lame un peu plus massive.</summary>
@@ -376,6 +400,83 @@ public partial class Joueur
         parent.AddChild(modele);
     }
 
+    /// <summary>Ceinture à poches : GLB <c>centure_tresser.glb</c> ; même matériau procédural que corde/tissu (<see cref="Atlas_Matiere.ObtenirMaterielCorde"/>).</summary>
+    public static void InstancierModeleCeinturePoches(Node3D parent, SlotInventaire slot, float tailleMaxMetres = 0.4f)
+    {
+        PackedScene scene = GD.Load<PackedScene>("res://Modeles/Equipable/centure_tresser.glb");
+        if (scene == null) return;
+
+        NettoyerModelesEnfants(parent);
+        Node3D modele = scene.Instantiate<Node3D>();
+        modele.Name = "ModeleArme";
+
+        void ParcourirMeshes(Node n)
+        {
+            if (n is MeshInstance3D mi)
+            {
+                RemplacerMeshParNormalesFacettes(mi);
+                AppliquerMaterielObjet(mi, Joueur.IdObjetCeinturePoches, slot.IndexChimique, slot.IndexMorphologique, slot.NiveauFracture);
+            }
+            foreach (Node c in n.GetChildren())
+                ParcourirMeshes(c);
+        }
+
+        ParcourirMeshes(modele);
+        NormaliserEchelleEtCentrerModeleArme(modele, tailleMaxMetres);
+        parent.AddChild(modele);
+    }
+
+    /// <summary>Pochette tier 0 : GLB <c>Pochette_Tiere0.glb</c> ; même matériau procédural que corde/tissu/ceinture.</summary>
+    public static void InstancierModelePochetteTier0(Node3D parent, SlotInventaire slot, float tailleMaxMetres = 0.36f)
+    {
+        PackedScene scene = GD.Load<PackedScene>("res://Modeles/materials/Pochette_Tiere0.glb");
+        if (scene == null) return;
+
+        NettoyerModelesEnfants(parent);
+        Node3D modele = scene.Instantiate<Node3D>();
+        modele.Name = "ModeleArme";
+
+        void ParcourirMeshes(Node n)
+        {
+            if (n is MeshInstance3D mi)
+            {
+                RemplacerMeshParNormalesFacettes(mi);
+                AppliquerMaterielObjet(mi, Joueur.IdObjetPochetteTier0, slot.IndexChimique, slot.IndexMorphologique, slot.NiveauFracture);
+            }
+            foreach (Node c in n.GetChildren())
+                ParcourirMeshes(c);
+        }
+
+        ParcourirMeshes(modele);
+        NormaliserEchelleEtCentrerModeleArme(modele, tailleMaxMetres);
+        parent.AddChild(modele);
+    }
+
+    public static void InstancierModeleSacTier0(Node3D parent, SlotInventaire slot, float tailleMaxMetres = 0.4f)
+    {
+        PackedScene scene = GD.Load<PackedScene>("res://Modeles/Equipements/Sac_Tiere0.glb");
+        if (scene == null) return;
+
+        NettoyerModelesEnfants(parent);
+        Node3D modele = scene.Instantiate<Node3D>();
+        modele.Name = "ModeleArme";
+
+        void ParcourirMeshes(Node n)
+        {
+            if (n is MeshInstance3D mi)
+            {
+                RemplacerMeshParNormalesFacettes(mi);
+                AppliquerMaterielObjet(mi, Joueur.IdObjetSacTier0, slot.IndexChimique, slot.IndexMorphologique, slot.NiveauFracture);
+            }
+            foreach (Node c in n.GetChildren())
+                ParcourirMeshes(c);
+        }
+
+        ParcourirMeshes(modele);
+        NormaliserEchelleEtCentrerModeleArme(modele, tailleMaxMetres);
+        parent.AddChild(modele);
+    }
+
     public static void InstancierModeleArme(Node3D parent, SlotInventaire slot, float tailleMaxUnites = 0.525f, float facteurEchelleLame = 1f)
     {
         NettoyerModelesEnfants(parent);
@@ -439,7 +540,7 @@ public partial class Joueur
 
     private static bool EstMatiereFlexible(int id)
     {
-        int[] flexibles = { 15, 16, 17, 20, 21 }; // 20 corde, 21 tissu : flexibles
+        int[] flexibles = { 15, 16, 17, 20, 21, Joueur.IdObjetCeinturePoches, Joueur.IdObjetPochetteTier0, Joueur.IdObjetSacTier0 };
         return Array.IndexOf(flexibles, id) != -1;
     }
 

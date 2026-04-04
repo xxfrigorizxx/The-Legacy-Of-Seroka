@@ -125,6 +125,8 @@ grow_vertical = 2
 script = ExtResource("1_script")
 MainGaucheSlot = NodePath("MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/LigneMainsCeinture/MainGaucheSlot")
 MainDroiteSlot = NodePath("MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/LigneMainsCeinture/MainDroiteSlot")
+EquipementSacSlot = NodePath("MarginPrincipal/VBoxPrincipal/CorpsHBox/GrilleEquipCorps/EquipementSacSlot")
+EquipementCorpsSlot = NodePath("MarginPrincipal/VBoxPrincipal/CorpsHBox/GrilleEquipCorps/EquipementCorpsSlot")
 VueJoueurPanel = NodePath("MarginPrincipal/VBoxPrincipal/CorpsHBox/VueJoueurPanel")
 GrilleAssemblage = NodePath("MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/LigneCraft/CadreCraft/GrilleAssemblage")
 SlotResultatCraft = NodePath("MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/LigneCraft/CraftSortie")
@@ -393,14 +395,14 @@ size_flags_horizontal = 0
 size_flags_vertical = 3
 theme_override_constants/h_separation = 6
 theme_override_constants/v_separation = 6
-columns = 2
+columns = 1
 
-[node name="Equip0" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/GrilleEquipCorps"]
+[node name="EquipementSacSlot" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/GrilleEquipCorps"]
 custom_minimum_size = Vector2(68, 68)
 layout_mode = 2
-theme_override_styles/panel = SubResource("StyleRougeCorps")
+theme_override_styles/panel = SubResource("StyleVertSlot")
 
-[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/GrilleEquipCorps/Equip0"]
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/GrilleEquipCorps/EquipementSacSlot"]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -408,18 +410,18 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 theme_override_font_sizes/font_size = 8
-text = "Équipement Corps"
+text = "Sac"
 horizontal_alignment = 1
 vertical_alignment = 1
 autowrap_mode = 0
 clip_text = true
 
-[node name="Equip1" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/GrilleEquipCorps"]
+[node name="EquipementCorpsSlot" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/GrilleEquipCorps"]
 custom_minimum_size = Vector2(68, 68)
 layout_mode = 2
 theme_override_styles/panel = SubResource("StyleRougeCorps")
 
-[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/GrilleEquipCorps/Equip1"]
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/GrilleEquipCorps/EquipementCorpsSlot"]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -427,197 +429,7 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 theme_override_font_sizes/font_size = 8
-text = "Équipement Corps"
-horizontal_alignment = 1
-vertical_alignment = 1
-autowrap_mode = 0
-clip_text = true
-
-[node name="Equip2" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/GrilleEquipCorps"]
-custom_minimum_size = Vector2(68, 68)
-layout_mode = 2
-theme_override_styles/panel = SubResource("StyleRougeCorps")
-
-[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/GrilleEquipCorps/Equip2"]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-theme_override_font_sizes/font_size = 8
-text = "Équipement Corps"
-horizontal_alignment = 1
-vertical_alignment = 1
-autowrap_mode = 0
-clip_text = true
-
-[node name="Equip3" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/GrilleEquipCorps"]
-custom_minimum_size = Vector2(68, 68)
-layout_mode = 2
-theme_override_styles/panel = SubResource("StyleRougeCorps")
-
-[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/GrilleEquipCorps/Equip3"]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-theme_override_font_sizes/font_size = 8
-text = "Équipement Corps"
-horizontal_alignment = 1
-vertical_alignment = 1
-autowrap_mode = 0
-clip_text = true
-
-[node name="Equip4" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/GrilleEquipCorps"]
-custom_minimum_size = Vector2(68, 68)
-layout_mode = 2
-theme_override_styles/panel = SubResource("StyleRougeCorps")
-
-[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/GrilleEquipCorps/Equip4"]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-theme_override_font_sizes/font_size = 8
-text = "Équipement Corps"
-horizontal_alignment = 1
-vertical_alignment = 1
-autowrap_mode = 0
-clip_text = true
-
-[node name="Equip5" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/GrilleEquipCorps"]
-custom_minimum_size = Vector2(68, 68)
-layout_mode = 2
-theme_override_styles/panel = SubResource("StyleRougeCorps")
-
-[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/GrilleEquipCorps/Equip5"]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-theme_override_font_sizes/font_size = 8
-text = "Équipement Corps"
-horizontal_alignment = 1
-vertical_alignment = 1
-autowrap_mode = 0
-clip_text = true
-
-[node name="Equip6" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/GrilleEquipCorps"]
-custom_minimum_size = Vector2(68, 68)
-layout_mode = 2
-theme_override_styles/panel = SubResource("StyleRougeCorps")
-
-[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/GrilleEquipCorps/Equip6"]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-theme_override_font_sizes/font_size = 8
-text = "Équipement Corps"
-horizontal_alignment = 1
-vertical_alignment = 1
-autowrap_mode = 0
-clip_text = true
-
-[node name="Equip7" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/GrilleEquipCorps"]
-custom_minimum_size = Vector2(68, 68)
-layout_mode = 2
-theme_override_styles/panel = SubResource("StyleRougeCorps")
-
-[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/GrilleEquipCorps/Equip7"]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-theme_override_font_sizes/font_size = 8
-text = "Équipement Corps"
-horizontal_alignment = 1
-vertical_alignment = 1
-autowrap_mode = 0
-clip_text = true
-
-[node name="Equip8" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/GrilleEquipCorps"]
-custom_minimum_size = Vector2(68, 68)
-layout_mode = 2
-theme_override_styles/panel = SubResource("StyleRougeCorps")
-
-[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/GrilleEquipCorps/Equip8"]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-theme_override_font_sizes/font_size = 8
-text = "Équipement Corps"
-horizontal_alignment = 1
-vertical_alignment = 1
-autowrap_mode = 0
-clip_text = true
-
-[node name="Equip9" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/GrilleEquipCorps"]
-custom_minimum_size = Vector2(68, 68)
-layout_mode = 2
-theme_override_styles/panel = SubResource("StyleRougeCorps")
-
-[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/GrilleEquipCorps/Equip9"]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-theme_override_font_sizes/font_size = 8
-text = "Équipement Corps"
-horizontal_alignment = 1
-vertical_alignment = 1
-autowrap_mode = 0
-clip_text = true
-
-[node name="Equip10" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/GrilleEquipCorps"]
-custom_minimum_size = Vector2(68, 68)
-layout_mode = 2
-theme_override_styles/panel = SubResource("StyleRougeCorps")
-
-[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/GrilleEquipCorps/Equip10"]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-theme_override_font_sizes/font_size = 8
-text = "Équipement Corps"
-horizontal_alignment = 1
-vertical_alignment = 1
-autowrap_mode = 0
-clip_text = true
-
-[node name="Equip11" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/GrilleEquipCorps"]
-custom_minimum_size = Vector2(68, 68)
-layout_mode = 2
-theme_override_styles/panel = SubResource("StyleRougeCorps")
-
-[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/GrilleEquipCorps/Equip11"]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-theme_override_font_sizes/font_size = 8
-text = "Équipement Corps"
+text = "Ceinture"
 horizontal_alignment = 1
 vertical_alignment = 1
 autowrap_mode = 0

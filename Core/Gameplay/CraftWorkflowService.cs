@@ -16,8 +16,12 @@ public partial class Joueur
         int n = CraftGrille3x3AuTable ? 9 : 4;
         for (int i = 0; i < n && i < g.Length; i++)
         {
-            if (!g[i].EstVide)
+            if (g[i].EstVide) continue;
+            int q = ObtenirQuantiteSlot(g[i]) - 1;
+            if (q <= 0)
                 g[i] = new SlotInventaire();
+            else
+                g[i].Quantite = q;
         }
     }
 }

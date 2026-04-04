@@ -35,6 +35,8 @@ public partial class BlocChutant : RigidBody3D
 
 	public override void _Ready()
 	{
+		AddToGroup("PersistantsBlocChutant");
+		AddToGroup("ObjetsDormantsDynamiques");
 		CollisionLayer = 1;
 		CollisionMask = 1;
 		ContinuousCd = true;
@@ -107,7 +109,10 @@ public partial class BlocChutant : RigidBody3D
 	{
 		var bloc = new BlocChutant();
 		bloc.SetMeta("ID_Matiere", (int)idMateriau);
-		bloc._ConstruireVisuelEtCollision(idMateriau, matTerrain);
+		if (idMateriau == ID_FEUILLE_ARRACHEE)
+			bloc._ConstruireVisuelFeuillage(null);
+		else
+			bloc._ConstruireVisuelEtCollision(idMateriau, matTerrain);
 		// GlobalPosition nécessite is_inside_tree() == true : à définir par l'appelant après AddChild().
 		return bloc;
 	}

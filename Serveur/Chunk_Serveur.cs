@@ -430,10 +430,9 @@ public partial class Chunk_Serveur : RefCounted
 		return bytes;
 	}
 
-	/// <summary>Sauvegarde binaire sur disque. NE sauvegarde QUE si EstModifie (touché par DetruireVoxel/CreerMatiere).</summary>
+	/// <summary>Sauvegarde binaire sur disque.</summary>
 	public void SauvegarderChunkSurDisque()
 	{
-		if (!_estModifie) return;
 		string nom = GameState.Instance?.NomMondeActuel ?? "MonMonde";
 		string dossierSave = ProjectSettings.GlobalizePath($"user://saves/{nom}/chunks/");
 		Directory.CreateDirectory(dossierSave);
@@ -446,6 +445,7 @@ public partial class Chunk_Serveur : RefCounted
 			writer.Write(donnees);
 		}
 		GD.Print($"ZERO-K : Cicatrice mémorisée. Chunk {ChunkOffsetX}_{ChunkOffsetZ} gravé sur le disque.");
+		_estModifie = false;
 	}
 
 	/// <summary>Désérialise depuis byte[] (GetBuffer). Chunk chargé = pas modifié.</summary>
@@ -473,8 +473,14 @@ public partial class Chunk_Serveur : RefCounted
 		}
 		_estModifie = false;
 		_chargeDepuisDisque = true; // MARQUER : ce chunk vient du disque — GenererDonneesVoxel ne doit JAMAIS le toucher.
-		GenererInventaireFloreDepuisSurface(); // Flore pour chunks chargés (InventaireFlore non sauvegardé)
 		return true;
+	}
+
+	/// <summary>Flore fallback pour rétrocompatibilité si aucun fichier flore n’existe encore.</summary>
+	public void RegenererInventaireFloreDepuisSurface()
+	{
+		InventaireFlore.Clear();
+		GenererInventaireFloreDepuisSurface();
 	}
 
 	/// <summary>Scanne la surface chargée et remplit InventaireFlore (chunks du disque). Gazon partout sur ID 1.</summary>

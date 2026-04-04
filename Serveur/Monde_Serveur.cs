@@ -47,7 +47,13 @@ public partial class Monde_Serveur : Node
 	private static readonly int MaxThreadsGeneration = 4;
 	[Export] public int MultiplicateurCharge = 8; // 16 → 8 pour test (génération /2)
 	private int LancerMaxTaches => MaxThreadsGeneration * MultiplicateurCharge;
-	private const int MaxChunksEnvoiParTick = 16;
+	/// <summary>Budget anti micro-freeze : limite de chunks workers intégrés par frame.</summary>
+	private const int MaxIntegrationsWorkersParTick = 2;
+	/// <summary>Budget anti micro-freeze : limite de demandes chunks traitées par frame.</summary>
+	private const int MaxDemandesChunksParTick = 3;
+	/// <summary>Budget anti micro-freeze : limite de chargements disque synchrones par frame.</summary>
+	private const int MaxChargesDisqueParTick = 1;
+	private const int MaxChunksEnvoiParTick = 8;
 	private bool _modificationEnCours;
 	private readonly object _verrouGeneration = new object();
 	private ConcurrentQueue<(Vector2I coord, Chunk_Serveur chunk, DonneesChunk donnees)> _chunksGeneres = new ConcurrentQueue<(Vector2I, Chunk_Serveur, DonneesChunk)>();
@@ -93,7 +99,7 @@ public partial class Monde_Serveur : Node
 		CreerPoolsRochesParTaille();
 	}
 
-	/// <summary>Sauvegarde d'urgence : sauvegarde uniquement les chunks modifiés (EstModifie).</summary>
+	/// <summary>Sauvegarde d'urgence : sauvegarde tous les chunks chargés (robuste même si un drapeau EstModifie a été raté).</summary>
 	public void SauvegarderMondeEntier()
 	{
 		GD.Print("ZERO-K : Lancement du Râle d'Agonie. Sauvegarde des Chunks modifiés...");
@@ -102,13 +108,11 @@ public partial class Monde_Serveur : Node
 		{
 			Vector2I coord = kvp.Key;
 			Chunk_Serveur chunk = kvp.Value;
-			if (chunk.EstModifie)
-			{
-				chunk.SauvegarderChunkSurDisque();
-				SauvegarderPierresChunk(coord);
-				SauvegarderArbresChunk(coord);
-				chunksSauves++;
-			}
+			chunk.SauvegarderChunkSurDisque();
+			SauvegarderFloreChunk(coord, chunk);
+			SauvegarderPierresChunk(coord);
+			SauvegarderArbresChunk(coord);
+			chunksSauves++;
 		}
 		GD.Print($"ZERO-K : Râle d'Agonie terminé. {chunksSauves} Chunks gravés sur le disque.");
 	}
@@ -142,7 +146,8 @@ public partial class Monde_Serveur : Node
 
 		// Récupérer les chunks générés par les workers (Main Thread uniquement)
 		// SÉGRÉGATION : ne JAMAIS écraser un chunk chargé depuis le disque avec un chunk procédural.
-		while (_chunksGeneres.TryDequeue(out var result))
+		int integrationsWorkers = 0;
+		while (integrationsWorkers < MaxIntegrationsWorkersParTick && _chunksGeneres.TryDequeue(out var result))
 		{
 			_chunksEnCoursGeneration.Remove(result.coord);
 			_chunksEnGenerationActive--;
@@ -154,6 +159,7 @@ public partial class Monde_Serveur : Node
 			// Envoi client uniquement APRÈS stase remplie, sinon LibererRochesChunk trouve une liste vide
 			DeclencherEnsemencement(result.coord, result.chunk, TailleChunk, (coord, ch) =>
 				_fileEnvoiReseau.Enqueue(new ColisChunk { Coord = coord, Donnees = ch.ObtenirDonneesPourClient() }));
+			integrationsWorkers++;
 		}
 
 		// Manufacture parallèle : purge des obsolètes puis extraction radiale
@@ -167,8 +173,11 @@ public partial class Monde_Serveur : Node
 				return d2 > rayonMaxCarrePurge;
 			});
 			Vector3 posObservation = posObs;
-			while (_chunksEnAttenteEnvoi.Count > 0 && _chunksEnGenerationActive < LancerMaxTaches)
+			int demandesTraitees = 0;
+			int chargesDisque = 0;
+			while (_chunksEnAttenteEnvoi.Count > 0 && _chunksEnGenerationActive < LancerMaxTaches && demandesTraitees < MaxDemandesChunksParTick)
 			{
+				demandesTraitees++;
 				Vector2I chunkCible = ExtraireChunkLePlusProche(_chunksEnAttenteEnvoi, posObservation);
 
 				float distCarree = DistanceCarreeAuJoueur(chunkCible, posObservation);
@@ -187,7 +196,14 @@ public partial class Monde_Serveur : Node
 				// BRANCHE 1 : RÉSURRECTION PURE — AUCUN appel de génération. Le chunk part directement au Mesh.
 				if (FichierChunkExiste(chunkCible))
 				{
+					if (chargesDisque >= MaxChargesDisqueParTick)
+					{
+						// On refile la demande pour la frame suivante afin d'éviter un pic I/O + désérialisation.
+						_chunksEnAttenteEnvoi.Add(chunkCible);
+						continue;
+					}
 					chunkActuel = ChargerChunkDepuisDisque(chunkCible);
+					chargesDisque++;
 					// RÈGLE D'ARCHITECTURE : GenererTerrainDeBase, GenererCoucheSurface, GenererEau, GenererArbres
 					// ne sont JAMAIS appelés ici. Le chunk chargé est final.
 				}
@@ -413,8 +429,73 @@ public partial class Monde_Serveur : Node
 			GD.PrintErr($"ZERO-K REJET : Chunk {coord} — AppliquerTableauBytes a échoué. Régénération forcée.");
 			return null;
 		}
+		ChargerFloreChunk(coord, chunk);
 		ChargerArbresChunk(coord, chunk);
 		return chunk;
+	}
+
+	/// <summary>Sauvegarde l’inventaire flore du chunk (herbe/buissons retirés ou repoussés).</summary>
+	private void SauvegarderFloreChunk(Vector2I coord, Chunk_Serveur chunk)
+	{
+		if (chunk == null) return;
+		string nom = GameState.Instance?.NomMondeActuel ?? "MonMonde";
+		string dossier = ProjectSettings.GlobalizePath($"user://saves/{nom}/chunks/");
+		Directory.CreateDirectory(dossier);
+		string chemin = Path.Combine(dossier, $"chunk_{coord.X}_{coord.Y}_flore.bin");
+		try
+		{
+			using (var w = new BinaryWriter(File.Open(chemin, FileMode.Create)))
+			{
+				w.Write(0x5A4B3346); // ZK3F
+				w.Write(chunk.InventaireFlore.Count);
+				foreach (var kv in chunk.InventaireFlore)
+				{
+					w.Write(kv.Key.X);
+					w.Write(kv.Key.Y);
+					w.Write(kv.Key.Z);
+					w.Write(kv.Value);
+				}
+			}
+		}
+		catch (Exception ex) { GD.PrintErr($"ZERO-K : Erreur sauvegarde flore chunk {coord} : {ex.Message}"); }
+	}
+
+	/// <summary>Charge l’inventaire flore; fallback procédural si fichier absent.</summary>
+	private void ChargerFloreChunk(Vector2I coord, Chunk_Serveur chunk)
+	{
+		if (chunk == null) return;
+		string nom = GameState.Instance?.NomMondeActuel ?? "MonMonde";
+		string chemin = ProjectSettings.GlobalizePath($"user://saves/{nom}/chunks/chunk_{coord.X}_{coord.Y}_flore.bin");
+		if (!File.Exists(chemin))
+		{
+			chunk.RegenererInventaireFloreDepuisSurface();
+			return;
+		}
+		try
+		{
+			chunk.InventaireFlore.Clear();
+			using (var r = new BinaryReader(File.Open(chemin, FileMode.Open, System.IO.FileAccess.Read, FileShare.Read)))
+			{
+				int magic = r.ReadInt32();
+				if (magic != 0x5A4B3346)
+				{
+					chunk.RegenererInventaireFloreDepuisSurface();
+					return;
+				}
+				int count = r.ReadInt32();
+				for (int i = 0; i < count; i++)
+				{
+					var pos = new Vector3I(r.ReadInt32(), r.ReadInt32(), r.ReadInt32());
+					byte etat = r.ReadByte();
+					chunk.InventaireFlore[pos] = etat;
+				}
+			}
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"ZERO-K : Erreur chargement flore chunk {coord} : {ex.Message}");
+			chunk.RegenererInventaireFloreDepuisSurface();
+		}
 	}
 
 	private Chunk_Serveur CreerChunkServeur(Vector2I coord)
@@ -468,8 +549,8 @@ public partial class Monde_Serveur : Node
 
 	private const float NIVEAU_EAU = 103f;  // +1 m
 	private const float DECALAGE_SPAWN_VERTICAL = 1.2f; // Légèrement au-dessus du terrain à la génération, tombe quand réveillé
-	/// <summary>Rayon en chunks : pierres gelées s'activent quand le joueur entre dans cette zone (comme le gazon). Chunk garanti chargé.</summary>
-	private const int RAYON_ACTIVATION_PIERRES_CHUNKS = 2;
+	/// <summary>Rayon en chunks : objets dynamiques gelés se réveillent dans cette zone autour du joueur.</summary>
+	private const int RAYON_ACTIVATION_PIERRES_CHUNKS = 5;
 
 	/// <summary>Délai de synchronisation : attend 2 frames physiques, puis enfile sur le tapis roulant (ordre spatial logique). Si onStasePrete est fourni (chunk procédural), on enqueue l'envoi client seulement après la stase → évite LibererRochesChunk à vide.</summary>
 	private async void DeclencherEnsemencement(Vector2I chunkCoord, Chunk_Serveur chunk, float tailleChunk, Action<Vector2I, Chunk_Serveur> onStasePrete = null)
@@ -666,7 +747,7 @@ public partial class Monde_Serveur : Node
 	/// <summary>Rayon en unités : pierres gelées se réveillent quand joueur entre (2 chunks = terrain chargé).</summary>
 	private float RayonActivationPierres => RAYON_ACTIVATION_PIERRES_CHUNKS * TailleChunk;
 
-	/// <summary>Réveille les pierres dans le rayon, endort immédiatement celles hors rayon ou qui se sont mises en sommeil physique.</summary>
+	/// <summary>Réveille les objets dynamiques dans le rayon, endort les lointains (charge CPU réduite côté serveur).</summary>
 	private void ReveillerPierresDansRayon()
 	{
 		if (_parentPourBlocsChutants == null || _obtenirPositionJoueur == null) return;
@@ -675,16 +756,29 @@ public partial class Monde_Serveur : Node
 		foreach (Node child in _parentPourBlocsChutants.GetChildren())
 		{
 			if (child is not RigidBody3D rb) continue;
-			var item = rb as ItemPhysique ?? rb.GetNodeOrNull<ItemPhysique>("ItemPhysique");
-			if (item == null) continue;
-			int id = item.ID_Objet;
-			if (!ItemPhysique.EstIdRocheMatiere(id)) continue;
+			int id = 0;
+			if (rb is ItemPhysique item)
+				id = item.ID_Objet;
+			else if (rb.HasMeta("ID_Matiere"))
+				id = rb.GetMeta("ID_Matiere").AsInt32();
 			if (!TryGetPositionMonde(rb, out Vector3 posRb)) continue;
 			float distCarre = posRb.DistanceSquaredTo(posJoueur);
 			if (distCarre <= rayonCarre)
-				rb.Freeze = false; // Réveiller : gravité + terrain solide
+			{
+				if (id != 200)
+				{
+					rb.Freeze = false; // Réveiller : gravité + collisions
+					rb.Sleeping = false;
+				}
+			}
 			else
-				rb.Freeze = true;  // Endormir hors 2 chunks : évite chute dans le vide
+			{
+				rb.LinearVelocity = Vector3.Zero;
+				rb.AngularVelocity = Vector3.Zero;
+				rb.Sleeping = true;
+				if (id != 200)
+					rb.Freeze = true;
+			}
 		}
 	}
 
@@ -726,7 +820,6 @@ public partial class Monde_Serveur : Node
 			if (pos.X >= xMin && pos.X < xMax && pos.Z >= zMin && pos.Z < zMax)
 				pierres.Add((pos, id, Mathf.Clamp(item.IndexCacheMemoire, 0, 3), Mathf.Clamp(item.IndexTailleRoche, 0, 4)));
 		}
-		if (pierres.Count == 0) return;
 		string nom = GameState.Instance?.NomMondeActuel ?? "MonMonde";
 		string dossier = ProjectSettings.GlobalizePath($"user://saves/{nom}/chunks/");
 		Directory.CreateDirectory(dossier);
@@ -807,7 +900,6 @@ public partial class Monde_Serveur : Node
 			if (p.X >= xMin && p.X < xMax && p.Z >= zMin && p.Z < zMax)
 				arbres.Add((p, arbre.AgeEnJours));
 		}
-		if (arbres.Count == 0) return;
 		string nom = GameState.Instance?.NomMondeActuel ?? "MonMonde";
 		string dossier = ProjectSettings.GlobalizePath($"user://saves/{nom}/chunks/");
 		Directory.CreateDirectory(dossier);
@@ -1204,6 +1296,7 @@ public partial class Monde_Serveur : Node
 			if (_chunks.TryGetValue(coord, out var chunk))
 			{
 				chunk.SauvegarderChunkSurDisque();
+				SauvegarderFloreChunk(coord, chunk);
 				SauvegarderPierresChunk(coord);
 				SauvegarderArbresChunk(coord);
 				RetirerPierresChunk(coord);

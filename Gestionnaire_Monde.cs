@@ -39,6 +39,9 @@ public partial class Gestionnaire_Monde : Node3D
 	/// <summary>Overlay "Chargement du monde..." affiché tant que la collision du chunk de spawn n'est pas prête.</summary>
 	private CanvasLayer _overlayChargement;
 	private double _secondesOverlayChargement;
+	private bool _etatPersistantRestaure;
+	private double _secondesDormanceObjets;
+	private const int RayonDormanceObjetsChunks = 5;
 
 	// Legacy
 	private List<Vector2I> _chunksACharger = new List<Vector2I>();
@@ -241,6 +244,16 @@ public partial class Gestionnaire_Monde : Node3D
 			matEau.SetShaderParameter("albedo_color", new Color(0.1f, 0.3f, 0.6f, 0.6f));
 			MaterielEau = matEau;
 		}
+
+		CallDeferred(nameof(RestaurerEtatPersistantMonde));
+	}
+
+	private void RestaurerEtatPersistantMonde()
+	{
+		if (_etatPersistantRestaure) return;
+		_etatPersistantRestaure = true;
+		if (_joueur is Joueur j)
+			j.ChargerEtatPersistantMonde();
 	}
 
 	public override void _Input(InputEvent @event)
@@ -272,6 +285,8 @@ public partial class Gestionnaire_Monde : Node3D
 		{
 			if (_joueur != null)
 				GameState.Instance?.SauvegarderPositionJoueur(_joueur.GlobalPosition);
+			if (_joueur is Joueur j)
+				j.SauvegarderEtatPersistantMonde();
 			if (UseArchitectureReseau)
 				_mondeServeur?.SauvegarderMondeEntier();
 			else
@@ -286,6 +301,8 @@ public partial class Gestionnaire_Monde : Node3D
 		// Sauvegarde position joueur (reconnexion au même endroit) — uniquement si encore dans l'arbre.
 		if (_joueur != null && _joueur.IsInsideTree())
 			GameState.Instance?.SauvegarderPositionJoueur(_joueur.GlobalPosition);
+		if (_joueur is Joueur j)
+			j.SauvegarderEtatPersistantMonde();
 		// RÈGLE ABSOLUE : sauvegarde des chunks modifiés AVANT destruction (parent _ExitTree avant enfants).
 		if (UseArchitectureReseau)
 			_mondeServeur?.SauvegarderMondeEntier();
@@ -305,6 +322,8 @@ public partial class Gestionnaire_Monde : Node3D
 	{
 		if (_joueur != null)
 			GameState.Instance?.SauvegarderPositionJoueur(_joueur.GlobalPosition);
+		if (_joueur is Joueur j)
+			j.SauvegarderEtatPersistantMonde();
 		if (UseArchitectureReseau)
 			_mondeServeur?.SauvegarderMondeEntier();
 		else
@@ -506,6 +525,12 @@ public partial class Gestionnaire_Monde : Node3D
 
 		if (UseArchitectureReseau)
 		{
+			_secondesDormanceObjets += delta;
+			if (_secondesDormanceObjets >= 0.4)
+			{
+				_secondesDormanceObjets = 0;
+				MettreAJourDormanceObjetsPoses();
+			}
 			// Monde_Client gère son propre _Process
 			return;
 		}
@@ -580,6 +605,50 @@ public partial class Gestionnaire_Monde : Node3D
 						break;
 					}
 				}
+			}
+		}
+	}
+
+	private void MettreAJourDormanceObjetsPoses()
+	{
+		if (_joueur == null) return;
+		Vector2I chunkJoueur = WorldToChunkCoord(_joueur.GlobalPosition, TailleChunk);
+		int rayon = RayonDormanceObjetsChunks;
+		foreach (Node n in GetTree().GetNodesInGroup("BlocsPoses"))
+		{
+			if (n is not RigidBody3D rb || !rb.IsInsideTree()) continue;
+			if (rb is ItemPhysique ip && ip.ID_Objet == 200) continue;
+			Vector2I c = WorldToChunkCoord(rb.GlobalPosition, TailleChunk);
+			bool proche = Mathf.Abs(c.X - chunkJoueur.X) <= rayon && Mathf.Abs(c.Y - chunkJoueur.Y) <= rayon;
+			if (proche)
+			{
+				rb.Freeze = false;
+				rb.Sleeping = false;
+			}
+			else
+			{
+				rb.LinearVelocity = Vector3.Zero;
+				rb.AngularVelocity = Vector3.Zero;
+				rb.Sleeping = true;
+				rb.Freeze = true;
+			}
+		}
+		foreach (Node n in GetTree().GetNodesInGroup("ObjetsDormantsDynamiques"))
+		{
+			if (n is not RigidBody3D rb || !rb.IsInsideTree()) continue;
+			Vector2I c = WorldToChunkCoord(rb.GlobalPosition, TailleChunk);
+			bool proche = Mathf.Abs(c.X - chunkJoueur.X) <= rayon && Mathf.Abs(c.Y - chunkJoueur.Y) <= rayon;
+			if (proche)
+			{
+				rb.Freeze = false;
+				rb.Sleeping = false;
+			}
+			else
+			{
+				rb.LinearVelocity = Vector3.Zero;
+				rb.AngularVelocity = Vector3.Zero;
+				rb.Sleeping = true;
+				rb.Freeze = true;
 			}
 		}
 	}

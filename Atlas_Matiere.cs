@@ -44,7 +44,7 @@ public static class Atlas_Matiere
 
     public static float ObtenirFlexibiliteEffective(SlotInventaire slot)
     {
-        if (slot.ID == 20 || slot.ID == 21)
+        if (slot.ID == 20 || slot.ID == 21 || slot.ID == Joueur.IdObjetCeinturePoches || slot.ID == Joueur.IdObjetPochetteTier0)
         {
             float fa = ObtenirProfilFlexible(slot.IndexChimique, out var pa) ? pa.Flexibilite : 0.5f;
             float fb = ObtenirProfilFlexible(slot.IndexMorphologique, out var pb) ? pb.Flexibilite : 0.5f;
@@ -233,7 +233,30 @@ public static class Atlas_Matiere
             return "Outil forgé";
         }
         if (id == Joueur.IdObjetSacDos) return "Sac à dos";
-        if (id == Joueur.IdObjetCeinturePoches) return "Ceinture à poches";
+        if (id == Joueur.IdObjetCeinturePoches)
+        {
+            bool a = ObtenirProfilFlexible(slot.IndexChimique, out var pa);
+            bool b = ObtenirProfilFlexible(slot.IndexMorphologique, out var pb);
+            if (a && b)
+                return $"Ceinture à poches ({pa.Nom}+{pb.Nom})";
+            if (a)
+                return $"Ceinture à poches ({pa.Nom})";
+            if (b)
+                return $"Ceinture à poches ({pb.Nom})";
+            return "Ceinture à poches";
+        }
+        if (id == Joueur.IdObjetPochetteTier0)
+        {
+            bool a = ObtenirProfilFlexible(slot.IndexChimique, out var pa);
+            bool b = ObtenirProfilFlexible(slot.IndexMorphologique, out var pb);
+            if (a && b)
+                return $"Pochette tier 0 ({pa.Nom}+{pb.Nom})";
+            if (a)
+                return $"Pochette tier 0 ({pa.Nom})";
+            if (b)
+                return $"Pochette tier 0 ({pb.Nom})";
+            return "Pochette tier 0";
+        }
         if (ObtenirProfilFlexible(id, out var flex))
             return flex.Nom;
         if (id == 30)
@@ -374,6 +397,7 @@ public static class Atlas_Matiere
             !s.EstVide && ItemPhysique.EstIdRocheMatiere(s.ID) && s.IndexMorphologique == 1
             && (s.IndexTaille == 0 || s.IndexTaille == 1);
         static bool EstSlotCordeCraft(SlotInventaire s) => !s.EstVide && s.ID == 20;
+        static bool EstSlotTissuCraft(SlotInventaire s) => !s.EstVide && s.ID == 21;
         static bool EstSlotBatonCraft(SlotInventaire s) => !s.EstVide && s.ID == 32;
 
         SlotInventaire c0, c1, c2, c3;
@@ -392,8 +416,83 @@ public static class Atlas_Matiere
             c3 = grille[3];
         }
 
-        // RECETTE : 4 cordes (20) en carré 2×2 (inventaire ou coin haut-gauche de l’établi) → tissu primitif tier 0 (21).
-        if (EstSlotCordeCraft(c0) && EstSlotCordeCraft(c1) && EstSlotCordeCraft(c2) && EstSlotCordeCraft(c3))
+        // RECETTE ATELIER : 6 cordes (20) → ceinture à poches (102). Formes : 2×3 (colonnes gauche/droite) ou 3×2 (lignes haut/bas).
+        if (grilleCraft3x3Table && grille.Length >= 9)
+        {
+            bool blocGauche = EstSlotCordeCraft(grille[0]) && EstSlotCordeCraft(grille[1]) && EstSlotCordeCraft(grille[3]) && EstSlotCordeCraft(grille[4]) && EstSlotCordeCraft(grille[6]) && EstSlotCordeCraft(grille[7])
+                && grille[2].EstVide && grille[5].EstVide && grille[8].EstVide;
+            bool blocDroit = EstSlotCordeCraft(grille[1]) && EstSlotCordeCraft(grille[2]) && EstSlotCordeCraft(grille[4]) && EstSlotCordeCraft(grille[5]) && EstSlotCordeCraft(grille[7]) && EstSlotCordeCraft(grille[8])
+                && grille[0].EstVide && grille[3].EstVide && grille[6].EstVide;
+            bool blocHaut = EstSlotCordeCraft(grille[0]) && EstSlotCordeCraft(grille[1]) && EstSlotCordeCraft(grille[2]) && EstSlotCordeCraft(grille[3]) && EstSlotCordeCraft(grille[4]) && EstSlotCordeCraft(grille[5])
+                && grille[6].EstVide && grille[7].EstVide && grille[8].EstVide;
+            bool blocBas = EstSlotCordeCraft(grille[3]) && EstSlotCordeCraft(grille[4]) && EstSlotCordeCraft(grille[5]) && EstSlotCordeCraft(grille[6]) && EstSlotCordeCraft(grille[7]) && EstSlotCordeCraft(grille[8])
+                && grille[0].EstVide && grille[1].EstVide && grille[2].EstVide;
+            if (blocGauche || blocDroit || blocHaut || blocBas)
+            {
+                SlotInventaire refC = blocGauche ? grille[0] : blocDroit ? grille[1] : blocHaut ? grille[0] : grille[3];
+                int nf;
+                if (blocGauche)
+                    nf = Mathf.Max(Mathf.Max(Mathf.Max(grille[0].NiveauFracture, grille[1].NiveauFracture), Mathf.Max(grille[3].NiveauFracture, grille[4].NiveauFracture)), Mathf.Max(grille[6].NiveauFracture, grille[7].NiveauFracture));
+                else if (blocDroit)
+                    nf = Mathf.Max(Mathf.Max(Mathf.Max(grille[1].NiveauFracture, grille[2].NiveauFracture), Mathf.Max(grille[4].NiveauFracture, grille[5].NiveauFracture)), Mathf.Max(grille[7].NiveauFracture, grille[8].NiveauFracture));
+                else if (blocHaut)
+                    nf = Mathf.Max(Mathf.Max(Mathf.Max(grille[0].NiveauFracture, grille[1].NiveauFracture), Mathf.Max(grille[2].NiveauFracture, grille[3].NiveauFracture)), Mathf.Max(grille[4].NiveauFracture, grille[5].NiveauFracture));
+                else
+                    nf = Mathf.Max(Mathf.Max(Mathf.Max(grille[3].NiveauFracture, grille[4].NiveauFracture), Mathf.Max(grille[5].NiveauFracture, grille[6].NiveauFracture)), Mathf.Max(grille[7].NiveauFracture, grille[8].NiveauFracture));
+                return new SlotInventaire
+                {
+                    ID = Joueur.IdObjetCeinturePoches,
+                    IndexChimique = refC.IndexChimique,
+                    IndexMorphologique = refC.IndexMorphologique,
+                    NiveauFracture = nf,
+                    EstUnEclat = false
+                };
+            }
+
+            // RECETTE ATELIER : Pochette tier 0 (103)
+            // Patron strict : [1]=tissu, [4]=corde tressée, [7]=tissu ; tout le reste vide.
+            bool pochetteTier0 = EstSlotTissuCraft(grille[1]) && EstSlotCordeCraft(grille[4]) && EstSlotTissuCraft(grille[7])
+                && grille[0].EstVide && grille[2].EstVide && grille[3].EstVide && grille[5].EstVide && grille[6].EstVide && grille[8].EstVide;
+            if (pochetteTier0)
+            {
+                int nf = Mathf.Max(grille[1].NiveauFracture, Mathf.Max(grille[4].NiveauFracture, grille[7].NiveauFracture));
+                return new SlotInventaire
+                {
+                    ID = Joueur.IdObjetPochetteTier0,
+                    IndexChimique = grille[4].IndexChimique,
+                    IndexMorphologique = grille[4].IndexMorphologique,
+                    NiveauFracture = nf,
+                    EstUnEclat = false
+                };
+            }
+
+            // RECETTE ATELIER : Sac tier 0 (101) = ficelle au-dessus de la pochette tier 0.
+            // Patron strict :
+            // [0]=vide [1]=ficelle [2]=vide
+            // [3]=vide [4]=pochette [5]=vide
+            // [6]=vide [7]=vide [8]=vide
+            bool sacTier0 = grille[0].EstVide && EstSlotCordeCraft(grille[1]) && grille[2].EstVide
+                && grille[3].EstVide && !grille[4].EstVide && grille[4].ID == Joueur.IdObjetPochetteTier0 && grille[5].EstVide
+                && grille[6].EstVide && grille[7].EstVide && grille[8].EstVide;
+            if (sacTier0)
+            {
+                int nf = Mathf.Max(grille[1].NiveauFracture, grille[4].NiveauFracture);
+                return new SlotInventaire
+                {
+                    ID = Joueur.IdObjetSacTier0,
+                    IndexChimique = grille[1].IndexChimique,
+                    IndexMorphologique = grille[1].IndexMorphologique,
+                    NiveauFracture = nf,
+                    EstUnEclat = false
+                };
+            }
+        }
+
+        // RECETTE : 4 cordes (20) en carré 2×2 strict — poche (Q) : cases 0–3 ; établi : coin haut-gauche 0,1,3,4 et rien d’autre sur le 3×3 (sinon ceinture / autres recettes).
+        bool tissu2x2 = EstSlotCordeCraft(c0) && EstSlotCordeCraft(c1) && EstSlotCordeCraft(c2) && EstSlotCordeCraft(c3);
+        if (tissu2x2 && grilleCraft3x3Table && grille.Length >= 9)
+            tissu2x2 = grille[2].EstVide && grille[5].EstVide && grille[6].EstVide && grille[7].EstVide && grille[8].EstVide;
+        if (tissu2x2)
         {
             int nf = Mathf.Max(Mathf.Max(c0.NiveauFracture, c1.NiveauFracture), Mathf.Max(c2.NiveauFracture, c3.NiveauFracture));
             return new SlotInventaire

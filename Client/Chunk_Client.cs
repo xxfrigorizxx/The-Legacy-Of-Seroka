@@ -1309,24 +1309,13 @@ void fragment() {
 		data.TailleChunk = donnees.TailleChunk;
 		data.HauteurMax = donnees.HauteurMax;
 
-		// Flore : ne pas réécraser un inventaire déjà synchronisé (fauchage, gravité). Sinon la surface herbe (ID 1) régénère
-		// des brins là où le joueur vient de couper — le MultiMesh restait animé alors que l'item est déjà spawné.
-		Dictionary<Vector3I, byte> floreAvant = null;
-		if (data.InventaireFlore != null)
-			floreAvant = new Dictionary<Vector3I, byte>(data.InventaireFlore);
-		var genere = GenererInventaireFloreDepuisSurface(data);
-		if (floreAvant == null)
-			data.InventaireFlore = genere;
-		else
-		{
-			var fusion = new Dictionary<Vector3I, byte>();
-			foreach (var kv in genere)
-			{
-				if (floreAvant.TryGetValue(kv.Key, out byte type))
-					fusion[kv.Key] = type;
-			}
-			data.InventaireFlore = fusion;
-		}
+		// Flore : l’état serveur (persisté disque) est la source de vérité absolue.
+		// IMPORTANT : un inventaire vide est un état valide (zone totalement fauchée),
+		// il ne faut jamais régénérer automatiquement côté client.
+		if (donnees.InventaireFlore != null)
+			data.InventaireFlore = new Dictionary<Vector3I, byte>(donnees.InventaireFlore);
+		else if (data.InventaireFlore == null)
+			data.InventaireFlore = GenererInventaireFloreDepuisSurface(data); // Fallback legacy uniquement.
 
 		var payloads = new List<SectionPayload>(NB_SECTIONS);
 		for (int i = 0; i < NB_SECTIONS; i++)

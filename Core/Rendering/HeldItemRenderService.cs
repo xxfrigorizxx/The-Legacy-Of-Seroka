@@ -19,6 +19,12 @@ public partial class Joueur
                 _objetEnMain.RemoveMeta(MetaSignatureCorde20);
             if (_objetEnMain.HasMeta(MetaSignatureTissu21))
                 _objetEnMain.RemoveMeta(MetaSignatureTissu21);
+            if (_objetEnMain.HasMeta(MetaSignatureCeinture102))
+                _objetEnMain.RemoveMeta(MetaSignatureCeinture102);
+            if (_objetEnMain.HasMeta(MetaSignaturePochette103))
+                _objetEnMain.RemoveMeta(MetaSignaturePochette103);
+            if (_objetEnMain.HasMeta(MetaSignatureSac101))
+                _objetEnMain.RemoveMeta(MetaSignatureSac101);
             _objetEnMain.Mesh = null;
             _objetEnMain.MaterialOverride = null;
             return;
@@ -35,6 +41,8 @@ public partial class Joueur
                 _objetEnMain.RemoveMeta(MetaSignatureCorde20);
             if (_objetEnMain.HasMeta(MetaSignatureTissu21))
                 _objetEnMain.RemoveMeta(MetaSignatureTissu21);
+            if (_objetEnMain.HasMeta(MetaSignatureCeinture102))
+                _objetEnMain.RemoveMeta(MetaSignatureCeinture102);
             int sig = SignatureSlotDague105(main);
             int prev = _objetEnMain.HasMeta(MetaSignatureDague105) ? (int)_objetEnMain.GetMeta(MetaSignatureDague105).AsInt32() : -1;
             bool manqueModele = _objetEnMain.FindChild("ModeleArme", true, false) == null;
@@ -61,6 +69,8 @@ public partial class Joueur
                 _objetEnMain.RemoveMeta(MetaSignatureCorde20);
             if (_objetEnMain.HasMeta(MetaSignatureTissu21))
                 _objetEnMain.RemoveMeta(MetaSignatureTissu21);
+            if (_objetEnMain.HasMeta(MetaSignatureCeinture102))
+                _objetEnMain.RemoveMeta(MetaSignatureCeinture102);
             int sig = SignatureSlotHachette106(main);
             int prev = _objetEnMain.HasMeta(MetaSignatureHachette106) ? (int)_objetEnMain.GetMeta(MetaSignatureHachette106).AsInt32() : -1;
             bool manqueModele = _objetEnMain.FindChild("ModeleArme", true, false) == null;
@@ -86,6 +96,8 @@ public partial class Joueur
                 _objetEnMain.RemoveMeta(MetaSignatureAtelier200);
             if (_objetEnMain.HasMeta(MetaSignatureTissu21))
                 _objetEnMain.RemoveMeta(MetaSignatureTissu21);
+            if (_objetEnMain.HasMeta(MetaSignatureCeinture102))
+                _objetEnMain.RemoveMeta(MetaSignatureCeinture102);
             int sig = SignatureSlotCorde20(main);
             int prev = _objetEnMain.HasMeta(MetaSignatureCorde20) ? (int)_objetEnMain.GetMeta(MetaSignatureCorde20).AsInt32() : -1;
             bool manqueModele = _objetEnMain.FindChild("ModeleArme", true, false) == null;
@@ -111,6 +123,8 @@ public partial class Joueur
                 _objetEnMain.RemoveMeta(MetaSignatureAtelier200);
             if (_objetEnMain.HasMeta(MetaSignatureCorde20))
                 _objetEnMain.RemoveMeta(MetaSignatureCorde20);
+            if (_objetEnMain.HasMeta(MetaSignatureCeinture102))
+                _objetEnMain.RemoveMeta(MetaSignatureCeinture102);
             int sig = SignatureSlotTissu21(main);
             int prev = _objetEnMain.HasMeta(MetaSignatureTissu21) ? (int)_objetEnMain.GetMeta(MetaSignatureTissu21).AsInt32() : -1;
             bool manqueModele = _objetEnMain.FindChild("ModeleArme", true, false) == null;
@@ -122,6 +136,93 @@ public partial class Joueur
             }
             _objetEnMain.Scale = Vector3.One;
             _objetEnMain.RotationDegrees = new Vector3(-12f + _rotationManuelleX, 8f + _rotationManuelleY, 4f + _rotationManuelleZ);
+            return;
+        }
+        if (main.ID == IdObjetCeinturePoches)
+        {
+            _objetEnMain.Mesh = null;
+            _objetEnMain.MaterialOverride = null;
+            if (_objetEnMain.HasMeta(MetaSignatureDague105))
+                _objetEnMain.RemoveMeta(MetaSignatureDague105);
+            if (_objetEnMain.HasMeta(MetaSignatureHachette106))
+                _objetEnMain.RemoveMeta(MetaSignatureHachette106);
+            if (_objetEnMain.HasMeta(MetaSignatureAtelier200))
+                _objetEnMain.RemoveMeta(MetaSignatureAtelier200);
+            if (_objetEnMain.HasMeta(MetaSignatureCorde20))
+                _objetEnMain.RemoveMeta(MetaSignatureCorde20);
+            if (_objetEnMain.HasMeta(MetaSignatureTissu21))
+                _objetEnMain.RemoveMeta(MetaSignatureTissu21);
+            int sig = SignatureSlotCeinture102(main);
+            int prev = _objetEnMain.HasMeta(MetaSignatureCeinture102) ? (int)_objetEnMain.GetMeta(MetaSignatureCeinture102).AsInt32() : -1;
+            bool manqueModele = _objetEnMain.FindChild("ModeleArme", true, false) == null;
+            if (manqueModele || sig != prev)
+            {
+                NettoyerModelesEnfants(_objetEnMain);
+                InstancierModeleCeinturePoches(_objetEnMain, main, 0.38f);
+                _objetEnMain.SetMeta(MetaSignatureCeinture102, sig);
+            }
+            _objetEnMain.Scale = Vector3.One;
+            _objetEnMain.RotationDegrees = new Vector3(-10f + _rotationManuelleX, 18f + _rotationManuelleY, 2f + _rotationManuelleZ);
+            return;
+        }
+        if (main.ID == IdObjetPochetteTier0)
+        {
+            _objetEnMain.Mesh = null;
+            _objetEnMain.MaterialOverride = null;
+            if (_objetEnMain.HasMeta(MetaSignatureDague105))
+                _objetEnMain.RemoveMeta(MetaSignatureDague105);
+            if (_objetEnMain.HasMeta(MetaSignatureHachette106))
+                _objetEnMain.RemoveMeta(MetaSignatureHachette106);
+            if (_objetEnMain.HasMeta(MetaSignatureAtelier200))
+                _objetEnMain.RemoveMeta(MetaSignatureAtelier200);
+            if (_objetEnMain.HasMeta(MetaSignatureCorde20))
+                _objetEnMain.RemoveMeta(MetaSignatureCorde20);
+            if (_objetEnMain.HasMeta(MetaSignatureTissu21))
+                _objetEnMain.RemoveMeta(MetaSignatureTissu21);
+            if (_objetEnMain.HasMeta(MetaSignatureCeinture102))
+                _objetEnMain.RemoveMeta(MetaSignatureCeinture102);
+            int sig = SignatureSlotPochette103(main);
+            int prev = _objetEnMain.HasMeta(MetaSignaturePochette103) ? (int)_objetEnMain.GetMeta(MetaSignaturePochette103).AsInt32() : -1;
+            bool manqueModele = _objetEnMain.FindChild("ModeleArme", true, false) == null;
+            if (manqueModele || sig != prev)
+            {
+                NettoyerModelesEnfants(_objetEnMain);
+                InstancierModelePochetteTier0(_objetEnMain, main, 0.35f);
+                _objetEnMain.SetMeta(MetaSignaturePochette103, sig);
+            }
+            _objetEnMain.Scale = Vector3.One;
+            _objetEnMain.RotationDegrees = new Vector3(-9f + _rotationManuelleX, 16f + _rotationManuelleY, 1f + _rotationManuelleZ);
+            return;
+        }
+        if (main.ID == IdObjetSacTier0)
+        {
+            _objetEnMain.Mesh = null;
+            _objetEnMain.MaterialOverride = null;
+            if (_objetEnMain.HasMeta(MetaSignatureDague105))
+                _objetEnMain.RemoveMeta(MetaSignatureDague105);
+            if (_objetEnMain.HasMeta(MetaSignatureHachette106))
+                _objetEnMain.RemoveMeta(MetaSignatureHachette106);
+            if (_objetEnMain.HasMeta(MetaSignatureAtelier200))
+                _objetEnMain.RemoveMeta(MetaSignatureAtelier200);
+            if (_objetEnMain.HasMeta(MetaSignatureCorde20))
+                _objetEnMain.RemoveMeta(MetaSignatureCorde20);
+            if (_objetEnMain.HasMeta(MetaSignatureTissu21))
+                _objetEnMain.RemoveMeta(MetaSignatureTissu21);
+            if (_objetEnMain.HasMeta(MetaSignatureCeinture102))
+                _objetEnMain.RemoveMeta(MetaSignatureCeinture102);
+            if (_objetEnMain.HasMeta(MetaSignaturePochette103))
+                _objetEnMain.RemoveMeta(MetaSignaturePochette103);
+            int sig = SignatureSlotSac101(main);
+            int prev = _objetEnMain.HasMeta(MetaSignatureSac101) ? (int)_objetEnMain.GetMeta(MetaSignatureSac101).AsInt32() : -1;
+            bool manqueModele = _objetEnMain.FindChild("ModeleArme", true, false) == null;
+            if (manqueModele || sig != prev)
+            {
+                NettoyerModelesEnfants(_objetEnMain);
+                InstancierModeleSacTier0(_objetEnMain, main, 0.38f);
+                _objetEnMain.SetMeta(MetaSignatureSac101, sig);
+            }
+            _objetEnMain.Scale = Vector3.One;
+            _objetEnMain.RotationDegrees = new Vector3(-11f + _rotationManuelleX, 20f + _rotationManuelleY, 3f + _rotationManuelleZ);
             return;
         }
         if (main.ID == 200)
@@ -136,6 +237,8 @@ public partial class Joueur
                 _objetEnMain.RemoveMeta(MetaSignatureCorde20);
             if (_objetEnMain.HasMeta(MetaSignatureTissu21))
                 _objetEnMain.RemoveMeta(MetaSignatureTissu21);
+            if (_objetEnMain.HasMeta(MetaSignatureCeinture102))
+                _objetEnMain.RemoveMeta(MetaSignatureCeinture102);
             int sig = SignatureSlotAtelier200(main);
             int prev = _objetEnMain.HasMeta(MetaSignatureAtelier200) ? (int)_objetEnMain.GetMeta(MetaSignatureAtelier200).AsInt32() : -1;
             bool manqueModele = _objetEnMain.FindChild("ModeleArme", true, false) == null;
@@ -160,6 +263,12 @@ public partial class Joueur
             _objetEnMain.RemoveMeta(MetaSignatureCorde20);
         if (_objetEnMain.HasMeta(MetaSignatureTissu21))
             _objetEnMain.RemoveMeta(MetaSignatureTissu21);
+        if (_objetEnMain.HasMeta(MetaSignatureCeinture102))
+            _objetEnMain.RemoveMeta(MetaSignatureCeinture102);
+        if (_objetEnMain.HasMeta(MetaSignaturePochette103))
+            _objetEnMain.RemoveMeta(MetaSignaturePochette103);
+        if (_objetEnMain.HasMeta(MetaSignatureSac101))
+            _objetEnMain.RemoveMeta(MetaSignatureSac101);
         int idxMorphMain = main.IndexMorphologique;
         Mesh m = main.EstUnEclat ? main.MeshEclat : ObtenirMeshDepuisCache(main.ID, idxMorphMain, main.IndexTaille);
         _objetEnMain.Mesh = m;
@@ -192,9 +301,9 @@ public partial class Joueur
         }
         else if (m != null)
         {
-            int morphMat = main.ID is 20 or 21 ? main.IndexMorphologique
+            int morphMat = main.ID is 20 or 21 or IdObjetCeinturePoches or IdObjetPochetteTier0 or IdObjetSacTier0 ? main.IndexMorphologique
                 : (main.ID == 30 || main.ID == 32) ? main.IndexMorphologique : 0;
-            int tresMat = main.ID is 20 or 21 ? main.NiveauFracture : 0;
+            int tresMat = main.ID is 20 or 21 or IdObjetCeinturePoches or IdObjetPochetteTier0 or IdObjetSacTier0 ? main.NiveauFracture : 0;
             AppliquerMaterielObjet(_objetEnMain, main.ID, main.IndexChimique, morphMat, tresMat);
         }
     }
@@ -221,6 +330,12 @@ public partial class Joueur
                 meshNode.RemoveMeta(MetaSignatureCorde20);
             if (meshNode.HasMeta(MetaSignatureTissu21))
                 meshNode.RemoveMeta(MetaSignatureTissu21);
+            if (meshNode.HasMeta(MetaSignatureCeinture102))
+                meshNode.RemoveMeta(MetaSignatureCeinture102);
+            if (meshNode.HasMeta(MetaSignaturePochette103))
+                meshNode.RemoveMeta(MetaSignaturePochette103);
+            if (meshNode.HasMeta(MetaSignatureSac101))
+                meshNode.RemoveMeta(MetaSignatureSac101);
             meshNode.Mesh = null;
             meshNode.MaterialOverride = null;
             return;
@@ -237,6 +352,8 @@ public partial class Joueur
                 meshNode.RemoveMeta(MetaSignatureCorde20);
             if (meshNode.HasMeta(MetaSignatureTissu21))
                 meshNode.RemoveMeta(MetaSignatureTissu21);
+            if (meshNode.HasMeta(MetaSignatureCeinture102))
+                meshNode.RemoveMeta(MetaSignatureCeinture102);
             int sig = SignatureSlotDague105(slot);
             int prev = meshNode.HasMeta(MetaSignatureDague105) ? (int)meshNode.GetMeta(MetaSignatureDague105).AsInt32() : -1;
             bool manque = meshNode.FindChild("ModeleArme", true, false) == null;
@@ -263,6 +380,8 @@ public partial class Joueur
                 meshNode.RemoveMeta(MetaSignatureCorde20);
             if (meshNode.HasMeta(MetaSignatureTissu21))
                 meshNode.RemoveMeta(MetaSignatureTissu21);
+            if (meshNode.HasMeta(MetaSignatureCeinture102))
+                meshNode.RemoveMeta(MetaSignatureCeinture102);
             int sig = SignatureSlotHachette106(slot);
             int prev = meshNode.HasMeta(MetaSignatureHachette106) ? (int)meshNode.GetMeta(MetaSignatureHachette106).AsInt32() : -1;
             bool manque = meshNode.FindChild("ModeleArme", true, false) == null;
@@ -288,6 +407,8 @@ public partial class Joueur
                 meshNode.RemoveMeta(MetaSignatureAtelier200);
             if (meshNode.HasMeta(MetaSignatureTissu21))
                 meshNode.RemoveMeta(MetaSignatureTissu21);
+            if (meshNode.HasMeta(MetaSignatureCeinture102))
+                meshNode.RemoveMeta(MetaSignatureCeinture102);
             int sig = SignatureSlotCorde20(slot);
             int prev = meshNode.HasMeta(MetaSignatureCorde20) ? (int)meshNode.GetMeta(MetaSignatureCorde20).AsInt32() : -1;
             bool manque = meshNode.FindChild("ModeleArme", true, false) == null;
@@ -313,6 +434,8 @@ public partial class Joueur
                 meshNode.RemoveMeta(MetaSignatureAtelier200);
             if (meshNode.HasMeta(MetaSignatureCorde20))
                 meshNode.RemoveMeta(MetaSignatureCorde20);
+            if (meshNode.HasMeta(MetaSignatureCeinture102))
+                meshNode.RemoveMeta(MetaSignatureCeinture102);
             int sig = SignatureSlotTissu21(slot);
             int prev = meshNode.HasMeta(MetaSignatureTissu21) ? (int)meshNode.GetMeta(MetaSignatureTissu21).AsInt32() : -1;
             bool manque = meshNode.FindChild("ModeleArme", true, false) == null;
@@ -324,6 +447,93 @@ public partial class Joueur
             }
             meshNode.Scale = Vector3.One;
             meshNode.RotationDegrees = new Vector3(10f, 32f, -6f);
+            return;
+        }
+        if (slot.ID == IdObjetCeinturePoches)
+        {
+            meshNode.Mesh = null;
+            meshNode.MaterialOverride = null;
+            if (meshNode.HasMeta(MetaSignatureDague105))
+                meshNode.RemoveMeta(MetaSignatureDague105);
+            if (meshNode.HasMeta(MetaSignatureHachette106))
+                meshNode.RemoveMeta(MetaSignatureHachette106);
+            if (meshNode.HasMeta(MetaSignatureAtelier200))
+                meshNode.RemoveMeta(MetaSignatureAtelier200);
+            if (meshNode.HasMeta(MetaSignatureCorde20))
+                meshNode.RemoveMeta(MetaSignatureCorde20);
+            if (meshNode.HasMeta(MetaSignatureTissu21))
+                meshNode.RemoveMeta(MetaSignatureTissu21);
+            int sig = SignatureSlotCeinture102(slot);
+            int prev = meshNode.HasMeta(MetaSignatureCeinture102) ? (int)meshNode.GetMeta(MetaSignatureCeinture102).AsInt32() : -1;
+            bool manque = meshNode.FindChild("ModeleArme", true, false) == null;
+            if (manque || sig != prev)
+            {
+                NettoyerModelesEnfants(meshNode);
+                InstancierModeleCeinturePoches(meshNode, slot, 0.32f);
+                meshNode.SetMeta(MetaSignatureCeinture102, sig);
+            }
+            meshNode.Scale = Vector3.One;
+            meshNode.RotationDegrees = new Vector3(8f, 28f, -4f);
+            return;
+        }
+        if (slot.ID == IdObjetPochetteTier0)
+        {
+            meshNode.Mesh = null;
+            meshNode.MaterialOverride = null;
+            if (meshNode.HasMeta(MetaSignatureDague105))
+                meshNode.RemoveMeta(MetaSignatureDague105);
+            if (meshNode.HasMeta(MetaSignatureHachette106))
+                meshNode.RemoveMeta(MetaSignatureHachette106);
+            if (meshNode.HasMeta(MetaSignatureAtelier200))
+                meshNode.RemoveMeta(MetaSignatureAtelier200);
+            if (meshNode.HasMeta(MetaSignatureCorde20))
+                meshNode.RemoveMeta(MetaSignatureCorde20);
+            if (meshNode.HasMeta(MetaSignatureTissu21))
+                meshNode.RemoveMeta(MetaSignatureTissu21);
+            if (meshNode.HasMeta(MetaSignatureCeinture102))
+                meshNode.RemoveMeta(MetaSignatureCeinture102);
+            int sig = SignatureSlotPochette103(slot);
+            int prev = meshNode.HasMeta(MetaSignaturePochette103) ? (int)meshNode.GetMeta(MetaSignaturePochette103).AsInt32() : -1;
+            bool manque = meshNode.FindChild("ModeleArme", true, false) == null;
+            if (manque || sig != prev)
+            {
+                NettoyerModelesEnfants(meshNode);
+                InstancierModelePochetteTier0(meshNode, slot, 0.3f);
+                meshNode.SetMeta(MetaSignaturePochette103, sig);
+            }
+            meshNode.Scale = Vector3.One;
+            meshNode.RotationDegrees = new Vector3(7f, 24f, -3f);
+            return;
+        }
+        if (slot.ID == IdObjetSacTier0)
+        {
+            meshNode.Mesh = null;
+            meshNode.MaterialOverride = null;
+            if (meshNode.HasMeta(MetaSignatureDague105))
+                meshNode.RemoveMeta(MetaSignatureDague105);
+            if (meshNode.HasMeta(MetaSignatureHachette106))
+                meshNode.RemoveMeta(MetaSignatureHachette106);
+            if (meshNode.HasMeta(MetaSignatureAtelier200))
+                meshNode.RemoveMeta(MetaSignatureAtelier200);
+            if (meshNode.HasMeta(MetaSignatureCorde20))
+                meshNode.RemoveMeta(MetaSignatureCorde20);
+            if (meshNode.HasMeta(MetaSignatureTissu21))
+                meshNode.RemoveMeta(MetaSignatureTissu21);
+            if (meshNode.HasMeta(MetaSignatureCeinture102))
+                meshNode.RemoveMeta(MetaSignatureCeinture102);
+            if (meshNode.HasMeta(MetaSignaturePochette103))
+                meshNode.RemoveMeta(MetaSignaturePochette103);
+            int sig = SignatureSlotSac101(slot);
+            int prev = meshNode.HasMeta(MetaSignatureSac101) ? (int)meshNode.GetMeta(MetaSignatureSac101).AsInt32() : -1;
+            bool manque = meshNode.FindChild("ModeleArme", true, false) == null;
+            if (manque || sig != prev)
+            {
+                NettoyerModelesEnfants(meshNode);
+                InstancierModeleSacTier0(meshNode, slot, 0.33f);
+                meshNode.SetMeta(MetaSignatureSac101, sig);
+            }
+            meshNode.Scale = Vector3.One;
+            meshNode.RotationDegrees = new Vector3(8f, 30f, -4f);
             return;
         }
         if (slot.ID == 200)
@@ -338,6 +548,8 @@ public partial class Joueur
                 meshNode.RemoveMeta(MetaSignatureCorde20);
             if (meshNode.HasMeta(MetaSignatureTissu21))
                 meshNode.RemoveMeta(MetaSignatureTissu21);
+            if (meshNode.HasMeta(MetaSignatureCeinture102))
+                meshNode.RemoveMeta(MetaSignatureCeinture102);
             int sig = SignatureSlotAtelier200(slot);
             int prev = meshNode.HasMeta(MetaSignatureAtelier200) ? (int)meshNode.GetMeta(MetaSignatureAtelier200).AsInt32() : -1;
             bool manque = meshNode.FindChild("ModeleArme", true, false) == null;
@@ -362,6 +574,12 @@ public partial class Joueur
             meshNode.RemoveMeta(MetaSignatureCorde20);
         if (meshNode.HasMeta(MetaSignatureTissu21))
             meshNode.RemoveMeta(MetaSignatureTissu21);
+        if (meshNode.HasMeta(MetaSignatureCeinture102))
+            meshNode.RemoveMeta(MetaSignatureCeinture102);
+        if (meshNode.HasMeta(MetaSignaturePochette103))
+            meshNode.RemoveMeta(MetaSignaturePochette103);
+        if (meshNode.HasMeta(MetaSignatureSac101))
+            meshNode.RemoveMeta(MetaSignatureSac101);
         Mesh m = slot.EstUnEclat ? slot.MeshEclat : ObtenirMeshDepuisCache(slot.ID, slot.IndexMorphologique, slot.IndexTaille);
         meshNode.Mesh = m;
         if (slot.ID == 30 || slot.ID == 32)
@@ -392,9 +610,9 @@ public partial class Joueur
         }
         else if (m != null)
         {
-            int morphMat = slot.ID is 20 or 21 ? slot.IndexMorphologique
+            int morphMat = slot.ID is 20 or 21 or IdObjetCeinturePoches or IdObjetPochetteTier0 or IdObjetSacTier0 ? slot.IndexMorphologique
                 : (slot.ID == 30 || slot.ID == 32) ? slot.IndexMorphologique : 0;
-            int tresMat = slot.ID is 20 or 21 ? slot.NiveauFracture : 0;
+            int tresMat = slot.ID is 20 or 21 or IdObjetCeinturePoches or IdObjetPochetteTier0 or IdObjetSacTier0 ? slot.NiveauFracture : 0;
             AppliquerMaterielObjet(meshNode, slot.ID, slot.IndexChimique, morphMat, tresMat);
         }
     }

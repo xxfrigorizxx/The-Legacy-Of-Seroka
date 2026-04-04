@@ -16,6 +16,8 @@ public partial class MenuAnatomie : Control
 	[Export] public ColorRect FondSombre;
 	[Export] public Panel InterfaceFutureSlot;
 	[Export] public Panel SacSlot;
+	[Export] public Panel EquipementSacSlot;
+	/// <summary>Grille <c>GrilleEquipCorps</c> : pour l’instant une seule case (ceinture 102). Pour d’autres équipements, ajouter des panneaux frères dans la scène et augmenter <c>columns</c> si besoin.</summary>
 	[Export] public Panel EquipementCorpsSlot;
 	[Export] public Panel SlotResultatCraft;
 
@@ -26,6 +28,12 @@ public partial class MenuAnatomie : Control
 	private SubViewportContainer _vpMenuDroite;
 	private MeshInstance3D _meshPreviewMenuG;
 	private MeshInstance3D _meshPreviewMenuD;
+	private SubViewportContainer _vpMenuCeinture;
+	private MeshInstance3D _meshPreviewMenuCeinture;
+	private Label _lblSlotCeinture;
+	private SubViewportContainer _vpMenuSacEquip;
+	private MeshInstance3D _meshPreviewMenuSacEquip;
+	private Label _lblSlotSacEquip;
 
 	/// <summary>Objet « tenu par la souris » dans l’inventaire Q : échange au clic avec une main ou une case 2×2.</summary>
 	private SlotInventaire _curseurMenu;
@@ -39,12 +47,17 @@ public partial class MenuAnatomie : Control
 	private const string CheminGrilleSac = "MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac";
 	private const string CheminMainGauche = "MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/LigneMainsCeinture/MainGaucheSlot";
 	private const string CheminMainDroite = "MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/LigneMainsCeinture/MainDroiteSlot";
+	private const string CheminEquipementCorpsSlot = "MarginPrincipal/VBoxPrincipal/CorpsHBox/GrilleEquipCorps/EquipementCorpsSlot";
+	private const string CheminEquipementSacSlot = "MarginPrincipal/VBoxPrincipal/CorpsHBox/GrilleEquipCorps/EquipementSacSlot";
 	private const string CheminGrilleAssemblage = "MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/LigneCraft/CadreCraft/GrilleAssemblage";
 	private const string CheminSlotResultatCraft = "MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/LigneCraft/CraftSortie";
 
 	private bool _clicsMainsConnectes;
+	private bool _clicsSlotCeintureConnecte;
+	private bool _clicsSlotSacConnecte;
 	private bool _clicsCraftConnectes;
 	private bool _clicsSlotResultatCraftConnecte;
+	private bool _clicsGrilleSacConnectes;
 	private bool _barreOngletsJeuConfiguree;
 
 	private const string CheminBarreOnglets = "MarginPrincipal/VBoxPrincipal/BarreOnglets";
@@ -67,6 +80,7 @@ public partial class MenuAnatomie : Control
 	private SubViewportContainer _vpCurseurSouris;
 	private MeshInstance3D _meshCurseurSouris;
 	private Label _lblCurseurSouris;
+	private Label _lblCurseurQuantite;
 	/// <summary>Infobulle près du curseur : nom exact du slot survolé (débogage des noms / ADN).</summary>
 	private Panel _panneauInfobulleSlot;
 	private Label _lblInfobulleSlot;
@@ -77,6 +91,10 @@ public partial class MenuAnatomie : Control
 			MainGaucheSlot = GetNodeOrNull<Panel>(CheminMainGauche) ?? FindChild("MainGaucheSlot", true, false) as Panel;
 		if (MainDroiteSlot == null || !GodotObject.IsInstanceValid(MainDroiteSlot))
 			MainDroiteSlot = GetNodeOrNull<Panel>(CheminMainDroite) ?? FindChild("MainDroiteSlot", true, false) as Panel;
+		if (EquipementCorpsSlot == null || !GodotObject.IsInstanceValid(EquipementCorpsSlot))
+			EquipementCorpsSlot = GetNodeOrNull<Panel>(CheminEquipementCorpsSlot) ?? FindChild("EquipementCorpsSlot", true, false) as Panel;
+		if (EquipementSacSlot == null || !GodotObject.IsInstanceValid(EquipementSacSlot))
+			EquipementSacSlot = GetNodeOrNull<Panel>(CheminEquipementSacSlot) ?? FindChild("EquipementSacSlot", true, false) as Panel;
 	}
 
 	private void ResoudreGrilleAssemblage()
@@ -121,10 +139,21 @@ public partial class MenuAnatomie : Control
 		if (Engine.IsEditorHint()) return;
 		ResoudreReferencesSlotsMains();
 		if (MainGaucheSlot == null || MainDroiteSlot == null) return;
-		if (_meshPreviewMenuG != null && GodotObject.IsInstanceValid(_meshPreviewMenuG)) return;
-
-		_meshPreviewMenuG = CreerViewportPreviewDansSlot(MainGaucheSlot, "ViewportMenuMainG", out _vpMenuGauche);
-		_meshPreviewMenuD = CreerViewportPreviewDansSlot(MainDroiteSlot, "ViewportMenuMainD", out _vpMenuDroite);
+		if (_meshPreviewMenuG == null || !GodotObject.IsInstanceValid(_meshPreviewMenuG))
+		{
+			_meshPreviewMenuG = CreerViewportPreviewDansSlot(MainGaucheSlot, "ViewportMenuMainG", out _vpMenuGauche);
+			_meshPreviewMenuD = CreerViewportPreviewDansSlot(MainDroiteSlot, "ViewportMenuMainD", out _vpMenuDroite);
+		}
+		if (EquipementCorpsSlot != null && (_meshPreviewMenuCeinture == null || !GodotObject.IsInstanceValid(_meshPreviewMenuCeinture)))
+		{
+			_meshPreviewMenuCeinture = CreerViewportPreviewDansSlot(EquipementCorpsSlot, "ViewportMenuCeinture", out _vpMenuCeinture);
+			_lblSlotCeinture = TrouverOuCreerLabel(EquipementCorpsSlot, "Ceinture\n[vide]");
+		}
+		if (EquipementSacSlot != null && (_meshPreviewMenuSacEquip == null || !GodotObject.IsInstanceValid(_meshPreviewMenuSacEquip)))
+		{
+			_meshPreviewMenuSacEquip = CreerViewportPreviewDansSlot(EquipementSacSlot, "ViewportMenuSacEquip", out _vpMenuSacEquip);
+			_lblSlotSacEquip = TrouverOuCreerLabel(EquipementSacSlot, "Sac\n[vide]");
+		}
 	}
 
 	private static MeshInstance3D CreerViewportPreviewDansSlot(Panel panel, string nomConteneur, out SubViewportContainer holder)
@@ -202,18 +231,45 @@ public partial class MenuAnatomie : Control
 			_clicsSlotResultatCraftConnecte = true;
 			Branche(SlotResultatCraft, e => TraiterClicInventaire(e, 3));
 		}
+		ResoudreReferencesSlotsMains();
+		if (!_clicsSlotCeintureConnecte && EquipementCorpsSlot != null)
+		{
+			_clicsSlotCeintureConnecte = true;
+			Branche(EquipementCorpsSlot, e => TraiterClicInventaire(e, 4));
+		}
+		if (!_clicsSlotSacConnecte && EquipementSacSlot != null)
+		{
+			_clicsSlotSacConnecte = true;
+			Branche(EquipementSacSlot, e => TraiterClicInventaire(e, 5));
+		}
+		if (!_clicsGrilleSacConnectes && ObtenirGrilleSac() is GridContainer grilleSac)
+		{
+			_clicsGrilleSacConnectes = true;
+			grilleSac.MouseFilter = Control.MouseFilterEnum.Ignore;
+			int n = grilleSac.GetChildCount();
+			for (int i = 0; i < n; i++)
+			{
+				int idx = i;
+				if (grilleSac.GetChild(i) is Panel cp)
+					Branche(cp, e => TraiterClicInventaire(e, 6, idx));
+			}
+		}
 	}
 
 	private void TraiterClicInventaire(InputEvent e, int mode, int craftIdx = -1)
 	{
 		if (_joueurRef == null) return;
-		if (e is not InputEventMouseButton mb || !mb.Pressed || mb.ButtonIndex != MouseButton.Left)
+		if (e is not InputEventMouseButton mb || !mb.Pressed)
+			return;
+		bool clicGauche = mb.ButtonIndex == MouseButton.Left;
+		bool clicDroit = mb.ButtonIndex == MouseButton.Right;
+		if (!clicGauche && !clicDroit)
 			return;
 
 		if (mode == 0)
-			EchangerCurseurAvec(ref _joueurRef.MainGauche);
+			InteragirCurseurAvecSlot(ref _joueurRef.MainGauche, clicGauche, clicDroit);
 		else if (mode == 1)
-			EchangerCurseurAvec(ref _joueurRef.MainDroite);
+			InteragirCurseurAvecSlot(ref _joueurRef.MainDroite, clicGauche, clicDroit);
 		else if (mode == 2 && craftIdx >= 0)
 		{
 			if (!_joueurRef.CraftGrille3x3AuTable && craftIdx >= 4)
@@ -221,19 +277,35 @@ public partial class MenuAnatomie : Control
 			var g = _joueurRef.ObtenirGrilleCraftAffichee();
 			if (g == null || craftIdx >= g.Length)
 				return;
-			EchangerCurseurAvec(ref _joueurRef.RefSlotCraft(craftIdx));
+			InteragirCurseurAvecSlot(ref _joueurRef.RefSlotCraft(craftIdx), clicGauche, clicDroit);
 			_joueurRef.VerifierRecettes();
 		}
 		else if (mode == 3)
 		{
-			if (_curseurMenu.EstVide && !_joueurRef.SlotResultatCraft.EstVide)
+			if (clicGauche && _curseurMenu.EstVide && !_joueurRef.SlotResultatCraft.EstVide)
 			{
 				_curseurMenu = _joueurRef.SlotResultatCraft;
+				_curseurMenu.Quantite = Joueur.ObtenirQuantiteSlot(_curseurMenu);
 				_joueurRef.ConsommerIngredientsCraft();
 				_joueurRef.VerifierRecettes();
 			}
 			else
 				return;
+		}
+		else if (mode == 4)
+		{
+			if (!EchangerCurseurAvecEquipementCeintureSiValide())
+				return;
+		}
+		else if (mode == 5)
+		{
+			if (!EchangerCurseurAvecEquipementSacSiValide())
+				return;
+		}
+		else if (mode == 6 && craftIdx >= 0)
+		{
+			if (!_joueurRef.ASacEquipe() || craftIdx != 0) return;
+			InteragirCurseurAvecSlot(ref _joueurRef.RefSlotSac(0), clicGauche, clicDroit);
 		}
 		else
 			return;
@@ -242,11 +314,133 @@ public partial class MenuAnatomie : Control
 		_joueurRef.RafraichirHUD();
 	}
 
+	private static SlotInventaire CopierSlotUnitaire(SlotInventaire src)
+	{
+		var s = src;
+		s.Quantite = 1;
+		return s;
+	}
+
+	private static bool PeutEmpiler(SlotInventaire a, SlotInventaire b) => Joueur.SontEmpilables(a, b) && Joueur.ObtenirPileMax(a) > 1;
+
+	private void InteragirCurseurAvecSlot(ref SlotInventaire slot, bool clicGauche, bool clicDroit)
+	{
+		if (clicGauche)
+		{
+			InteractionClicGauche(ref slot);
+			return;
+		}
+		if (clicDroit)
+			InteractionClicDroit(ref slot);
+	}
+
+	private void InteractionClicGauche(ref SlotInventaire slot)
+	{
+		if (_curseurMenu.EstVide)
+		{
+			_curseurMenu = slot;
+			if (!_curseurMenu.EstVide) _curseurMenu.Quantite = Joueur.ObtenirQuantiteSlot(_curseurMenu);
+			slot = new SlotInventaire();
+			return;
+		}
+		if (slot.EstVide)
+		{
+			slot = _curseurMenu;
+			slot.Quantite = Joueur.ObtenirQuantiteSlot(slot);
+			_curseurMenu = new SlotInventaire();
+			return;
+		}
+		if (PeutEmpiler(slot, _curseurMenu))
+		{
+			int max = Joueur.ObtenirPileMax(slot);
+			int qDst = Joueur.ObtenirQuantiteSlot(slot);
+			int qSrc = Joueur.ObtenirQuantiteSlot(_curseurMenu);
+			int place = Mathf.Max(0, max - qDst);
+			int depose = Mathf.Min(place, qSrc);
+			if (depose > 0)
+			{
+				slot.Quantite = qDst + depose;
+				qSrc -= depose;
+				if (qSrc <= 0) _curseurMenu = new SlotInventaire();
+				else _curseurMenu.Quantite = qSrc;
+				return;
+			}
+		}
+		var a = _curseurMenu;
+		_curseurMenu = slot;
+		slot = a;
+		_curseurMenu.Quantite = Joueur.ObtenirQuantiteSlot(_curseurMenu);
+		slot.Quantite = Joueur.ObtenirQuantiteSlot(slot);
+	}
+
+	private void InteractionClicDroit(ref SlotInventaire slot)
+	{
+		if (_curseurMenu.EstVide)
+		{
+			if (slot.EstVide) return;
+			int q = Joueur.ObtenirQuantiteSlot(slot);
+			int prendre = Mathf.CeilToInt(q * 0.5f);
+			_curseurMenu = slot;
+			_curseurMenu.Quantite = prendre;
+			int reste = q - prendre;
+			if (reste <= 0) slot = new SlotInventaire();
+			else slot.Quantite = reste;
+			return;
+		}
+		if (slot.EstVide)
+		{
+			slot = CopierSlotUnitaire(_curseurMenu);
+			int qSrc = Joueur.ObtenirQuantiteSlot(_curseurMenu) - 1;
+			if (qSrc <= 0) _curseurMenu = new SlotInventaire();
+			else _curseurMenu.Quantite = qSrc;
+			return;
+		}
+		if (!PeutEmpiler(slot, _curseurMenu)) return;
+		int max = Joueur.ObtenirPileMax(slot);
+		int qDst = Joueur.ObtenirQuantiteSlot(slot);
+		if (qDst >= max) return;
+		slot.Quantite = qDst + 1;
+		int qSrc2 = Joueur.ObtenirQuantiteSlot(_curseurMenu) - 1;
+		if (qSrc2 <= 0) _curseurMenu = new SlotInventaire();
+		else _curseurMenu.Quantite = qSrc2;
+	}
+
 	private void EchangerCurseurAvec(ref SlotInventaire slot)
 	{
 		var a = _curseurMenu;
 		_curseurMenu = slot;
 		slot = a;
+	}
+
+	/// <summary>Échange curseur ↔ équipement ceinture : seules les ceintures (102) peuvent entrer dans le slot rouge.</summary>
+	private bool EchangerCurseurAvecEquipementCeintureSiValide()
+	{
+		if (_joueurRef == null) return false;
+		if (!_curseurMenu.EstVide && _curseurMenu.ID != Joueur.IdObjetCeinturePoches)
+		{
+			GD.Print("ZERO-K : Ce slot rouge n’accepte que les ceintures à poches.");
+			return false;
+		}
+		SlotInventaire surCeinture = _joueurRef.EquipementCeinture;
+		SlotInventaire depuisCurseur = _curseurMenu;
+		_joueurRef.AssignerEquipementCeinture(depuisCurseur);
+		_curseurMenu = surCeinture;
+		return true;
+	}
+
+	private bool EchangerCurseurAvecEquipementSacSiValide()
+	{
+		if (_joueurRef == null) return false;
+		if (!_curseurMenu.EstVide && _curseurMenu.ID != Joueur.IdObjetSacTier0)
+		{
+			GD.Print("ZERO-K : Ce slot n’accepte que le sac tier 0.");
+			return false;
+		}
+		SlotInventaire surSac = _joueurRef.EquipementSacDos;
+		SlotInventaire depuisCurseur = _curseurMenu;
+		_joueurRef.AssignerEquipementSacDos(depuisCurseur);
+		_curseurMenu = surSac;
+		return true;
 	}
 
 	private void ResoudreCurseurAvantFermeture()
@@ -348,6 +542,7 @@ public partial class MenuAnatomie : Control
 		};
 		vbox.AddChild(cadreVp);
 		_meshCurseurSouris = CreerViewportPreviewDansSlot(cadreVp, "VpCurseurSouris", out _vpCurseurSouris);
+		_lblCurseurQuantite = TrouverOuCreerLabelQuantite(cadreVp);
 
 		_lblCurseurSouris = new Label
 		{
@@ -391,6 +586,12 @@ public partial class MenuAnatomie : Control
 			string nom = Atlas_Matiere.ObtenirNomObjet(_curseurMenu);
 			_lblCurseurSouris.Text = string.IsNullOrEmpty(nom) ? " " : nom;
 			_lblCurseurSouris.Visible = !vis || !vpOk;
+		}
+		if (_lblCurseurQuantite != null)
+		{
+			int q = Joueur.ObtenirQuantiteSlot(_curseurMenu);
+			_lblCurseurQuantite.Visible = q > 1;
+			_lblCurseurQuantite.Text = q > 1 ? $"x{q}" : "";
 		}
 		_conteneurFlottantCurseur.GlobalPosition = GetGlobalMousePosition() - _conteneurFlottantCurseur.Size * 0.5f;
 	}
@@ -457,6 +658,18 @@ public partial class MenuAnatomie : Control
 			slot = _joueurRef.MainDroite;
 			return true;
 		}
+		if (EquipementCorpsSlot != null && GodotObject.IsInstanceValid(EquipementCorpsSlot)
+			&& (h == EquipementCorpsSlot || EquipementCorpsSlot.IsAncestorOf(h)))
+		{
+			slot = _joueurRef.EquipementCeinture;
+			return true;
+		}
+		if (EquipementSacSlot != null && GodotObject.IsInstanceValid(EquipementSacSlot)
+			&& (h == EquipementSacSlot || EquipementSacSlot.IsAncestorOf(h)))
+		{
+			slot = _joueurRef.EquipementSacDos;
+			return true;
+		}
 		if (SlotResultatCraft != null && GodotObject.IsInstanceValid(SlotResultatCraft)
 			&& (h == SlotResultatCraft || SlotResultatCraft.IsAncestorOf(h)))
 		{
@@ -479,6 +692,19 @@ public partial class MenuAnatomie : Control
 						return true;
 					}
 					break;
+				}
+			}
+		}
+		if (ObtenirGrilleSac() is GridContainer grilleSac && GodotObject.IsInstanceValid(grilleSac) && grilleSac.IsAncestorOf(h))
+		{
+			for (Control cur = h; cur != null; cur = cur.GetParent() as Control)
+			{
+				if (cur.GetParent() == grilleSac && cur is Panel)
+				{
+					int idx = cur.GetIndex();
+					if (!_joueurRef.ASacEquipe() || idx != 0) break;
+					slot = _joueurRef.RefSlotSac(0);
+					return true;
 				}
 			}
 		}
@@ -554,6 +780,8 @@ public partial class MenuAnatomie : Control
 				_lblCraft[i].Text = string.IsNullOrEmpty(nom) ? " " : nom;
 				_lblCraft[i].Visible = !vis || !vpOk;
 			}
+			if (GrilleAssemblage.GetChild(i) is Panel panelCase)
+				RafraichirQuantiteSlot(panelCase, s);
 		}
 
 		ResoudreSlotResultatCraft();
@@ -586,6 +814,7 @@ public partial class MenuAnatomie : Control
 				_lblResultatCraft.Text = string.IsNullOrEmpty(nomRes) ? " " : nomRes;
 				_lblResultatCraft.Visible = !visRes || !vpResOk;
 			}
+			RafraichirQuantiteSlot(SlotResultatCraft, sRes);
 		}
 	}
 
@@ -611,6 +840,44 @@ public partial class MenuAnatomie : Control
 		// Stop par défaut : le label recouvre le Panel et bloquait GuiInput (craft + mains).
 		lbl.MouseFilter = Control.MouseFilterEnum.Ignore;
 		return lbl;
+	}
+
+	private Label TrouverOuCreerLabelQuantite(Panel parent)
+	{
+		if (parent == null) return null;
+		var lbl = parent.GetNodeOrNull<Label>("QtyLabel");
+		if (lbl == null)
+		{
+			lbl = new Label
+			{
+				Name = "QtyLabel",
+				HorizontalAlignment = HorizontalAlignment.Right,
+				VerticalAlignment = VerticalAlignment.Top,
+				Visible = false
+			};
+			lbl.SetAnchorsPreset(Control.LayoutPreset.TopRight);
+			lbl.OffsetLeft = -52f;
+			lbl.OffsetTop = 2f;
+			lbl.OffsetRight = -4f;
+			lbl.OffsetBottom = 18f;
+			lbl.AddThemeFontSizeOverride("font_size", 12);
+			lbl.AddThemeColorOverride("font_color", Colors.White);
+			lbl.AddThemeColorOverride("font_outline_color", Colors.Black);
+			lbl.AddThemeConstantOverride("outline_size", 2);
+			lbl.MouseFilter = Control.MouseFilterEnum.Ignore;
+			parent.AddChild(lbl);
+		}
+		return lbl;
+	}
+
+	private void RafraichirQuantiteSlot(Panel panel, SlotInventaire slot)
+	{
+		if (panel == null) return;
+		var lbl = TrouverOuCreerLabelQuantite(panel);
+		if (lbl == null) return;
+		int q = Joueur.ObtenirQuantiteSlot(slot);
+		lbl.Visible = !slot.EstVide && q > 1;
+		lbl.Text = lbl.Visible ? $"x{q}" : "";
 	}
 
 	private Label TrouverLabelEnfant(Node parent)
@@ -811,7 +1078,6 @@ public partial class MenuAnatomie : Control
 
 		// VERROUILLAGE DE L'ÉTAT ZÉRO (Le joueur naît nu)
 		if (SacSlot != null) SacSlot.Hide();
-		if (EquipementCorpsSlot != null) EquipementCorpsSlot.Hide();
 
 		// Ce slot est réservé pour le futur, on le tue visuellement pour l'instant
 		Control slotJaune = FindChild("InterfaceFutureSlot", true, false) as Control;
@@ -997,6 +1263,7 @@ public partial class MenuAnatomie : Control
 			string nomG = Atlas_Matiere.ObtenirNomObjet(_joueurRef.MainGauche);
 			_lblMainGauche.Text = string.IsNullOrEmpty(nomG) ? "Main G\n[Vide]" : $"Main G\n[{nomG}]";
 		}
+		RafraichirQuantiteSlot(MainGaucheSlot, _joueurRef.MainGauche);
 		AppliquerBordureActive(MainGaucheSlot, _joueurRef.MainGaucheEstActive);
 
 		if (previewDOk)
@@ -1012,19 +1279,82 @@ public partial class MenuAnatomie : Control
 			string nomD = Atlas_Matiere.ObtenirNomObjet(_joueurRef.MainDroite);
 			_lblMainDroite.Text = string.IsNullOrEmpty(nomD) ? "Main D\n[Vide]" : $"Main D\n[{nomD}]";
 		}
+		RafraichirQuantiteSlot(MainDroiteSlot, _joueurRef.MainDroite);
 		AppliquerBordureActive(MainDroiteSlot, !_joueurRef.MainGaucheEstActive);
+
+		ResoudreReferencesSlotsMains();
+		AssurerPreviews3DMains();
+		if (EquipementCorpsSlot != null && _meshPreviewMenuCeinture != null && GodotObject.IsInstanceValid(_meshPreviewMenuCeinture))
+		{
+			var eqC = _joueurRef.EquipementCeinture;
+			bool visC = _joueurRef.InventaireSlotAunVisuel3D(eqC);
+			bool vpCOk = _vpMenuCeinture != null && GodotObject.IsInstanceValid(_vpMenuCeinture);
+			if (vpCOk)
+			{
+				_vpMenuCeinture.Visible = visC;
+				if (visC)
+					_joueurRef.SynchroniserPreviewSlotMenu(_meshPreviewMenuCeinture, eqC);
+				else
+				{
+					_meshPreviewMenuCeinture.Mesh = null;
+					_meshPreviewMenuCeinture.MaterialOverride = null;
+				}
+			}
+			if (_lblSlotCeinture != null)
+			{
+				bool montrerTexte = !visC || !vpCOk;
+				_lblSlotCeinture.Visible = montrerTexte;
+				string nomC = Atlas_Matiere.ObtenirNomObjet(eqC);
+				_lblSlotCeinture.Text = string.IsNullOrEmpty(nomC) ? "Ceinture\n[slot vide]" : $"Ceinture\n[{nomC}]";
+			}
+			RafraichirQuantiteSlot(EquipementCorpsSlot, eqC);
+		}
+		if (EquipementSacSlot != null && _meshPreviewMenuSacEquip != null && GodotObject.IsInstanceValid(_meshPreviewMenuSacEquip))
+		{
+			var eqS = _joueurRef.EquipementSacDos;
+			bool visS = _joueurRef.InventaireSlotAunVisuel3D(eqS);
+			bool vpSOk = _vpMenuSacEquip != null && GodotObject.IsInstanceValid(_vpMenuSacEquip);
+			if (vpSOk)
+			{
+				_vpMenuSacEquip.Visible = visS;
+				if (visS)
+					_joueurRef.SynchroniserPreviewSlotMenu(_meshPreviewMenuSacEquip, eqS);
+				else
+				{
+					_meshPreviewMenuSacEquip.Mesh = null;
+					_meshPreviewMenuSacEquip.MaterialOverride = null;
+				}
+			}
+			if (_lblSlotSacEquip != null)
+			{
+				bool montrerTexte = !visS || !vpSOk;
+				_lblSlotSacEquip.Visible = montrerTexte;
+				string nomS = Atlas_Matiere.ObtenirNomObjet(eqS);
+				_lblSlotSacEquip.Text = string.IsNullOrEmpty(nomS) ? "Sac\n[slot vide]" : $"Sac\n[{nomS}]";
+			}
+			RafraichirQuantiteSlot(EquipementSacSlot, eqS);
+		}
 
 		AppliquerDispositionGrilleCraft();
 
 		if (ObtenirGrilleSac() is GridContainer grilleSac)
 		{
-			bool afficher = _joueurRef.AStockageSacOuCeintureEquipe();
+			bool afficher = _joueurRef.ASacEquipe();
 			grilleSac.Visible = afficher;
 			grilleSac.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
 			grilleSac.SizeFlagsVertical = afficher ? Control.SizeFlags.ExpandFill : Control.SizeFlags.ShrinkBegin;
-			foreach (Node enfant in grilleSac.GetChildren())
+			for (int i = 0; i < grilleSac.GetChildCount(); i++)
 			{
-				if (enfant is Control c) c.Visible = afficher;
+				if (grilleSac.GetChild(i) is not Control c) continue;
+				bool visCase = afficher && i == 0;
+				c.Visible = visCase;
+				if (c is Panel p && TrouverOuCreerLabel(p, " ") is Label l)
+				{
+					string nomSac = visCase ? Atlas_Matiere.ObtenirNomObjet(_joueurRef.RefSlotSac(0)) : "";
+					int q = visCase ? Joueur.ObtenirQuantiteSlot(_joueurRef.RefSlotSac(0)) : 0;
+					l.Text = string.IsNullOrEmpty(nomSac) ? " " : (q > 1 ? $"{nomSac} x{q}" : nomSac);
+					RafraichirQuantiteSlot(p, visCase ? _joueurRef.RefSlotSac(0) : new SlotInventaire());
+				}
 			}
 		}
 

@@ -29,6 +29,10 @@ using System.Collections.Generic;
     public float DurabiliteOutilActuelle;
     /// <summary>Dague 105 : taille de la roche en pointe (0–4) utilisée au craft — échelle visuelle de la lame. Défaut 2 si absent.</summary>
     public int IndexTailleLameRoche;
+    /// <summary>Quantité stackée dans le slot (base 1).</summary>
+    public int Quantite;
+    /// <summary>Clé de conteneur persistante (ex: sac tier 0) pour mémoriser son contenu même déséquipé.</summary>
+    public string CleConteneur;
 
     public SlotInventaire()
     {
@@ -45,6 +49,8 @@ using System.Collections.Generic;
         DurabiliteOutilMax = 0f;
         DurabiliteOutilActuelle = 0f;
         IndexTailleLameRoche = 2;
+        Quantite = 0;
+        CleConteneur = "";
     }
 
     public bool EstVide => ID == 0;
@@ -62,9 +68,13 @@ public partial class Joueur : CharacterBody3D
     public const int IdObjetSacDos = 101;
     /// <summary>Ceinture à poches équipable : débloque la même grille.</summary>
     public const int IdObjetCeinturePoches = 102;
+    /// <summary>Pochette tier 0 (matériau) : craft atelier, même rendu corde/tissu que la ceinture.</summary>
+    public const int IdObjetPochetteTier0 = 103;
+    /// <summary>Sac tier 0 équipable : débloque le stockage du sac.</summary>
+    public const int IdObjetSacTier0 = 101;
 
     /// <summary>True si cet ID est un contenant porté qui ouvre la grille « sac » dans l’UI.</summary>
-    public static bool EstObjetQuiDebloqueGrilleSac(int id) => id == IdObjetSacDos || id == IdObjetCeinturePoches;
+    public static bool EstObjetQuiDebloqueGrilleSac(int id) => id == IdObjetSacDos;
 
     /// <summary>Stats des outils forgés (CAO) : clé = <see cref="HashGenomeStable"/> du genome si présent, sinon GetHashCode du mesh (héritage).</summary>
     public struct StatsOutilForge
@@ -131,6 +141,9 @@ public partial class Joueur : CharacterBody3D
 
     /// <summary>Craft 2×2 dans le menu inventaire (Q) — jamais mélangé avec la grille de l’établi posé.</summary>
     public SlotInventaire[] GrilleCraftPoche = new SlotInventaire[4];
+    /// <summary>Stockage sac (phase 1 : 1 case). Le contenu vit dans l'objet sac via <see cref="CleConteneur"/>.</summary>
+    public SlotInventaire[] GrilleSacStockage = new SlotInventaire[1];
+    private readonly Dictionary<string, SlotInventaire[]> _memoireStockageSacs = new Dictionary<string, SlotInventaire[]>();
 
     /// <summary>Atelier (ItemPhysique 200) dont le plan 3×3 est affiché ; null en mode poche.</summary>
     public ItemPhysique AtelierPlanTravailOuvert;
@@ -154,6 +167,9 @@ public partial class Joueur : CharacterBody3D
     private const string MetaSignatureAtelier200 = "SigAtelier200";
     private const string MetaSignatureCorde20 = "SigCorde20";
     private const string MetaSignatureTissu21 = "SigTissu21";
+    private const string MetaSignatureCeinture102 = "SigCeinture102";
+    private const string MetaSignaturePochette103 = "SigPochette103";
+    private const string MetaSignatureSac101 = "SigSac101";
     private SubViewportContainer _viewportSlotGauche;
     private SubViewportContainer _viewportSlotDroite;
     private MeshInstance3D _meshPreviewGauche;
@@ -822,6 +838,9 @@ public partial class Joueur : CharacterBody3D
         else if (id == 17) return new CapsuleMesh { Radius = 0.009f, Height = 0.38f };
         else if (id == 20) return null; // GLB res://Modeles/materials/traisagre_corde_tier0.glb via InstancierModeleCordeTier0Gazon
         else if (id == 21) return null; // GLB res://Modeles/materials/tissu_tier0.glb via InstancierModeleTissuTier0
+        else if (id == IdObjetSacTier0) return null; // GLB res://Modeles/Equipements/Sac_Tiere0.glb via InstancierModeleSacTier0
+        else if (id == IdObjetCeinturePoches) return null; // GLB res://Modeles/Equipable/centure_tresser.glb via InstancierModeleCeinturePoches
+        else if (id == IdObjetPochetteTier0) return null; // GLB res://Modeles/materials/Pochette_Tiere0.glb via InstancierModelePochetteTier0
         else if (id == 30 || id == 32)
         {
             CalculerDimensionsBoisPose(id, indexMorpho, indexTaille, out float br, out float bl, out _, out _);
@@ -848,7 +867,7 @@ public partial class Joueur : CharacterBody3D
                 : new StandardMaterial3D { AlbedoColor = new Color(0.35f, 0.55f, 0.15f), Roughness = 0.9f };
             return;
         }
-        if (idObjet == 20 || idObjet == 21) { visuel.MaterialOverride = Atlas_Matiere.ObtenirMaterielCorde(indexChimique, indexMorphologique, niveauTressage); return; }
+        if (idObjet == 20 || idObjet == 21 || idObjet == IdObjetCeinturePoches || idObjet == IdObjetPochetteTier0 || idObjet == IdObjetSacTier0) { visuel.MaterialOverride = Atlas_Matiere.ObtenirMaterielCorde(indexChimique, indexMorphologique, niveauTressage); return; }
         if (idObjet == 30 || idObjet == 32)
         {
             visuel.MaterialOverride = idObjet == 32 && indexChimique == 1
@@ -1355,6 +1374,56 @@ public partial class Joueur : CharacterBody3D
             item.AddChild(new CollisionShape3D { Shape = new BoxShape3D { Size = new Vector3(0.32f, 0.06f, 0.32f) } });
             corps = item;
         }
+        else if (id == IdObjetCeinturePoches) // Ceinture : 6 cordes tressées — GLB + matière corde/tissu.
+        {
+            var item = new ItemPhysique
+            {
+                ID_Objet = id,
+                IndexChimique = mainActive.IndexChimique,
+                IndexCacheMemoire = mainActive.IndexMorphologique,
+                NiveauFracture = mainActive.NiveauFracture,
+                Name = "ItemPhysique"
+            };
+            if (!string.IsNullOrEmpty(mainActive.CleConteneur))
+                item.SetMeta("CleConteneur", mainActive.CleConteneur);
+            var meshRoot = new Node3D { Name = "MeshInstance3D" };
+            InstancierModeleCeinturePoches(meshRoot, mainActive, 0.4f);
+            item.AddChild(meshRoot);
+            item.AddChild(new CollisionShape3D { Shape = new BoxShape3D { Size = new Vector3(0.42f, 0.08f, 0.28f) } });
+            corps = item;
+        }
+        else if (id == IdObjetPochetteTier0) // Pochette tier 0 : tissu + corde, même matière procédurale que ceinture.
+        {
+            var item = new ItemPhysique
+            {
+                ID_Objet = id,
+                IndexChimique = mainActive.IndexChimique,
+                IndexCacheMemoire = mainActive.IndexMorphologique,
+                NiveauFracture = mainActive.NiveauFracture,
+                Name = "ItemPhysique"
+            };
+            var meshRoot = new Node3D { Name = "MeshInstance3D" };
+            InstancierModelePochetteTier0(meshRoot, mainActive, 0.36f);
+            item.AddChild(meshRoot);
+            item.AddChild(new CollisionShape3D { Shape = new BoxShape3D { Size = new Vector3(0.24f, 0.08f, 0.2f) } });
+            corps = item;
+        }
+        else if (id == IdObjetSacTier0) // Sac tier 0 : modèle dédié + matière corde/tissu.
+        {
+            var item = new ItemPhysique
+            {
+                ID_Objet = id,
+                IndexChimique = mainActive.IndexChimique,
+                IndexCacheMemoire = mainActive.IndexMorphologique,
+                NiveauFracture = mainActive.NiveauFracture,
+                Name = "ItemPhysique"
+            };
+            var meshRoot = new Node3D { Name = "MeshInstance3D" };
+            InstancierModeleSacTier0(meshRoot, mainActive, 0.4f);
+            item.AddChild(meshRoot);
+            item.AddChild(new CollisionShape3D { Shape = new BoxShape3D { Size = new Vector3(0.36f, 0.14f, 0.28f) } });
+            corps = item;
+        }
         else if (id == 30 || id == 32)
         {
             int f = Mathf.Clamp(mainActive.IndexMorphologique, 0, 3);
@@ -1482,7 +1551,7 @@ public partial class Joueur : CharacterBody3D
                 rbPose.LinearDamp = 0.42f;
                 rbPose.AngularDamp = 1.0f;
             }
-            else if (id == 20 || id == 21)
+            else if (id == 20 || id == 21 || id == IdObjetCeinturePoches || id == IdObjetPochetteTier0 || id == IdObjetSacTier0)
             {
                 rbPose.PhysicsMaterialOverride = _physMatCorde;
                 rbPose.LinearDampMode = RigidBody3D.DampMode.Replace;
@@ -1524,7 +1593,7 @@ public partial class Joueur : CharacterBody3D
                 ItemPhysique.AppliquerPhysiqueHachette106(ipHachette);
         }
         // Fibres / corde non élastiques : ne pas appliquer d’échelle « étirée » (herbe, liane, corde boyau+herbe, etc.)
-        bool estFlexOuCorde = id == 15 || id == 16 || id == 17 || id == 20 || id == 21;
+        bool estFlexOuCorde = id == 15 || id == 16 || id == 17 || id == 20 || id == 21 || id == IdObjetCeinturePoches || id == IdObjetPochetteTier0 || id == IdObjetSacTier0;
         if (estFlexOuCorde && !ObtenirSlotFlexibleEtirable(mainActive))
             corps.Scale = Vector3.One;
         else if (!ItemPhysique.EstIdRocheMatiere(id) && id != 30 && id != 32 && mainActive.ScaleEclat != Vector3.Zero)
