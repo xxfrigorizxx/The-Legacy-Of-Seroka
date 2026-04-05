@@ -490,6 +490,7 @@ public partial class Monde_Serveur : Node
 					chunk.InventaireFlore[pos] = etat;
 				}
 			}
+			chunk.EnrichirBuissonsDepuisInventaireSiAbsents();
 		}
 		catch (Exception ex)
 		{
@@ -1100,6 +1101,95 @@ public partial class Monde_Serveur : Node
 				var chunk = ObtenirOuCreerChunk(new Vector2I(cx, cz));
 				chunk.FaucherFlore(pointImpact, rayon);
 			}
+	}
+
+	/// <summary>Récolte ciblée de buisson : 0=hachette (branche), 1=dague, 2=pelle (replantable).</summary>
+	public bool RecolterBuissonGlobal(Vector3 pointImpact, float rayon, byte modeRecolte)
+	{
+		int cxMin = Gestionnaire_Monde.WorldToChunkCoord(pointImpact.X - rayon, pointImpact.Z, TailleChunk).X;
+		int cxMax = Gestionnaire_Monde.WorldToChunkCoord(pointImpact.X + rayon, pointImpact.Z, TailleChunk).X;
+		int czMin = Gestionnaire_Monde.WorldToChunkCoord(pointImpact.X, pointImpact.Z - rayon, TailleChunk).Y;
+		int czMax = Gestionnaire_Monde.WorldToChunkCoord(pointImpact.X, pointImpact.Z + rayon, TailleChunk).Y;
+		for (int cx = cxMin; cx <= cxMax; cx++)
+			for (int cz = czMin; cz <= czMax; cz++)
+			{
+				var chunk = ObtenirOuCreerChunk(new Vector2I(cx, cz));
+				if (chunk.RecolterBuisson(pointImpact, rayon, modeRecolte))
+					return true;
+			}
+		return false;
+	}
+
+	/// <summary>Détection d’un buisson sous la visée (sans mutation), utile pour le minage maintenu.</summary>
+	public bool EssayerDetecterBuissonGlobal(Vector3 pointImpact, float rayon, out Vector3 posBuisson, out byte typeFlore)
+	{
+		posBuisson = Vector3.Zero;
+		typeFlore = 0;
+		int cxMin = Gestionnaire_Monde.WorldToChunkCoord(pointImpact.X - rayon, pointImpact.Z, TailleChunk).X;
+		int cxMax = Gestionnaire_Monde.WorldToChunkCoord(pointImpact.X + rayon, pointImpact.Z, TailleChunk).X;
+		int czMin = Gestionnaire_Monde.WorldToChunkCoord(pointImpact.X, pointImpact.Z - rayon, TailleChunk).Y;
+		int czMax = Gestionnaire_Monde.WorldToChunkCoord(pointImpact.X, pointImpact.Z + rayon, TailleChunk).Y;
+		float meilleureDist2 = float.MaxValue;
+		bool trouve = false;
+		for (int cx = cxMin; cx <= cxMax; cx++)
+			for (int cz = czMin; cz <= czMax; cz++)
+			{
+				var chunk = ObtenirOuCreerChunk(new Vector2I(cx, cz));
+				if (!chunk.EssayerDetecterBuisson(pointImpact, rayon, out Vector3 pos, out byte type))
+					continue;
+				float d2 = pos.DistanceSquaredTo(pointImpact);
+				if (!trouve || d2 < meilleureDist2)
+				{
+					trouve = true;
+					meilleureDist2 = d2;
+					posBuisson = pos;
+					typeFlore = type;
+				}
+			}
+		return trouve;
+	}
+
+	/// <summary>Plante un buisson au point visé (terre plate). Retourne false si la zone n'est pas valide.</summary>
+	public bool PlanterBuissonGlobal(Vector3 pointImpact, byte typeFlore)
+	{
+		Vector2I coord = Gestionnaire_Monde.WorldToChunkCoord(pointImpact.X, pointImpact.Z, TailleChunk);
+		var chunk = ObtenirOuCreerChunk(coord);
+		return chunk.PlanterBuisson(pointImpact, typeFlore);
+	}
+
+	/// <summary>Cueille les baies d’un buisson plein sous la visée (le buisson devient vide).</summary>
+	public bool RecolterBaiesBuissonGlobal(Vector3 pointImpact, float rayon, out int quantiteBaies, out byte indexCouleurBaie)
+	{
+		quantiteBaies = 0;
+		indexCouleurBaie = 0;
+		int cxMin = Gestionnaire_Monde.WorldToChunkCoord(pointImpact.X - rayon, pointImpact.Z, TailleChunk).X;
+		int cxMax = Gestionnaire_Monde.WorldToChunkCoord(pointImpact.X + rayon, pointImpact.Z, TailleChunk).X;
+		int czMin = Gestionnaire_Monde.WorldToChunkCoord(pointImpact.X, pointImpact.Z - rayon, TailleChunk).Y;
+		int czMax = Gestionnaire_Monde.WorldToChunkCoord(pointImpact.X, pointImpact.Z + rayon, TailleChunk).Y;
+
+		Vector2I meilleurChunk = default;
+		Vector3 meilleurePos = Vector3.Zero;
+		float meilleureDist2 = float.MaxValue;
+		bool trouve = false;
+		for (int cx = cxMin; cx <= cxMax; cx++)
+			for (int cz = czMin; cz <= czMax; cz++)
+			{
+				var chunk = ObtenirOuCreerChunk(new Vector2I(cx, cz));
+				if (!chunk.EssayerDetecterBuisson(pointImpact, rayon, out Vector3 pos, out byte typeFlore) || typeFlore != 1)
+					continue;
+				float d2 = pos.DistanceSquaredTo(pointImpact);
+				if (!trouve || d2 < meilleureDist2)
+				{
+					trouve = true;
+					meilleureDist2 = d2;
+					meilleurePos = pos;
+					meilleurChunk = new Vector2I(cx, cz);
+				}
+			}
+
+		if (!trouve) return false;
+		var cible = ObtenirOuCreerChunk(meilleurChunk);
+		return cible.RecolterBaiesBuisson(meilleurePos, rayon, out quantiteBaies, out indexCouleurBaie);
 	}
 
 	public void AppliquerCreationGlobale(Vector3 pointImpact, Vector3 normale, float rayon, int idMatiere = 1)

@@ -78,6 +78,8 @@ public partial class Joueur : CharacterBody3D
     public const int IdObjetPellePierreTier0 = 107;
     /// <summary>Pioche en pierre tier 0.</summary>
     public const int IdObjetPiochePierreTier0 = 108;
+    /// <summary>Petite baie récoltable sur buisson (palette couleur via IndexChimique).</summary>
+    public const int IdObjetBaie = 35;
 
     /// <summary>True si cet ID est un contenant porté qui ouvre la grille « sac » dans l’UI.</summary>
     public static bool EstObjetQuiDebloqueGrilleSac(int id) => id == IdObjetSacDos;
@@ -181,6 +183,7 @@ public partial class Joueur : CharacterBody3D
     private const string MetaSignatureCeinture104 = "SigCeinture104";
     private const string MetaSignaturePochette103 = "SigPochette103";
     private const string MetaSignatureSac101 = "SigSac101";
+    private const string MetaSignatureBaie35 = "SigBaie35";
     private SubViewportContainer _viewportSlotGauche;
     private SubViewportContainer _viewportSlotDroite;
     private MeshInstance3D _meshPreviewGauche;
@@ -483,6 +486,12 @@ public partial class Joueur : CharacterBody3D
         {
             _gaucheMaintenu = false;
             SlotInventaire mainActive = MainGaucheEstActive ? MainGauche : MainDroite;
+            if (_bloquerActionClicGaucheApresMinageBuisson)
+            {
+                _bloquerActionClicGaucheApresMinageBuisson = false;
+                ReinitialiserMinageMainNueProgression();
+                return;
+            }
             if (!mainActive.EstVide && PeutUtiliserFrappe(mainActive))
             {
                 TypeMouvementFrappe mouv = TypeMouvementFrappe.Estoc;
@@ -519,8 +528,9 @@ public partial class Joueur : CharacterBody3D
                 // IDENTIFICATION DE LA MATIÈRE : Est-ce du terrain (Voxel) ?
                 bool estTerrainVoxel = mainActive.ID >= 1 && mainActive.ID <= 9;
                 bool estAtelierEnMain = mainActive.ID == 200;
+                bool estBuissonEnMain = mainActive.ID == 10 || mainActive.ID == 11;
                 // Clic bref = poser. Maintien du clic = lancer (seuil 0,5 s). Atelier (meuble) : jamais de lancer.
-                if (estAtelierEnMain || estTerrainVoxel || _forceLancer < 0.5f)
+                if (estAtelierEnMain || estBuissonEnMain || estTerrainVoxel || _forceLancer < 0.5f)
                 {
                     // Clic droit court + lame / roche plate / éclat + sol : fauchage (même ressenti qu’un coup) — le gauche le fait aussi.
                     if (!estAtelierEnMain && !estTerrainVoxel && _forceLancer < 0.5f && ExecuterFauchageSolPrioritaireClicDroit())
@@ -853,6 +863,9 @@ public partial class Joueur : CharacterBody3D
             float r = ItemPhysique.RayonBaseRochesJoueur(indexTaille);
             return new SphereMesh { Radius = r, Height = r * 2f };
         }
+        else if (id == 10) return Chunk_Client.ObtenirMeshBuissonProcedural(true);
+        else if (id == 11) return Chunk_Client.ObtenirMeshBuissonProcedural(false);
+        else if (id == BlocChutant.ID_BRANCHE) return new CylinderMesh { TopRadius = 0.08f, BottomRadius = 0.08f, Height = 0.6f, RadialSegments = 10, Rings = 1 };
         else if (id == 15 || id == 16) return new CapsuleMesh { Radius = 0.009f, Height = 0.34f };
         else if (id == 17) return new CapsuleMesh { Radius = 0.009f, Height = 0.38f };
         else if (id == 20) return null; // GLB res://Modeles/materials/traisagre_corde_tier0.glb via InstancierModeleCordeTier0Gazon
@@ -868,6 +881,7 @@ public partial class Joueur : CharacterBody3D
             return GenererMeshBoisFendu(br, bl, indexMorpho);
         }
         else if (id == 34) return new QuadMesh { Size = new Vector2(0.12f, 0.18f) }; // Feuilles (même style que feuillage arbre)
+        else if (id == IdObjetBaie) return new SphereMesh { Radius = 0.05f, Height = 0.10f, RadialSegments = 10, Rings = 6 };
         if (id >= 1 && id <= 9)
             return new BoxMesh { Size = new Vector3(0.2f, 0.2f, 0.2f) };
         return null;
@@ -896,7 +910,28 @@ public partial class Joueur : CharacterBody3D
                 : ArbreVivant.ObtenirMaterielBoisTriplanar();
             return;
         }
+        if (idObjet == 10 || idObjet == 11)
+        {
+            visuel.MaterialOverride = null; // Le mesh buisson porte déjà son matériau procédural.
+            return;
+        }
+        if (idObjet == BlocChutant.ID_BRANCHE)
+        {
+            visuel.MaterialOverride = new StandardMaterial3D { AlbedoColor = new Color(0.52f, 0.32f, 0.14f), Roughness = 0.9f, Metallic = 0.02f };
+            return;
+        }
         if (idObjet == 34) { visuel.MaterialOverride = new StandardMaterial3D { AlbedoColor = new Color(0.2f, 0.55f, 0.15f), Roughness = 0.95f, Metallic = 0f }; return; }
+        if (idObjet == IdObjetBaie)
+        {
+            Color c = indexChimique switch
+            {
+                1 => new Color(0.82f, 0.24f, 0.64f), // futur violet
+                2 => new Color(0.95f, 0.62f, 0.12f), // futur orange
+                _ => new Color(0.90f, 0.14f, 0.14f)  // rouge par défaut
+            };
+            visuel.MaterialOverride = new StandardMaterial3D { AlbedoColor = c, Roughness = 0.34f, Metallic = 0f, EmissionEnabled = true, Emission = c * 0.06f };
+            return;
+        }
         if (idObjet >= 1 && idObjet <= 9)
         {
             visuel.MaterialOverride = new StandardMaterial3D { AlbedoColor = new Color(0.42f, 0.3f, 0.2f), Roughness = 1f, Metallic = 0f };
@@ -1558,6 +1593,27 @@ public partial class Joueur : CharacterBody3D
             var bloc = BlocChutant.CreerFeuillageArrache(pointDeChute, matFeuilles);
             corps = bloc;
         }
+        else if (id == 10 || id == 11 || id == BlocChutant.ID_BRANCHE)
+        {
+            var mat = new StandardMaterial3D { AlbedoColor = new Color(0.38f, 0.46f, 0.2f), Roughness = 0.92f, Metallic = 0f };
+            corps = BlocChutant.Creer(pointDeChute, (byte)id, mat);
+        }
+        else if (id == IdObjetBaie)
+        {
+            var item = new ItemPhysique
+            {
+                ID_Objet = id,
+                IndexChimique = mainActive.IndexChimique,
+                IndexCacheMemoire = 0,
+                Name = "ItemPhysique",
+                ContinuousCd = true
+            };
+            var meshRoot = new Node3D { Name = "MeshInstance3D" };
+            InstancierModeleBaie(meshRoot, mainActive, 0.22f);
+            item.AddChild(meshRoot);
+            item.AddChild(new CollisionShape3D { Shape = new SphereShape3D { Radius = 0.08f } });
+            corps = item;
+        }
         else // 999 Buisson — RigidBody3D pour pouvoir le lancer comme les autres objets posés.
         {
             float cote = 0.85f;
@@ -1697,7 +1753,7 @@ public partial class Joueur : CharacterBody3D
         {
             if (!mainActive.EstVide && Input.IsActionPressed("clic_droit"))
                 _forceLancer = Mathf.Min(5.0f, _forceLancer + (VitesseChargeBras * 2.5f) * dt);
-            if (_gaucheMaintenu && (mainActive.EstVide || mainActive.ID == 106 || mainActive.ID == IdObjetPellePierreTier0 || mainActive.ID == IdObjetPiochePierreTier0))
+            if (_gaucheMaintenu && (mainActive.EstVide || mainActive.ID == 105 || mainActive.ID == 106 || mainActive.ID == IdObjetPellePierreTier0 || mainActive.ID == IdObjetPiochePierreTier0))
                 MettreAJourMinageMainNueOuAtelier(dt, mainActive);
             else
                 ReinitialiserMinageMainNueProgression();

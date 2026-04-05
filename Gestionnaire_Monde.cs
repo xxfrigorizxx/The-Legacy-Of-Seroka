@@ -39,6 +39,9 @@ public partial class Gestionnaire_Monde : Node3D
 	/// <summary>Overlay "Chargement du monde..." affiché tant que la collision du chunk de spawn n'est pas prête.</summary>
 	private CanvasLayer _overlayChargement;
 	private double _secondesOverlayChargement;
+	private Vector3 _spawnInitialEnAttente;
+	private bool _spawnDoitEtreAligneAuSol;
+	private bool _spawnAligneAuSol;
 	private bool _etatPersistantRestaure;
 	private double _secondesDormanceObjets;
 	private const int RayonDormanceObjetsChunks = 5;
@@ -110,6 +113,140 @@ public partial class Gestionnaire_Monde : Node3D
 	private const int MaxEauParTick = 32;
 	private static readonly Vector3I[] DirReveilEau = { new Vector3I(0, 1, 0), new Vector3I(0, -1, 0), new Vector3I(1, 0, 0), new Vector3I(-1, 0, 0), new Vector3I(0, 0, 1), new Vector3I(0, 0, -1) };
 	private static readonly Vector3I[] DirEauHorizLegacy = { new Vector3I(1, 0, 0), new Vector3I(-1, 0, 0), new Vector3I(0, 0, -1), new Vector3I(0, 0, 1) };
+
+	private static uint MelangerSeed(uint v)
+	{
+		v ^= v >> 16;
+		v *= 0x7feb352du;
+		v ^= v >> 15;
+		v *= 0x846ca68bu;
+		v ^= v >> 16;
+		return v;
+	}
+
+	private static int EtendreDansPlage(uint h, int minInclusif, int maxInclusif)
+	{
+		if (maxInclusif <= minInclusif) return minInclusif;
+		uint amplitude = (uint)(maxInclusif - minInclusif + 1);
+		return minInclusif + (int)(h % amplitude);
+	}
+
+	private int EvaluerCandidatSpawn(int x, int z)
+	{
+		int h = Generateur_Voxel.ObtenirHauteurTerrainMonde(x, z, SeedTerrain);
+		if (h < 103 || h > 230) return int.MinValue;
+
+		// Rejette les zones trop abruptes (rive abrupte, pente forte, bord de canyon).
+		int hE = Generateur_Voxel.ObtenirHauteurTerrainMonde(x + 8, z, SeedTerrain);
+		int hW = Generateur_Voxel.ObtenirHauteurTerrainMonde(x - 8, z, SeedTerrain);
+		int hN = Generateur_Voxel.ObtenirHauteurTerrainMonde(x, z - 8, SeedTerrain);
+		int hS = Generateur_Voxel.ObtenirHauteurTerrainMonde(x, z + 8, SeedTerrain);
+		int pente = Mathf.Abs(h - hE) + Mathf.Abs(h - hW) + Mathf.Abs(h - hN) + Mathf.Abs(h - hS);
+		if (pente > 40) return int.MinValue;
+
+		// Préférence pour un plateau "jouable" (ni sous l'eau, ni en haute montagne).
+		int scoreAltitude = 600 - Mathf.Abs(h - 118) * 8;
+		int scorePente = 220 - pente * 4;
+		return scoreAltitude + scorePente;
+	}
+
+	private Vector3 CalculerSpawnInitialDepuisSeed()
+	{
+		uint s0 = MelangerSeed((uint)SeedTerrain ^ 0x9E3779B9u);
+		uint s1 = MelangerSeed(s0 ^ 0x85EBCA6Bu);
+		int baseX = EtendreDansPlage(s0, -4096, 4096);
+		int baseZ = EtendreDansPlage(s1, -4096, 4096);
+
+		const int pas = 24;
+		const int rayonAnneaux = 24;
+		int meilleurX = baseX;
+		int meilleurZ = baseZ;
+		int meilleurScore = int.MinValue;
+
+		for (int anneau = 0; anneau <= rayonAnneaux; anneau++)
+		{
+			for (int dx = -anneau; dx <= anneau; dx++)
+			{
+				for (int dz = -anneau; dz <= anneau; dz++)
+				{
+					if (anneau > 0 && Mathf.Abs(dx) != anneau && Mathf.Abs(dz) != anneau) continue;
+					int x = baseX + dx * pas;
+					int z = baseZ + dz * pas;
+					int score = EvaluerCandidatSpawn(x, z);
+					if (score > meilleurScore)
+					{
+						meilleurScore = score;
+						meilleurX = x;
+						meilleurZ = z;
+					}
+				}
+			}
+			if (meilleurScore > 500) break;
+		}
+
+		int hauteurTerrain = Generateur_Voxel.ObtenirHauteurTerrainMonde(meilleurX, meilleurZ, SeedTerrain);
+		float ySpawn = hauteurTerrain + 40f;
+		if (hauteurTerrain < 103) ySpawn = Mathf.Max(ySpawn, 142f);
+		return new Vector3(meilleurX + 0.5f, ySpawn, meilleurZ + 0.5f);
+	}
+
+	/// <summary>Garantit un spawn au-dessus du terrain local pour éviter un joueur sous la map.</summary>
+	private Vector3 AssurerSpawnAuDessusDuSol(Vector3 pos)
+	{
+		int hauteurTerrain = Generateur_Voxel.ObtenirHauteurTerrainMonde((int)pos.X, (int)pos.Z, SeedTerrain);
+		float yMinSecurise = hauteurTerrain + 2.2f;
+		if (pos.Y < yMinSecurise)
+		{
+			GD.Print($"ZERO-K : Spawn corrigé (anti sous-map) {pos.Y:0.00} -> {yMinSecurise:0.00}");
+			pos.Y = yMinSecurise;
+		}
+		return pos;
+	}
+
+	/// <summary>Raycast vertical vers le terrain/collision du monde. Retourne true si un point sol est trouvé.</summary>
+	private bool EssayerTrouverSolParRaycast(Vector3 positionApprox, out Vector3 pointSol)
+	{
+		pointSol = Vector3.Zero;
+		World3D world = GetWorld3D();
+		if (world == null || world.DirectSpaceState == null) return false;
+		Vector3 debut = positionApprox + Vector3.Up * 900f;
+		Vector3 fin = positionApprox + Vector3.Down * 900f;
+		var query = PhysicsRayQueryParameters3D.Create(debut, fin);
+		query.CollideWithAreas = false;
+		query.CollideWithBodies = true;
+		if (_joueur != null && _joueur.GetRid().IsValid)
+		{
+			var excludes = new Godot.Collections.Array<Rid> { _joueur.GetRid() };
+			query.Exclude = excludes;
+		}
+
+		var hit = world.DirectSpaceState.IntersectRay(query);
+		if (hit.Count == 0 || !hit.ContainsKey("position")) return false;
+		pointSol = (Vector3)hit["position"];
+		return true;
+	}
+
+	/// <summary>Finalise le spawn du nouveau monde : place le joueur au sol et l'affiche.</summary>
+	private void FinaliserSpawnInitialAuSol()
+	{
+		if (!_spawnDoitEtreAligneAuSol || _spawnAligneAuSol || _joueur == null) return;
+
+		Vector3 posFinale;
+		if (EssayerTrouverSolParRaycast(_spawnInitialEnAttente, out Vector3 pointSol))
+		{
+			posFinale = pointSol + Vector3.Up * 1.2f;
+		}
+		else
+		{
+			// Fallback robuste si le raycast ne touche pas encore.
+			posFinale = AssurerSpawnAuDessusDuSol(_spawnInitialEnAttente);
+		}
+
+		_joueur.GlobalPosition = posFinale;
+		_joueur.Visible = true;
+		_spawnAligneAuSol = true;
+		GD.Print($"ZERO-K : Spawn finalisé au sol -> {posFinale}");
+	}
 
 	private void ActiverEauLegacy(Vector3I pos) { if (_eauActive.Add(pos)) _fileEau.Enqueue(pos); }
 
@@ -191,6 +328,8 @@ public partial class Gestionnaire_Monde : Node3D
 		// Position : chargée si monde existant, sinon spawn par défaut (terrain généré → joueur déposé)
 		Vector3 posSpawn = _joueur.GlobalPosition;
 		var posSauvegardee = GameState.Instance?.ObtenirPositionJoueurSauvegardee();
+		_spawnDoitEtreAligneAuSol = !posSauvegardee.HasValue;
+		_spawnAligneAuSol = !_spawnDoitEtreAligneAuSol;
 		if (posSauvegardee.HasValue)
 		{
 			posSpawn = posSauvegardee.Value;
@@ -198,12 +337,15 @@ public partial class Gestionnaire_Monde : Node3D
 		}
 		else
 		{
-			int hauteurTerrain = Generateur_Voxel.ObtenirHauteurTerrainMonde((int)posSpawn.X, (int)posSpawn.Z, SeedTerrain);
-			float ySpawn = hauteurTerrain + 40f;  // Spawn plus haut (terrain généré d'abord, gravité suspendue jusqu'à collision)
-			if (hauteurTerrain < 103) ySpawn = Mathf.Max(ySpawn, 142f);
-			posSpawn = new Vector3(posSpawn.X, ySpawn, posSpawn.Z);
+			// Nouveau monde: spawn déterministe basé sur la seed (et pas uniquement la position fixe de la scène).
+			posSpawn = CalculerSpawnInitialDepuisSeed();
+			GD.Print($"ZERO-K : Spawn initial seed={SeedTerrain} -> {posSpawn}");
 		}
+		posSpawn = AssurerSpawnAuDessusDuSol(posSpawn);
 		_joueur.GlobalPosition = posSpawn;
+		_spawnInitialEnAttente = posSpawn;
+		if (_spawnDoitEtreAligneAuSol)
+			_joueur.Visible = false; // Apparaît seulement après alignement raycast sur le sol.
 
 		if (UseArchitectureReseau)
 		{
@@ -508,10 +650,16 @@ public partial class Gestionnaire_Monde : Node3D
 		if (_overlayChargement != null && _overlayChargement.Visible)
 		{
 			_secondesOverlayChargement += delta;
-			if (EstSpawnPret() || _secondesOverlayChargement >= 90.0)
+			bool spawnPret = EstSpawnPret();
+			if (spawnPret && _spawnDoitEtreAligneAuSol && !_spawnAligneAuSol)
+				FinaliserSpawnInitialAuSol();
+			bool spawnPretEtAligne = spawnPret && (!_spawnDoitEtreAligneAuSol || _spawnAligneAuSol);
+			if (spawnPretEtAligne || _secondesOverlayChargement >= 90.0)
 			{
-				if (!EstSpawnPret() && _secondesOverlayChargement >= 90.0)
+				if (!spawnPretEtAligne && _secondesOverlayChargement >= 90.0)
 					GD.PrintErr("ZERO-K : Timeout chargement monde (>90 s) — overlay masqué. Vérifiez réseau / Monde_Client si le sol manque.");
+				if (_spawnDoitEtreAligneAuSol && !_spawnAligneAuSol)
+					FinaliserSpawnInitialAuSol();
 				_overlayChargement.Visible = false;
 			}
 		}
@@ -695,6 +843,41 @@ public partial class Gestionnaire_Monde : Node3D
 			_mondeServeur?.AppliquerFauchageGlobal(pointImpact, rayon);
 		else
 			GD.Print("ZERO-K : Le fauchage (gazon, fibres) n'existe qu'en mode chunks serveur. Réactivez UseArchitectureReseau sur le Gestionnaire_Monde.");
+	}
+
+	/// <summary>Récolte ciblée d’un buisson : 0=hachette (branche), 1=dague (coupe), 2=pelle (déracinage replantable).</summary>
+	public bool RecolterBuissonGlobal(Vector3 pointImpact, float rayon, byte modeRecolte)
+	{
+		if (UseArchitectureReseau && _mondeServeur != null)
+			return _mondeServeur.RecolterBuissonGlobal(pointImpact, rayon, modeRecolte);
+		return false;
+	}
+
+	/// <summary>Détecte un buisson sous la visée sans le modifier.</summary>
+	public bool EssayerDetecterBuissonSousPoint(Vector3 pointImpact, float rayon, out Vector3 posBuisson, out byte typeFlore)
+	{
+		posBuisson = Vector3.Zero;
+		typeFlore = 0;
+		if (UseArchitectureReseau && _mondeServeur != null)
+			return _mondeServeur.EssayerDetecterBuissonGlobal(pointImpact, rayon, out posBuisson, out typeFlore);
+		return false;
+	}
+
+	/// <summary>Plante un buisson (type 1/2) au sol selon le point visé.</summary>
+	public bool PlanterBuissonGlobal(Vector3 pointImpact, Vector3 normaleImpact, byte typeFlore)
+	{
+		if (!(UseArchitectureReseau && _mondeServeur != null)) return false;
+		Vector3 cible = pointImpact + (normaleImpact * 0.08f);
+		return _mondeServeur.PlanterBuissonGlobal(cible, typeFlore);
+	}
+
+	/// <summary>Récolte les baies d’un buisson plein sous la visée. Retourne la quantité et l’index couleur récoltés.</summary>
+	public bool RecolterBaiesBuissonSousPoint(Vector3 pointImpact, float rayon, out int quantiteBaies, out byte indexCouleurBaie)
+	{
+		quantiteBaies = 0;
+		indexCouleurBaie = 0;
+		if (!(UseArchitectureReseau && _mondeServeur != null)) return false;
+		return _mondeServeur.RecolterBaiesBuissonGlobal(pointImpact, rayon, out quantiteBaies, out indexCouleurBaie);
 	}
 
 	/// <summary>Oracle géologique : lecture directe de l'ADN (_materials) depuis le Serveur. Évite la dissonance visuelle (mine terre → reçoit pierre).</summary>

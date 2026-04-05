@@ -8,7 +8,7 @@ public partial class Joueur
     private static bool EstObjetAvecVisuel(int id)
     {
         if (id >= 1 && id <= 9) return true;
-        return ItemPhysique.EstIdRocheMatiere(id) || id == 15 || id == 16 || id == 17 || id == 20 || id == 21 || id == Joueur.IdObjetCeinturePoches || id == Joueur.IdObjetCeintureSacoches || id == Joueur.IdObjetPochetteTier0 || id == Joueur.IdObjetSacTier0 || id == 30 || id == 32 || id == 34 || id == 100 || id == 105 || id == 106 || id == Joueur.IdObjetPellePierreTier0 || id == Joueur.IdObjetPiochePierreTier0 || id == 200;
+        return ItemPhysique.EstIdRocheMatiere(id) || id == 10 || id == 11 || id == BlocChutant.ID_BRANCHE || id == 15 || id == 16 || id == 17 || id == 20 || id == 21 || id == Joueur.IdObjetCeinturePoches || id == Joueur.IdObjetCeintureSacoches || id == Joueur.IdObjetPochetteTier0 || id == Joueur.IdObjetSacTier0 || id == 30 || id == 32 || id == 34 || id == Joueur.IdObjetBaie || id == 100 || id == 105 || id == 106 || id == Joueur.IdObjetPellePierreTier0 || id == Joueur.IdObjetPiochePierreTier0 || id == 200;
     }
 
     public static void NettoyerModelesEnfants(Node3D parent)
@@ -551,6 +551,29 @@ public partial class Joueur
                 RemplacerMeshParNormalesFacettes(mi);
                 AppliquerMaterielObjet(mi, Joueur.IdObjetSacTier0, slot.IndexChimique, slot.IndexMorphologique, slot.NiveauFracture);
             }
+            foreach (Node c in n.GetChildren())
+                ParcourirMeshes(c);
+        }
+
+        ParcourirMeshes(modele);
+        NormaliserEchelleEtCentrerModeleArme(modele, tailleMaxMetres);
+        parent.AddChild(modele);
+    }
+
+    /// <summary>Petite baie récoltée sur buisson : modèle GLB dédié + teinte pilotée par IndexChimique.</summary>
+    public static void InstancierModeleBaie(Node3D parent, SlotInventaire slot, float tailleMaxMetres = 0.18f)
+    {
+        PackedScene scene = GD.Load<PackedScene>("res://Modeles/Nouriture/Petite_Bais.glb");
+        if (scene == null) return;
+
+        NettoyerModelesEnfants(parent);
+        Node3D modele = scene.Instantiate<Node3D>();
+        modele.Name = "ModeleArme";
+
+        void ParcourirMeshes(Node n)
+        {
+            if (n is MeshInstance3D mi)
+                AppliquerMaterielObjet(mi, Joueur.IdObjetBaie, slot.IndexChimique, 0, 0);
             foreach (Node c in n.GetChildren())
                 ParcourirMeshes(c);
         }

@@ -4,6 +4,8 @@ using System.Collections.Generic;
 
 public partial class Joueur
 {
+    private const float RayonInteractionBaiesBuisson = 1.2f;
+
     /// <summary>Ouvre le plan de travail 3x3 si la visée touche un atelier posé (ID 200).</summary>
     private bool EssayerOuvrirAtelierSousVisee()
     {
@@ -30,7 +32,71 @@ public partial class Joueur
     /// <summary>E : ramassage uniquement (plus de pose/attache via E).</summary>
     private void ExecuterToucheInteragir()
     {
+        if (EssayerRamasserBaiesBuissonSousVisee())
+            return;
         ExecuterRamassageObjet();
+    }
+
+    /// <summary>Cueillette instantanée des baies sur buisson plein sous la visée (le buisson passe visuellement en vide).</summary>
+    private bool EssayerRamasserBaiesBuissonSousVisee()
+    {
+        _rayon.ForceRaycastUpdate();
+        if (!_rayon.IsColliding() || _gestionnaireMonde == null) return false;
+        Node objetTouche = NoeudDepuisColliderRaycast(_rayon.GetCollider());
+        if (!EstSolViseParRayon(_rayon, objetTouche)) return false;
+
+        Vector3 pointImpact = _rayon.GetCollisionPoint();
+        if (!_gestionnaireMonde.EssayerDetecterBuissonSousPoint(pointImpact, RayonInteractionBaiesBuisson, out _, out byte typeFlore))
+            return false;
+        if (typeFlore != 1)
+        {
+            GD.Print("ZERO-K : Ce buisson est vide, aucune baie à ramasser.");
+            return true;
+        }
+
+        var slotTest = new SlotInventaire { ID = IdObjetBaie, IndexChimique = 0, Quantite = 1 };
+        if (!ADeLaPlacePourSlotInventaire(slotTest))
+        {
+            GD.Print("ZERO-K : Inventaire plein, impossible de cueillir les baies.");
+            return true;
+        }
+
+        if (!_gestionnaireMonde.RecolterBaiesBuissonSousPoint(pointImpact, RayonInteractionBaiesBuisson, out int quantite, out byte couleur))
+            return false;
+
+        quantite = Mathf.Clamp(quantite, 1, 4);
+        int restant = quantite;
+        while (restant > 0)
+        {
+            var s = new SlotInventaire
+            {
+                ID = IdObjetBaie,
+                IndexChimique = couleur,
+                Quantite = restant,
+                IndexMorphologique = 0,
+                IndexTaille = 0,
+                IndexBotanique = LSystem_Botanique.IndexChene
+            };
+            if (EssayerAjouterDansInventaire(s))
+            {
+                restant = 0;
+                break;
+            }
+            restant--;
+        }
+
+        int ajoutees = quantite - restant;
+        if (ajoutees > 0)
+        {
+            RafraichirHUD();
+            string c = couleur == 0 ? "rouges" : "colorées";
+            GD.Print($"ZERO-K : {ajoutees} baie(s) {c} récoltée(s) sur le buisson.");
+        }
+        else
+        {
+            GD.Print("ZERO-K : Aucune baie ajoutée (inventaire saturé).");
+        }
+        return true;
     }
 
     private void ConsommerUneUniteMainActive()
@@ -86,7 +152,7 @@ public partial class Joueur
     {
         if (s.EstVide || s.ID == 0) return false;
         if (s.ID >= 1 && s.ID <= 9 && s.ID != 4) return true;
-        return s.ID == 999 || ItemPhysique.EstIdRocheMatiere(s.ID) || s.ID == 30 || s.ID == 32 || s.ID == 34 || s.ID == 21 || s.ID == IdObjetCeinturePoches || s.ID == IdObjetCeintureSacoches || s.ID == IdObjetPochetteTier0 || s.ID == IdObjetSacTier0 || s.ID == IdObjetPellePierreTier0 || s.ID == IdObjetPiochePierreTier0 || s.ID == 200;
+        return s.ID == 999 || s.ID == 10 || s.ID == 11 || s.ID == BlocChutant.ID_BRANCHE || s.ID == IdObjetBaie || ItemPhysique.EstIdRocheMatiere(s.ID) || s.ID == 30 || s.ID == 32 || s.ID == 34 || s.ID == 21 || s.ID == IdObjetCeinturePoches || s.ID == IdObjetCeintureSacoches || s.ID == IdObjetPochetteTier0 || s.ID == IdObjetSacTier0 || s.ID == IdObjetPellePierreTier0 || s.ID == IdObjetPiochePierreTier0 || s.ID == 200;
     }
 
     /// <summary>Corde (20) : accrocher au point de visée si surface valide (sol, roche, arbre, bloc posé).</summary>
@@ -344,7 +410,25 @@ public partial class Joueur
         {
             _gestionnaireMonde?.AppliquerCreationGlobale(pointImpact, normaleImpact, RAYON_SCULPTURE, id);
         }
-        else if (id == 999 || ItemPhysique.EstIdRocheMatiere(id) || id == 15 || id == 16 || id == 17 || id == 20 || id == 21 || id == IdObjetCeinturePoches || id == IdObjetCeintureSacoches || id == IdObjetPochetteTier0 || id == IdObjetSacTier0 || id == 30 || id == 32 || id == 34 || id == 105 || id == 106 || id == IdObjetPellePierreTier0 || id == IdObjetPiochePierreTier0 || id == 200)
+		else if (id == 10 || id == 11)
+		{
+			Node noeudCol = NoeudDepuisColliderRaycast(_rayon.GetCollider());
+			if (!EstSolViseParRayon(_rayon, noeudCol))
+			{
+				GD.Print("ZERO-K : Replantation buisson impossible hors sol.");
+				return;
+			}
+			byte varianteCouleur = (byte)Mathf.Clamp(mainActive.IndexChimique, 0, 120);
+			byte typeBuisson = Chunk_Serveur.ConstruireTypeBuisson(varianteCouleur, plein: id == 10);
+			bool plante = _gestionnaireMonde?.PlanterBuissonGlobal(pointImpact, normaleImpact, typeBuisson) ?? false;
+			if (!plante)
+			{
+				GD.Print("ZERO-K : Sol non valide pour replanter ce buisson (terre plate requise).");
+				return;
+			}
+			GD.Print("ZERO-K : Buisson replanté.");
+		}
+        else if (id == 999 || id == BlocChutant.ID_BRANCHE || id == IdObjetBaie || ItemPhysique.EstIdRocheMatiere(id) || id == 15 || id == 16 || id == 17 || id == 20 || id == 21 || id == IdObjetCeinturePoches || id == IdObjetCeintureSacoches || id == IdObjetPochetteTier0 || id == IdObjetSacTier0 || id == 30 || id == 32 || id == 34 || id == 105 || id == 106 || id == IdObjetPellePierreTier0 || id == IdObjetPiochePierreTier0 || id == 200)
         {
             Node3D nePose = CreerBlocPose(pointDeChute, mainActive);
             if (id != 200)

@@ -3,13 +3,13 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://bapsbyvtcla6d"
-path="res://.godot/imported/Buisson_Vide.glb-ce48cc8250b05a6c634d6142cc106d26.scn"
+uid="uid://bk00oswo2aq7g"
+path="res://.godot/imported/Petite_Bais.glb-c537bca9a3b6f5d545daeeda7ec00fe6.scn"
 
 [deps]
 
-source_file="res://Modeles/Botanique/Buisson_Vide.glb"
-dest_files=["res://.godot/imported/Buisson_Vide.glb-ce48cc8250b05a6c634d6142cc106d26.scn"]
+source_file="res://Modeles/Nouriture/Petite_Bais.glb"
+dest_files=["res://.godot/imported/Petite_Bais.glb-c537bca9a3b6f5d545daeeda7ec00fe6.scn"]
 
 [params]
 

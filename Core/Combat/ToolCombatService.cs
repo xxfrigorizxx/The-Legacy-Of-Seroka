@@ -14,6 +14,13 @@ public partial class Joueur
     private float _progressionRecuperationAtelier;
     private float _cooldownParticulesRecuperationAtelier;
     private ItemPhysique _atelierCibleRecuperation;
+    private const float DureeRecolteBuissonOutilSecondes = 3.0f;
+    private const float RayonDetectionBuisson = 1.25f;
+    private float _progressionRecolteBuisson;
+    private Vector3 _pointRecolteBuisson;
+    private Vector3I _posBuissonRecolte;
+    private bool _aCibleBuissonRecolte;
+    private bool _bloquerActionClicGaucheApresMinageBuisson;
 
     private static bool EstMatiereMinableMainNue(int idMatiere)
     {
@@ -34,6 +41,75 @@ public partial class Joueur
         _progressionRecuperationAtelier = 0f;
         _cooldownParticulesRecuperationAtelier = 0f;
         _atelierCibleRecuperation = null;
+        _progressionRecolteBuisson = 0f;
+        _aCibleBuissonRecolte = false;
+        _pointRecolteBuisson = Vector3.Zero;
+        _posBuissonRecolte = default;
+        _bloquerActionClicGaucheApresMinageBuisson = false;
+    }
+
+    private bool EssayerObtenirCibleBuisson(out Vector3 pointImpact, out Vector3 pointBuissonMonde, out Vector3I posBuisson, out byte typeBuisson)
+    {
+        pointImpact = Vector3.Zero;
+        pointBuissonMonde = Vector3.Zero;
+        posBuisson = default;
+        typeBuisson = 0;
+        _rayon.ForceRaycastUpdate();
+        if (!_rayon.IsColliding()) return false;
+        Node objetTouche = NoeudDepuisColliderRaycast(_rayon.GetCollider());
+        if (!EstSolViseParRayon(_rayon, objetTouche)) return false;
+        pointImpact = _rayon.GetCollisionPoint();
+        if (_gestionnaireMonde == null) return false;
+        if (!_gestionnaireMonde.EssayerDetecterBuissonSousPoint(pointImpact, RayonDetectionBuisson, out Vector3 posMondeBuisson, out typeBuisson))
+            return false;
+        pointBuissonMonde = posMondeBuisson;
+        posBuisson = new Vector3I(Mathf.FloorToInt(posMondeBuisson.X), Mathf.FloorToInt(posMondeBuisson.Y), Mathf.FloorToInt(posMondeBuisson.Z));
+        return true;
+    }
+
+    /// <summary>Dague/Pelle : minage maintenu 3s sur buisson (dague coupe, pelle déracine replantable).</summary>
+    private bool MettreAJourRecolteBuissonOutil(float dt, SlotInventaire mainActive)
+    {
+        bool dague = mainActive.ID == 105;
+        bool pelle = mainActive.ID == IdObjetPellePierreTier0;
+        if (!dague && !pelle) return false;
+        if (!EssayerObtenirCibleBuisson(out Vector3 pointImpact, out Vector3 pointBuissonMonde, out Vector3I posBuisson, out byte typeBuisson))
+        {
+            _progressionRecolteBuisson = 0f;
+            _aCibleBuissonRecolte = false;
+            return false;
+        }
+
+        if (!_aCibleBuissonRecolte || posBuisson != _posBuissonRecolte)
+        {
+            _aCibleBuissonRecolte = true;
+            _posBuissonRecolte = posBuisson;
+            _progressionRecolteBuisson = 0f;
+        }
+        _pointRecolteBuisson = pointBuissonMonde;
+        _progressionRecolteBuisson += dt;
+        if (_progressionRecolteBuisson < DureeRecolteBuissonOutilSecondes)
+            return true;
+
+        byte mode = dague ? (byte)1 : (byte)2;
+        bool succes = _gestionnaireMonde?.RecolterBuissonGlobal(_pointRecolteBuisson, RayonDetectionBuisson, mode) ?? false;
+        if (succes)
+        {
+            if (dague)
+            {
+                AppliquerUsureOutilMainActive(1.6f);
+                GD.Print("ZERO-K : Dague: branche de buisson récoltée.");
+            }
+            else
+            {
+                AppliquerUsureOutilMainActive(2.1f);
+                GD.Print("ZERO-K : Buisson déraciné (plante replantable récupérée).");
+            }
+            _bloquerActionClicGaucheApresMinageBuisson = true;
+        }
+        _progressionRecolteBuisson = 0f;
+        _aCibleBuissonRecolte = false;
+        return true;
     }
 
     private bool EssayerObtenirCibleMinageMainNue(out Vector3 pointImpactVoxel, out Vector3 normaleImpact, out int idExtrait)
@@ -229,6 +305,7 @@ public partial class Joueur
     {
         bool mainVide = mainActive.EstVide;
         bool hachette = mainActive.ID == 106;
+        bool dague = mainActive.ID == 105;
         bool pelle = mainActive.ID == IdObjetPellePierreTier0;
         bool pioche = mainActive.ID == IdObjetPiochePierreTier0;
 
@@ -281,6 +358,9 @@ public partial class Joueur
         _progressionRecuperationAtelier = 0f;
         _cooldownParticulesRecuperationAtelier = 0f;
         _atelierCibleRecuperation = null;
+
+        if ((dague || pelle) && MettreAJourRecolteBuissonOutil(dt, mainActive))
+            return;
 
         if (!mainVide && !pelle && !pioche)
         {
@@ -572,6 +652,24 @@ public partial class Joueur
     private void ExecuterCreusage(float force, float efficacitePelle, float masseOutil, Vector3 pointImpact)
     {
         SlotInventaire mainActive = MainGaucheEstActive ? MainGauche : MainDroite;
+
+        // Dague sur buisson: interdit en coup instantané, uniquement minage maintenu 3s.
+        if (mainActive.ID == 105 && (_gestionnaireMonde?.EssayerDetecterBuissonSousPoint(pointImpact, RayonDetectionBuisson, out _, out _)) == true)
+        {
+            GD.Print("ZERO-K : Maintenez 3s avec la dague pour couper le buisson.");
+            return;
+        }
+
+        // Hachette: coupe immédiate de buisson -> branche courte.
+        if (mainActive.ID == 106)
+        {
+            if ((_gestionnaireMonde?.RecolterBuissonGlobal(pointImpact, RayonDetectionBuisson, 0)) == true)
+            {
+                AppliquerUsureOutilMainActive(1.7f);
+                GD.Print("ZERO-K : Branche de buisson récoltée à la hachette.");
+                return;
+            }
+        }
 
         if (efficacitePelle < 0.6f)
         {

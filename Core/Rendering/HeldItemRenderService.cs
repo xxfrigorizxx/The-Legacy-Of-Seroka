@@ -286,6 +286,25 @@ public partial class Joueur
             _objetEnMain.RotationDegrees = new Vector3(-11f + _rotationManuelleX, 20f + _rotationManuelleY, 3f + _rotationManuelleZ);
             return;
         }
+        if (main.ID == IdObjetBaie)
+        {
+            _objetEnMain.Mesh = null;
+            _objetEnMain.MaterialOverride = null;
+            NettoyerModelesEnfants(_objetEnMain);
+            InstancierModeleBaie(_objetEnMain, main, 0.16f);
+            _objetEnMain.Scale = Vector3.One;
+            _objetEnMain.RotationDegrees = new Vector3(-6f + _rotationManuelleX, 22f + _rotationManuelleY, 2f + _rotationManuelleZ);
+            return;
+        }
+        if (main.ID == 10 || main.ID == 11)
+        {
+            NettoyerModelesEnfants(_objetEnMain);
+            _objetEnMain.Mesh = ObtenirMeshDepuisCache(main.ID, main.IndexMorphologique, main.IndexTaille);
+            _objetEnMain.MaterialOverride = null;
+            _objetEnMain.Scale = Vector3.One * 0.0048f;
+            _objetEnMain.RotationDegrees = new Vector3(-6f + _rotationManuelleX, 25f + _rotationManuelleY, 0f + _rotationManuelleZ);
+            return;
+        }
         if (main.ID == 200)
         {
             _objetEnMain.Mesh = null;
@@ -650,6 +669,25 @@ public partial class Joueur
             }
             meshNode.Scale = Vector3.One;
             meshNode.RotationDegrees = new Vector3(8f, 30f, -4f);
+            return;
+        }
+        if (slot.ID == IdObjetBaie)
+        {
+            meshNode.Mesh = null;
+            meshNode.MaterialOverride = null;
+            NettoyerModelesEnfants(meshNode);
+            InstancierModeleBaie(meshNode, slot, 0.14f);
+            meshNode.Scale = Vector3.One;
+            meshNode.RotationDegrees = new Vector3(0f, 30f, 0f);
+            return;
+        }
+        if (slot.ID == 10 || slot.ID == 11)
+        {
+            NettoyerModelesEnfants(meshNode);
+            meshNode.Mesh = ObtenirMeshDepuisCache(slot.ID, slot.IndexMorphologique, slot.IndexTaille);
+            meshNode.MaterialOverride = null;
+            meshNode.Scale = Vector3.One * 0.0044f;
+            meshNode.RotationDegrees = new Vector3(0f, 28f, 0f);
             return;
         }
         if (slot.ID == 200)

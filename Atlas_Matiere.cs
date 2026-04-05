@@ -397,6 +397,17 @@ public static class Atlas_Matiere
                 return $"Tissu (tier 0) {pb.Nom}";
             return "Tissu (tier 0)";
         }
+        if (id == Joueur.IdObjetBaie)
+        {
+            string couleur = slot.IndexChimique switch
+            {
+                1 => "violette",
+                2 => "orange",
+                _ => "rouge"
+            };
+            int q = Joueur.ObtenirQuantiteSlot(slot);
+            return q > 1 ? $"Petites baies {couleur}s x{q}" : $"Petite baie {couleur}";
+        }
         return id switch
         {
             1 => "Terre",
@@ -408,6 +419,9 @@ public static class Atlas_Matiere
             7 => "Boue",
             8 => "Terre tropicale",
             9 => "Terre gelée",
+            10 => "Buisson plein",
+            11 => "Buisson vide",
+            31 => "Branche de buisson",
             34 => "Feuillage",
             999 => "Végétation",
             _ => $"Objet #{id}"

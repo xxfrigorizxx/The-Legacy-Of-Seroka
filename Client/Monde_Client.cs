@@ -155,20 +155,20 @@ public partial class Monde_Client : Node3D
 		data._meshRef = mergedMesh;
 		data._shapeRef = shape;
 
-		// Gazon : retirer l'ancien nœud si réintégration (évite double couche animée).
-		if (data._nodeGazon != null)
+		// Flore (gazon + buissons) : retirer l'ancien nœud si réintégration.
+		if (data._nodeFlore != null)
 		{
-			data._nodeGazon.QueueFree();
-			data._nodeGazon = null;
+			data._nodeFlore.QueueFree();
+			data._nodeFlore = null;
 		}
 		if (data.InventaireFlore != null && data.InventaireFlore.Count > 0)
 		{
 			Vector3 posObs = ObtenirPositionObservation();
-			var nodeGazon = Chunk_Client.CreerNoeudGazonPourChunkData(data, posObs, TailleChunk);
-			if (nodeGazon != null)
+			var nodeFlore = Chunk_Client.CreerNoeudFlorePourChunkData(data, posObs, TailleChunk);
+			if (nodeFlore != null)
 			{
-				AddChild(nodeGazon);
-				data._nodeGazon = nodeGazon;
+				AddChild(nodeFlore);
+				data._nodeFlore = nodeFlore;
 			}
 		}
 
@@ -583,19 +583,26 @@ public partial class Monde_Client : Node3D
 		data.InventaireFlore = inventaireFlore ?? new Dictionary<Vector3I, byte>();
 		Vector3 posObs = ObtenirPositionObservation();
 
-		if (data._nodeGazon is MultiMeshInstance3D nodeGazon)
+		if (data._nodeFlore is Node3D nodeFlore)
 		{
-			Chunk_Client.MettreAJourGazonPourChunkData(data, posObs, nodeGazon);
+			Chunk_Client.MettreAJourFlorePourChunkData(data, posObs, nodeFlore);
+			return;
+		}
+
+		// Ancien monde : racine = seul MultiMesh gazon (sans buissons instanciés).
+		if (data._nodeFlore is MultiMeshInstance3D legacyGazon)
+		{
+			Chunk_Client.MettreAJourGazonPourChunkData(data, posObs, legacyGazon);
 			return;
 		}
 
 		if (data.InventaireFlore.Count > 0)
 		{
-			var node = Chunk_Client.CreerNoeudGazonPourChunkData(data, posObs, TailleChunk);
+			var node = Chunk_Client.CreerNoeudFlorePourChunkData(data, posObs, TailleChunk);
 			if (node != null)
 			{
 				AddChild(node);
-				data._nodeGazon = node;
+				data._nodeFlore = node;
 			}
 		}
 	}

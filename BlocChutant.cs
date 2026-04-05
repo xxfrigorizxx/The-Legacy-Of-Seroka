@@ -86,6 +86,12 @@ public partial class BlocChutant : RigidBody3D
 				linD = 0.55f;
 				angD = 1.15f;
 				break;
+			case ID_BAIE:
+				densiteKgM3 = 180f;
+				pm = new PhysicsMaterial { Friction = 0.82f, Bounce = 0.12f };
+				linD = 0.28f;
+				angD = 0.52f;
+				break;
 		}
 
 		Mass = Mathf.Clamp(vol * densiteKgM3, 0.02f, 500f);
@@ -101,6 +107,8 @@ public partial class BlocChutant : RigidBody3D
 	public const byte ID_BOIS = 30;
 	/// <summary>Branche — bois fin, tombe quand on coupe.</summary>
 	public const byte ID_BRANCHE = 31;
+	/// <summary>Petite baie récoltable.</summary>
+	public const byte ID_BAIE = 35;
 	/// <summary>Feuillage arraché (même mesh visuel que les feuilles d'arbre, pas de l'herbe).</summary>
 	public const byte ID_FEUILLE_ARRACHEE = 34;
 
@@ -154,30 +162,21 @@ public partial class BlocChutant : RigidBody3D
 			case ID_BRANCHE:
 				{
 					bool estBranche = idMateriau == ID_BRANCHE;
-					float rayon = estBranche ? 0.08f : 0.2f;
-					float hauteur = estBranche ? 0.6f : 0.5f;
+					// Branche de buisson: version au sol plus fine et plus courte (~x3 plus petite).
+					float rayon = estBranche ? 0.0267f : 0.2f;
+					float hauteur = estBranche ? 0.2f : 0.5f;
 					meshInstance.Mesh = _ConstruireMeshCylindre(rayon, hauteur);
-					var bruitEcorce = new FastNoiseLite { Seed = 4242 };
-					bruitEcorce.NoiseType = FastNoiseLite.NoiseTypeEnum.Simplex;
-					bruitEcorce.FractalType = FastNoiseLite.FractalTypeEnum.Fbm;
-					bruitEcorce.Frequency = 0.08f;
-					var texEcorce = new NoiseTexture2D { Width = 128, Height = 128, Noise = bruitEcorce };
-					meshInstance.MaterialOverride = new StandardMaterial3D
-					{
-						AlbedoColor = new Color(0.52f, 0.32f, 0.14f),
-						AlbedoTexture = texEcorce,
-						Roughness = 0.9f,
-						Metallic = 0.02f
-					};
+					// Même rendu que l’item en main: teinte stable sans texture bruitée floue.
+					meshInstance.MaterialOverride = new StandardMaterial3D { AlbedoColor = new Color(0.52f, 0.32f, 0.14f), Roughness = 0.9f, Metallic = 0.02f };
 					meshInstance.Rotation = new Vector3(Mathf.Pi * 0.5f, 0, 0); // Cylindre couché (bûche)
 				}
 				break;
 			case ID_BUISSON_PLEIN:
-				meshInstance.Mesh = _ExtraireMeshBuisson("res://Modeles/Botanique/Buisson_Plein.glb");
+				meshInstance.Mesh = Chunk_Client.ObtenirMeshBuissonProcedural(true);
 				meshInstance.Scale = new Vector3(0.008f, 0.008f, 0.008f);
 				break;
 			case ID_BUISSON_VIDE:
-				meshInstance.Mesh = _ExtraireMeshBuisson("res://Modeles/Botanique/Buisson_Vide.glb");
+				meshInstance.Mesh = Chunk_Client.ObtenirMeshBuissonProcedural(false);
 				meshInstance.Scale = new Vector3(0.008f, 0.008f, 0.008f);
 				break;
 			case ID_FIBRE_HERBE:
@@ -192,13 +191,24 @@ public partial class BlocChutant : RigidBody3D
 					}
 				}
 				break;
+			case ID_BAIE:
+				meshInstance.Mesh = new SphereMesh { Radius = 0.08f, Height = 0.16f, RadialSegments = 10, Rings = 6 };
+				meshInstance.MaterialOverride = new StandardMaterial3D
+				{
+					AlbedoColor = new Color(0.90f, 0.14f, 0.14f),
+					Roughness = 0.34f,
+					Metallic = 0f,
+					EmissionEnabled = true,
+					Emission = new Color(0.05f, 0.01f, 0.01f)
+				};
+				break;
 			default:
 				meshInstance.Mesh = _ConstruireMeshCube(idMateriau);
 				break;
 		}
 
 		// Buissons/bois : garder leur matériau. Fibre : déjà ajouté. Autres (terrain etc.) : override matTerrain.
-		if (idMateriau != ID_BUISSON_PLEIN && idMateriau != ID_BUISSON_VIDE && idMateriau != ID_FIBRE_HERBE && idMateriau != ID_BOIS && idMateriau != ID_BRANCHE && matTerrain != null)
+		if (idMateriau != ID_BUISSON_PLEIN && idMateriau != ID_BUISSON_VIDE && idMateriau != ID_FIBRE_HERBE && idMateriau != ID_BOIS && idMateriau != ID_BRANCHE && idMateriau != ID_BAIE && matTerrain != null)
 			meshInstance.MaterialOverride = (Material)matTerrain.Duplicate();
 		if (idMateriau != ID_FIBRE_HERBE)
 			AddChild(meshInstance);
@@ -208,6 +218,7 @@ public partial class BlocChutant : RigidBody3D
 		bool estBuisson = idMateriau == ID_BUISSON_PLEIN || idMateriau == ID_BUISSON_VIDE;
 		bool estFibre = idMateriau == ID_FIBRE_HERBE;
 		bool estBois = idMateriau == ID_BOIS || idMateriau == ID_BRANCHE;
+		bool estBaie = idMateriau == ID_BAIE;
 		if (estFibre)
 		{
 			collision.Shape = new BoxShape3D { Size = new Vector3(0.1f, 0.4f, 0.1f) };
@@ -215,8 +226,8 @@ public partial class BlocChutant : RigidBody3D
 		}
 		else if (estBois)
 		{
-			float r = idMateriau == ID_BRANCHE ? 0.1f : 0.25f;
-			float h = idMateriau == ID_BRANCHE ? 0.7f : 0.55f;
+			float r = idMateriau == ID_BRANCHE ? 0.0334f : 0.25f;
+			float h = idMateriau == ID_BRANCHE ? 0.233f : 0.55f;
 			collision.Shape = new CylinderShape3D { Radius = r, Height = h };
 			collision.Position = new Vector3(0, 0, 0);
 			collision.Rotation = new Vector3(Mathf.Pi * 0.5f, 0, 0);
@@ -228,33 +239,17 @@ public partial class BlocChutant : RigidBody3D
 			collision.Shape = new BoxShape3D { Size = new Vector3(tailleCollision, tailleCollision, tailleCollision) };
 			collision.Position = new Vector3(tailleCollision * 0.5f, tailleCollision * 0.5f, tailleCollision * 0.5f);
 		}
+		else if (estBaie)
+		{
+			collision.Shape = new SphereShape3D { Radius = 0.09f };
+			collision.Position = new Vector3(0f, 0f, 0f);
+		}
 		else
 		{
 			collision.Shape = new BoxShape3D { Size = Vector3.One };
 			collision.Position = new Vector3(0.5f, 0.5f, 0.5f);
 		}
 		AddChild(collision);
-	}
-
-	private static Mesh _ExtraireMeshBuisson(string path)
-	{
-		var scene = GD.Load<PackedScene>(path);
-		if (scene == null) return null;
-		Node racine = scene.Instantiate();
-		Mesh mesh = _ExtraireMeshRecursif(racine);
-		racine.QueueFree();
-		return mesh;
-	}
-
-	private static Mesh _ExtraireMeshRecursif(Node noeud)
-	{
-		if (noeud is MeshInstance3D mi && mi.Mesh != null) return mi.Mesh;
-		foreach (Node enfant in noeud.GetChildren())
-		{
-			Mesh m = _ExtraireMeshRecursif(enfant);
-			if (m != null) return m;
-		}
-		return null;
 	}
 
 	private static Mesh _ConstruireMeshCylindre(float rayon, float hauteur)

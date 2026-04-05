@@ -25,8 +25,8 @@ public class ChunkData
 	internal Shape3D _shapeRef;
 	/// <summary>Référence au mesh eau fusionné (évite GC).</summary>
 	internal ArrayMesh _meshEauRef;
-	/// <summary>Nœud gazon (MultiMeshInstance3D) créé à l'intégration du chunk. Libéré dans LibérerRids.</summary>
-	internal Node _nodeGazon;
+	/// <summary>Racine flore (Node3D « Flore » : Gazon + BuissonPlein + BuissonVide). Ancien format possible : seul MultiMeshInstance3D gazon. Libéré dans LibérerRids.</summary>
+	internal Node _nodeFlore;
 
 	/// <summary>Données voxel (tableaux plats). Remplis par ExecuterCalculChunk.</summary>
 	public float[] DensitiesFlat { get; set; }
@@ -124,10 +124,10 @@ public class ChunkData
 		_meshRef = null;
 		_shapeRef = null;
 		_meshEauRef = null;
-		if (_nodeGazon != null)
+		if (_nodeFlore != null)
 		{
-			_nodeGazon.QueueFree();
-			_nodeGazon = null;
+			_nodeFlore.QueueFree();
+			_nodeFlore = null;
 		}
 	}
 }

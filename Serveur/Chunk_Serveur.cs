@@ -36,8 +36,27 @@ public partial class Chunk_Serveur : RefCounted
 	private const float NIVEAU_MIN_FLORE = 5f;
 	private const float NIVEAU_MAX_FLORE = 260f;
 
-	/// <summary>Registre de flore : position globale → type (1 = Buisson Plein, 2 = Buisson Vide). Jamais de modification voxel.</summary>
+	/// <summary>Registre flore: 0=gazon, puis couples buisson (impair=plein, pair=vide) pour variantes futures.</summary>
 	public Dictionary<Vector3I, byte> InventaireFlore { get; } = new Dictionary<Vector3I, byte>();
+
+	public const byte FloreTypeGazon = 0;
+	public const byte FloreTypeBuissonRougePlein = 1;
+	public const byte FloreTypeBuissonRougeVide = 2;
+	public const byte VarianteCouleurBuissonRouge = 0;
+	private const byte FloreTypeBuissonDebut = FloreTypeBuissonRougePlein;
+
+	public static bool EstTypeBuisson(byte typeFlore) => typeFlore >= FloreTypeBuissonDebut;
+	public static bool EstBuissonPlein(byte typeFlore) => EstTypeBuisson(typeFlore) && (((typeFlore - FloreTypeBuissonDebut) & 1) == 0);
+	public static bool EstBuissonVide(byte typeFlore) => EstTypeBuisson(typeFlore) && (((typeFlore - FloreTypeBuissonDebut) & 1) == 1);
+	public static byte ObtenirVarianteBuisson(byte typeFlore) => EstTypeBuisson(typeFlore) ? (byte)((typeFlore - FloreTypeBuissonDebut) / 2) : (byte)255;
+	public static byte ConstruireTypeBuisson(byte varianteCouleur, bool plein)
+	{
+		int v = varianteCouleur;
+		if (v < 0) v = 0;
+		if (v > 120) v = 120;
+		return (byte)(FloreTypeBuissonDebut + v * 2 + (plein ? 0 : 1));
+	}
+	public static byte TypeBuissonSansBaies(byte typeFlore) => EstTypeBuisson(typeFlore) ? ConstruireTypeBuisson(ObtenirVarianteBuisson(typeFlore), false) : typeFlore;
 
 	/// <summary>Registre d'arbres L-System : racine (position base) → (stade 0-3, seed). Croissance 1 stade/jour.</summary>
 	public Dictionary<Vector3I, DonneesArbre> InventaireArbres { get; } = new Dictionary<Vector3I, DonneesArbre>();
@@ -170,14 +189,10 @@ public partial class Chunk_Serveur : RefCounted
 								if (altitudeFlore > NIVEAU_MIN_FLORE && altitudeFlore < NIVEAU_MAX_FLORE)
 								{
 									var posGlobale = new Vector3I((int)xGlobal, (int)globalY, (int)zGlobal);
-									InventaireFlore[posGlobale] = 0; // Gazon seul par défaut
-									float humiditeBrute = _noiseHumidite.GetNoise2D(xGlobal * 0.05f, zGlobal * 0.05f);
-									float humiditeNorm = (humiditeBrute + 1f) * 0.5f;
-									float chanceDePousse = 0f;
-									if (humiditeNorm > 0.3f) chanceDePousse = (humiditeNorm - 0.3f) * 0.015f;
-									if (chanceDePousse > 0.02f) chanceDePousse = 0.02f;
+									InventaireFlore[posGlobale] = FloreTypeGazon; // Gazon seul par défaut
+									float chanceDePousse = CalculerChanceBuisson(xGlobal, zGlobal);
 									if (chanceDePousse > 0f && DeterministicRand(xGlobal, zGlobal) < chanceDePousse)
-										InventaireFlore[posGlobale] = (byte)(DeterministicRand(xGlobal + 17f, zGlobal) < 0.5f ? 1 : 2);
+										InventaireFlore[posGlobale] = ConstruireTypeBuisson(VarianteCouleurBuissonRouge, DeterministicRand(xGlobal + 17f, zGlobal) < 0.5f);
 								}
 							}
 						}
@@ -313,6 +328,17 @@ public partial class Chunk_Serveur : RefCounted
 	{
 		uint h = (uint)(x * 73856093) ^ (uint)(z * 19349663);
 		return ((h % 10000) / 10000f);
+	}
+
+	/// <summary>Probabilité de transformer un gazon en buisson selon l'humidité locale.</summary>
+	private float CalculerChanceBuisson(float xGlobal, float zGlobal)
+	{
+		float humiditeBrute = _noiseHumidite.GetNoise2D(xGlobal * 0.05f, zGlobal * 0.05f);
+		float humiditeNorm = (humiditeBrute + 1f) * 0.5f;
+		if (humiditeNorm <= 0.28f) return 0f;
+		float t = (humiditeNorm - 0.28f) / 0.72f;
+		float chance = 0.003f + t * 0.045f;
+		return Mathf.Clamp(chance, 0f, 0.05f);
 	}
 
 	/// <summary>Seuil de pente max (m) : si la hauteur varie de plus sur 1 m, pas de flore (évite lévitation sur bords).</summary>
@@ -483,6 +509,26 @@ public partial class Chunk_Serveur : RefCounted
 		GenererInventaireFloreDepuisSurface();
 	}
 
+	/// <summary>Migration douce: anciens chunks avec gazon seul -> injecte des buissons sans recréer toute la flore.</summary>
+	public void EnrichirBuissonsDepuisInventaireSiAbsents()
+	{
+		if (InventaireFlore.Count == 0) return;
+		foreach (var kv in InventaireFlore)
+			if (EstTypeBuisson(kv.Value))
+				return;
+
+		var positions = new List<Vector3I>(InventaireFlore.Keys);
+		foreach (var pos in positions)
+		{
+			if (!InventaireFlore.TryGetValue(pos, out byte typeFlore) || typeFlore != FloreTypeGazon) continue;
+			float xGlobal = pos.X;
+			float zGlobal = pos.Z;
+			float chanceDePousse = CalculerChanceBuisson(xGlobal, zGlobal);
+			if (chanceDePousse > 0f && DeterministicRand(xGlobal, zGlobal) < chanceDePousse)
+				InventaireFlore[pos] = ConstruireTypeBuisson(VarianteCouleurBuissonRouge, DeterministicRand(xGlobal + 17f, zGlobal) < 0.5f);
+		}
+	}
+
 	/// <summary>Scanne la surface chargée et remplit InventaireFlore (chunks du disque). Gazon partout sur ID 1.</summary>
 	private void GenererInventaireFloreDepuisSurface()
 	{
@@ -502,14 +548,10 @@ public partial class Chunk_Serveur : RefCounted
 				float altitudeFlore = ySurface;
 				if (altitudeFlore <= NIVEAU_MIN_FLORE || altitudeFlore >= NIVEAU_MAX_FLORE) continue;
 				var posGlobale = new Vector3I((int)xGlobal, ySurface, (int)zGlobal);
-				InventaireFlore[posGlobale] = 0;
-				float humiditeBrute = _noiseHumidite.GetNoise2D(xGlobal * 0.05f, zGlobal * 0.05f);
-				float humiditeNorm = (humiditeBrute + 1f) * 0.5f;
-				float chanceDePousse = 0f;
-				if (humiditeNorm > 0.3f) chanceDePousse = (humiditeNorm - 0.3f) * 0.015f;
-				if (chanceDePousse > 0.02f) chanceDePousse = 0.02f;
+				InventaireFlore[posGlobale] = FloreTypeGazon;
+				float chanceDePousse = CalculerChanceBuisson(xGlobal, zGlobal);
 				if (chanceDePousse > 0f && DeterministicRand(xGlobal, zGlobal) < chanceDePousse)
-					InventaireFlore[posGlobale] = (byte)(DeterministicRand(xGlobal + 17f, zGlobal) < 0.5f ? 1 : 2);
+					InventaireFlore[posGlobale] = ConstruireTypeBuisson(VarianteCouleurBuissonRouge, DeterministicRand(xGlobal + 17f, zGlobal) < 0.5f);
 			}
 	}
 
@@ -536,7 +578,7 @@ public partial class Chunk_Serveur : RefCounted
 			if (InventaireFlore.TryGetValue(mort, out byte typeFlore))
 			{
 				Vector3 posSpawn = new Vector3(mort.X + 0.5f, mort.Y + 0.5f, mort.Z + 0.5f);
-				byte idItem = typeFlore == 0 ? (byte)15 : (byte)(typeFlore == 1 ? ID_ITEM_BUISSON_PLEIN : ID_ITEM_BUISSON_VIDE);
+				byte idItem = typeFlore == FloreTypeGazon ? (byte)15 : (byte)(EstBuissonPlein(typeFlore) ? ID_ITEM_BUISSON_PLEIN : ID_ITEM_BUISSON_VIDE);
 				_callbackBlocChutant?.Invoke(posSpawn, idItem);
 			}
 			InventaireFlore.Remove(mort);
@@ -571,6 +613,147 @@ public partial class Chunk_Serveur : RefCounted
 
 	private const byte ID_ITEM_BUISSON_PLEIN = 10;
 	private const byte ID_ITEM_BUISSON_VIDE = 11;
+private const byte ID_ITEM_BRANCHE_BUISSON = BlocChutant.ID_BRANCHE;
+private const byte ID_ITEM_BAIE = Joueur.IdObjetBaie;
+
+private int TirerQuantiteBaiesDepuisSeed(int seed)
+{
+	var rng = new RandomNumberGenerator { Seed = unchecked((ulong)(uint)seed) };
+	int roll = rng.RandiRange(1, 100);
+	if (roll <= 60) return 1;
+	if (roll <= 85) return 2;
+	if (roll <= 95) return 3;
+	return 4;
+}
+
+private void FaireTomberBaiesAuSolSiPlein(Vector3I posFlore, byte typeFlore, int quantiteForcee = -1)
+{
+	if (!EstBuissonPlein(typeFlore)) return;
+	int q = quantiteForcee > 0
+		? quantiteForcee
+		: TirerQuantiteBaiesDepuisSeed((posFlore.X * 73856093) ^ (posFlore.Y * 19349663) ^ (posFlore.Z * 83492791) ^ 0x6B35);
+	var rng = new RandomNumberGenerator { Seed = unchecked((ulong)(uint)((posFlore.X * 911) ^ (posFlore.Z * 353) ^ 0xBEE35)) };
+	Vector3 basePos = new Vector3(posFlore.X + 0.5f, posFlore.Y + 0.72f, posFlore.Z + 0.5f);
+	for (int i = 0; i < q; i++)
+	{
+		Vector3 offset = new Vector3(rng.RandfRange(-0.22f, 0.22f), rng.RandfRange(0.02f, 0.14f), rng.RandfRange(-0.22f, 0.22f));
+		_callbackBlocChutant?.Invoke(basePos + offset, ID_ITEM_BAIE);
+	}
+}
+
+private bool EssayerTrouverBuissonLePlusProche(Vector3 pointImpactGlobal, float rayon, out Vector3I posFlore, out byte typeFlore)
+{
+	posFlore = default;
+	typeFlore = 0;
+	float rayon2 = rayon * rayon;
+	const float demiEpaisseurVerticale = 5f;
+	float meilleureDist2 = float.MaxValue;
+	bool trouve = false;
+	foreach (var kv in InventaireFlore)
+	{
+		if (!EstTypeBuisson(kv.Value)) continue;
+		float dx = (kv.Key.X + 0.5f) - pointImpactGlobal.X;
+		float dz = (kv.Key.Z + 0.5f) - pointImpactGlobal.Z;
+		float d2 = dx * dx + dz * dz;
+		if (d2 > rayon2) continue;
+		float dy = Mathf.Abs((kv.Key.Y + 0.5f) - pointImpactGlobal.Y);
+		if (dy > demiEpaisseurVerticale) continue;
+		if (!trouve || d2 < meilleureDist2)
+		{
+			trouve = true;
+			meilleureDist2 = d2;
+			posFlore = kv.Key;
+			typeFlore = kv.Value;
+		}
+	}
+	return trouve;
+}
+
+/// <summary>Détection locale d’un buisson sous la visée (sans le récolter).</summary>
+public bool EssayerDetecterBuisson(Vector3 pointImpactGlobal, float rayon, out Vector3 posBuisson, out byte typeFlore)
+{
+	posBuisson = Vector3.Zero;
+	typeFlore = 0;
+	if (!EssayerTrouverBuissonLePlusProche(pointImpactGlobal, rayon, out Vector3I pos, out byte type))
+		return false;
+	posBuisson = new Vector3(pos.X + 0.5f, pos.Y + 0.5f, pos.Z + 0.5f);
+	typeFlore = type;
+	return true;
+}
+
+/// <summary>Récolte ciblée buisson: 0=hachette (branche), 1=dague (coupe), 2=pelle (plante replantable).</summary>
+public bool RecolterBuisson(Vector3 pointImpactGlobal, float rayon, byte modeRecolte)
+{
+	if (!EssayerTrouverBuissonLePlusProche(pointImpactGlobal, rayon, out Vector3I posFlore, out byte typeFlore))
+		return false;
+
+	Vector3 posSpawn = new Vector3(posFlore.X + 0.5f, posFlore.Y + 0.5f, posFlore.Z + 0.5f);
+	switch (modeRecolte)
+	{
+		case 0: // Hachette: coupe de branche, le buisson plein devient buisson vide.
+			FaireTomberBaiesAuSolSiPlein(posFlore, typeFlore);
+			_callbackBlocChutant?.Invoke(posSpawn + new Vector3(0f, 0.08f, 0f), ID_ITEM_BRANCHE_BUISSON);
+			if (EstBuissonPlein(typeFlore)) InventaireFlore[posFlore] = TypeBuissonSansBaies(typeFlore);
+			else InventaireFlore.Remove(posFlore);
+			break;
+
+		case 1: // Dague maintenue: coupe après 3s -> 1 branche + 1 baie (si buisson plein), sans drop buisson.
+			FaireTomberBaiesAuSolSiPlein(posFlore, typeFlore, 1);
+			_callbackBlocChutant?.Invoke(posSpawn + new Vector3(0f, 0.08f, 0f), ID_ITEM_BRANCHE_BUISSON);
+			InventaireFlore.Remove(posFlore);
+			break;
+
+		case 2: // Pelle maintenue: déracine et récupère la plante replantable.
+			FaireTomberBaiesAuSolSiPlein(posFlore, typeFlore);
+			InventaireFlore.Remove(posFlore);
+			// Pelle: on récupère la plante "sans baies"; les baies d'un buisson plein tombent déjà au sol juste au-dessus.
+			_callbackBlocChutant?.Invoke(posSpawn + new Vector3(0f, 0.06f, 0f), ID_ITEM_BUISSON_VIDE);
+			break;
+
+		default:
+			return false;
+	}
+
+	_onFlorePurgée?.Invoke(new Vector2I(ChunkOffsetX, ChunkOffsetZ), new Dictionary<Vector3I, byte>(InventaireFlore));
+	return true;
+}
+
+/// <summary>Plante un buisson (1 plein, 2 vide) sur la surface locale du chunk.</summary>
+public bool PlanterBuisson(Vector3 pointImpactGlobal, byte typeFlore)
+{
+	if (!EstTypeBuisson(typeFlore)) return false;
+	Gestionnaire_Monde.WorldToChunkAndLocal(pointImpactGlobal.X, pointImpactGlobal.Z, TailleChunk, out Vector2I c, out int lx, out int lz);
+	if (c.X != ChunkOffsetX || c.Y != ChunkOffsetZ) return false;
+	if (lx < 0 || lx >= TailleChunk || lz < 0 || lz >= TailleChunk) return false;
+	int ySurface = ObtenirHauteurSurfaceLocale(lx, lz);
+	if (ySurface < 0) return false;
+	lock (_verrouVoxel)
+	{
+		if (_materials[lx, ySurface, lz] != 1) return false; // Terre uniquement
+	}
+	if (!TerrainAssezPlatDepuisDonnees(lx, lz)) return false;
+	var posGlobale = new Vector3I(ChunkOffsetX * TailleChunk + lx, ySurface, ChunkOffsetZ * TailleChunk + lz);
+	InventaireFlore[posGlobale] = typeFlore;
+	_onFlorePurgée?.Invoke(new Vector2I(ChunkOffsetX, ChunkOffsetZ), new Dictionary<Vector3I, byte>(InventaireFlore));
+	return true;
+}
+
+/// <summary>Récolte des baies via interaction: uniquement buisson plein (type 1), qui devient ensuite buisson vide (type 2).</summary>
+public bool RecolterBaiesBuisson(Vector3 pointImpactGlobal, float rayon, out int quantiteBaies, out byte indexCouleurBaie)
+{
+	quantiteBaies = 0;
+	indexCouleurBaie = 0; // 0 = rouge (palette future extensible)
+	if (!EssayerTrouverBuissonLePlusProche(pointImpactGlobal, rayon, out Vector3I posFlore, out byte typeFlore))
+		return false;
+	if (!EstBuissonPlein(typeFlore)) // Buisson déjà vide: aucune baie à ramasser.
+		return false;
+
+	InventaireFlore[posFlore] = TypeBuissonSansBaies(typeFlore);
+	_onFlorePurgée?.Invoke(new Vector2I(ChunkOffsetX, ChunkOffsetZ), new Dictionary<Vector3I, byte>(InventaireFlore));
+
+	quantiteBaies = TirerQuantiteBaiesDepuisSeed((posFlore.X * 73856093) ^ (posFlore.Y * 19349663) ^ (posFlore.Z * 83492791) ^ unchecked((int)Time.GetTicksUsec()));
+	return true;
+}
 
 	public void DetruireVoxel(Vector3 pointImpactGlobal, float rayonExplosion, float forceDegats = 5.0f, Action<List<int>> onSectionsAffectees = null)
 	{
@@ -590,7 +773,7 @@ public partial class Chunk_Serveur : RefCounted
 			InventaireFlore.Remove(kv.Key);
 			Vector3 posSpawn = new Vector3(kv.Key.X + 0.5f, kv.Key.Y + 0.5f, kv.Key.Z + 0.5f);
 			// Gazon (0) lâche la Fibre (15). Buissons (1,2) : 10, 11.
-			byte idItem = kv.Value == 0 ? (byte)15 : (byte)(kv.Value == 1 ? ID_ITEM_BUISSON_PLEIN : ID_ITEM_BUISSON_VIDE);
+			byte idItem = kv.Value == FloreTypeGazon ? (byte)15 : (byte)(EstBuissonPlein(kv.Value) ? ID_ITEM_BUISSON_PLEIN : ID_ITEM_BUISSON_VIDE);
 			_callbackBlocChutant?.Invoke(posSpawn, idItem);
 		}
 		if (floreDetruite.Count > 0)
@@ -873,7 +1056,7 @@ public partial class Chunk_Serveur : RefCounted
 		{
 			InventaireFlore.Remove(kv.Key);
 			Vector3 posSpawn = new Vector3(kv.Key.X + 0.5f, kv.Key.Y + 0.5f, kv.Key.Z + 0.5f);
-			byte idItem = kv.Value == 0 ? (byte)15 : (byte)(kv.Value == 1 ? ID_ITEM_BUISSON_PLEIN : ID_ITEM_BUISSON_VIDE);
+			byte idItem = kv.Value == FloreTypeGazon ? (byte)15 : (byte)(EstBuissonPlein(kv.Value) ? ID_ITEM_BUISSON_PLEIN : ID_ITEM_BUISSON_VIDE);
 			_callbackBlocChutant?.Invoke(posSpawn, idItem);
 		}
 		_onFlorePurgée?.Invoke(new Vector2I(ChunkOffsetX, ChunkOffsetZ), new Dictionary<Vector3I, byte>(InventaireFlore));
