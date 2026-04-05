@@ -3,13 +3,13 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://iikn2m5wphkf"
-path="res://.godot/imported/grass.glb-7cc18e5cc53ce03c8e6bc2f537d85c01.scn"
+uid="uid://cd5bn2srgtcco"
+path="res://.godot/imported/Sac_Tiere0.glb-194416da408ee218b99375ea5a8bf1ac.scn"
 
 [deps]
 
-source_file="res://Modeles/Botanique/grass.glb"
-dest_files=["res://.godot/imported/grass.glb-7cc18e5cc53ce03c8e6bc2f537d85c01.scn"]
+source_file="res://Modeles/Equipable/Sac_Tiere0.glb"
+dest_files=["res://.godot/imported/Sac_Tiere0.glb-194416da408ee218b99375ea5a8bf1ac.scn"]
 
 [params]
 

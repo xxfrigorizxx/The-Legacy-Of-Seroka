@@ -8,7 +8,7 @@ public partial class Joueur
     private static bool EstObjetAvecVisuel(int id)
     {
         if (id >= 1 && id <= 9) return true;
-        return ItemPhysique.EstIdRocheMatiere(id) || id == 15 || id == 16 || id == 17 || id == 20 || id == 21 || id == Joueur.IdObjetCeinturePoches || id == Joueur.IdObjetCeintureSacoches || id == Joueur.IdObjetPochetteTier0 || id == Joueur.IdObjetSacTier0 || id == 30 || id == 32 || id == 34 || id == 100 || id == 105 || id == 106 || id == Joueur.IdObjetPellePierreTier0 || id == 200;
+        return ItemPhysique.EstIdRocheMatiere(id) || id == 15 || id == 16 || id == 17 || id == 20 || id == 21 || id == Joueur.IdObjetCeinturePoches || id == Joueur.IdObjetCeintureSacoches || id == Joueur.IdObjetPochetteTier0 || id == Joueur.IdObjetSacTier0 || id == 30 || id == 32 || id == 34 || id == 100 || id == 105 || id == 106 || id == Joueur.IdObjetPellePierreTier0 || id == Joueur.IdObjetPiochePierreTier0 || id == 200;
     }
 
     public static void NettoyerModelesEnfants(Node3D parent)
@@ -35,6 +35,8 @@ public partial class Joueur
             parent.RemoveMeta(MetaSignatureSac101);
         if (parent.HasMeta(MetaSignaturePelle107))
             parent.RemoveMeta(MetaSignaturePelle107);
+        if (parent.HasMeta(MetaSignaturePioche108))
+            parent.RemoveMeta(MetaSignaturePioche108);
     }
 
     private static Aabb TransformerAabb(Transform3D t, Aabb a)
@@ -142,6 +144,12 @@ public partial class Joueur
     private static int SignatureSlotPelle107(SlotInventaire s)
     {
         if (s.ID != Joueur.IdObjetPellePierreTier0) return -1;
+        return HashCode.Combine(s.IndexChimique, s.IndexMorphologique, s.IndexTaille, s.IndexBotanique, s.NiveauFracture);
+    }
+
+    private static int SignatureSlotPioche108(SlotInventaire s)
+    {
+        if (s.ID != Joueur.IdObjetPiochePierreTier0) return -1;
         return HashCode.Combine(s.IndexChimique, s.IndexMorphologique, s.IndexTaille, s.IndexBotanique, s.NiveauFracture);
     }
 
@@ -529,7 +537,7 @@ public partial class Joueur
 
     public static void InstancierModeleSacTier0(Node3D parent, SlotInventaire slot, float tailleMaxMetres = 0.4f)
     {
-        PackedScene scene = GD.Load<PackedScene>("res://Modeles/Equipements/Sac_Tiere0.glb");
+        PackedScene scene = GD.Load<PackedScene>("res://Modeles/Equipable/Sac_Tiere0.glb");
         if (scene == null) return;
 
         NettoyerModelesEnfants(parent);
@@ -555,34 +563,55 @@ public partial class Joueur
     public static void InstancierModeleArme(Node3D parent, SlotInventaire slot, float tailleMaxUnites = 0.525f, float facteurEchelleLame = 1f)
     {
         NettoyerModelesEnfants(parent);
-        if (slot.ID != 105 && slot.ID != 106 && slot.ID != Joueur.IdObjetPellePierreTier0) return;
+        if (slot.ID != 105 && slot.ID != 106 && slot.ID != Joueur.IdObjetPellePierreTier0 && slot.ID != Joueur.IdObjetPiochePierreTier0) return;
 
-        if (slot.ID == 106 || slot.ID == Joueur.IdObjetPellePierreTier0)
+        if (slot.ID == 106 || slot.ID == Joueur.IdObjetPellePierreTier0 || slot.ID == Joueur.IdObjetPiochePierreTier0)
         {
             bool estPelle = slot.ID == Joueur.IdObjetPellePierreTier0;
+            bool estPioche = slot.ID == Joueur.IdObjetPiochePierreTier0;
             PackedScene sceneHachette = GD.Load<PackedScene>(estPelle
                 ? "res://Modeles/Equipements/Pelle_Pierre_tier0.glb"
-                : "res://Modeles/Equipements/hachette_premitive_tier0.glb");
+                : (estPioche ? "res://Modeles/Equipements/Pioche_pierre_tier0.glb" : "res://Modeles/Equipements/hachette_premitive_tier0.glb"));
             if (sceneHachette == null) return;
 
             float tailleNorm = tailleMaxUnites * Mathf.Clamp(facteurEchelleLame, 0.72f, 1.28f);
             Node3D modeleHachette = sceneHachette.Instantiate<Node3D>();
             modeleHachette.Name = "ModeleArme";
 
-            MeshInstance3D partA = modeleHachette.GetNodeOrNull<MeshInstance3D>("tripo_part_1")
-                ?? TrouverMeshInstanceDontLeNomContient(modeleHachette, "tripo_part_1")
-                ?? TrouverMeshParMots(modeleHachette, "cord", "rope", "ficelle", "lien");
-            MeshInstance3D partB = modeleHachette.GetNodeOrNull<MeshInstance3D>("tripo_part_4")
-                ?? TrouverMeshInstanceDontLeNomContient(modeleHachette, "tripo_part_4")
-                ?? (estPelle ? TrouverMeshParMots(modeleHachette, "pierre", "stone", "rock", "lame", "head", "blade", "spade") : null);
-            MeshInstance3D partC = modeleHachette.GetNodeOrNull<MeshInstance3D>("tripo_part_5")
-                ?? TrouverMeshInstanceDontLeNomContient(modeleHachette, "tripo_part_5")
-                ?? (estPelle ? TrouverMeshParMots(modeleHachette, "manche", "wood", "bois", "baton", "stick", "handle", "shaft") : null);
-
-            // Ordre réel des GLB outils tier0 : Part_4 = tête minérale, Part_5 = manche (bâton), Part_1 = lien (corde).
-            MeshInstance3D miLame106 = partB;
-            MeshInstance3D miManche106 = partC;
-            MeshInstance3D miCorde106 = partA;
+            MeshInstance3D miLame106;
+            MeshInstance3D miManche106;
+            MeshInstance3D miCorde106;
+            if (estPelle)
+            {
+                // Pelle : mapping validé user -> part_0 = manche, part_1 = corde, part_2 = roche.
+                MeshInstance3D part0 = modeleHachette.GetNodeOrNull<MeshInstance3D>("tripo_part_0")
+                    ?? TrouverMeshInstanceDontLeNomContient(modeleHachette, "tripo_part_0")
+                    ?? TrouverMeshParMots(modeleHachette, "manche", "wood", "bois", "baton", "stick", "handle", "shaft");
+                MeshInstance3D part1 = modeleHachette.GetNodeOrNull<MeshInstance3D>("tripo_part_1")
+                    ?? TrouverMeshInstanceDontLeNomContient(modeleHachette, "tripo_part_1")
+                    ?? TrouverMeshParMots(modeleHachette, "cord", "rope", "ficelle", "lien");
+                MeshInstance3D part2 = modeleHachette.GetNodeOrNull<MeshInstance3D>("tripo_part_2")
+                    ?? TrouverMeshInstanceDontLeNomContient(modeleHachette, "tripo_part_2")
+                    ?? TrouverMeshParMots(modeleHachette, "pierre", "stone", "rock", "lame", "head", "blade", "spade");
+                miManche106 = part0;
+                miCorde106 = part1;
+                miLame106 = part2;
+            }
+            else
+            {
+                MeshInstance3D partA = modeleHachette.GetNodeOrNull<MeshInstance3D>("tripo_part_1")
+                    ?? TrouverMeshInstanceDontLeNomContient(modeleHachette, "tripo_part_1")
+                    ?? TrouverMeshParMots(modeleHachette, "cord", "rope", "ficelle", "lien");
+                MeshInstance3D partB = modeleHachette.GetNodeOrNull<MeshInstance3D>("tripo_part_4")
+                    ?? TrouverMeshInstanceDontLeNomContient(modeleHachette, "tripo_part_4")
+                    ?? (estPioche ? TrouverMeshParMots(modeleHachette, "pierre", "stone", "rock", "lame", "head", "blade", "pick", "pioche") : null);
+                MeshInstance3D partC = modeleHachette.GetNodeOrNull<MeshInstance3D>("tripo_part_5")
+                    ?? TrouverMeshInstanceDontLeNomContient(modeleHachette, "tripo_part_5")
+                    ?? (estPioche ? TrouverMeshParMots(modeleHachette, "manche", "wood", "bois", "baton", "stick", "handle", "shaft") : null);
+                miLame106 = partB;
+                miManche106 = partC;
+                miCorde106 = partA;
+            }
 
             // Fallback robuste: si le GLB pelle a des noms différents, on répartit les meshes restants.
             var tousMeshes = ListerMeshes(modeleHachette);

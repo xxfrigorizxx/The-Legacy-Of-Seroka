@@ -626,15 +626,40 @@ public partial class Monde_Client : Node3D
 			vx.SetVoxelLocal(TailleChunk, (int)posGlobal.Y, localZ, id);
 			_sectionsAReconstruire.Add((cx - 1, cz, sec));
 		}
+		if (localX == TailleChunk - 1 && _chunksData.TryGetValue(new Vector2I(cx + 1, cz), out var vxp))
+		{
+			vxp.SetVoxelLocal(0, (int)posGlobal.Y, localZ, id);
+			_sectionsAReconstruire.Add((cx + 1, cz, sec));
+		}
 		if (localZ == 0 && _chunksData.TryGetValue(new Vector2I(cx, cz - 1), out var vz))
 		{
 			vz.SetVoxelLocal(localX, (int)posGlobal.Y, TailleChunk, id);
 			_sectionsAReconstruire.Add((cx, cz - 1, sec));
 		}
+		if (localZ == TailleChunk - 1 && _chunksData.TryGetValue(new Vector2I(cx, cz + 1), out var vzp))
+		{
+			vzp.SetVoxelLocal(localX, (int)posGlobal.Y, 0, id);
+			_sectionsAReconstruire.Add((cx, cz + 1, sec));
+		}
 		if (localX == 0 && localZ == 0 && _chunksData.TryGetValue(new Vector2I(cx - 1, cz - 1), out var vxz))
 		{
 			vxz.SetVoxelLocal(TailleChunk, (int)posGlobal.Y, TailleChunk, id);
 			_sectionsAReconstruire.Add((cx - 1, cz - 1, sec));
+		}
+		if (localX == TailleChunk - 1 && localZ == 0 && _chunksData.TryGetValue(new Vector2I(cx + 1, cz - 1), out var vxpz))
+		{
+			vxpz.SetVoxelLocal(0, (int)posGlobal.Y, TailleChunk, id);
+			_sectionsAReconstruire.Add((cx + 1, cz - 1, sec));
+		}
+		if (localX == 0 && localZ == TailleChunk - 1 && _chunksData.TryGetValue(new Vector2I(cx - 1, cz + 1), out var vxzp))
+		{
+			vxzp.SetVoxelLocal(TailleChunk, (int)posGlobal.Y, 0, id);
+			_sectionsAReconstruire.Add((cx - 1, cz + 1, sec));
+		}
+		if (localX == TailleChunk - 1 && localZ == TailleChunk - 1 && _chunksData.TryGetValue(new Vector2I(cx + 1, cz + 1), out var vxpzp))
+		{
+			vxpzp.SetVoxelLocal(0, (int)posGlobal.Y, 0, id);
+			_sectionsAReconstruire.Add((cx + 1, cz + 1, sec));
 		}
 
 		if (sec >= 0 && sec < 45) _sectionsAReconstruire.Add((cx, cz, sec));

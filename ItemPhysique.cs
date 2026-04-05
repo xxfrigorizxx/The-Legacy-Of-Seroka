@@ -151,6 +151,18 @@ public partial class ItemPhysique : RigidBody3D
 		rb.PhysicsMaterialOverride = new PhysicsMaterial { Friction = 0.68f, Bounce = 0.04f };
 	}
 
+	/// <summary>Pioche pierre tier0 (108) : outil plus lourd, stabilité proche hachette.</summary>
+	public static void AppliquerPhysiquePioche108(ItemPhysique rb)
+	{
+		if (rb == null || rb.ID_Objet != Joueur.IdObjetPiochePierreTier0) return;
+		rb.ContinuousCd = true;
+		rb.LinearDampMode = RigidBody3D.DampMode.Replace;
+		rb.LinearDamp = 0.22f;
+		rb.AngularDampMode = RigidBody3D.DampMode.Replace;
+		rb.AngularDamp = 0.88f;
+		rb.PhysicsMaterialOverride = new PhysicsMaterial { Friction = 0.66f, Bounce = 0.04f };
+	}
+
 	/// <summary>Table géologique : compositions minérales réelles (couleur, rugosité, future résistance).</summary>
 	public static readonly ProfilMineral[] TableGeologique = new ProfilMineral[]
 	{
@@ -323,6 +335,15 @@ public partial class ItemPhysique : RigidBody3D
 			ResistanceActuelle = 30f;
 			Scale = Vector3.One;
 			AppliquerPhysiquePelle107(this);
+			return;
+		}
+		if (ID_Objet == Joueur.IdObjetPiochePierreTier0)
+		{
+			IndexChimique = Mathf.Clamp(IndexChimique, 0, TableGeologique.Length - 1);
+			Mass = 0.66f;
+			ResistanceActuelle = 32f;
+			Scale = Vector3.One;
+			AppliquerPhysiquePioche108(this);
 			return;
 		}
 		// Bûche (30) et Bâton (32) : propriétés depuis le profil botanique (chêne, pin, …) pour bien spécifier l'essence.
@@ -1673,6 +1694,11 @@ public partial class ItemPhysique : RigidBody3D
 		if (ID_Objet == Joueur.IdObjetPellePierreTier0)
 		{
 			AppliquerPhysiquePelle107(this);
+			return;
+		}
+		if (ID_Objet == Joueur.IdObjetPiochePierreTier0)
+		{
+			AppliquerPhysiquePioche108(this);
 			return;
 		}
 		if (EstIdRocheMatiere(ID_Objet))

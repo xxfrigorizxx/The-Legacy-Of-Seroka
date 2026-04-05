@@ -180,9 +180,31 @@ public static class Atlas_Matiere
         return Mathf.Clamp(maxDur, 100f, 1000f);
     }
 
+    public static float CalculerDurabiliteMaxNouvellePioche(SlotInventaire roche, SlotInventaire corde, SlotInventaire baton)
+    {
+        int idxLame = Mathf.Clamp(roche.ID - ItemPhysique.IdRocheMatiereMin, 0, ItemPhysique.TableGeologique.Length - 1);
+        float mineral = ItemPhysique.TableGeologique[idxLame].ResistanceFuture;
+        ObtenirStatsCorde(corde.IndexChimique, corde.IndexMorphologique, out float durCord, out _);
+        float durBois = ObtenirDurabiliteBois(baton.IndexBotanique);
+        float maxDur = mineral * 3.7f + durCord * 6f + durBois * 16f;
+        maxDur *= Mathf.Max(0.4f, 1f - corde.NiveauFracture * 0.11f);
+        return Mathf.Clamp(maxDur, 110f, 1100f);
+    }
+
+    public static float CalculerDurabiliteMaxPiocheDepuisSlot(SlotInventaire pioche)
+    {
+        int idxLame = Mathf.Clamp(pioche.IndexChimique, 0, ItemPhysique.TableGeologique.Length - 1);
+        float mineral = ItemPhysique.TableGeologique[idxLame].ResistanceFuture;
+        ObtenirStatsCorde(pioche.IndexMorphologique, pioche.IndexTaille, out float durCord, out _);
+        float durBois = ObtenirDurabiliteBois(pioche.IndexBotanique);
+        float maxDur = mineral * 3.7f + durCord * 6f + durBois * 16f;
+        maxDur *= Mathf.Max(0.4f, 1f - pioche.NiveauFracture * 0.11f);
+        return Mathf.Clamp(maxDur, 110f, 1100f);
+    }
+
     public static void InitialiserDurabiliteOutilSiBesoin(ref SlotInventaire s)
     {
-        if (s.ID != 105 && s.ID != 106 && s.ID != Joueur.IdObjetPellePierreTier0) return;
+        if (s.ID != 105 && s.ID != 106 && s.ID != Joueur.IdObjetPellePierreTier0 && s.ID != Joueur.IdObjetPiochePierreTier0) return;
         if (s.DurabiliteOutilMax > 0.5f)
         {
             if (s.DurabiliteOutilActuelle <= 0f)
@@ -204,6 +226,12 @@ public static class Atlas_Matiere
         else if (s.ID == Joueur.IdObjetPellePierreTier0)
         {
             float max = CalculerDurabiliteMaxPelleDepuisSlot(s);
+            s.DurabiliteOutilMax = max;
+            s.DurabiliteOutilActuelle = max;
+        }
+        else if (s.ID == Joueur.IdObjetPiochePierreTier0)
+        {
+            float max = CalculerDurabiliteMaxPiocheDepuisSlot(s);
             s.DurabiliteOutilMax = max;
             s.DurabiliteOutilActuelle = max;
         }
@@ -257,6 +285,18 @@ public static class Atlas_Matiere
         {
             int i = Mathf.Clamp(slot.IndexChimique, 0, ItemPhysique.TableGeologique.Length - 1);
             string nom = $"Pelle en {ItemPhysique.TableGeologique[i].Nom}";
+            if (slot.DurabiliteOutilMax > 0.5f)
+            {
+                int a = Mathf.Max(0, Mathf.RoundToInt(slot.DurabiliteOutilActuelle));
+                int m = Mathf.Max(1, Mathf.RoundToInt(slot.DurabiliteOutilMax));
+                return $"{nom} ({a}/{m})";
+            }
+            return nom;
+        }
+        if (id == Joueur.IdObjetPiochePierreTier0)
+        {
+            int i = Mathf.Clamp(slot.IndexChimique, 0, ItemPhysique.TableGeologique.Length - 1);
+            string nom = $"Pioche en {ItemPhysique.TableGeologique[i].Nom}";
             if (slot.DurabiliteOutilMax > 0.5f)
             {
                 int a = Mathf.Max(0, Mathf.RoundToInt(slot.DurabiliteOutilActuelle));
@@ -619,6 +659,36 @@ public static class Atlas_Matiere
                 return new SlotInventaire
                 {
                     ID = Joueur.IdObjetPellePierreTier0,
+                    IndexChimique = roche.ID - ItemPhysique.IdRocheMatiereMin,
+                    IndexMorphologique = corde.IndexChimique,
+                    IndexTaille = corde.IndexMorphologique,
+                    IndexBotanique = baton.IndexBotanique,
+                    EstUnEclat = false,
+                    NiveauFracture = corde.NiveauFracture,
+                    DurabiliteOutilMax = dMax,
+                    DurabiliteOutilActuelle = dMax
+                };
+            }
+        }
+
+        static bool EstSlotPetiteRochePointeCraft(SlotInventaire s) =>
+            !s.EstVide && ItemPhysique.EstIdRocheMatiere(s.ID) && s.IndexMorphologique == 3 && (s.IndexTaille == 0 || s.IndexTaille == 1);
+        // Pioche pierre tier0 (108) 3x3:
+        // [1]=petite roche en pointe, [2]=ficelle, [3]=petite roche en pointe, [5]=bâton façonné, [8]=bâton façonné.
+        if (grilleCraft3x3Table && grille.Length >= 9
+            && EstSlotPetiteRochePointeCraft(grille[0]) && EstSlotCordeCraft(grille[1]) && EstSlotPetiteRochePointeCraft(grille[2])
+            && EstSlotBatonFaconneCraft(grille[4]) && EstSlotBatonFaconneCraft(grille[7]))
+        {
+            bool autresVides = grille[3].EstVide && grille[5].EstVide && grille[6].EstVide && grille[8].EstVide;
+            if (autresVides)
+            {
+                SlotInventaire roche = grille[0];
+                SlotInventaire corde = grille[1];
+                SlotInventaire baton = grille[4];
+                float dMax = CalculerDurabiliteMaxNouvellePioche(roche, corde, baton);
+                return new SlotInventaire
+                {
+                    ID = Joueur.IdObjetPiochePierreTier0,
                     IndexChimique = roche.ID - ItemPhysique.IdRocheMatiereMin,
                     IndexMorphologique = corde.IndexChimique,
                     IndexTaille = corde.IndexMorphologique,

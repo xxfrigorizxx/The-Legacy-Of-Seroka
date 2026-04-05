@@ -1106,13 +1106,21 @@ public partial class Monde_Serveur : Node
 	{
 		_modificationEnCours = true;
 		Vector3 pointCible = pointImpact + (normale * 0.1f); // Réduit pour éviter les blocs flottants
-		Vector2I c = Gestionnaire_Monde.WorldToChunkCoord(pointCible.X, pointCible.Z, TailleChunk);
-		int cx = c.X;
-		int cz = c.Y;
-		Vector2I coord = new Vector2I(cx, cz);
+		byte matiere = (byte)Mathf.Clamp(idMatiere, 0, 255);
+		int cxMin = Gestionnaire_Monde.WorldToChunkCoord(pointCible.X - rayon, pointCible.Z, TailleChunk).X;
+		int cxMax = Gestionnaire_Monde.WorldToChunkCoord(pointCible.X + rayon, pointCible.Z, TailleChunk).X;
+		int czMin = Gestionnaire_Monde.WorldToChunkCoord(pointCible.X, pointCible.Z - rayon, TailleChunk).Y;
+		int czMax = Gestionnaire_Monde.WorldToChunkCoord(pointCible.X, pointCible.Z + rayon, TailleChunk).Y;
 
-		var chunk = ObtenirOuCreerChunk(coord);
-		chunk.CreerMatiere(pointCible, rayon, (byte)Mathf.Clamp(idMatiere, 0, 255));
+		for (int cx = cxMin; cx <= cxMax; cx++)
+		{
+			for (int cz = czMin; cz <= czMax; cz++)
+			{
+				Vector2I coord = new Vector2I(cx, cz);
+				var chunk = ObtenirOuCreerChunk(coord);
+				chunk.CreerMatiere(pointCible, rayon, matiere);
+			}
+		}
 	}
 
 	public DonneesChunk ObtenirDonneesChunkPourClient(Vector2I coord)

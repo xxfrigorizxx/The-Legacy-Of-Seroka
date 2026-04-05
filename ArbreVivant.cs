@@ -69,7 +69,8 @@ public partial class ArbreVivant : StaticBody3D
 		ObtenirMaterielBois();
 		_cacheMatBoisTriplanar = (StandardMaterial3D)_cacheMatBois.Duplicate();
 		_cacheMatBoisTriplanar.Uv1Triplanar = true;
-		_cacheMatBoisTriplanar.Uv1WorldTriplanar = true;
+		// Mapping triplanar local (et non monde) pour figer la texture sur chaque mesh de bois.
+		_cacheMatBoisTriplanar.Uv1WorldTriplanar = false;
 		_cacheMatBoisTriplanar.Uv1TriplanarSharpness = 2f;
 		_cacheMatBoisTriplanar.AlbedoColor = new Color(0.65f, 0.45f, 0.25f);
 		// Désactive le backface culling (éclats / faces de coupe visibles même si winding imparfait).

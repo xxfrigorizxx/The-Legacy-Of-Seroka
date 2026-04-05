@@ -3,13 +3,13 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://cd5bn2srgtcco"
-path="res://.godot/imported/Sac_Tiere0.glb-805ba9f2b04859f38f6ac4d4d08433af.scn"
+uid="uid://7eb135qj5ouj"
+path="res://.godot/imported/Pioche_pierre_tier0.glb-f7f6c4c9cd335f8fb21ea3443fa0538d.scn"
 
 [deps]
 
-source_file="res://Modeles/Equipements/Sac_Tiere0.glb"
-dest_files=["res://.godot/imported/Sac_Tiere0.glb-805ba9f2b04859f38f6ac4d4d08433af.scn"]
+source_file="res://Modeles/Equipements/Pioche_pierre_tier0.glb"
+dest_files=["res://.godot/imported/Pioche_pierre_tier0.glb-f7f6c4c9cd335f8fb21ea3443fa0538d.scn"]
 
 [params]
 

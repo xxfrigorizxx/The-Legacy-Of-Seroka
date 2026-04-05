@@ -4,6 +4,7 @@ using System;
 public partial class Joueur
 {
     private const float DureeMinageMainNueSecondes = 3.0f;
+    private const float DureeMinagePiochePierreSecondes = 4.0f;
     private const float IntervalleParticulesMinageMainNue = 0.12f;
     private const float DureeRecuperationAtelierMainNue = 5.0f;
     private const float DureeRecuperationAtelierHachette = 2.85f;
@@ -18,6 +19,12 @@ public partial class Joueur
     {
         // Main nue : sable + familles de terres (dont herbe/terre de surface) uniquement.
         return idMatiere == 1 || idMatiere == 3 || idMatiere == 6 || idMatiere == 7 || idMatiere == 8 || idMatiere == 9;
+    }
+
+    private static bool EstMatiereMinablePioche(int idMatiere)
+    {
+        // Pioche : roche voxel.
+        return idMatiere == 2;
     }
 
     private void ReinitialiserMinageMainNueProgression()
@@ -47,6 +54,26 @@ public partial class Joueur
         Vector3 pointDeSondage = pointImpactVoxel - (normaleImpact * 0.5f);
         idExtrait = _gestionnaireMonde?.ObtenirMatiereExacte(pointDeSondage) ?? 0;
         return EstMatiereMinableMainNue(idExtrait);
+    }
+
+    private bool EssayerObtenirCibleMinagePioche(out Vector3 pointImpactVoxel, out Vector3 normaleImpact, out int idExtrait)
+    {
+        pointImpactVoxel = Vector3.Zero;
+        normaleImpact = Vector3.Up;
+        idExtrait = 0;
+
+        _rayon.ForceRaycastUpdate();
+        if (!_rayon.IsColliding()) return false;
+
+        Node objetTouche = NoeudDepuisColliderRaycast(_rayon.GetCollider());
+        if (objetTouche != null && (objetTouche is ItemPhysique || ResoudreRigidBodyDepuisCollider(objetTouche) != null || objetTouche.IsInGroup("BlocsPoses")))
+            return false;
+
+        pointImpactVoxel = _rayon.GetCollisionPoint();
+        normaleImpact = _rayon.GetCollisionNormal();
+        Vector3 pointDeSondage = pointImpactVoxel - (normaleImpact * 0.5f);
+        idExtrait = _gestionnaireMonde?.ObtenirMatiereExacte(pointDeSondage) ?? 0;
+        return EstMatiereMinablePioche(idExtrait);
     }
 
     private bool EssayerObtenirAtelierSousVisee(out ItemPhysique atelier, out Vector3 pointImpact, out Vector3 normaleImpact)
@@ -202,6 +229,8 @@ public partial class Joueur
     {
         bool mainVide = mainActive.EstVide;
         bool hachette = mainActive.ID == 106;
+        bool pelle = mainActive.ID == IdObjetPellePierreTier0;
+        bool pioche = mainActive.ID == IdObjetPiochePierreTier0;
 
         if (EssayerObtenirAtelierSousVisee(out ItemPhysique atelier, out Vector3 pAtelier, out Vector3 nAtelier))
         {
@@ -253,13 +282,21 @@ public partial class Joueur
         _cooldownParticulesRecuperationAtelier = 0f;
         _atelierCibleRecuperation = null;
 
-        if (!mainVide)
+        if (!mainVide && !pelle && !pioche)
         {
             ReinitialiserMinageMainNueProgression();
             return;
         }
 
-        if (!EssayerObtenirCibleMinageMainNue(out Vector3 pointImpactVoxel, out Vector3 normaleImpact, out int idExtrait))
+        Vector3 pointImpactVoxel;
+        Vector3 normaleImpact;
+        int idExtrait;
+        bool cibleValide;
+        if (pioche)
+            cibleValide = EssayerObtenirCibleMinagePioche(out pointImpactVoxel, out normaleImpact, out idExtrait);
+        else
+            cibleValide = EssayerObtenirCibleMinageMainNue(out pointImpactVoxel, out normaleImpact, out idExtrait);
+        if (!cibleValide)
         {
             ReinitialiserMinageMainNueProgression();
             return;
@@ -273,7 +310,8 @@ public partial class Joueur
             EmmettreParticulesMinageMainNue(pointImpactVoxel, normaleImpact);
         }
 
-        if (_progressionMinageMainNue < DureeMinageMainNueSecondes)
+        float dureeMinage = pioche ? DureeMinagePiochePierreSecondes : (pelle ? (DureeMinageMainNueSecondes * 0.95f) : DureeMinageMainNueSecondes);
+        if (_progressionMinageMainNue < dureeMinage)
             return;
 
         ExecuterMinageVoxelMainNue(pointImpactVoxel, idExtrait);
@@ -282,7 +320,7 @@ public partial class Joueur
 
     private void ExecuterMinageVoxelMainNue(Vector3 pointImpactVoxel, int idExtrait)
     {
-        if (!EstMatiereMinableMainNue(idExtrait))
+        if (!EstMatiereMinableMainNue(idExtrait) && !EstMatiereMinablePioche(idExtrait))
             return;
         if (MainGaucheEstActive && !MainGauche.EstVide && !MainDroite.EstVide) return;
         if (!MainGaucheEstActive && !MainDroite.EstVide && !MainGauche.EstVide) return;
@@ -337,6 +375,8 @@ public partial class Joueur
             return (0.78f, 0.22f, 1.15f);
         if (mainActive.ID == 106)
             return (0.88f, 0.12f, 2.05f);
+        if (mainActive.ID == IdObjetPiochePierreTier0)
+            return (0.92f, 0.08f, 2.25f);
         if (mainActive.ID == IdObjetPellePierreTier0)
             return (0.26f, 0.95f, 2.15f);
         if (ItemPhysique.EstIdRocheMatiere(mainActive.ID))
@@ -379,6 +419,8 @@ public partial class Joueur
             epaisseurLame = 0.04f;
         else if (mainActive.ID == 106)
             epaisseurLame = 0.065f;
+        else if (mainActive.ID == IdObjetPiochePierreTier0)
+            epaisseurLame = 0.06f;
         else if (mainActive.ID == IdObjetPellePierreTier0)
             epaisseurLame = 0.09f;
 
@@ -972,7 +1014,7 @@ public partial class Joueur
         }
 
         if ((mainActive.ID == 105 && !EstFrappeDagueAvecLaLame(pointImpact, directionFrappe))
-            || ((mainActive.ID == 106 || mainActive.ID == IdObjetPellePierreTier0) && !EstFrappeHachette106AvecLaLame(pointImpact, directionFrappe)))
+            || ((mainActive.ID == 106 || mainActive.ID == IdObjetPellePierreTier0 || mainActive.ID == IdObjetPiochePierreTier0) && !EstFrappeHachette106AvecLaLame(pointImpact, directionFrappe)))
         {
             GD.Print("ZERO-K : Orientez le tranchant vers la cible — ce coup porte le manche ou le plat.");
             return;
@@ -982,7 +1024,7 @@ public partial class Joueur
         int resultatFracture = item.SubirDegats(forceImpact, dirVue, pointImpact);
         if (resultatFracture == 0)
             GD.Print("ZERO-K : L'impact n'est pas assez puissant. La roche résonne mais ne cède pas (Rebond).");
-        else if (mainActive.ID == 105 || mainActive.ID == 106 || mainActive.ID == IdObjetPellePierreTier0)
+        else if (mainActive.ID == 105 || mainActive.ID == 106 || mainActive.ID == IdObjetPellePierreTier0 || mainActive.ID == IdObjetPiochePierreTier0)
             AppliquerUsureOutilMainActive(2.15f + forceImpact * 0.017f);
     }
 

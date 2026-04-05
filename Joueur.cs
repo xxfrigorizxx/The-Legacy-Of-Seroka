@@ -76,6 +76,8 @@ public partial class Joueur : CharacterBody3D
     public const int IdObjetCeintureSacoches = 104;
     /// <summary>Pelle en pierre tier 0.</summary>
     public const int IdObjetPellePierreTier0 = 107;
+    /// <summary>Pioche en pierre tier 0.</summary>
+    public const int IdObjetPiochePierreTier0 = 108;
 
     /// <summary>True si cet ID est un contenant porté qui ouvre la grille « sac » dans l’UI.</summary>
     public static bool EstObjetQuiDebloqueGrilleSac(int id) => id == IdObjetSacDos;
@@ -171,6 +173,7 @@ public partial class Joueur : CharacterBody3D
     private const string MetaSignatureDague105 = "SigDague105";
     private const string MetaSignatureHachette106 = "SigHachette106";
     private const string MetaSignaturePelle107 = "SigPelle107";
+    private const string MetaSignaturePioche108 = "SigPioche108";
     private const string MetaSignatureAtelier200 = "SigAtelier200";
     private const string MetaSignatureCorde20 = "SigCorde20";
     private const string MetaSignatureTissu21 = "SigTissu21";
@@ -697,19 +700,19 @@ public partial class Joueur : CharacterBody3D
     {
         if (s.EstVide) return false;
         if (EstObjetProcedural(s.ID)) return true;
-        if (s.ID == 105 || s.ID == 106 || s.ID == IdObjetPellePierreTier0) return true;
+        if (s.ID == 105 || s.ID == 106 || s.ID == IdObjetPellePierreTier0 || s.ID == IdObjetPiochePierreTier0) return true;
         return s.ID == 100 && s.EstUnEclat && s.MeshEclat != null;
     }
 
     private void AssurerDurabiliteOutilsSurLesMains()
     {
-        if (MainGauche.ID == 105 || MainGauche.ID == 106 || MainGauche.ID == IdObjetPellePierreTier0)
+        if (MainGauche.ID == 105 || MainGauche.ID == 106 || MainGauche.ID == IdObjetPellePierreTier0 || MainGauche.ID == IdObjetPiochePierreTier0)
         {
             var m = MainGauche;
             Atlas_Matiere.InitialiserDurabiliteOutilSiBesoin(ref m);
             MainGauche = m;
         }
-        if (MainDroite.ID == 105 || MainDroite.ID == 106 || MainDroite.ID == IdObjetPellePierreTier0)
+        if (MainDroite.ID == 105 || MainDroite.ID == 106 || MainDroite.ID == IdObjetPellePierreTier0 || MainDroite.ID == IdObjetPiochePierreTier0)
         {
             var m = MainDroite;
             Atlas_Matiere.InitialiserDurabiliteOutilSiBesoin(ref m);
@@ -725,7 +728,7 @@ public partial class Joueur : CharacterBody3D
         int idOutilCasse = 0;
         if (MainGaucheEstActive)
         {
-            if (MainGauche.ID != 105 && MainGauche.ID != 106 && MainGauche.ID != IdObjetPellePierreTier0) return;
+            if (MainGauche.ID != 105 && MainGauche.ID != 106 && MainGauche.ID != IdObjetPellePierreTier0 && MainGauche.ID != IdObjetPiochePierreTier0) return;
             var m = MainGauche;
             int idOutil = m.ID;
             Atlas_Matiere.InitialiserDurabiliteOutilSiBesoin(ref m);
@@ -741,7 +744,7 @@ public partial class Joueur : CharacterBody3D
         }
         else
         {
-            if (MainDroite.ID != 105 && MainDroite.ID != 106 && MainDroite.ID != IdObjetPellePierreTier0) return;
+            if (MainDroite.ID != 105 && MainDroite.ID != 106 && MainDroite.ID != IdObjetPellePierreTier0 && MainDroite.ID != IdObjetPiochePierreTier0) return;
             var m = MainDroite;
             int idOutil = m.ID;
             Atlas_Matiere.InitialiserDurabiliteOutilSiBesoin(ref m);
@@ -761,15 +764,17 @@ public partial class Joueur : CharacterBody3D
                 GD.Print("ZERO-K : La dague primitive se brise — lame ou manche a cédé. Il vous faudra une nouvelle lame et une corde.");
             else if (idOutilCasse == 106)
                 GD.Print("ZERO-K : La hachette primitive se brise — lame ou manche a cédé. Il vous faudra refaire l’outil.");
-            else
+            else if (idOutilCasse == IdObjetPellePierreTier0)
                 GD.Print("ZERO-K : La pelle en pierre se brise — il faut reforger l’outil.");
+            else
+                GD.Print("ZERO-K : La pioche en pierre se brise — il faut reforger l’outil.");
         }
         RafraichirHUD();
     }
 
     private static void RemplirDurabiliteOutilDepuisItemPhysique(ref SlotInventaire slot, ItemPhysique item)
     {
-        if ((slot.ID != 105 && slot.ID != 106 && slot.ID != IdObjetPellePierreTier0) || item == null) return;
+        if ((slot.ID != 105 && slot.ID != 106 && slot.ID != IdObjetPellePierreTier0 && slot.ID != IdObjetPiochePierreTier0) || item == null) return;
         if (item.HasMeta(MetaDurabiliteOutilMax))
         {
             slot.DurabiliteOutilMax = (float)item.GetMeta(MetaDurabiliteOutilMax).AsDouble();
@@ -852,10 +857,11 @@ public partial class Joueur : CharacterBody3D
         else if (id == 17) return new CapsuleMesh { Radius = 0.009f, Height = 0.38f };
         else if (id == 20) return null; // GLB res://Modeles/materials/traisagre_corde_tier0.glb via InstancierModeleCordeTier0Gazon
         else if (id == 21) return null; // GLB res://Modeles/materials/tissu_tier0.glb via InstancierModeleTissuTier0
-        else if (id == IdObjetSacTier0) return null; // GLB res://Modeles/Equipements/Sac_Tiere0.glb via InstancierModeleSacTier0
+        else if (id == IdObjetSacTier0) return null; // GLB res://Modeles/Equipable/Sac_Tiere0.glb via InstancierModeleSacTier0
         else if (id == IdObjetCeinturePoches || id == IdObjetCeintureSacoches) return null; // GLB ceinture / ceinture+pochettes via instanciation dédiée
         else if (id == IdObjetPochetteTier0) return null; // GLB res://Modeles/materials/Pochette_Tiere0.glb via InstancierModelePochetteTier0
         else if (id == IdObjetPellePierreTier0) return null; // GLB res://Modeles/Equipements/Pelle_Pierre_tier0.glb via InstancierModeleArme
+        else if (id == IdObjetPiochePierreTier0) return null; // GLB res://Modeles/Equipements/Pioche_pierre_tier0.glb via InstancierModeleArme
         else if (id == 30 || id == 32)
         {
             CalculerDimensionsBoisPose(id, indexMorpho, indexTaille, out float br, out float bl, out _, out _);
@@ -1285,6 +1291,34 @@ public partial class Joueur : CharacterBody3D
             });
             corps = item;
         }
+        else if (id == IdObjetPiochePierreTier0)
+        {
+            SlotInventaire slotPioche = mainActive;
+            Atlas_Matiere.InitialiserDurabiliteOutilSiBesoin(ref slotPioche);
+            var item = new ItemPhysique
+            {
+                ID_Objet = id,
+                IndexChimique = mainActive.IndexChimique,
+                IndexCacheMemoire = mainActive.IndexMorphologique,
+                IndexTailleRoche = mainActive.IndexTaille,
+                IndexBotanique = mainActive.IndexBotanique,
+                NiveauFracture = mainActive.NiveauFracture,
+                Name = "ItemPhysique",
+                ContinuousCd = true
+            };
+            item.SetMeta(MetaDurabiliteOutilMax, slotPioche.DurabiliteOutilMax);
+            item.SetMeta(MetaDurabiliteOutilActuelle, slotPioche.DurabiliteOutilActuelle);
+            var meshRoot = new MeshInstance3D { Name = "MeshInstance3D" };
+            InstancierModeleArme(meshRoot, slotPioche, 0.65f, 1f);
+            item.AddChild(meshRoot);
+            item.AddChild(new CollisionShape3D
+            {
+                Name = "CollisionShape3D",
+                Shape = new BoxShape3D { Size = new Vector3(0.13f, 0.54f, 0.22f) },
+                Position = new Vector3(0, 0.24f, 0)
+            });
+            corps = item;
+        }
         else if (id == 200)
         {
             var item = new ItemPhysique
@@ -1639,6 +1673,8 @@ public partial class Joueur : CharacterBody3D
                 ItemPhysique.AppliquerPhysiqueHachette106(ipHachette);
             else if (id == IdObjetPellePierreTier0 && rbPose is ItemPhysique ipPelle)
                 ItemPhysique.AppliquerPhysiquePelle107(ipPelle);
+            else if (id == IdObjetPiochePierreTier0 && rbPose is ItemPhysique ipPioche)
+                ItemPhysique.AppliquerPhysiquePioche108(ipPioche);
         }
         // Fibres / corde non élastiques : ne pas appliquer d’échelle « étirée » (herbe, liane, corde boyau+herbe, etc.)
         bool estFlexOuCorde = id == 15 || id == 16 || id == 17 || id == 20 || id == 21 || id == IdObjetCeinturePoches || id == IdObjetCeintureSacoches || id == IdObjetPochetteTier0 || id == IdObjetSacTier0;
@@ -1661,7 +1697,7 @@ public partial class Joueur : CharacterBody3D
         {
             if (!mainActive.EstVide && Input.IsActionPressed("clic_droit"))
                 _forceLancer = Mathf.Min(5.0f, _forceLancer + (VitesseChargeBras * 2.5f) * dt);
-            if (_gaucheMaintenu && (mainActive.EstVide || mainActive.ID == 106))
+            if (_gaucheMaintenu && (mainActive.EstVide || mainActive.ID == 106 || mainActive.ID == IdObjetPellePierreTier0 || mainActive.ID == IdObjetPiochePierreTier0))
                 MettreAJourMinageMainNueOuAtelier(dt, mainActive);
             else
                 ReinitialiserMinageMainNueProgression();
