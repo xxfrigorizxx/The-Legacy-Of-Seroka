@@ -43,11 +43,24 @@ public static class LSystem_Botanique
 		Flexibilite = 0.2f
 	};
 
-	/// <summary>Index du chêne dans TableBotanique. Tout le bois actuel vient du chêne ; en prévision des futurs arbres (autre index).</summary>
-	public const byte IndexChene = 0;
+	public static readonly ProfilBotanique Bouleau = new ProfilBotanique
+	{
+		Nom = "Bouleau",
+		ID_Tronc = 30,
+		ID_Feuille = 31,
+		MasseDensite = 0.75f,
+		ResistanceHache = 150f,
+		Combustibilite = 280f,
+		ChaleurDegagee = 740f,
+		Flexibilite = 0.25f
+	};
 
-	/// <summary>Table des essences. Pour l'instant uniquement le chêne (0). Permet d'ajouter d'autres arbres plus tard avec des attributs différents.</summary>
-	public static readonly ProfilBotanique[] TableBotanique = { Chene };
+	/// <summary>Index du chêne dans TableBotanique.</summary>
+	public const byte IndexChene = 0;
+	public const byte IndexBouleau = 1; // Nouvelle espece
+
+	/// <summary>Table des essences. 0=Chêne, 1=Bouleau.</summary>
+	public static readonly ProfilBotanique[] TableBotanique = { Chene, Bouleau };
 
 	/// <summary>Retourne le profil botanique pour l'index d'espèce (0 = chêne). Clamp si hors bornes.</summary>
 	public static ProfilBotanique ObtenirProfil(byte indexEspece)
@@ -156,6 +169,40 @@ public static class LSystem_Botanique
 					// Sous-branche : 2–3 rameaux feuillus, feuillage le long
 					float r = RandFromSeed(seed, iterb * 19 + 200);
 					suivant += r < 0.4f ? "FF[+L][-L][>L]L" : (r < 0.7f ? "FL[+L][-L]L" : "FF[+L]L");
+					iterb++;
+				}
+				else
+					suivant += c;
+			}
+			actuel = suivant;
+		}
+		return actuel;
+	}
+
+	public static string GenererChaineBouleauOrganique(int iterations, uint seed)
+	{
+		// Bouleau : tronc dominant mais NON exponentiel, branches fines concentrées vers le haut.
+		string actuel = "TTA";
+		int iterA = 0, iterb = 0;
+		for (int i = 0; i < iterations; i++)
+		{
+			string suivant = "";
+			foreach (char c in actuel)
+			{
+				if (c == 'A')
+				{
+					float r = RandFromSeed(seed, 700 + iterA * 11);
+					// Une seule poussée de tronc par itération (évite l'effet "colonne infinie").
+					if (r < 0.33f) suivant += "T[+b][<b]A";
+					else if (r < 0.66f) suivant += "T[+b][-b]A";
+					else suivant += "T[<b][->b]A";
+					iterA++;
+				}
+				else if (c == 'b')
+				{
+					float r = RandFromSeed(seed, 900 + iterb * 13);
+					// Rameaux courts avec feuilles pour former une cime de bouleau.
+					suivant += r < 0.45f ? "FFL[+L][<L]" : (r < 0.75f ? "FL[+L]" : "F[<L]L");
 					iterb++;
 				}
 				else

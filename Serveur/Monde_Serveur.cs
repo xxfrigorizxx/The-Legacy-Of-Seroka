@@ -893,13 +893,13 @@ public partial class Monde_Serveur : Node
 		float xMax = (coord.X + 1) * TailleChunk;
 		float zMin = coord.Y * TailleChunk;
 		float zMax = (coord.Y + 1) * TailleChunk;
-		var arbres = new List<(Vector3 pos, int age)>();
+		var arbres = new List<(Vector3 pos, int age, byte indexBotanique)>();
 		foreach (Node n in _parentPourArbres.GetChildren())
 		{
 			if (n is not ArbreVivant arbre) continue;
 			if (!TryGetPositionMonde(arbre, out Vector3 p)) continue;
 			if (p.X >= xMin && p.X < xMax && p.Z >= zMin && p.Z < zMax)
-				arbres.Add((p, arbre.AgeEnJours));
+				arbres.Add((p, arbre.AgeEnJours, arbre.IndexBotanique));
 		}
 		string nom = GameState.Instance?.NomMondeActuel ?? "MonMonde";
 		string dossier = ProjectSettings.GlobalizePath($"user://saves/{nom}/chunks/");
@@ -909,18 +909,27 @@ public partial class Monde_Serveur : Node
 		{
 			using (var w = new BinaryWriter(File.Open(chemin, FileMode.Create)))
 			{
-				w.Write(0x5A4B3251); // MAGIC V2 = sauvegarde temps
+				w.Write(0x5A4B3252); // MAGIC V3 = temps + index botanique
 				int jourActuel = GameState.Instance != null ? GameState.Instance.JourAbsolu : 0;
 				w.Write(jourActuel);
 				w.Write(arbres.Count);
-				foreach (var (pos, age) in arbres)
+				foreach (var (pos, age, indexBotanique) in arbres)
 				{
 					w.Write((int)pos.X); w.Write((int)pos.Y); w.Write((int)pos.Z);
 					w.Write(age); // Âge brut (int, croissance infinie)
+					w.Write(indexBotanique);
 				}
 			}
 		}
 		catch (Exception ex) { GD.PrintErr($"ZERO-K : Erreur sauvegarde arbres chunk {coord} : {ex.Message}"); }
+	}
+
+	private static byte DeterminerIndexBotaniqueArbre(uint seedArbre)
+	{
+		// Choix déterministe: un arbre garde la même essence entre chargements.
+		uint h = (seedArbre * 1664525u) + 1013904223u;
+		float r = (h & 0x00FFFFFFu) / 16777216f;
+		return (byte)(r < 0.4f ? LSystem_Botanique.IndexBouleau : LSystem_Botanique.IndexChene);
 	}
 
 	/// <summary>Spawn les ArbreVivant 3D pour ce chunk (procédural ou chargé).</summary>
@@ -938,6 +947,7 @@ public partial class Monde_Serveur : Node
 				ResistanceActuelle = ArbreVivant.ResistanceMaxPourAge(age),
 				Seed = kv.Value.Seed
 			};
+			arbre.IndexBotanique = DeterminerIndexBotaniqueArbre(kv.Value.Seed);
 			_parentPourArbres.AddChild(arbre);
 			arbre.GlobalPosition = pos;
 		}
@@ -956,7 +966,8 @@ public partial class Monde_Serveur : Node
 			{
 				int magic = r.ReadInt32();
 				int jourDeSauvegarde = 0;
-				if (magic == 0x5A4B3251) // V2 avec temps
+				bool formatV3 = magic == 0x5A4B3252;
+				if (magic == 0x5A4B3251 || formatV3) // V2/V3 avec temps
 					jourDeSauvegarde = r.ReadInt32();
 				else if (magic != 0x5A4B3250)
 					return; // Format inconnu
@@ -969,23 +980,30 @@ public partial class Monde_Serveur : Node
 				{
 					int gx = r.ReadInt32(), gy = r.ReadInt32(), gz = r.ReadInt32();
 					int ageSauvegarde;
-					if (magic == 0x5A4B3251)
+					byte indexBotaniqueSauvegarde;
+					if (magic == 0x5A4B3251 || formatV3)
+					{
 						ageSauvegarde = r.ReadInt32();
+						indexBotaniqueSauvegarde = formatV3 ? r.ReadByte() : LSystem_Botanique.IndexChene;
+					}
 					else
 					{
 						byte stage = r.ReadByte();
 						r.ReadUInt32(); // seed (legacy)
 						ageSauvegarde = stage + 1; // Ancien format Stage 0-4 → age 1-5
+						indexBotaniqueSauvegarde = LSystem_Botanique.IndexChene;
 					}
 
 					Vector3 pos = new Vector3(gx + 0.5f, gy - 0.5f, gz + 0.5f);
 					uint seedArbre = (uint)((gx * 73856093) ^ (gz * 19349663));
 					int ageCharge = Mathf.Max(1, ageSauvegarde);
+					byte indexBotanique = formatV3 ? indexBotaniqueSauvegarde : DeterminerIndexBotaniqueArbre(seedArbre);
 					var arbre = new ArbreVivant
 					{
 						AgeEnJours = ageCharge,
 						ResistanceActuelle = ArbreVivant.ResistanceMaxPourAge(ageCharge),
-						Seed = seedArbre
+						Seed = seedArbre,
+						IndexBotanique = indexBotanique
 					};
 					_parentPourArbres.AddChild(arbre);
 					arbre.GlobalPosition = pos;

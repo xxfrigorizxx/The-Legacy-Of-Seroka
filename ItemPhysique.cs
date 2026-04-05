@@ -289,7 +289,7 @@ public partial class ItemPhysique : RigidBody3D
 			else if (ID_Objet == 30 || ID_Objet == 32)
 				visuel.MaterialOverride = ID_Objet == 32 && IndexChimique == 1
 					? ArbreVivant.ObtenirMaterielBoisTriplanarBatonChenEPale()
-					: ArbreVivant.ObtenirMaterielBoisTriplanar();
+					: ArbreVivant.ObtenirMaterielBoisTriplanar(IndexBotanique);
 			if (!EstMatiereSilexParIdObjet(ID_Objet) && !_surImpactConnecte)
 			{
 				ContactMonitor = true;

@@ -364,16 +364,16 @@ public partial class Joueur
                 if (nomLower.Contains("cord"))
                 {
                     RemplacerMeshParNormalesFacettes(mi);
-                    AppliquerMaterielObjet(mi, 20, slot.IndexChimique, slot.IndexMorphologique, slot.NiveauFracture);
+                    AppliquerMaterielObjet(mi, 20, slot.IndexChimique, slot.IndexMorphologique, slot.NiveauFracture, slot.IndexBotanique);
                 }
                 else if (nomLower.Contains("roche"))
                 {
                     int randChimique = rng.RandiRange(0, ItemPhysique.TableGeologique.Length - 1);
                     int idRoche = ItemPhysique.IdRocheMatiereMin + randChimique;
-                    AppliquerMaterielObjet(mi, idRoche, randChimique, 0, 0);
+                    AppliquerMaterielObjet(mi, idRoche, randChimique, 0, 0, slot.IndexBotanique);
                 }
                 else
-                    mi.MaterialOverride = ArbreVivant.ObtenirMaterielBoisTriplanar();
+                    mi.MaterialOverride = ArbreVivant.ObtenirMaterielBoisTriplanar(slot.IndexBotanique);
             }
             foreach (Node c in n.GetChildren())
                 ParcourirMeshes(c);
@@ -408,18 +408,18 @@ public partial class Joueur
                 if (nomLower.Contains("cord"))
                 {
                     RemplacerMeshParNormalesFacettes(mi);
-                    AppliquerMaterielObjet(mi, 20, slot.IndexChimique, slot.IndexMorphologique, slot.NiveauFracture);
+                    AppliquerMaterielObjet(mi, 20, slot.IndexChimique, slot.IndexMorphologique, slot.NiveauFracture, slot.IndexBotanique);
                 }
                 else if (nomLower.Contains("roche"))
                 {
                     int randChimique = rng.RandiRange(0, ItemPhysique.TableGeologique.Length - 1);
                     int idRoche = ItemPhysique.IdRocheMatiereMin + randChimique;
-                    AppliquerMaterielObjet(mi, idRoche, randChimique, 0, 0);
+                    AppliquerMaterielObjet(mi, idRoche, randChimique, 0, 0, slot.IndexBotanique);
                 }
                 else
                 {
                     RemplacerMeshParNormalesFacettes(mi);
-                    AppliquerMaterielObjet(mi, 20, slot.IndexChimique, slot.IndexMorphologique, slot.NiveauFracture);
+                    AppliquerMaterielObjet(mi, 20, slot.IndexChimique, slot.IndexMorphologique, slot.NiveauFracture, slot.IndexBotanique);
                 }
             }
             foreach (Node c in n.GetChildren())
@@ -446,7 +446,7 @@ public partial class Joueur
             if (n is MeshInstance3D mi)
             {
                 RemplacerMeshParNormalesFacettes(mi);
-                AppliquerMaterielObjet(mi, 21, slot.IndexChimique, slot.IndexMorphologique, slot.NiveauFracture);
+                AppliquerMaterielObjet(mi, 21, slot.IndexChimique, slot.IndexMorphologique, slot.NiveauFracture, slot.IndexBotanique);
             }
             foreach (Node c in n.GetChildren())
                 ParcourirMeshes(c);
@@ -472,7 +472,7 @@ public partial class Joueur
             if (n is MeshInstance3D mi)
             {
                 RemplacerMeshParNormalesFacettes(mi);
-                AppliquerMaterielObjet(mi, Joueur.IdObjetCeinturePoches, slot.IndexChimique, slot.IndexMorphologique, slot.NiveauFracture);
+                AppliquerMaterielObjet(mi, Joueur.IdObjetCeinturePoches, slot.IndexChimique, slot.IndexMorphologique, slot.NiveauFracture, slot.IndexBotanique);
             }
             foreach (Node c in n.GetChildren())
                 ParcourirMeshes(c);
@@ -498,7 +498,7 @@ public partial class Joueur
             if (n is MeshInstance3D mi)
             {
                 RemplacerMeshParNormalesFacettes(mi);
-                AppliquerMaterielObjet(mi, Joueur.IdObjetCeintureSacoches, slot.IndexChimique, slot.IndexMorphologique, slot.NiveauFracture);
+                AppliquerMaterielObjet(mi, Joueur.IdObjetCeintureSacoches, slot.IndexChimique, slot.IndexMorphologique, slot.NiveauFracture, slot.IndexBotanique);
             }
             foreach (Node c in n.GetChildren())
                 ParcourirMeshes(c);
@@ -524,7 +524,7 @@ public partial class Joueur
             if (n is MeshInstance3D mi)
             {
                 RemplacerMeshParNormalesFacettes(mi);
-                AppliquerMaterielObjet(mi, Joueur.IdObjetPochetteTier0, slot.IndexChimique, slot.IndexMorphologique, slot.NiveauFracture);
+                AppliquerMaterielObjet(mi, Joueur.IdObjetPochetteTier0, slot.IndexChimique, slot.IndexMorphologique, slot.NiveauFracture, slot.IndexBotanique);
             }
             foreach (Node c in n.GetChildren())
                 ParcourirMeshes(c);
@@ -549,7 +549,7 @@ public partial class Joueur
             if (n is MeshInstance3D mi)
             {
                 RemplacerMeshParNormalesFacettes(mi);
-                AppliquerMaterielObjet(mi, Joueur.IdObjetSacTier0, slot.IndexChimique, slot.IndexMorphologique, slot.NiveauFracture);
+                AppliquerMaterielObjet(mi, Joueur.IdObjetSacTier0, slot.IndexChimique, slot.IndexMorphologique, slot.NiveauFracture, slot.IndexBotanique);
             }
             foreach (Node c in n.GetChildren())
                 ParcourirMeshes(c);
@@ -573,7 +573,7 @@ public partial class Joueur
         void ParcourirMeshes(Node n)
         {
             if (n is MeshInstance3D mi)
-                AppliquerMaterielObjet(mi, Joueur.IdObjetBaie, slot.IndexChimique, 0, 0);
+                AppliquerMaterielObjet(mi, Joueur.IdObjetBaie, slot.IndexChimique, 0, 0, slot.IndexBotanique);
             foreach (Node c in n.GetChildren())
                 ParcourirMeshes(c);
         }
@@ -660,17 +660,17 @@ public partial class Joueur
             if (miLame106 != null)
             {
                 RemplacerMeshParNormalesFacettes(miLame106);
-                AppliquerMaterielObjet(miLame106, idRoche106, slot.IndexChimique, 0, 0);
+                AppliquerMaterielObjet(miLame106, idRoche106, slot.IndexChimique, 0, 0, slot.IndexBotanique);
             }
             if (miManche106 != null)
             {
                 RemplacerMeshParNormalesFacettes(miManche106);
-                AppliquerMaterielObjet(miManche106, 32, 0, 0, 0);
+                AppliquerMaterielObjet(miManche106, 32, 0, 0, 0, slot.IndexBotanique);
             }
             if (miCorde106 != null)
             {
                 RemplacerMeshParNormalesFacettes(miCorde106);
-                AppliquerMaterielObjet(miCorde106, 20, slot.IndexMorphologique, slot.IndexTaille, slot.NiveauFracture);
+                AppliquerMaterielObjet(miCorde106, 20, slot.IndexMorphologique, slot.IndexTaille, slot.NiveauFracture, slot.IndexBotanique);
             }
 
             NormaliserEchelleEtCentrerModeleArme(modeleHachette, tailleNorm);
@@ -692,9 +692,9 @@ public partial class Joueur
 
         int idRocheDague = ItemPhysique.IdRocheMatiereMin + Mathf.Clamp(slot.IndexChimique, 0, ItemPhysique.TableGeologique.Length - 1);
         if (meshLame != null)
-            AppliquerMaterielObjet(meshLame, idRocheDague, slot.IndexChimique, 0, 0);
+            AppliquerMaterielObjet(meshLame, idRocheDague, slot.IndexChimique, 0, 0, slot.IndexBotanique);
         if (meshManche != null)
-            AppliquerMaterielObjet(meshManche, 20, slot.IndexMorphologique, slot.IndexTaille, slot.NiveauFracture);
+            AppliquerMaterielObjet(meshManche, 20, slot.IndexMorphologique, slot.IndexTaille, slot.NiveauFracture, slot.IndexBotanique);
 
         NormaliserEchelleEtCentrerModeleArme(modele, tailleNormDague);
         parent.AddChild(modele);

@@ -111,7 +111,8 @@ public static class Atlas_Matiere
     {
         return indexBotanique switch
         {
-            0 => 18.0f,
+            0 => 18.0f, // Chêne : robuste
+            1 => 13.0f, // Bouleau : tendre
             _ => 10.0f
         };
     }
@@ -266,7 +267,7 @@ public static class Atlas_Matiere
         }
         if (id == 200)
         {
-            string essence = slot.IndexBotanique == 0 ? "Chêne" : "Bois";
+            string essence = slot.IndexBotanique == 1 ? "Bouleau" : (slot.IndexBotanique == 0 ? "Chêne" : "Bois");
             return $"Atelier Primitif en {essence}";
         }
         if (id == 106)
@@ -353,14 +354,14 @@ public static class Atlas_Matiere
             return flex.Nom;
         if (id == 30)
         {
-            string essence = slot.IndexBotanique == 0 ? "Chêne" : "Bois";
+            string essence = slot.IndexBotanique == 1 ? "Bouleau" : (slot.IndexBotanique == 0 ? "Chêne" : "Bois");
             string longueur = slot.IndexTaille switch { 0 => "Tronc Brut", 1 => "Bûche Standard", 2 => "Demi-Bûche Courte", 3 => "Rondin", _ => "Morceau" };
             string fente = slot.IndexMorphologique switch { 0 => "", 1 => " (Fendue en 2)", 2 => " (Fendue en 4)", 3 => " (Fendue en 8)", _ => " (Éclat)" };
             return $"{longueur}{fente} de {essence}";
         }
         if (id == 32)
         {
-            string essence = slot.IndexBotanique == 0 ? "Chêne" : "Bois";
+            string essence = slot.IndexBotanique == 1 ? "Bouleau" : (slot.IndexBotanique == 0 ? "Chêne" : "Bois");
             string longueur = slot.IndexTaille switch { 0 => "Brin brut", 1 => "Bâton standard", 2 => "Demi-bâton", 3 => "Rondin fin", _ => "Morceau" };
             string fente = slot.IndexMorphologique switch { 0 => "", 1 => " (Fendu en 2)", 2 => " (Fendu en 4)", 3 => " (Planchette)", _ => "" };
             float zL = slot.ScaleEclat.Z;

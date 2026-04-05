@@ -887,7 +887,7 @@ public partial class Joueur : CharacterBody3D
         return null;
     }
 
-    public static void AppliquerMaterielObjet(MeshInstance3D visuel, int idObjet, int indexChimique, int indexMorphologique = 0, int niveauTressage = 0)
+    public static void AppliquerMaterielObjet(MeshInstance3D visuel, int idObjet, int indexChimique, int indexMorphologique = 0, int niveauTressage = 0, byte indexBotanique = LSystem_Botanique.IndexChene)
     {
         // FIX CRITIQUE : Ne JAMAIS écraser le matériau d'un outil forgé (il possède ses propres surfaces cuites)
         if (idObjet == 100)
@@ -907,7 +907,7 @@ public partial class Joueur : CharacterBody3D
         {
             visuel.MaterialOverride = idObjet == 32 && indexChimique == 1
                 ? ArbreVivant.ObtenirMaterielBoisTriplanarBatonChenEPale()
-                : ArbreVivant.ObtenirMaterielBoisTriplanar();
+                : ArbreVivant.ObtenirMaterielBoisTriplanar(indexBotanique);
             return;
         }
         if (idObjet == 10 || idObjet == 11)
@@ -1236,7 +1236,7 @@ public partial class Joueur : CharacterBody3D
                 matVisuel = boisSculpte
                     ? (mainActive.ID == 32 && mainActive.IndexChimique == 1
                         ? ArbreVivant.ObtenirMaterielBoisTriplanarBatonChenEPale()
-                        : ArbreVivant.ObtenirMaterielBoisTriplanar())
+                        : ArbreVivant.ObtenirMaterielBoisTriplanar(mainActive.IndexBotanique))
                     : ItemPhysique.CreerMaterielProcedural(ItemPhysique.EstMatiereSilexParIdObjet(mainActive.ID), chimPourRoche);
             }
             item.AddChild(new MeshInstance3D { Name = "MeshInstance3D", Mesh = meshPose, MaterialOverride = matVisuel });
@@ -1578,7 +1578,7 @@ public partial class Joueur : CharacterBody3D
                 Mesh = meshObj,
                 MaterialOverride = id == 32 && mainActive.IndexChimique == 1
                     ? ArbreVivant.ObtenirMaterielBoisTriplanarBatonChenEPale()
-                    : ArbreVivant.ObtenirMaterielBoisTriplanar()
+                    : ArbreVivant.ObtenirMaterielBoisTriplanar(mainActive.IndexBotanique)
             };
             meshNode.RotationDegrees = new Vector3(90f, 0f, 0f);
             var colNode = new CollisionShape3D { Shape = colObj };

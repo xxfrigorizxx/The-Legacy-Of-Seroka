@@ -43,6 +43,7 @@ public class ChunkData
 	/// <summary>Bruit climat (une seule instance par chunk, réutilisée pour tous les voxels).</summary>
 	public FastNoiseLite NoiseTemperature { get; set; }
 	public FastNoiseLite NoiseHumidite { get; set; }
+	public FastNoiseLite NoiseHumiditeDetail { get; set; }
 	/// <summary>Flore générée à partir de la surface du chunk (gazon + buissons). Rempli au chargement.</summary>
 	public Dictionary<Vector3I, byte> InventaireFlore { get; set; }
 
@@ -60,6 +61,13 @@ public class ChunkData
 		NoiseHumidite.FractalType = FastNoiseLite.FractalTypeEnum.Fbm;
 		NoiseHumidite.FractalOctaves = 4;
 		NoiseHumidite.Frequency = 0.0006f;
+
+		NoiseHumiditeDetail = new FastNoiseLite();
+		NoiseHumiditeDetail.Seed = seed + 33;
+		NoiseHumiditeDetail.NoiseType = FastNoiseLite.NoiseTypeEnum.Perlin;
+		NoiseHumiditeDetail.FractalType = FastNoiseLite.FractalTypeEnum.Fbm;
+		NoiseHumiditeDetail.FractalOctaves = 2;
+		NoiseHumiditeDetail.Frequency = 0.0065f;
 	}
 
 	/// <summary>Index 1D cohérent avec DonneesChunk (serveur) : ordre (x,y,z) avec x le plus lent = x*Ty*Tz + y*Tz + z. Une erreur ici inverse X/Z et tourne le maillage de 90°.</summary>

@@ -27,6 +27,21 @@ float noise(vec2 st) {
 	return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
 }
 
+vec3 rgb2hsv(vec3 c) {
+	vec4 K = vec4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
+	vec4 p = mix(vec4(c.bg, K.wz), vec4(c.gb, K.xy), step(c.b, c.g));
+	vec4 q = mix(vec4(p.xyw, c.r), vec4(c.r, p.yzx), step(p.x, c.r));
+	float d = q.x - min(q.w, q.y);
+	float e = 1.0e-10;
+	return vec3(abs(q.z + (q.w - q.y) / (6.0 * d + e)), d / (q.x + e), q.x);
+}
+
+vec3 hsv2rgb(vec3 c) {
+	vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+	vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+	return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+}
+
 void vertex() {
 	vec3 normal = abs(NORMAL);
 	normal = pow(normal, vec3(4.0));
@@ -71,31 +86,50 @@ void fragment() {
 	vec3 final_color = albedo_tex.rgb * (0.65 + macro_noise * 0.5); // Modulation de la luminosité
 
 	// --- MUTATION SÉMANTIQUE (FERTILITÉ & CLIMAT) —---
-	float facteur_humidite = clamp((v_humidite + 1.0) * 0.5, 0.0, 1.0);
+	float facteur_humidite_macro = clamp((v_humidite + 1.0) * 0.5, 0.0, 1.0);
+	// Micro-variation mondiale (pas liée aux chunks) pour casser l'uniformité visuelle.
+	float humidite_micro = noise(world_pos.xz * 0.012 + vec2(73.1, -21.7));
+	float facteur_humidite = clamp(facteur_humidite_macro * 0.82 + humidite_micro * 0.18, 0.0, 1.0);
 
 	// Herbe (ID 1) : sec = jaunâtre, normal = vert, humide = vert foncé
 	if (material_id == 1.0) {
-		vec3 couleur_seche = vec3(1.3, 0.9, 0.35);   // Jaunâtre / paille
-		vec3 couleur_normal = vec3(0.45, 0.75, 0.4); // Vert normal
-		vec3 couleur_humide = vec3(0.25, 0.55, 0.3); // Vert foncé
-		vec3 teinte_flore;
-		if (facteur_humidite < 0.35) teinte_flore = mix(couleur_seche, couleur_normal, facteur_humidite / 0.35);
-		else teinte_flore = mix(couleur_normal, couleur_humide, (facteur_humidite - 0.35) / 0.65);
-		final_color *= teinte_flore;
+		// Pas de "filtre plaqué": on modifie la teinte/saturation/lumière en HSV
+		// pour conserver le relief et les détails de texture.
+		vec3 hsv = rgb2hsv(final_color);
+		float h = facteur_humidite;
+		float micro = noise(world_pos.xz * 0.08 + vec2(11.3, -6.9)) - 0.5;
+
+		// Sec -> teinte plus jaune, humide -> vert plus froid/foncé.
+		hsv.x = fract(hsv.x + mix(-0.055, 0.025, h) + micro * 0.010);
+		hsv.y = clamp(hsv.y * mix(0.78, 1.22, h), 0.0, 1.0);
+		hsv.z = clamp(hsv.z * mix(1.06, 0.80, h), 0.0, 1.0);
+		final_color = hsv2rgb(hsv);
 	}
 	// Boue (ID 7) : sec = grisâtre, humide = de plus en plus brun
 	if (material_id == 7.0) {
-		vec3 gris_sec = vec3(0.7, 0.68, 0.65);   // Grisâtre
-		vec3 brun_humide = vec3(0.45, 0.32, 0.22); // Brun
-		vec3 teinte_boue = mix(gris_sec, brun_humide, facteur_humidite);
-		final_color *= teinte_boue;
+		// Logique demandée: humide => plus gris (pas brun foncé).
+		vec3 hsv = rgb2hsv(final_color);
+		float h = facteur_humidite;
+		float micro = noise(world_pos.xz * 0.09 + vec2(-17.2, 8.6)) - 0.5;
+		hsv.x = fract(hsv.x + mix(0.012, -0.006, h) + micro * 0.006);
+		hsv.y = clamp(hsv.y * mix(0.75, 0.28, h), 0.0, 1.0); // Plus humide => plus désaturé (gris)
+		hsv.z = clamp(hsv.z * mix(1.02, 0.72, h), 0.0, 1.0);
+		vec3 teinte_boue = hsv2rgb(hsv);
+		vec3 gris_humide = vec3(dot(teinte_boue, vec3(0.299, 0.587, 0.114)));
+		final_color = mix(teinte_boue, gris_humide, h * 0.55);
 	}
 	// Terre aride (ID 6) : sec = grisâtre, humide = assombri
 	if (material_id == 6.0) {
-		float assombrissement = mix(1.0, 0.5, facteur_humidite);
-		vec3 gris_sec = vec3(0.95, 0.9, 0.85);
-		vec3 brun = vec3(0.6, 0.5, 0.4);
-		final_color *= mix(gris_sec, brun, facteur_humidite * 0.7);
+		// Même logique: humide => plus gris, sans virer brun.
+		vec3 hsv = rgb2hsv(final_color);
+		float h = facteur_humidite;
+		float micro = noise(world_pos.xz * 0.07 + vec2(5.4, 14.9)) - 0.5;
+		hsv.x = fract(hsv.x + mix(-0.01, 0.0, h) + micro * 0.004);
+		hsv.y = clamp(hsv.y * mix(0.62, 0.20, h), 0.0, 1.0);
+		hsv.z = clamp(hsv.z * mix(1.08, 0.76, h), 0.0, 1.0);
+		vec3 teinte_aride = hsv2rgb(hsv);
+		vec3 gris_humide = vec3(dot(teinte_aride, vec3(0.299, 0.587, 0.114)));
+		final_color = mix(teinte_aride, gris_humide, h * 0.48);
 	}
 
 	ALBEDO = final_color;

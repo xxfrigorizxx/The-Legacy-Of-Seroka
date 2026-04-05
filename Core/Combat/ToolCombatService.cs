@@ -24,8 +24,8 @@ public partial class Joueur
 
     private static bool EstMatiereMinableMainNue(int idMatiere)
     {
-        // Main nue : sable + familles de terres (dont herbe/terre de surface) uniquement.
-        return idMatiere == 1 || idMatiere == 3 || idMatiere == 6 || idMatiere == 7 || idMatiere == 8 || idMatiere == 9;
+        // Main nue : sable + terres + neige (ID 5).
+        return idMatiere == 1 || idMatiere == 3 || idMatiere == 5 || idMatiere == 6 || idMatiere == 7 || idMatiere == 8 || idMatiere == 9;
     }
 
     private static bool EstMatiereMinablePioche(int idMatiere)
@@ -694,8 +694,8 @@ public partial class Joueur
         if (mainActive.ID == IdObjetPellePierreTier0)
         {
             int idMatiereImpact = _gestionnaireMonde?.ObtenirMatiereExacte(pointImpact - (_rayon.GetCollisionNormal() * 0.45f)) ?? 0;
-            // Pelle pierre tier0 : +5% uniquement sur terre/sable/terre aride.
-            if (idMatiereImpact == 1 || idMatiereImpact == 3 || idMatiereImpact == 6)
+            // Pelle pierre tier0 : bonus sur terre/sable/terre aride/neige.
+            if (idMatiereImpact == 1 || idMatiereImpact == 3 || idMatiereImpact == 5 || idMatiereImpact == 6)
                 forceCreusage *= 1.05f;
         }
 

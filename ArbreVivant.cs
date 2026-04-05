@@ -26,6 +26,7 @@ public partial class ArbreVivant : StaticBody3D
 	}
 	/// <summary>Graine pour variabilité des angles/longueurs (évite arbres identiques).</summary>
 	public uint Seed = 12345;
+	public byte IndexBotanique = 0;
 	private const float CHANCE_CROISSANCE = 0.05f; // 1 chance sur 20 de grandir chaque nuit
 
 	/// <summary>Dimensions réelles du tronc (remplis par GenererMaillageArbre). Utilisées pour la bûche et les bâtons au démembrement.</summary>
@@ -41,11 +42,27 @@ public partial class ArbreVivant : StaticBody3D
 
 	private static StandardMaterial3D _cacheMatBois;
 	private static StandardMaterial3D _cacheMatBoisTriplanar;
+	private static StandardMaterial3D _cacheMatBoisBouleau;
+	private static StandardMaterial3D _cacheMatBoisTriplanarBouleau;
 	private static StandardMaterial3D _cacheMatBoisBatonChenEPale;
 	private static StandardMaterial3D _cacheMatFeuilles;
 
-	public static Material ObtenirMaterielBois()
+	public static Material ObtenirMaterielBois(byte indexBotanique = 0)
 	{
+		if (indexBotanique == LSystem_Botanique.IndexBouleau)
+		{
+			if (_cacheMatBoisBouleau != null) return _cacheMatBoisBouleau;
+			var bruit = new FastNoiseLite { Seed = 777, NoiseType = FastNoiseLite.NoiseTypeEnum.Cellular, Frequency = 0.08f };
+			var tex = new NoiseTexture2D { Width = 256, Height = 256, Noise = bruit };
+			var ramp = new Gradient();
+			ramp.AddPoint(0.0f, new Color(0.1f, 0.1f, 0.1f));    // Taches noires
+			ramp.AddPoint(0.2f, new Color(0.85f, 0.85f, 0.82f));  // Écorce blanche
+			ramp.AddPoint(1.0f, new Color(0.92f, 0.92f, 0.90f));
+			tex.ColorRamp = ramp;
+			_cacheMatBoisBouleau = new StandardMaterial3D { AlbedoTexture = tex, Roughness = 0.85f };
+			return _cacheMatBoisBouleau;
+		}
+
 		if (_cacheMatBois != null) return _cacheMatBois;
 		var bruitEcorce = new FastNoiseLite { Seed = 4242 };
 		bruitEcorce.NoiseType = FastNoiseLite.NoiseTypeEnum.Simplex;
@@ -63,8 +80,21 @@ public partial class ArbreVivant : StaticBody3D
 	}
 
 	/// <summary>Même texture que le tronc, triplanar monde (ignore les UV locaux dégénérés) + teinte aubier.</summary>
-	public static Material ObtenirMaterielBoisTriplanar()
+	public static Material ObtenirMaterielBoisTriplanar(byte indexBotanique = 0)
 	{
+		if (indexBotanique == LSystem_Botanique.IndexBouleau)
+		{
+			if (_cacheMatBoisTriplanarBouleau != null) return _cacheMatBoisTriplanarBouleau;
+			ObtenirMaterielBois(LSystem_Botanique.IndexBouleau);
+			_cacheMatBoisTriplanarBouleau = (StandardMaterial3D)_cacheMatBoisBouleau.Duplicate();
+			_cacheMatBoisTriplanarBouleau.Uv1Triplanar = true;
+			_cacheMatBoisTriplanarBouleau.Uv1WorldTriplanar = false;
+			_cacheMatBoisTriplanarBouleau.Uv1TriplanarSharpness = 2f;
+			_cacheMatBoisTriplanarBouleau.AlbedoColor = new Color(0.82f, 0.78f, 0.65f); // Bois intérieur clair
+			_cacheMatBoisTriplanarBouleau.CullMode = BaseMaterial3D.CullModeEnum.Disabled;
+			return _cacheMatBoisTriplanarBouleau;
+		}
+
 		if (_cacheMatBoisTriplanar != null) return _cacheMatBoisTriplanar;
 		ObtenirMaterielBois();
 		_cacheMatBoisTriplanar = (StandardMaterial3D)_cacheMatBois.Duplicate();
@@ -225,8 +255,8 @@ public partial class ArbreVivant : StaticBody3D
 		cadavre.SetMeta("RayonTroncSommet", _rayonTroncSommet);
 		cadavre.SetMeta("LongueurBrancheMoy", _longueurBrancheMoyenne);
 		cadavre.SetMeta("EpaisseurBrancheMoy", _epaisseurBrancheMoyenne);
-		// Essence (pour masse / résistance des bûches — aujourd’hui chêne ; même index que LSystem).
-		cadavre.SetMeta("IndexBotanique", (int)LSystem_Botanique.IndexChene);
+		// Essence de l'arbre (chêne/bouleau) conservée sur le cadavre.
+		cadavre.SetMeta("IndexBotanique", (int)IndexBotanique);
 		int segmentsTronc = Mathf.Max(1, Mathf.CeilToInt(_hauteurTroncTotale / 1.0f));
 		cadavre.SetMeta("SegmentsRestants", segmentsTronc);
 		cadavre.SetMeta("SegmentsInitiaux", segmentsTronc);
@@ -355,9 +385,13 @@ public partial class ArbreVivant : StaticBody3D
 
 	private void GenererMaillageArbre()
 	{
-		// Chêne organique : variété, branches asymétriques (pas 4 angles fixes), sous-branches
-		int iter = Mathf.Max(2, Mathf.Clamp(AgeEnJours, 1, 6)); // Plus d'itérations = plus de ramification
-		string adnFinal = LSystem_Botanique.GenererChaineCheneOrganique(iter, Seed);
+		// ADN par essence : chêne volumineux vs bouleau plus droit et élancé.
+		int iter = IndexBotanique == LSystem_Botanique.IndexBouleau
+			? Mathf.Clamp(AgeEnJours, 1, 4)
+			: Mathf.Max(2, Mathf.Clamp(AgeEnJours, 1, 6)); // Plus d'itérations = plus de ramification
+		string adnFinal = IndexBotanique == LSystem_Botanique.IndexBouleau
+			? LSystem_Botanique.GenererChaineBouleauOrganique(iter, Seed)
+			: LSystem_Botanique.GenererChaineCheneOrganique(iter, Seed);
 
 		var stBois = new SurfaceTool();
 		stBois.Begin(Mesh.PrimitiveType.Triangles);
@@ -368,7 +402,8 @@ public partial class ArbreVivant : StaticBody3D
 		Stack<TortueEtat> pile = new Stack<TortueEtat>();
 		Transform3D tortue = Transform3D.Identity;
 
-		float angle = Mathf.DegToRad(35f + Hash(Seed, 0) * 25f);
+		float angleBase = IndexBotanique == LSystem_Botanique.IndexBouleau ? 20f : 35f;
+		float angle = Mathf.DegToRad(angleBase + Hash(Seed, 0) * 20f);
 		float multEpaisseur = 0.75f + Hash(Seed, 1) * 0.5f;
 		float multLongueur = 0.8f + Hash(Seed, 2) * 0.6f;
 		float reductionBranche = 0.72f + Hash(Seed, 3) * 0.18f;
@@ -376,6 +411,13 @@ public partial class ArbreVivant : StaticBody3D
 		float scaleAge = AgeEnJours <= 2 ? 0.4f + 0.2f * AgeEnJours : 1f;
 		float epaisseurBase = (0.12f + 0.06f * AgeEnJours) * multEpaisseur * scaleAge;
 		float longueurSegment = (0.6f + AgeEnJours * 0.18f) * multLongueur * scaleAge;
+		if (IndexBotanique == LSystem_Botanique.IndexBouleau)
+		{
+			// Bouleau plus fin, moins "totem", tronc un peu élancé.
+			epaisseurBase *= 0.72f;
+			longueurSegment *= 0.68f;
+			reductionBranche = 0.78f + Hash(Seed, 3) * 0.10f;
+		}
 
 		_hauteurTroncTotale = 0f;
 		_rayonTroncBase = epaisseurBase;
@@ -487,13 +529,18 @@ public partial class ArbreVivant : StaticBody3D
 		_longueurBrancheMoyenne = nbSegmentsBranche > 0 ? sommeLongueurBranche / nbSegmentsBranche : longueurSegment;
 		_epaisseurBrancheMoyenne = nbSegmentsBranche > 0 ? sommeEpaisseurBranche / nbSegmentsBranche : (epaisseurBase * 0.7f);
 
-		if (!estCoupe) GenererFeuillage(stFeuilles, tortue, AgeEnJours);
+		if (!estCoupe)
+		{
+			// Évite l'effet "sucette" au sommet du bouleau.
+			if (IndexBotanique == LSystem_Botanique.IndexBouleau) GenererFeuillagePetit(stFeuilles, tortue, Mathf.Max(1, AgeEnJours - 1));
+			else GenererFeuillage(stFeuilles, tortue, AgeEnJours);
+		}
 
 		stBois.GenerateNormals();
 		// Pas de GenerateTangents (nécessite UV parfaits, inutile sans normal map)
 		Mesh meshBois = stBois.Commit();
 		_visuelBois.Mesh = meshBois;
-		_visuelBois.MaterialOverride = ObtenirMaterielBois();
+		_visuelBois.MaterialOverride = ObtenirMaterielBois(IndexBotanique);
 
 		stFeuilles.GenerateNormals();
 		_visuelFeuillage.Mesh = stFeuilles.Commit();

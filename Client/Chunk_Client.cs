@@ -71,6 +71,7 @@ public partial class Chunk_Client : Node3D
 	private int Idx(int x, int y, int z) => x * _ty * _tz + y * _tz + z;
 	private FastNoiseLite _noiseTemperature;
 	private FastNoiseLite _noiseHumidite;
+	private FastNoiseLite _noiseHumiditeDetail;
 	private Dictionary<Vector3I, byte> _inventaireFloreEnAttente;
 	private Dictionary<Vector3I, byte> _inventaireFloreCache;
 	private ChunkFlorePayload _payloadFloreCache;
@@ -146,6 +147,13 @@ public partial class Chunk_Client : Node3D
 		_noiseHumidite.FractalType = FastNoiseLite.FractalTypeEnum.Fbm;
 		_noiseHumidite.FractalOctaves = 4;
 		_noiseHumidite.Frequency = 0.0006f;
+
+		_noiseHumiditeDetail = new FastNoiseLite();
+		_noiseHumiditeDetail.Seed = seed + 33;
+		_noiseHumiditeDetail.NoiseType = FastNoiseLite.NoiseTypeEnum.Perlin;
+		_noiseHumiditeDetail.FractalType = FastNoiseLite.FractalTypeEnum.Fbm;
+		_noiseHumiditeDetail.FractalOctaves = 2;
+		_noiseHumiditeDetail.Frequency = 0.0065f;
 	}
 
 	/// <summary>Exécute le calcul lourd (décompression + flore + 45 sections) dans le worker. Appelé par Monde_Client depuis Task.Run. Une seule tâche = un chunk entier (pas de sous-tasks).</summary>
@@ -517,11 +525,11 @@ public partial class Chunk_Client : Node3D
 			return new Color(0.5f, 0.6f, 0.5f);
 		byte idMat = _materialsFlat[Idx(lx, yGlobal, lz)];
 		float temp = _noiseTemperature.GetNoise2D(xGlobal, zGlobal);
-		float hum = _noiseHumidite.GetNoise2D(xGlobal, zGlobal);
+		float hum = CalculerHumiditeGlobale(xGlobal, zGlobal);
 		float facteurHum = Mathf.Clamp((hum + 1f) * 0.5f, 0f, 1f);
-		Color sec = new Color(1.3f, 0.9f, 0.35f);
-		Color normal = new Color(0.45f, 0.75f, 0.4f);
-		Color humide = new Color(0.25f, 0.55f, 0.3f);
+		Color sec = new Color(0.93f, 0.82f, 0.36f);
+		Color normal = new Color(0.38f, 0.63f, 0.28f);
+		Color humide = new Color(0.16f, 0.42f, 0.22f);
 		Color couleurBase = facteurHum < 0.35f
 			? sec.Lerp(normal, facteurHum / 0.35f)
 			: normal.Lerp(humide, (facteurHum - 0.35f) / 0.65f);
@@ -754,16 +762,23 @@ private static Texture2D _cacheTextureFeuilleBuisson;
 			return new Color(0.5f, 0.6f, 0.5f);
 		byte idMat = _materialsFlat[Idx(lx, yGlobal, lz)];
 		float temp = _noiseTemperature.GetNoise2D(xGlobal, zGlobal);
-		float hum = _noiseHumidite.GetNoise2D(xGlobal, zGlobal);
+		float hum = CalculerHumiditeGlobale(xGlobal, zGlobal);
 		float facteurHum = Mathf.Clamp((hum + 1f) * 0.5f, 0f, 1f);
 		// Gazon 3D : sec = jaunâtre, normal = vert, humide = vert foncé (comme shader terrain)
-		Color sec = new Color(1.3f, 0.9f, 0.35f);
-		Color normal = new Color(0.45f, 0.75f, 0.4f);
-		Color humide = new Color(0.25f, 0.55f, 0.3f);
+		Color sec = new Color(0.93f, 0.82f, 0.36f);
+		Color normal = new Color(0.38f, 0.63f, 0.28f);
+		Color humide = new Color(0.16f, 0.42f, 0.22f);
 		Color couleurBase = facteurHum < 0.35f
 			? sec.Lerp(normal, facteurHum / 0.35f)
 			: normal.Lerp(humide, (facteurHum - 0.35f) / 0.65f);
 		return couleurBase;
+	}
+
+	private float CalculerHumiditeGlobale(float xGlobal, float zGlobal)
+	{
+		float macro = _noiseHumidite.GetNoise2D(xGlobal, zGlobal);
+		float micro = _noiseHumiditeDetail != null ? _noiseHumiditeDetail.GetNoise2D(xGlobal, zGlobal) : 0f;
+		return Mathf.Clamp(macro * 0.85f + micro * 0.15f, -1f, 1f);
 	}
 
 	/// <summary>ShaderMaterial procédural : gazon mat et organique (pas de plastique), vent, dégradé naturel.</summary>
@@ -1156,7 +1171,7 @@ void fragment() {
 					float xGlobal = baseX + x;
 					float zGlobal = baseZ + z;
 					float temp = _noiseTemperature?.GetNoise2D(xGlobal, zGlobal) ?? 0f;
-					float hum = _noiseHumidite?.GetNoise2D(xGlobal, zGlobal) ?? 0f;
+					float hum = _noiseHumidite != null ? CalculerHumiditeGlobale(xGlobal, zGlobal) : 0f;
 					Color couleurId = new Color(idMat / 255f, (temp + 1f) * 0.5f, (hum + 1f) * 0.5f, 1f);
 
 					for (int i = 0; triTable[cubeIndex, i] != -1; i += 3)
@@ -1366,7 +1381,7 @@ void fragment() {
 						float xGlobal = baseX + x;
 						float zGlobal = baseZ + z;
 						float temp = _noiseTemperature?.GetNoise2D(xGlobal, zGlobal) ?? 0f;
-						float hum = _noiseHumidite?.GetNoise2D(xGlobal, zGlobal) ?? 0f;
+						float hum = _noiseHumidite != null ? CalculerHumiditeGlobale(xGlobal, zGlobal) : 0f;
 						Color couleurId = new Color(idMat / 255f, (temp + 1f) * 0.5f, (hum + 1f) * 0.5f, 1f);
 
 						for (int i = 0; triTable[cubeIndex, i] != -1; i += 3)
@@ -1728,12 +1743,19 @@ void fragment() {
 		if (lx < 0 || lx > data.TailleChunk || yGlobal < 0 || yGlobal > data.HauteurMax || lz < 0 || lz > data.TailleChunk)
 			return new Color(0.5f, 0.6f, 0.5f);
 		float temp = data.NoiseTemperature.GetNoise2D(xGlobal, zGlobal);
-		float hum = data.NoiseHumidite.GetNoise2D(xGlobal, zGlobal);
+		float hum = CalculerHumiditeGlobaleDepuisChunkData(data, xGlobal, zGlobal);
 		float facteurHum = Mathf.Clamp((hum + 1f) * 0.5f, 0f, 1f);
-		Color sec = new Color(1.3f, 0.9f, 0.35f);
-		Color normal = new Color(0.45f, 0.75f, 0.4f);
-		Color humide = new Color(0.25f, 0.55f, 0.3f);
+		Color sec = new Color(0.93f, 0.82f, 0.36f);
+		Color normal = new Color(0.38f, 0.63f, 0.28f);
+		Color humide = new Color(0.16f, 0.42f, 0.22f);
 		return facteurHum < 0.35f ? sec.Lerp(normal, facteurHum / 0.35f) : normal.Lerp(humide, (facteurHum - 0.35f) / 0.65f);
+	}
+
+	private static float CalculerHumiditeGlobaleDepuisChunkData(ChunkData data, float xGlobal, float zGlobal)
+	{
+		float macro = data.NoiseHumidite.GetNoise2D(xGlobal, zGlobal);
+		float micro = data.NoiseHumiditeDetail != null ? data.NoiseHumiditeDetail.GetNoise2D(xGlobal, zGlobal) : 0f;
+		return Mathf.Clamp(macro * 0.85f + micro * 0.15f, -1f, 1f);
 	}
 
 	/// <summary>Génère l'inventaire flore (gazon) à partir de la surface du chunk. Appelé au chargement pour afficher l'herbe.</summary>
@@ -1833,7 +1855,6 @@ void fragment() {
 			var edgeTable = ConstantesMarchingCubes.EdgeTable;
 			var triTable = ConstantesMarchingCubes.TriTable;
 			var noiseT = data.NoiseTemperature;
-			var noiseH = data.NoiseHumidite;
 
 			for (int x = 0; x < tc; x++)
 				for (int y = 0; y < yFin - yDebut; y++)
@@ -1885,7 +1906,7 @@ void fragment() {
 						if (idMat == 0) idMat = 2;
 						float xGlobal = baseX + x, zGlobal = baseZ + z;
 						float temp = noiseT?.GetNoise2D(xGlobal, zGlobal) ?? 0f;
-						float hum = noiseH?.GetNoise2D(xGlobal, zGlobal) ?? 0f;
+						float hum = data.NoiseHumidite != null ? CalculerHumiditeGlobaleDepuisChunkData(data, xGlobal, zGlobal) : 0f;
 						Color couleurId = new Color(idMat / 255f, (temp + 1f) * 0.5f, (hum + 1f) * 0.5f, 1f);
 						for (int i = 0; triTable[cubeIndex, i] != -1; i += 3)
 						{

@@ -21,6 +21,7 @@ public partial class Chunk_Serveur : RefCounted
 	private FastNoiseLite _noiseErosion;
 	private FastNoiseLite _noiseTemperature;
 	private FastNoiseLite _noiseHumidite;
+	private FastNoiseLite _noiseHumiditeDetail;
 	private FastNoiseLite _noiseCavernes;
 	private FastNoiseLite _noiseRivieres;
 	private FastNoiseLite _noiseNeige;
@@ -124,6 +125,14 @@ public partial class Chunk_Serveur : RefCounted
 		_noiseHumidite.FractalOctaves = 4;
 		_noiseHumidite.Frequency = 0.0006f;  // Légèrement différent de temp = biomes variés
 
+		// Micro-variation globale continue (sans effet "patch par chunk").
+		_noiseHumiditeDetail = new FastNoiseLite();
+		_noiseHumiditeDetail.Seed = seed + 33;
+		_noiseHumiditeDetail.NoiseType = FastNoiseLite.NoiseTypeEnum.Perlin;
+		_noiseHumiditeDetail.FractalType = FastNoiseLite.FractalTypeEnum.Fbm;
+		_noiseHumiditeDetail.FractalOctaves = 2;
+		_noiseHumiditeDetail.Frequency = 0.0065f;
+
 		_noiseCavernes = new FastNoiseLite();
 		_noiseCavernes.NoiseType = FastNoiseLite.NoiseTypeEnum.Cellular;
 		_noiseCavernes.Seed = seed + 4;
@@ -168,7 +177,7 @@ public partial class Chunk_Serveur : RefCounted
 
 						int hauteurSurface = CalculerHauteurTerrain((int)xGlobal, (int)zGlobal);
 						float temperature = _noiseTemperature.GetNoise2D(xGlobal, zGlobal);
-						float humidite = _noiseHumidite.GetNoise2D(xGlobal, zGlobal);
+						float humidite = CalculerHumiditeGlobale(xGlobal, zGlobal);
 
 						_densitiesEau[x, y, z] = -1.0f;
 
@@ -269,7 +278,7 @@ public partial class Chunk_Serveur : RefCounted
 				if (_materials[x, hauteurSurface, z] != 1) continue; // Herbe uniquement
 			}
 
-			float humidite = _noiseHumidite.GetNoise2D(xGlobal * 0.03f, zGlobal * 0.03f);
+			float humidite = CalculerHumiditeGlobale(xGlobal, zGlobal);
 			if ((humidite + 1f) * 0.5f < 0.2f) continue;
 			if (DeterministicRand(xGlobal * 1.7f, zGlobal * 2.3f) >= chanceArbre) continue;
 
@@ -330,10 +339,17 @@ public partial class Chunk_Serveur : RefCounted
 		return ((h % 10000) / 10000f);
 	}
 
+	private float CalculerHumiditeGlobale(float xGlobal, float zGlobal)
+	{
+		float macro = _noiseHumidite.GetNoise2D(xGlobal, zGlobal);
+		float micro = _noiseHumiditeDetail != null ? _noiseHumiditeDetail.GetNoise2D(xGlobal, zGlobal) : 0f;
+		return Mathf.Clamp(macro * 0.85f + micro * 0.15f, -1f, 1f);
+	}
+
 	/// <summary>Probabilité de transformer un gazon en buisson selon l'humidité locale.</summary>
 	private float CalculerChanceBuisson(float xGlobal, float zGlobal)
 	{
-		float humiditeBrute = _noiseHumidite.GetNoise2D(xGlobal * 0.05f, zGlobal * 0.05f);
+		float humiditeBrute = CalculerHumiditeGlobale(xGlobal, zGlobal);
 		float humiditeNorm = (humiditeBrute + 1f) * 0.5f;
 		if (humiditeNorm <= 0.28f) return 0f;
 		float t = (humiditeNorm - 0.28f) / 0.72f;
