@@ -280,10 +280,39 @@ public partial class ArbreVivant : StaticBody3D
 
 		GetParent().AddChild(cadavre);
 		cadavre.GlobalTransform = poseArbre;
-
+		cadavre.GlobalPosition += Vector3.Up * 0.24f;
 		cadavre.ApplyCentralImpulse(directionFrappe * (40f * AgeEnJours) + Vector3.Up * 20f);
 
 		QueueFree();
+	}
+
+	/// <summary>L’impact est souvent dans le volume du feuillage/tronc : repousser depuis la racine puis garder au-dessus du sol.</summary>
+	private Vector3 CalculerPositionSpawnBranche(Vector3 pointImpact, Vector3 directionFrappe)
+	{
+		Vector3 depuisRacine = pointImpact - GlobalPosition;
+		if (depuisRacine.LengthSquared() < 1e-4f)
+			depuisRacine = directionFrappe.LengthSquared() > 1e-4f ? directionFrappe.Normalized() : Vector3.Up;
+		else
+			depuisRacine = depuisRacine.Normalized();
+		Vector3 candidat = pointImpact + depuisRacine * 0.48f + Vector3.Up * 0.22f;
+		var space = GetWorld3D()?.DirectSpaceState;
+		if (space == null)
+			return candidat;
+		Vector3 haut = new Vector3(candidat.X, candidat.Y + 8f, candidat.Z);
+		Vector3 bas = new Vector3(candidat.X, candidat.Y - 25f, candidat.Z);
+		var q = PhysicsRayQueryParameters3D.Create(haut, bas);
+		q.CollisionMask = 1;
+		var hit = space.IntersectRay(q);
+		if (hit.Count > 0 && hit.ContainsKey("position"))
+		{
+			Vector3 sol = hit["position"].AsVector3();
+			Vector3 n = hit.ContainsKey("normal") ? hit["normal"].AsVector3().Normalized() : Vector3.Up;
+			const float minAuDessus = 0.32f;
+			float d = n.Dot(candidat - sol);
+			if (d < minAuDessus)
+				candidat = sol + n * minAuDessus + depuisRacine * 0.12f;
+		}
+		return candidat;
 	}
 
 	private void DeclencherChuteBranche(Vector3 pointImpact, Vector3 directionFrappe)
@@ -313,7 +342,7 @@ public partial class ArbreVivant : StaticBody3D
 		});
 
 		GetParent().AddChild(brancheMorte);
-		brancheMorte.GlobalPosition = pointImpact;
+		brancheMorte.GlobalPosition = CalculerPositionSpawnBranche(pointImpact, directionFrappe);
 		brancheMorte.ApplyCentralImpulse(directionFrappe * 5f);
 	}
 

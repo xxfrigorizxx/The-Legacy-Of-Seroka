@@ -1175,10 +1175,20 @@ public partial class Monde_Serveur : Node
 
 		if (localX == 0 && _chunks.TryGetValue(new Vector2I(cx - 1, cz), out var vx))
 			vx.SetVoxelLocal(TailleChunk, posGlobal.Y, localZ, id);
+		if (localX == TailleChunk - 1 && _chunks.TryGetValue(new Vector2I(cx + 1, cz), out var vxp))
+			vxp.SetVoxelLocal(0, posGlobal.Y, localZ, id);
 		if (localZ == 0 && _chunks.TryGetValue(new Vector2I(cx, cz - 1), out var vz))
 			vz.SetVoxelLocal(localX, posGlobal.Y, TailleChunk, id);
+		if (localZ == TailleChunk - 1 && _chunks.TryGetValue(new Vector2I(cx, cz + 1), out var vzp))
+			vzp.SetVoxelLocal(localX, posGlobal.Y, 0, id);
 		if (localX == 0 && localZ == 0 && _chunks.TryGetValue(new Vector2I(cx - 1, cz - 1), out var vxz))
 			vxz.SetVoxelLocal(TailleChunk, posGlobal.Y, TailleChunk, id);
+		if (localX == TailleChunk - 1 && localZ == 0 && _chunks.TryGetValue(new Vector2I(cx + 1, cz - 1), out var vxpz))
+			vxpz.SetVoxelLocal(0, posGlobal.Y, TailleChunk, id);
+		if (localX == 0 && localZ == TailleChunk - 1 && _chunks.TryGetValue(new Vector2I(cx - 1, cz + 1), out var vxzp))
+			vxzp.SetVoxelLocal(TailleChunk, posGlobal.Y, 0, id);
+		if (localX == TailleChunk - 1 && localZ == TailleChunk - 1 && _chunks.TryGetValue(new Vector2I(cx + 1, cz + 1), out var vxpzp))
+			vxpzp.SetVoxelLocal(0, posGlobal.Y, 0, id);
 	}
 
 	private void DemanderMiseAJourMesh(Vector3I pos)

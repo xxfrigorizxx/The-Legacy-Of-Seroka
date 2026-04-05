@@ -50,6 +50,14 @@ public partial class Joueur
         _memoireStockageSacs[EquipementSacDos.CleConteneur] = CopierSlots(GrilleSacStockage, 1);
     }
 
+    private void SauvegarderStockageCeintureSacochesEquipeDansMemoire()
+    {
+        if (EquipementCeinture.EstVide || EquipementCeinture.ID != IdObjetCeintureSacoches) return;
+        if (string.IsNullOrEmpty(EquipementCeinture.CleConteneur))
+            EquipementCeinture.CleConteneur = GenererCleConteneur();
+        _memoireStockageSacs[EquipementCeinture.CleConteneur] = CopierSlots(GrilleCeintureStockage, 4);
+    }
+
     private void ChargerStockageDepuisSacEquipe()
     {
         if (EquipementSacDos.EstVide || EquipementSacDos.ID != IdObjetSacTier0)
@@ -65,9 +73,28 @@ public partial class Joueur
             GrilleSacStockage = new SlotInventaire[1];
     }
 
+    private void ChargerStockageDepuisCeintureSacochesEquipe()
+    {
+        if (EquipementCeinture.EstVide || EquipementCeinture.ID != IdObjetCeintureSacoches)
+        {
+            GrilleCeintureStockage = new SlotInventaire[4];
+            return;
+        }
+        if (string.IsNullOrEmpty(EquipementCeinture.CleConteneur))
+            EquipementCeinture.CleConteneur = GenererCleConteneur();
+        if (_memoireStockageSacs.TryGetValue(EquipementCeinture.CleConteneur, out var slots))
+            GrilleCeintureStockage = CopierSlots(slots, 4);
+        else
+            GrilleCeintureStockage = new SlotInventaire[4];
+    }
+
     public ref SlotInventaire RefSlotSac(int idx) => ref GrilleSacStockage[idx];
 
+    public ref SlotInventaire RefSlotCeintureStockage(int idx) => ref GrilleCeintureStockage[idx];
+
     public bool ASacEquipe() => !EquipementSacDos.EstVide && EquipementSacDos.ID == IdObjetSacTier0;
+
+    public bool ACeintureSacochesEquipe() => !EquipementCeinture.EstVide && EquipementCeinture.ID == IdObjetCeintureSacoches;
 
     /// <summary>Grille affichée et utilisée pour les clics craft : plan de l’atelier (9) ou poche (4).</summary>
     public SlotInventaire[] ObtenirGrilleCraftAffichee()
@@ -106,13 +133,17 @@ public partial class Joueur
 
     public void AssignerEquipementCeinture(SlotInventaire slot)
     {
+        SauvegarderStockageCeintureSacochesEquipeDansMemoire();
         EquipementCeinture = slot;
+        ChargerStockageDepuisCeintureSacochesEquipe();
         NotifierChangementEquipementCorps();
     }
 
     public void RetirerEquipementCeinture()
     {
+        SauvegarderStockageCeintureSacochesEquipeDansMemoire();
         EquipementCeinture = new SlotInventaire();
+        ChargerStockageDepuisCeintureSacochesEquipe();
         NotifierChangementEquipementCorps();
     }
 

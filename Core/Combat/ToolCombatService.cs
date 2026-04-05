@@ -3,6 +3,305 @@ using System;
 
 public partial class Joueur
 {
+    private const float DureeMinageMainNueSecondes = 3.0f;
+    private const float IntervalleParticulesMinageMainNue = 0.12f;
+    private const float DureeRecuperationAtelierMainNue = 5.0f;
+    private const float DureeRecuperationAtelierHachette = 2.85f;
+    private const float IntervalleParticulesRecuperationAtelier = 0.14f;
+    private float _progressionMinageMainNue;
+    private float _cooldownParticulesMinageMainNue;
+    private float _progressionRecuperationAtelier;
+    private float _cooldownParticulesRecuperationAtelier;
+    private ItemPhysique _atelierCibleRecuperation;
+
+    private static bool EstMatiereMinableMainNue(int idMatiere)
+    {
+        // Main nue : sable + familles de terres (dont herbe/terre de surface) uniquement.
+        return idMatiere == 1 || idMatiere == 3 || idMatiere == 6 || idMatiere == 7 || idMatiere == 8 || idMatiere == 9;
+    }
+
+    private void ReinitialiserMinageMainNueProgression()
+    {
+        _progressionMinageMainNue = 0f;
+        _cooldownParticulesMinageMainNue = 0f;
+        _progressionRecuperationAtelier = 0f;
+        _cooldownParticulesRecuperationAtelier = 0f;
+        _atelierCibleRecuperation = null;
+    }
+
+    private bool EssayerObtenirCibleMinageMainNue(out Vector3 pointImpactVoxel, out Vector3 normaleImpact, out int idExtrait)
+    {
+        pointImpactVoxel = Vector3.Zero;
+        normaleImpact = Vector3.Up;
+        idExtrait = 0;
+
+        _rayon.ForceRaycastUpdate();
+        if (!_rayon.IsColliding()) return false;
+
+        Node objetTouche = NoeudDepuisColliderRaycast(_rayon.GetCollider());
+        if (objetTouche != null && (objetTouche is ItemPhysique || ResoudreRigidBodyDepuisCollider(objetTouche) != null || objetTouche.IsInGroup("BlocsPoses")))
+            return false;
+
+        pointImpactVoxel = _rayon.GetCollisionPoint();
+        normaleImpact = _rayon.GetCollisionNormal();
+        Vector3 pointDeSondage = pointImpactVoxel - (normaleImpact * 0.5f);
+        idExtrait = _gestionnaireMonde?.ObtenirMatiereExacte(pointDeSondage) ?? 0;
+        return EstMatiereMinableMainNue(idExtrait);
+    }
+
+    private bool EssayerObtenirAtelierSousVisee(out ItemPhysique atelier, out Vector3 pointImpact, out Vector3 normaleImpact)
+    {
+        atelier = null;
+        pointImpact = Vector3.Zero;
+        normaleImpact = Vector3.Up;
+        _rayon.ForceRaycastUpdate();
+        if (!_rayon.IsColliding()) return false;
+        pointImpact = _rayon.GetCollisionPoint();
+        normaleImpact = _rayon.GetCollisionNormal();
+        Node objetTouche = NoeudDepuisColliderRaycast(_rayon.GetCollider());
+        var item = objetTouche as ItemPhysique
+            ?? (objetTouche as Node)?.GetParent() as ItemPhysique
+            ?? (objetTouche as Node)?.GetNodeOrNull<ItemPhysique>("ItemPhysique");
+        if (item == null || item.ID_Objet != 200) return false;
+        atelier = item;
+        return true;
+    }
+
+    private static SlotInventaire ConstruireSlotAtelier(ItemPhysique atelier)
+    {
+        return new SlotInventaire
+        {
+            ID = 200,
+            IndexBotanique = atelier != null ? atelier.IndexBotanique : LSystem_Botanique.IndexChene,
+            IndexMorphologique = atelier != null ? atelier.IndexCacheMemoire : 0,
+            IndexChimique = atelier != null ? atelier.IndexChimique : 0,
+            IndexTaille = 0,
+            ScaleEclat = Vector3.One,
+            EstUnEclat = false,
+            Quantite = 1
+        };
+    }
+
+    private bool PeutRecevoirDansSlot(SlotInventaire destination, SlotInventaire source)
+    {
+        if (destination.EstVide) return true;
+        if (!SontEmpilables(destination, source)) return false;
+        int max = ObtenirPileMax(destination);
+        return ObtenirQuantiteSlot(destination) + ObtenirQuantiteSlot(source) <= max;
+    }
+
+    private bool ADeLaPlacePourSlotInventaire(SlotInventaire slot)
+    {
+        if (PeutRecevoirDansSlot(MainGauche, slot) || PeutRecevoirDansSlot(MainDroite, slot))
+            return true;
+        if (ASacEquipe())
+        {
+            for (int i = 0; i < GrilleSacStockage.Length; i++)
+                if (PeutRecevoirDansSlot(RefSlotSac(i), slot))
+                    return true;
+        }
+        if (ACeintureSacochesEquipe())
+        {
+            for (int i = 0; i < GrilleCeintureStockage.Length; i++)
+                if (PeutRecevoirDansSlot(RefSlotCeintureStockage(i), slot))
+                    return true;
+        }
+        return false;
+    }
+
+    private bool EssayerAjouterDansInventaire(SlotInventaire slot)
+    {
+        slot.Quantite = ObtenirQuantiteSlot(slot);
+        if (TenterEmpilementComplet(ref MainGauche, slot)) return true;
+        if (TenterEmpilementComplet(ref MainDroite, slot)) return true;
+        if (ASacEquipe())
+        {
+            for (int i = 0; i < GrilleSacStockage.Length; i++)
+            {
+                ref SlotInventaire s = ref RefSlotSac(i);
+                if (TenterEmpilementComplet(ref s, slot)) return true;
+            }
+        }
+        if (ACeintureSacochesEquipe())
+        {
+            for (int i = 0; i < GrilleCeintureStockage.Length; i++)
+            {
+                ref SlotInventaire s = ref RefSlotCeintureStockage(i);
+                if (TenterEmpilementComplet(ref s, slot)) return true;
+            }
+        }
+
+        if (MainGauche.EstVide) { MainGauche = slot; return true; }
+        if (MainDroite.EstVide) { MainDroite = slot; return true; }
+        if (ASacEquipe())
+        {
+            for (int i = 0; i < GrilleSacStockage.Length; i++)
+            {
+                ref SlotInventaire s = ref RefSlotSac(i);
+                if (s.EstVide) { s = slot; return true; }
+            }
+        }
+        if (ACeintureSacochesEquipe())
+        {
+            for (int i = 0; i < GrilleCeintureStockage.Length; i++)
+            {
+                ref SlotInventaire s = ref RefSlotCeintureStockage(i);
+                if (s.EstVide) { s = slot; return true; }
+            }
+        }
+        return false;
+    }
+
+    private void EmmettreParticulesMinageMainNue(Vector3 position, Vector3 normale)
+    {
+        if (GetTree()?.CurrentScene == null) return;
+        Vector3 n = normale.LengthSquared() > 1e-5f ? normale.Normalized() : Vector3.Up;
+        var container = new Node3D { Name = "FxMinageMainNue" };
+        GetTree().CurrentScene.AddChild(container);
+        container.GlobalPosition = position + n * 0.02f;
+
+        var mat = new StandardMaterial3D { AlbedoColor = new Color(0.42f, 0.34f, 0.24f), Roughness = 0.95f, Metallic = 0f };
+        for (int i = 0; i < 7; i++)
+        {
+            var mi = new MeshInstance3D
+            {
+                Mesh = new BoxMesh { Size = new Vector3(0.025f, 0.025f, 0.025f) * (0.7f + GD.Randf() * 0.8f) },
+                MaterialOverride = mat,
+                Position = new Vector3((float)(GD.Randf() - 0.5f) * 0.14f, (float)GD.Randf() * 0.08f, (float)(GD.Randf() - 0.5f) * 0.14f)
+            };
+            container.AddChild(mi);
+        }
+        var timer = container.GetTree().CreateTimer(0.2);
+        timer.Timeout += () => container.QueueFree();
+    }
+
+    private void EmmettreParticulesRecuperationAtelier(Vector3 position, Vector3 normale)
+    {
+        if (GetTree()?.CurrentScene == null) return;
+        Vector3 n = normale.LengthSquared() > 1e-5f ? normale.Normalized() : Vector3.Up;
+        var container = new Node3D { Name = "FxRecuperationAtelier" };
+        GetTree().CurrentScene.AddChild(container);
+        container.GlobalPosition = position + n * 0.02f;
+
+        var mat = new StandardMaterial3D { AlbedoColor = new Color(0.45f, 0.3f, 0.18f), Roughness = 0.9f, Metallic = 0f };
+        for (int i = 0; i < 8; i++)
+        {
+            var mi = new MeshInstance3D
+            {
+                Mesh = new BoxMesh { Size = new Vector3(0.028f, 0.02f, 0.024f) * (0.7f + GD.Randf() * 0.9f) },
+                MaterialOverride = mat,
+                Position = new Vector3((float)(GD.Randf() - 0.5f) * 0.18f, (float)GD.Randf() * 0.1f, (float)(GD.Randf() - 0.5f) * 0.18f)
+            };
+            container.AddChild(mi);
+        }
+        var timer = container.GetTree().CreateTimer(0.22);
+        timer.Timeout += () => container.QueueFree();
+    }
+
+    private void MettreAJourMinageMainNueOuAtelier(float dt, SlotInventaire mainActive)
+    {
+        bool mainVide = mainActive.EstVide;
+        bool hachette = mainActive.ID == 106;
+
+        if (EssayerObtenirAtelierSousVisee(out ItemPhysique atelier, out Vector3 pAtelier, out Vector3 nAtelier))
+        {
+            if (!mainVide && !hachette)
+            {
+                ReinitialiserMinageMainNueProgression();
+                return;
+            }
+
+            var slotAtelier = ConstruireSlotAtelier(atelier);
+            if (!ADeLaPlacePourSlotInventaire(slotAtelier))
+            {
+                ReinitialiserMinageMainNueProgression();
+                return;
+            }
+
+            if (_atelierCibleRecuperation != atelier)
+            {
+                _atelierCibleRecuperation = atelier;
+                _progressionRecuperationAtelier = 0f;
+                _cooldownParticulesRecuperationAtelier = 0f;
+            }
+
+            _progressionRecuperationAtelier += dt;
+            _cooldownParticulesRecuperationAtelier -= dt;
+            if (_cooldownParticulesRecuperationAtelier <= 0f)
+            {
+                _cooldownParticulesRecuperationAtelier = IntervalleParticulesRecuperationAtelier;
+                EmmettreParticulesRecuperationAtelier(pAtelier, nAtelier);
+            }
+
+            float duree = mainVide ? DureeRecuperationAtelierMainNue : DureeRecuperationAtelierHachette;
+            if (_progressionRecuperationAtelier < duree)
+                return;
+
+            if (!EssayerAjouterDansInventaire(slotAtelier))
+            {
+                ReinitialiserMinageMainNueProgression();
+                return;
+            }
+            atelier.QueueFree();
+            RafraichirHUD();
+            GD.Print("ZERO-K : Atelier récupéré dans l'inventaire.");
+            ReinitialiserMinageMainNueProgression();
+            return;
+        }
+
+        _progressionRecuperationAtelier = 0f;
+        _cooldownParticulesRecuperationAtelier = 0f;
+        _atelierCibleRecuperation = null;
+
+        if (!mainVide)
+        {
+            ReinitialiserMinageMainNueProgression();
+            return;
+        }
+
+        if (!EssayerObtenirCibleMinageMainNue(out Vector3 pointImpactVoxel, out Vector3 normaleImpact, out int idExtrait))
+        {
+            ReinitialiserMinageMainNueProgression();
+            return;
+        }
+
+        _progressionMinageMainNue += dt;
+        _cooldownParticulesMinageMainNue -= dt;
+        if (_cooldownParticulesMinageMainNue <= 0f)
+        {
+            _cooldownParticulesMinageMainNue = IntervalleParticulesMinageMainNue;
+            EmmettreParticulesMinageMainNue(pointImpactVoxel, normaleImpact);
+        }
+
+        if (_progressionMinageMainNue < DureeMinageMainNueSecondes)
+            return;
+
+        ExecuterMinageVoxelMainNue(pointImpactVoxel, idExtrait);
+        ReinitialiserMinageMainNueProgression();
+    }
+
+    private void ExecuterMinageVoxelMainNue(Vector3 pointImpactVoxel, int idExtrait)
+    {
+        if (!EstMatiereMinableMainNue(idExtrait))
+            return;
+        if (MainGaucheEstActive && !MainGauche.EstVide && !MainDroite.EstVide) return;
+        if (!MainGaucheEstActive && !MainDroite.EstVide && !MainGauche.EstVide) return;
+
+        _gestionnaireMonde?.AppliquerDestructionGlobale(pointImpactVoxel, RAYON_SCULPTURE, 5.0f);
+        var nouveauSlot = new SlotInventaire { ID = idExtrait, IndexMorphologique = 0, IndexChimique = 0 };
+        if (MainGaucheEstActive)
+        {
+            if (MainGauche.EstVide) MainGauche = nouveauSlot;
+            else MainDroite = nouveauSlot;
+        }
+        else
+        {
+            if (MainDroite.EstVide) MainDroite = nouveauSlot;
+            else MainGauche = nouveauSlot;
+        }
+        RafraichirHUD();
+    }
+
     private (float efficaciteHache, float efficacitePelle, float masse) AnalyserOutilCAO(Vector3 directionFrappe)
     {
         SlotInventaire mainActive = MainGaucheEstActive ? MainGauche : MainDroite;
@@ -38,6 +337,8 @@ public partial class Joueur
             return (0.78f, 0.22f, 1.15f);
         if (mainActive.ID == 106)
             return (0.88f, 0.12f, 2.05f);
+        if (mainActive.ID == IdObjetPellePierreTier0)
+            return (0.26f, 0.95f, 2.15f);
         if (ItemPhysique.EstIdRocheMatiere(mainActive.ID))
         {
             float m = mainActive.IndexTaille switch { 0 => 1f, 1 => 2f, 2 => 8f, 3 => 14f, 4 => 20f, _ => 8f };
@@ -78,6 +379,8 @@ public partial class Joueur
             epaisseurLame = 0.04f;
         else if (mainActive.ID == 106)
             epaisseurLame = 0.065f;
+        else if (mainActive.ID == IdObjetPellePierreTier0)
+            epaisseurLame = 0.09f;
 
         return epaisseurLame;
     }
@@ -248,11 +551,18 @@ public partial class Joueur
         }
 
         float forceCreusage = masseOutil * force * efficacitePelle;
+        if (mainActive.ID == IdObjetPellePierreTier0)
+        {
+            int idMatiereImpact = _gestionnaireMonde?.ObtenirMatiereExacte(pointImpact - (_rayon.GetCollisionNormal() * 0.45f)) ?? 0;
+            // Pelle pierre tier0 : +5% uniquement sur terre/sable/terre aride.
+            if (idMatiereImpact == 1 || idMatiereImpact == 3 || idMatiereImpact == 6)
+                forceCreusage *= 1.05f;
+        }
 
         if (forceCreusage > 10f)
         {
             GD.Print($"ZERO-K : Extraction du sol réussie. (Force Volume: {forceCreusage:F1})");
-            if (mainActive.ID == 105 || mainActive.ID == 106)
+            if (mainActive.ID == 105 || mainActive.ID == 106 || mainActive.ID == IdObjetPellePierreTier0)
                 AppliquerUsureOutilMainActive(3.2f);
         }
         else if (mainActive.ID == 105 && efficacitePelle >= 0.6f)
@@ -339,11 +649,12 @@ public partial class Joueur
                 JouerSonEtEffetCoupeArbre(pointImpact);
                 GD.Print("ZERO-K : Feuillage arraché du cadavre végétal.");
                 int quantite = 3 + (int)(rbCible.Mass / 100f);
+                Vector3 baseFeuillage = CalculerPointAuDessusSol(rbCible.GlobalPosition.Lerp(pointImpact, 0.5f) + Vector3.Up * 1.2f, 0.42f);
                 for (int i = 0; i < quantite; i++)
                 {
-                    var bloc = BlocChutant.CreerFeuillageArrache(pointImpact, matFeuilles);
+                    var bloc = BlocChutant.CreerFeuillageArrache(baseFeuillage, matFeuilles);
                     GetTree().CurrentScene.AddChild(bloc);
-                    bloc.GlobalPosition = pointImpact + new Vector3((float)GD.Randf() - 0.5f, 0.5f, (float)GD.Randf() - 0.5f);
+                    bloc.GlobalPosition = baseFeuillage + new Vector3(((float)GD.Randf() - 0.5f) * 0.65f, (float)i * 0.06f + 0.12f, ((float)GD.Randf() - 0.5f) * 0.65f);
                 }
                 return;
             }
@@ -401,7 +712,12 @@ public partial class Joueur
                 ScaleEclat = new Vector3(1, 1, scaleZ)
             };
 
-            Node3D leTronc = CreerBlocPose(rbCible.GlobalPosition + Vector3.Up * 0.8f, slotTroncLong);
+            CalculerDimensionsBoisPose(30, 0, 0, out float rayonTroncSpawn, out float longueurBaseTronc, out _, out _);
+            float longueurTroncMonde = longueurBaseTronc * scaleZ;
+            Vector3 refSpawn = rbCible.GlobalPosition.Lerp(pointImpact, 0.45f);
+            float margeSol = rayonTroncSpawn + Mathf.Clamp(longueurTroncMonde * 0.22f, 0.25f, 1.35f);
+            Vector3 posTronc = CalculerPointAuDessusSol(refSpawn + Vector3.Up * 1.5f, margeSol);
+            Node3D leTronc = CreerBlocPose(posTronc, slotTroncLong);
             if (leTronc != null)
                 leTronc.GlobalRotation = rbCible.GlobalRotation;
 
@@ -643,7 +959,7 @@ public partial class Joueur
 
         rbCible.ApplyCentralImpulse(dirFrappeObj * impulsionFrappe);
 
-        if ((mainActive.ID == 105 || mainActive.ID == 106) && ItemPhysique.EstIdRocheMatiere(item.ID_Objet))
+        if ((mainActive.ID == 105 || mainActive.ID == 106 || mainActive.ID == IdObjetPellePierreTier0) && ItemPhysique.EstIdRocheMatiere(item.ID_Objet))
         {
             bool tranchantOk = mainActive.ID == 105
                 ? EstFrappeDagueAvecLaLame(pointImpact, directionFrappe)
@@ -656,7 +972,7 @@ public partial class Joueur
         }
 
         if ((mainActive.ID == 105 && !EstFrappeDagueAvecLaLame(pointImpact, directionFrappe))
-            || (mainActive.ID == 106 && !EstFrappeHachette106AvecLaLame(pointImpact, directionFrappe)))
+            || ((mainActive.ID == 106 || mainActive.ID == IdObjetPellePierreTier0) && !EstFrappeHachette106AvecLaLame(pointImpact, directionFrappe)))
         {
             GD.Print("ZERO-K : Orientez le tranchant vers la cible — ce coup porte le manche ou le plat.");
             return;
@@ -666,8 +982,28 @@ public partial class Joueur
         int resultatFracture = item.SubirDegats(forceImpact, dirVue, pointImpact);
         if (resultatFracture == 0)
             GD.Print("ZERO-K : L'impact n'est pas assez puissant. La roche résonne mais ne cède pas (Rebond).");
-        else if (mainActive.ID == 105 || mainActive.ID == 106)
+        else if (mainActive.ID == 105 || mainActive.ID == 106 || mainActive.ID == IdObjetPellePierreTier0)
             AppliquerUsureOutilMainActive(2.15f + forceImpact * 0.017f);
+    }
+
+    /// <summary>Rayon vertical sur le masque collision 1 ; place un point au-dessus du sol (évite tronc/branches sous le terrain).</summary>
+    private Vector3 CalculerPointAuDessusSol(Vector3 reference, float clearanceSelonNormale)
+    {
+        var space = GetWorld3D()?.DirectSpaceState;
+        Vector3 haut = reference + Vector3.Up * 16f;
+        Vector3 bas = reference - Vector3.Up * 48f;
+        if (space == null)
+            return reference + Vector3.Up * Mathf.Max(0.35f, clearanceSelonNormale);
+        var q = PhysicsRayQueryParameters3D.Create(haut, bas);
+        q.CollisionMask = 1;
+        var hit = space.IntersectRay(q);
+        if (hit.Count > 0 && hit.ContainsKey("position"))
+        {
+            Vector3 p = hit["position"].AsVector3();
+            Vector3 n = hit.ContainsKey("normal") ? hit["normal"].AsVector3().Normalized() : Vector3.Up;
+            return p + n * Mathf.Max(0.08f, clearanceSelonNormale);
+        }
+        return reference + Vector3.Up * Mathf.Max(0.4f, clearanceSelonNormale);
     }
 
 }

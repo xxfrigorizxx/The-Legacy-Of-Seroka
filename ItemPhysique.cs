@@ -139,6 +139,18 @@ public partial class ItemPhysique : RigidBody3D
 		rb.PhysicsMaterialOverride = new PhysicsMaterial { Friction = 0.62f, Bounce = 0.05f };
 	}
 
+	/// <summary>Pelle pierre tier0 (107) : physique proche hachette, un peu plus stable au sol.</summary>
+	public static void AppliquerPhysiquePelle107(ItemPhysique rb)
+	{
+		if (rb == null || rb.ID_Objet != Joueur.IdObjetPellePierreTier0) return;
+		rb.ContinuousCd = true;
+		rb.LinearDampMode = RigidBody3D.DampMode.Replace;
+		rb.LinearDamp = 0.24f;
+		rb.AngularDampMode = RigidBody3D.DampMode.Replace;
+		rb.AngularDamp = 0.92f;
+		rb.PhysicsMaterialOverride = new PhysicsMaterial { Friction = 0.68f, Bounce = 0.04f };
+	}
+
 	/// <summary>Table géologique : compositions minérales réelles (couleur, rugosité, future résistance).</summary>
 	public static readonly ProfilMineral[] TableGeologique = new ProfilMineral[]
 	{
@@ -235,7 +247,7 @@ public partial class ItemPhysique : RigidBody3D
 			else if (child is CollisionShape3D cs) hitbox = cs;
 		}
 
-		if ((ID_Objet == 20 || ID_Objet == 21 || ID_Objet == Joueur.IdObjetCeinturePoches || ID_Objet == Joueur.IdObjetPochetteTier0 || ID_Objet == Joueur.IdObjetSacTier0) && visuel == null)
+		if ((ID_Objet == 20 || ID_Objet == 21 || ID_Objet == Joueur.IdObjetCeinturePoches || ID_Objet == Joueur.IdObjetCeintureSacoches || ID_Objet == Joueur.IdObjetPochetteTier0 || ID_Objet == Joueur.IdObjetSacTier0) && visuel == null)
 			visuel = TrouverPremierMeshInstanceAvecMesh(this);
 
 		if (ID_Objet == 200)
@@ -279,9 +291,9 @@ public partial class ItemPhysique : RigidBody3D
 		}
 
 		// Fibre (15), corde (20), tissu (21), ceinture (102), pochette tier 0 (103) : mesh et matériau déjà assignés par Joueur.CreerBlocPose / BlocChutant.
-		if (ID_Objet == 15 || ID_Objet == 20 || ID_Objet == 21 || ID_Objet == Joueur.IdObjetCeinturePoches || ID_Objet == Joueur.IdObjetPochetteTier0 || ID_Objet == Joueur.IdObjetSacTier0)
+		if (ID_Objet == 15 || ID_Objet == 20 || ID_Objet == 21 || ID_Objet == Joueur.IdObjetCeinturePoches || ID_Objet == Joueur.IdObjetCeintureSacoches || ID_Objet == Joueur.IdObjetPochetteTier0 || ID_Objet == Joueur.IdObjetSacTier0)
 		{
-			Mass = ID_Objet == 21 ? 0.1f : (ID_Objet == Joueur.IdObjetCeinturePoches ? 0.14f : (ID_Objet == Joueur.IdObjetPochetteTier0 ? 0.12f : (ID_Objet == Joueur.IdObjetSacTier0 ? 0.16f : 0.08f)));
+			Mass = ID_Objet == 21 ? 0.1f : (ID_Objet == Joueur.IdObjetCeinturePoches ? 0.14f : (ID_Objet == Joueur.IdObjetCeintureSacoches ? 0.18f : (ID_Objet == Joueur.IdObjetPochetteTier0 ? 0.12f : (ID_Objet == Joueur.IdObjetSacTier0 ? 0.16f : 0.08f))));
 			ResistanceActuelle = 1f;
 			return;
 		}
@@ -302,6 +314,15 @@ public partial class ItemPhysique : RigidBody3D
 			ResistanceActuelle = 28f;
 			Scale = Vector3.One;
 			AppliquerPhysiqueHachette106(this);
+			return;
+		}
+		if (ID_Objet == Joueur.IdObjetPellePierreTier0)
+		{
+			IndexChimique = Mathf.Clamp(IndexChimique, 0, TableGeologique.Length - 1);
+			Mass = 0.62f;
+			ResistanceActuelle = 30f;
+			Scale = Vector3.One;
+			AppliquerPhysiquePelle107(this);
 			return;
 		}
 		// Bûche (30) et Bâton (32) : propriétés depuis le profil botanique (chêne, pin, …) pour bien spécifier l'essence.
@@ -1647,6 +1668,11 @@ public partial class ItemPhysique : RigidBody3D
 		if (ID_Objet == 106)
 		{
 			AppliquerPhysiqueHachette106(this);
+			return;
+		}
+		if (ID_Objet == Joueur.IdObjetPellePierreTier0)
+		{
+			AppliquerPhysiquePelle107(this);
 			return;
 		}
 		if (EstIdRocheMatiere(ID_Objet))

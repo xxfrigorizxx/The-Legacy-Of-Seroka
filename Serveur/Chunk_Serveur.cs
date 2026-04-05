@@ -836,6 +836,8 @@ public partial class Chunk_Serveur : RefCounted
 				if (_densitiesEau != null) _densitiesEau[lx, ly, lz] = -1.0f;
 			}
 		}
+		// Padding voisin répliqué = vraie mutation persistante (sinon trou bordure perdu au reload).
+		_estModifie = true;
 		AuditerGraviteFlore();
 	}
 

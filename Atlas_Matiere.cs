@@ -44,7 +44,7 @@ public static class Atlas_Matiere
 
     public static float ObtenirFlexibiliteEffective(SlotInventaire slot)
     {
-        if (slot.ID == 20 || slot.ID == 21 || slot.ID == Joueur.IdObjetCeinturePoches || slot.ID == Joueur.IdObjetPochetteTier0)
+        if (slot.ID == 20 || slot.ID == 21 || slot.ID == Joueur.IdObjetCeinturePoches || slot.ID == Joueur.IdObjetCeintureSacoches || slot.ID == Joueur.IdObjetPochetteTier0)
         {
             float fa = ObtenirProfilFlexible(slot.IndexChimique, out var pa) ? pa.Flexibilite : 0.5f;
             float fb = ObtenirProfilFlexible(slot.IndexMorphologique, out var pb) ? pb.Flexibilite : 0.5f;
@@ -158,9 +158,31 @@ public static class Atlas_Matiere
         return Mathf.Clamp(maxDur, 100f, 1000f);
     }
 
+    public static float CalculerDurabiliteMaxNouvellePelle(SlotInventaire roche, SlotInventaire corde, SlotInventaire baton)
+    {
+        int idxLame = Mathf.Clamp(roche.ID - ItemPhysique.IdRocheMatiereMin, 0, ItemPhysique.TableGeologique.Length - 1);
+        float mineral = ItemPhysique.TableGeologique[idxLame].ResistanceFuture;
+        ObtenirStatsCorde(corde.IndexChimique, corde.IndexMorphologique, out float durCord, out _);
+        float durBois = ObtenirDurabiliteBois(baton.IndexBotanique);
+        float maxDur = mineral * 3.5f + durCord * 6f + durBois * 15f;
+        maxDur *= Mathf.Max(0.4f, 1f - corde.NiveauFracture * 0.11f);
+        return Mathf.Clamp(maxDur, 100f, 1000f);
+    }
+
+    public static float CalculerDurabiliteMaxPelleDepuisSlot(SlotInventaire pelle)
+    {
+        int idxLame = Mathf.Clamp(pelle.IndexChimique, 0, ItemPhysique.TableGeologique.Length - 1);
+        float mineral = ItemPhysique.TableGeologique[idxLame].ResistanceFuture;
+        ObtenirStatsCorde(pelle.IndexMorphologique, pelle.IndexTaille, out float durCord, out _);
+        float durBois = ObtenirDurabiliteBois(pelle.IndexBotanique);
+        float maxDur = mineral * 3.5f + durCord * 6f + durBois * 15f;
+        maxDur *= Mathf.Max(0.4f, 1f - pelle.NiveauFracture * 0.11f);
+        return Mathf.Clamp(maxDur, 100f, 1000f);
+    }
+
     public static void InitialiserDurabiliteOutilSiBesoin(ref SlotInventaire s)
     {
-        if (s.ID != 105 && s.ID != 106) return;
+        if (s.ID != 105 && s.ID != 106 && s.ID != Joueur.IdObjetPellePierreTier0) return;
         if (s.DurabiliteOutilMax > 0.5f)
         {
             if (s.DurabiliteOutilActuelle <= 0f)
@@ -176,6 +198,12 @@ public static class Atlas_Matiere
         else if (s.ID == 106)
         {
             float max = CalculerDurabiliteMaxHachetteDepuisSlot(s);
+            s.DurabiliteOutilMax = max;
+            s.DurabiliteOutilActuelle = max;
+        }
+        else if (s.ID == Joueur.IdObjetPellePierreTier0)
+        {
+            float max = CalculerDurabiliteMaxPelleDepuisSlot(s);
             s.DurabiliteOutilMax = max;
             s.DurabiliteOutilActuelle = max;
         }
@@ -225,6 +253,18 @@ public static class Atlas_Matiere
             }
             return nom;
         }
+        if (id == Joueur.IdObjetPellePierreTier0)
+        {
+            int i = Mathf.Clamp(slot.IndexChimique, 0, ItemPhysique.TableGeologique.Length - 1);
+            string nom = $"Pelle en {ItemPhysique.TableGeologique[i].Nom}";
+            if (slot.DurabiliteOutilMax > 0.5f)
+            {
+                int a = Mathf.Max(0, Mathf.RoundToInt(slot.DurabiliteOutilActuelle));
+                int m = Mathf.Max(1, Mathf.RoundToInt(slot.DurabiliteOutilMax));
+                return $"{nom} ({a}/{m})";
+            }
+            return nom;
+        }
         if (id == 100)
         {
             int clef = Joueur.ClefRegistreOutilForge(slot);
@@ -244,6 +284,18 @@ public static class Atlas_Matiere
             if (b)
                 return $"Ceinture à poches ({pb.Nom})";
             return "Ceinture à poches";
+        }
+        if (id == Joueur.IdObjetCeintureSacoches)
+        {
+            bool a = ObtenirProfilFlexible(slot.IndexChimique, out var pa);
+            bool b = ObtenirProfilFlexible(slot.IndexMorphologique, out var pb);
+            if (a && b)
+                return $"Ceinture à sacoches ({pa.Nom}+{pb.Nom})";
+            if (a)
+                return $"Ceinture à sacoches ({pa.Nom})";
+            if (b)
+                return $"Ceinture à sacoches ({pb.Nom})";
+            return "Ceinture à sacoches";
         }
         if (id == Joueur.IdObjetPochetteTier0)
         {
@@ -340,16 +392,16 @@ public static class Atlas_Matiere
         if (ingredients.Count == 0)
             return new SlotInventaire();
 
-        // Une seule branche de chêne (bâton 32 brut) dans la grille → bâton de chêne façonné : mêmes taille / morph / ScaleEclat, teinte plus pâle (IndexChimique = 1).
+        // Une seule branche (bâton 32 brut) dans la grille → bâton façonné de la même essence : mêmes taille / morph / ScaleEclat, teinte façonnée (IndexChimique = 1).
         if (ingredients.Count == 1)
         {
             var br = ingredients[0];
-            if (br.ID == 32 && br.IndexBotanique == LSystem_Botanique.IndexChene && br.IndexChimique == 0)
+            if (br.ID == 32 && br.IndexChimique == 0)
             {
                 return new SlotInventaire
                 {
                     ID = 32,
-                    IndexBotanique = LSystem_Botanique.IndexChene,
+                    IndexBotanique = br.IndexBotanique,
                     IndexChimique = 1,
                     IndexMorphologique = br.IndexMorphologique,
                     IndexTaille = br.IndexTaille,
@@ -399,6 +451,7 @@ public static class Atlas_Matiere
         static bool EstSlotCordeCraft(SlotInventaire s) => !s.EstVide && s.ID == 20;
         static bool EstSlotTissuCraft(SlotInventaire s) => !s.EstVide && s.ID == 21;
         static bool EstSlotBatonCraft(SlotInventaire s) => !s.EstVide && s.ID == 32;
+        static bool EstSlotPochetteTier0Craft(SlotInventaire s) => !s.EstVide && s.ID == Joueur.IdObjetPochetteTier0;
 
         SlotInventaire c0, c1, c2, c3;
         if (grilleCraft3x3Table)
@@ -486,6 +539,26 @@ public static class Atlas_Matiere
                     EstUnEclat = false
                 };
             }
+
+            // RECETTE ATELIER : Ceinture à sacoches (104) = 4× pochette tier 0 aux coins + ceinture (102) au centre.
+            bool ceintureSacoches =
+                EstSlotPochetteTier0Craft(grille[0]) && EstSlotPochetteTier0Craft(grille[2]) && EstSlotPochetteTier0Craft(grille[6]) && EstSlotPochetteTier0Craft(grille[8])
+                && Joueur.SontEmpilables(grille[0], grille[2]) && Joueur.SontEmpilables(grille[0], grille[6]) && Joueur.SontEmpilables(grille[0], grille[8])
+                && grille[1].EstVide && grille[3].EstVide && grille[5].EstVide && grille[7].EstVide
+                && !grille[4].EstVide && grille[4].ID == Joueur.IdObjetCeinturePoches;
+            if (ceintureSacoches)
+            {
+                var refB = grille[4];
+                int nf = Mathf.Max(Mathf.Max(grille[0].NiveauFracture, grille[2].NiveauFracture), Mathf.Max(Mathf.Max(grille[6].NiveauFracture, grille[8].NiveauFracture), refB.NiveauFracture));
+                return new SlotInventaire
+                {
+                    ID = Joueur.IdObjetCeintureSacoches,
+                    IndexChimique = refB.IndexChimique,
+                    IndexMorphologique = refB.IndexMorphologique,
+                    NiveauFracture = nf,
+                    EstUnEclat = false
+                };
+            }
         }
 
         // RECETTE : 4 cordes (20) en carré 2×2 strict — poche (Q) : cases 0–3 ; établi : coin haut-gauche 0,1,3,4 et rien d’autre sur le 3×3 (sinon ceinture / autres recettes).
@@ -526,6 +599,37 @@ public static class Atlas_Matiere
             return ConstruireHachette106(c0, c1, c3);
         if (EstSlotCordeCraft(c0) && EstSlotRochePlateCraft(c1) && EstSlotBatonCraft(c2) && c3.EstVide)
             return ConstruireHachette106(c1, c0, c2);
+
+        // Pelle pierre tier0 (107) : colonne verticale en 3x3 atelier [1]=bâton façonné (toute essence), [4]=ficelle, [7]=petite roche ovale.
+        static bool EstSlotBatonFaconneCraft(SlotInventaire s) =>
+            !s.EstVide && s.ID == 32 && s.IndexChimique == 1;
+        static bool EstSlotPetiteRocheOvaleCraft(SlotInventaire s) =>
+            !s.EstVide && ItemPhysique.EstIdRocheMatiere(s.ID) && s.IndexMorphologique == 2 && (s.IndexTaille == 0 || s.IndexTaille == 1);
+        if (grilleCraft3x3Table && grille.Length >= 9
+            && EstSlotBatonFaconneCraft(grille[1]) && EstSlotCordeCraft(grille[4]) && EstSlotPetiteRocheOvaleCraft(grille[7]))
+        {
+            bool autresVides = grille[0].EstVide && grille[2].EstVide && grille[3].EstVide
+                && grille[5].EstVide && grille[6].EstVide && grille[8].EstVide;
+            if (autresVides)
+            {
+                SlotInventaire roche = grille[7];
+                SlotInventaire corde = grille[4];
+                SlotInventaire baton = grille[1];
+                float dMax = CalculerDurabiliteMaxNouvellePelle(roche, corde, baton);
+                return new SlotInventaire
+                {
+                    ID = Joueur.IdObjetPellePierreTier0,
+                    IndexChimique = roche.ID - ItemPhysique.IdRocheMatiereMin,
+                    IndexMorphologique = corde.IndexChimique,
+                    IndexTaille = corde.IndexMorphologique,
+                    IndexBotanique = baton.IndexBotanique,
+                    EstUnEclat = false,
+                    NiveauFracture = corde.NiveauFracture,
+                    DurabiliteOutilMax = dMax,
+                    DurabiliteOutilActuelle = dMax
+                };
+            }
+        }
 
         if (ingredients.Count == 2 && ingredients[0].ID == 15 && ingredients[1].ID == 15)
         {

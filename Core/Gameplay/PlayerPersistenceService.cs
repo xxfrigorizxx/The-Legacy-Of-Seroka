@@ -99,6 +99,7 @@ public partial class Joueur
             using var w = new BinaryWriter(File.Open(chemin, FileMode.Create));
             w.Write(VersionPersistenceJoueur);
             SauvegarderStockageSacEquipeDansMemoire();
+            SauvegarderStockageCeintureSacochesEquipeDansMemoire();
             EcrireSlot(w, MainGauche);
             EcrireSlot(w, MainDroite);
             EcrireSlot(w, EquipementSacDos);
@@ -156,6 +157,7 @@ public partial class Joueur
                 }
             }
             ChargerStockageDepuisSacEquipe();
+            ChargerStockageDepuisCeintureSacochesEquipe();
         }
         catch (Exception ex)
         {

@@ -4,73 +4,32 @@ using System.Collections.Generic;
 
 public partial class Joueur
 {
-    /// <summary>E : si la main active tient un objet → accrocher (corde) ou poser (flexible / autres) ; sinon ramasser.</summary>
-    private void ExecuterToucheInteragir()
+    /// <summary>Ouvre le plan de travail 3x3 si la visée touche un atelier posé (ID 200).</summary>
+    private bool EssayerOuvrirAtelierSousVisee()
     {
         _rayon.ForceRaycastUpdate();
-        if (_rayon.IsColliding())
-        {
-            Node objetTouche = NoeudDepuisColliderRaycast(_rayon.GetCollider());
-            var itemTouche = objetTouche as ItemPhysique
-                ?? (objetTouche as Node)?.GetParent() as ItemPhysique
-                ?? (objetTouche as Node)?.GetNodeOrNull<ItemPhysique>("ItemPhysique");
+        if (!_rayon.IsColliding()) return false;
+        Node objetTouche = NoeudDepuisColliderRaycast(_rayon.GetCollider());
+        var itemTouche = objetTouche as ItemPhysique
+            ?? (objetTouche as Node)?.GetParent() as ItemPhysique
+            ?? (objetTouche as Node)?.GetNodeOrNull<ItemPhysique>("ItemPhysique");
+        if (itemTouche == null || itemTouche.ID_Objet != 200 || _menuAnatomie == null)
+            return false;
 
-                if (itemTouche != null && itemTouche.ID_Objet == 200)
-                {
-                    if (Input.IsKeyPressed(Key.Shift))
-                    {
-                        ExecuterRamassageObjet();
-                        return;
-                    }
+        AtelierPlanTravailOuvert = itemTouche;
+        CraftGrille3x3AuTable = true;
+        if (!_menuAnatomie.EstOuvert)
+            _menuAnatomie.BasculerVisibilite();
+        else
+            _menuAnatomie.RafraichirMenu();
+        GetViewport().SetInputAsHandled();
+        GD.Print("ZERO-K : Plan de travail 3x3 de l'Atelier ouvert.");
+        return true;
+    }
 
-                // E (seul) = Ouvrir le plan de travail (Grille 3x3)
-                else
-                {
-                    if (_menuAnatomie != null)
-                    {
-                        AtelierPlanTravailOuvert = itemTouche;
-                        CraftGrille3x3AuTable = true;
-                        if (!_menuAnatomie.EstOuvert)
-                            _menuAnatomie.BasculerVisibilite();
-                        else
-                            _menuAnatomie.RafraichirMenu();
-
-                        GetViewport().SetInputAsHandled();
-                        GD.Print("ZERO-K : Plan de travail 3x3 de l'Atelier ouvert.");
-                    }
-                }
-                return;
-            }
-        }
-
-        SlotInventaire mainActive = MainGaucheEstActive ? MainGauche : MainDroite;
-        if (!mainActive.EstVide)
-        {
-            if (mainActive.ID == 20)
-            {
-                if (ExecuterAttacheCordeSiPossible(mainActive))
-                    return;
-                ExecuterPlacementDepuisInteragir(mainActive);
-                return;
-            }
-            if (mainActive.ID == 21)
-            {
-                ExecuterPlacementDepuisInteragir(mainActive);
-                return;
-            }
-            if (EstMatiereFlexible(mainActive.ID))
-            {
-                ExecuterPlacementDepuisInteragir(mainActive);
-                return;
-            }
-            if (EstObjetPosableAuSol(mainActive))
-            {
-                ExecuterPlacementDepuisInteragir(mainActive);
-                return;
-            }
-            GD.Print("ZERO-K : Cet objet ne se pose pas avec E (utilisez le clic droit pour le terrain / certains cas).");
-            return;
-        }
+    /// <summary>E : ramassage uniquement (plus de pose/attache via E).</summary>
+    private void ExecuterToucheInteragir()
+    {
         ExecuterRamassageObjet();
     }
 
@@ -112,7 +71,7 @@ public partial class Joueur
     /// <summary>Échelle pour l’établi CAO (hors 30/32, gérés à part) : fibres/corde non élastiques = taille naturelle, sans ScaleEclat « étiré ».</summary>
     public static Vector3 ObtenirEchellePieceFlexibleCAO(SlotInventaire slot)
     {
-        bool estFlexOuCorde = slot.ID == 15 || slot.ID == 16 || slot.ID == 17 || slot.ID == 20 || slot.ID == 21 || slot.ID == IdObjetCeinturePoches || slot.ID == IdObjetPochetteTier0 || slot.ID == IdObjetSacTier0;
+        bool estFlexOuCorde = slot.ID == 15 || slot.ID == 16 || slot.ID == 17 || slot.ID == 20 || slot.ID == 21 || slot.ID == IdObjetCeinturePoches || slot.ID == IdObjetCeintureSacoches || slot.ID == IdObjetPochetteTier0 || slot.ID == IdObjetSacTier0;
         if (estFlexOuCorde && !ObtenirSlotFlexibleEtirable(slot))
             return Vector3.One;
         if (slot.ScaleEclat != Vector3.Zero)
@@ -127,7 +86,7 @@ public partial class Joueur
     {
         if (s.EstVide || s.ID == 0) return false;
         if (s.ID >= 1 && s.ID <= 9 && s.ID != 4) return true;
-        return s.ID == 999 || ItemPhysique.EstIdRocheMatiere(s.ID) || s.ID == 30 || s.ID == 32 || s.ID == 34 || s.ID == 21 || s.ID == IdObjetCeinturePoches || s.ID == IdObjetPochetteTier0 || s.ID == IdObjetSacTier0 || s.ID == 200;
+        return s.ID == 999 || ItemPhysique.EstIdRocheMatiere(s.ID) || s.ID == 30 || s.ID == 32 || s.ID == 34 || s.ID == 21 || s.ID == IdObjetCeinturePoches || s.ID == IdObjetCeintureSacoches || s.ID == IdObjetPochetteTier0 || s.ID == IdObjetSacTier0 || s.ID == IdObjetPellePierreTier0 || s.ID == 200;
     }
 
     /// <summary>Corde (20) : accrocher au point de visée si surface valide (sol, roche, arbre, bloc posé).</summary>
@@ -189,6 +148,11 @@ public partial class Joueur
         if (objetTouche.IsInGroup("BlocsPoses"))
         {
             int id = objetTouche.HasMeta("ID_Matiere") ? (int)objetTouche.GetMeta("ID_Matiere").AsInt32() : 1;
+            if (id == 200)
+            {
+                GD.Print("ZERO-K : Atelier fixé au monde. Récupération uniquement par minage.");
+                return;
+            }
             var item = objetTouche as ItemPhysique ?? (objetTouche as Node)?.GetParent() as ItemPhysique ?? (objetTouche as Node)?.GetNodeOrNull<ItemPhysique>("ItemPhysique");
             nouveauSlot = new SlotInventaire
             {
@@ -199,7 +163,7 @@ public partial class Joueur
                 IndexChimique = item?.IndexChimique ?? 0,
                 IndexTaille = item != null && (item.ID_Objet == 30 || item.ID_Objet == 32)
                     ? Mathf.Clamp(item.IndexTailleRoche, 0, 4)
-                    : (item != null && (item.ID_Objet == 105 || item.ID_Objet == 106 || ItemPhysique.EstIdRocheMatiere(item.ID_Objet)) ? item.IndexTailleRoche : 2),
+                    : (item != null && (item.ID_Objet == 105 || item.ID_Objet == 106 || item.ID_Objet == IdObjetPellePierreTier0 || ItemPhysique.EstIdRocheMatiere(item.ID_Objet)) ? item.IndexTailleRoche : 0),
                 IndexTailleLameRoche = item != null && item.ID_Objet == 105 && item.HasMeta(MetaTailleLameRoche)
                     ? (int)item.GetMeta(MetaTailleLameRoche).AsInt32()
                     : (item != null && item.ID_Objet == 105 ? 2 : 0),
@@ -210,11 +174,11 @@ public partial class Joueur
                 ScaleEclat = item != null && (item.ID_Objet == 30 || item.ID_Objet == 32)
                     ? ScaleEclatBoisAuRamassage(item)
                     : (item != null ? item.Scale : Vector3.One),
-                IndexBotanique = item != null && (item.ID_Objet == 30 || item.ID_Objet == 32 || item.ID_Objet == 106) ? item.IndexBotanique : LSystem_Botanique.IndexChene,
+                IndexBotanique = item != null && (item.ID_Objet == 30 || item.ID_Objet == 32 || item.ID_Objet == 106 || item.ID_Objet == IdObjetPellePierreTier0) ? item.IndexBotanique : LSystem_Botanique.IndexChene,
                 GenomeAssemblage = LireGenomeSurItemPhysique(item),
                 CleConteneur = (item != null && item.HasMeta("CleConteneur")) ? item.GetMeta("CleConteneur").AsString() : ""
             };
-            if ((nouveauSlot.ID == 105 || nouveauSlot.ID == 106) && item != null)
+            if ((nouveauSlot.ID == 105 || nouveauSlot.ID == 106 || nouveauSlot.ID == IdObjetPellePierreTier0) && item != null)
                 RemplirDurabiliteOutilDepuisItemPhysique(ref nouveauSlot, item);
         }
         else if (objetTouche is RigidBody3D rb)
@@ -229,6 +193,11 @@ public partial class Joueur
             {
             var item = rb as ItemPhysique ?? (rb as Node)?.GetParent() as ItemPhysique ?? rb.GetNodeOrNull<ItemPhysique>("ItemPhysique");
             if (item == null) return;
+            if (item.ID_Objet == 200)
+            {
+                GD.Print("ZERO-K : Atelier fixé au monde. Récupération uniquement par minage.");
+                return;
+            }
             if (ItemPhysique.EstIdRocheMatiere(item.ID_Objet) && item.IndexTailleRoche >= 3)
             {
                 GD.Print("ZERO-K : Masse excessive. La colonne vertébrale céderait. Action bloquée.");
@@ -241,7 +210,7 @@ public partial class Joueur
                 IndexChimique = item.IndexChimique,
                 IndexTaille = item.ID_Objet == 30 || item.ID_Objet == 32
                     ? Mathf.Clamp(item.IndexTailleRoche, 0, 4)
-                    : (item.ID_Objet == 105 || item.ID_Objet == 106 || ItemPhysique.EstIdRocheMatiere(item.ID_Objet) ? item.IndexTailleRoche : 2),
+                    : (item.ID_Objet == 105 || item.ID_Objet == 106 || item.ID_Objet == IdObjetPellePierreTier0 || ItemPhysique.EstIdRocheMatiere(item.ID_Objet) ? item.IndexTailleRoche : 0),
                 IndexTailleLameRoche = item.ID_Objet == 105 && item.HasMeta(MetaTailleLameRoche)
                     ? (int)item.GetMeta(MetaTailleLameRoche).AsInt32()
                     : (item.ID_Objet == 105 ? 2 : 0),
@@ -249,11 +218,11 @@ public partial class Joueur
                 MeshEclat = item.EstUnEclat ? item.ObtenirMeshVisuel() : null,
                 NiveauFracture = item.NiveauFracture,
                 ScaleEclat = (item.ID_Objet == 30 || item.ID_Objet == 32) ? ScaleEclatBoisAuRamassage(item) : item.Scale,
-                IndexBotanique = (item.ID_Objet == 30 || item.ID_Objet == 32 || item.ID_Objet == 106 || item.ID_Objet == 200) ? item.IndexBotanique : LSystem_Botanique.IndexChene,
+                IndexBotanique = (item.ID_Objet == 30 || item.ID_Objet == 32 || item.ID_Objet == 106 || item.ID_Objet == IdObjetPellePierreTier0 || item.ID_Objet == 200) ? item.IndexBotanique : LSystem_Botanique.IndexChene,
                 GenomeAssemblage = LireGenomeSurItemPhysique(item),
                 CleConteneur = item.HasMeta("CleConteneur") ? item.GetMeta("CleConteneur").AsString() : ""
             };
-            if (nouveauSlot.ID == 105 || nouveauSlot.ID == 106)
+            if (nouveauSlot.ID == 105 || nouveauSlot.ID == 106 || nouveauSlot.ID == IdObjetPellePierreTier0)
                 RemplirDurabiliteOutilDepuisItemPhysique(ref nouveauSlot, item);
             }
         }
@@ -261,6 +230,11 @@ public partial class Joueur
         {
             var item = sb.GetNodeOrNull<ItemPhysique>("ItemPhysique");
             if (item == null) return;
+            if (item.ID_Objet == 200)
+            {
+                GD.Print("ZERO-K : Atelier fixé au monde. Récupération uniquement par minage.");
+                return;
+            }
             if (ItemPhysique.EstIdRocheMatiere(item.ID_Objet) && item.IndexTailleRoche >= 3)
             {
                 GD.Print("ZERO-K : Masse excessive. La colonne vertébrale céderait. Action bloquée.");
@@ -273,7 +247,7 @@ public partial class Joueur
                 IndexChimique = item.IndexChimique,
                 IndexTaille = item.ID_Objet == 30 || item.ID_Objet == 32
                     ? Mathf.Clamp(item.IndexTailleRoche, 0, 4)
-                    : (item.ID_Objet == 105 || item.ID_Objet == 106 || ItemPhysique.EstIdRocheMatiere(item.ID_Objet) ? item.IndexTailleRoche : 2),
+                    : (item.ID_Objet == 105 || item.ID_Objet == 106 || item.ID_Objet == IdObjetPellePierreTier0 || ItemPhysique.EstIdRocheMatiere(item.ID_Objet) ? item.IndexTailleRoche : 0),
                 IndexTailleLameRoche = item.ID_Objet == 105 && item.HasMeta(MetaTailleLameRoche)
                     ? (int)item.GetMeta(MetaTailleLameRoche).AsInt32()
                     : (item.ID_Objet == 105 ? 2 : 0),
@@ -281,11 +255,11 @@ public partial class Joueur
                 MeshEclat = item.EstUnEclat ? item.ObtenirMeshVisuel() : null,
                 NiveauFracture = item.NiveauFracture,
                 ScaleEclat = (item.ID_Objet == 30 || item.ID_Objet == 32) ? ScaleEclatBoisAuRamassage(item) : item.Scale,
-                IndexBotanique = (item.ID_Objet == 30 || item.ID_Objet == 32 || item.ID_Objet == 106) ? item.IndexBotanique : LSystem_Botanique.IndexChene,
+                IndexBotanique = (item.ID_Objet == 30 || item.ID_Objet == 32 || item.ID_Objet == 106 || item.ID_Objet == IdObjetPellePierreTier0) ? item.IndexBotanique : LSystem_Botanique.IndexChene,
                 GenomeAssemblage = LireGenomeSurItemPhysique(item),
                 CleConteneur = item.HasMeta("CleConteneur") ? item.GetMeta("CleConteneur").AsString() : ""
             };
-            if (nouveauSlot.ID == 105 || nouveauSlot.ID == 106)
+            if (nouveauSlot.ID == 105 || nouveauSlot.ID == 106 || nouveauSlot.ID == IdObjetPellePierreTier0)
                 RemplirDurabiliteOutilDepuisItemPhysique(ref nouveauSlot, item);
         }
         else
@@ -370,12 +344,13 @@ public partial class Joueur
         {
             _gestionnaireMonde?.AppliquerCreationGlobale(pointImpact, normaleImpact, RAYON_SCULPTURE, id);
         }
-        else if (id == 999 || ItemPhysique.EstIdRocheMatiere(id) || id == 15 || id == 16 || id == 17 || id == 20 || id == 21 || id == IdObjetCeinturePoches || id == IdObjetPochetteTier0 || id == IdObjetSacTier0 || id == 30 || id == 32 || id == 34 || id == 105 || id == 106 || id == 200)
+        else if (id == 999 || ItemPhysique.EstIdRocheMatiere(id) || id == 15 || id == 16 || id == 17 || id == 20 || id == 21 || id == IdObjetCeinturePoches || id == IdObjetCeintureSacoches || id == IdObjetPochetteTier0 || id == IdObjetSacTier0 || id == 30 || id == 32 || id == 34 || id == 105 || id == 106 || id == IdObjetPellePierreTier0 || id == 200)
         {
             Node3D nePose = CreerBlocPose(pointDeChute, mainActive);
             if (id != 200)
                 AppliquerImpulsionLacherDoux(nePose);
         }
+
         else
         {
             GD.Print($"ZERO-K : Matière {id} non géologique. Pose ignorée.");
