@@ -36,6 +36,7 @@ public partial class Gestionnaire_Monde : Node3D
 	private Monde_Client _mondeClient;
 	private NetworkManager _networkManager;
 	private Label _labelCoords;
+	private CanvasLayer _repereCentreLayer;
 	/// <summary>Overlay "Chargement du monde..." affiché tant que la collision du chunk de spawn n'est pas prête.</summary>
 	private CanvasLayer _overlayChargement;
 	private double _secondesOverlayChargement;
@@ -45,6 +46,11 @@ public partial class Gestionnaire_Monde : Node3D
 	private bool _etatPersistantRestaure;
 	private double _secondesDormanceObjets;
 	private const int RayonDormanceObjetsChunks = 5;
+	private const float NiveauEauOcean = 103f;
+	private Area3D _oceanPhysique;
+	private Node3D _conteneurEffetsEau;
+	private readonly HashSet<ulong> _corpsDansOcean = new HashSet<ulong>();
+	private StandardMaterial3D _materielEclaboussureEau;
 
 	// Legacy
 	private List<Vector2I> _chunksACharger = new List<Vector2I>();
@@ -324,6 +330,7 @@ public partial class Gestionnaire_Monde : Node3D
 		panel.AddChild(_labelCoords);
 		AddChild(canvas);
 		canvas.AddChild(panel);
+		CreerRepereCentreEcran();
 
 		// Position : chargée si monde existant, sinon spawn par défaut (terrain généré → joueur déposé)
 		Vector3 posSpawn = _joueur.GlobalPosition;
@@ -388,6 +395,49 @@ public partial class Gestionnaire_Monde : Node3D
 		}
 
 		CallDeferred(nameof(RestaurerEtatPersistantMonde));
+	}
+
+	private void CreerRepereCentreEcran()
+	{
+		if (_repereCentreLayer != null && GodotObject.IsInstanceValid(_repereCentreLayer)) return;
+
+		_repereCentreLayer = new CanvasLayer { Layer = 12 };
+		AddChild(_repereCentreLayer);
+
+		var root = new Control
+		{
+			Name = "RepereCentre",
+			MouseFilter = Control.MouseFilterEnum.Ignore
+		};
+		root.SetAnchorsPreset(Control.LayoutPreset.Center);
+		root.CustomMinimumSize = new Vector2(22, 22);
+		root.Size = root.CustomMinimumSize;
+		root.Position = -root.Size * 0.5f;
+		_repereCentreLayer.AddChild(root);
+
+		var h = new ColorRect
+		{
+			Name = "LigneHorizontale",
+			Color = new Color(1f, 1f, 1f, 0.9f),
+			MouseFilter = Control.MouseFilterEnum.Ignore
+		};
+		h.SetAnchorsPreset(Control.LayoutPreset.Center);
+		h.CustomMinimumSize = new Vector2(18, 2);
+		h.Size = h.CustomMinimumSize;
+		h.Position = -h.Size * 0.5f;
+		root.AddChild(h);
+
+		var v = new ColorRect
+		{
+			Name = "LigneVerticale",
+			Color = new Color(1f, 1f, 1f, 0.9f),
+			MouseFilter = Control.MouseFilterEnum.Ignore
+		};
+		v.SetAnchorsPreset(Control.LayoutPreset.Center);
+		v.CustomMinimumSize = new Vector2(2, 18);
+		v.Size = v.CustomMinimumSize;
+		v.Position = -v.Size * 0.5f;
+		root.AddChild(v);
 	}
 
 	private void RestaurerEtatPersistantMonde()
@@ -608,9 +658,8 @@ public partial class Gestionnaire_Monde : Node3D
 	/// <summary>Matrice visqueuse : océan physique couvrant Y &lt; 103. Linear/Angular Damp 4.0, gravité 4 (Archimède).</summary>
 	private void CreerAreaOcean()
 	{
-		const float NIVEAU_EAU = 103f;
 		float demiRayon = RayonMondeChunks * TailleChunk;
-		float hauteurZone = NIVEAU_EAU + 500f; // Couvre jusqu'en profondeur -500
+		float hauteurZone = NiveauEauOcean + 500f; // Couvre jusqu'en profondeur -500
 		var ocean = new Area3D { Name = "Ocean_Physique" };
 		ocean.GravitySpaceOverride = Area3D.SpaceOverride.Replace;
 		ocean.Gravity = 4.0f; // Poussée d'Archimède (réduit chute)
@@ -625,8 +674,99 @@ public partial class Gestionnaire_Monde : Node3D
 		var col = new CollisionShape3D();
 		col.Shape = new BoxShape3D { Size = new Vector3(demiRayon * 2f, hauteurZone, demiRayon * 2f) };
 		ocean.AddChild(col);
-		ocean.Position = new Vector3(0, (NIVEAU_EAU - 500f) / 2f, 0); // Centre du volume
+		ocean.Position = new Vector3(0, (NiveauEauOcean - 500f) / 2f, 0); // Centre du volume
+		ocean.BodyEntered += SurCorpsEntreOcean;
+		ocean.BodyExited += SurCorpsSortOcean;
 		AddChild(ocean);
+		_oceanPhysique = ocean;
+	}
+
+	private void SurCorpsEntreOcean(Node3D corps)
+	{
+		if (corps == null || !GodotObject.IsInstanceValid(corps)) return;
+		if (corps == _joueur) return;
+		if (corps is not RigidBody3D rb) return;
+
+		ulong id = corps.GetInstanceId();
+		if (!_corpsDansOcean.Add(id)) return;
+
+		// Seulement un objet qui tombe (vitesse verticale descendante suffisante).
+		float vitesseChute = -rb.LinearVelocity.Y;
+		if (vitesseChute < 2.0f) return;
+
+		float intensite = Mathf.Clamp(vitesseChute / 18f, 0.35f, 1.35f);
+		Vector3 impactSurface = rb.GlobalPosition;
+		impactSurface.Y = NiveauEauOcean + 0.04f;
+		CreerEclaboussureSurface(impactSurface, intensite);
+	}
+
+	private void SurCorpsSortOcean(Node3D corps)
+	{
+		if (corps == null || !GodotObject.IsInstanceValid(corps)) return;
+		_corpsDansOcean.Remove(corps.GetInstanceId());
+	}
+
+	private StandardMaterial3D ObtenirMaterielEclaboussureEau()
+	{
+		if (_materielEclaboussureEau != null) return _materielEclaboussureEau;
+		_materielEclaboussureEau = new StandardMaterial3D
+		{
+			ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
+			Transparency = BaseMaterial3D.TransparencyEnum.Alpha,
+			AlbedoColor = new Color(0.82f, 0.93f, 1f, 0.82f),
+			NoDepthTest = false,
+			BillboardMode = BaseMaterial3D.BillboardModeEnum.Enabled
+		};
+		return _materielEclaboussureEau;
+	}
+
+	private void AssurerConteneurEffetsEau()
+	{
+		if (_conteneurEffetsEau != null && GodotObject.IsInstanceValid(_conteneurEffetsEau)) return;
+		_conteneurEffetsEau = new Node3D { Name = "Effets_Eau" };
+		AddChild(_conteneurEffetsEau);
+	}
+
+	private void CreerEclaboussureSurface(Vector3 centre, float intensite)
+	{
+		AssurerConteneurEffetsEau();
+		if (_conteneurEffetsEau == null || !GodotObject.IsInstanceValid(_conteneurEffetsEau)) return;
+
+		var rng = new RandomNumberGenerator();
+		rng.Seed = (ulong)(Engine.GetPhysicsFrames() * 73856093u + (uint)Mathf.Abs((int)centre.X * 19349663) + (uint)Mathf.Abs((int)centre.Z * 83492791));
+		int nbGouttes = Mathf.Clamp(Mathf.RoundToInt(10 + 18 * intensite), 10, 34);
+		Material mat = ObtenirMaterielEclaboussureEau();
+
+		for (int i = 0; i < nbGouttes; i++)
+		{
+			float angle = rng.RandfRange(0f, Mathf.Tau);
+			float rayon = rng.RandfRange(0.06f, 0.18f + 0.22f * intensite);
+			float montee = rng.RandfRange(0.08f, 0.32f + 0.25f * intensite);
+			float dureeMontee = rng.RandfRange(0.10f, 0.18f);
+			float dureeDescente = rng.RandfRange(0.12f, 0.24f);
+			float taille = rng.RandfRange(0.028f, 0.05f + 0.03f * intensite);
+
+			var goutte = new MeshInstance3D
+			{
+				Mesh = new QuadMesh { Size = new Vector2(taille, taille) },
+				MaterialOverride = mat,
+				GlobalPosition = centre + new Vector3(rng.RandfRange(-0.04f, 0.04f), 0f, rng.RandfRange(-0.04f, 0.04f))
+			};
+			_conteneurEffetsEau.AddChild(goutte);
+
+			Vector3 cibleMontee = centre + new Vector3(Mathf.Cos(angle) * rayon * 0.55f, montee, Mathf.Sin(angle) * rayon * 0.55f);
+			Vector3 cibleDescente = centre + new Vector3(Mathf.Cos(angle) * rayon, rng.RandfRange(0.0f, 0.03f), Mathf.Sin(angle) * rayon);
+
+			var tw = CreateTween();
+			tw.TweenProperty(goutte, "global_position", cibleMontee, dureeMontee).SetTrans(Tween.TransitionType.Quad).SetEase(Tween.EaseType.Out);
+			tw.TweenProperty(goutte, "global_position", cibleDescente, dureeDescente).SetTrans(Tween.TransitionType.Quad).SetEase(Tween.EaseType.In);
+			tw.Parallel().TweenProperty(goutte, "scale", Vector3.Zero, dureeMontee + dureeDescente).SetTrans(Tween.TransitionType.Quad).SetEase(Tween.EaseType.In);
+			tw.Finished += () =>
+			{
+				if (GodotObject.IsInstanceValid(goutte))
+					goutte.QueueFree();
+			};
+		}
 	}
 
 	private void EnvoyerFuseauHoraireAuPeer(long peerId)

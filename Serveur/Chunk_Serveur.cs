@@ -253,6 +253,8 @@ public partial class Chunk_Serveur : RefCounted
 
 			// Pass L-System : injection des Chênes (voxels bois ID 30, feuilles ID 31)
 			InjecterArbresLSystem();
+			// Garantie de lisibilité gameplay: au moins un buisson si le chunk contient du gazon.
+			AssurerBuissonMinimalDansChunk();
 			// RÈGLE : Chunk procédural non touché par le joueur → jamais sauvegardé (régénération à la demande).
 		}
 	}
@@ -262,6 +264,7 @@ public partial class Chunk_Serveur : RefCounted
 	{
 		const float chanceArbre = 0.06f;
 		const int espacementMin = 4;
+		bool arbreAjoute = false;
 		for (int x = 2; x < TailleChunk - 2; x += espacementMin)
 		for (int z = 2; z < TailleChunk - 2; z += espacementMin)
 		{
@@ -287,7 +290,61 @@ public partial class Chunk_Serveur : RefCounted
 			// Âges 1–10 à la génération (pas que des bébés)
 			int stage = (int)(seedArbre % 10);
 			InventaireArbres[racine] = new DonneesArbre { Stage = (byte)stage, Seed = seedArbre };
+			arbreAjoute = true;
 		}
+
+		if (arbreAjoute || InventaireArbres.Count > 0) return;
+
+		// Fallback machine/biome : si le tirage standard n'a rien donné, on force un arbre
+		// sur un point viable (herbe + terrain plat), sans filtrage humidité.
+		for (int x = 2; x < TailleChunk - 2; x += 2)
+		for (int z = 2; z < TailleChunk - 2; z += 2)
+		{
+			int xGlobal = ChunkOffsetX * TailleChunk + x;
+			int zGlobal = ChunkOffsetZ * TailleChunk + z;
+			if (!TerrainAssezPlat(xGlobal, zGlobal)) continue;
+
+			int hauteurSurface = CalculerHauteurTerrain(xGlobal, zGlobal);
+			if (hauteurSurface < 0 || hauteurSurface >= HauteurMax - 1) continue;
+			if (hauteurSurface <= 2) continue;
+
+			lock (_verrouVoxel)
+			{
+				if (_materials[x, hauteurSurface, z] != 1) continue;
+			}
+
+			var racine = new Vector3I(xGlobal, hauteurSurface + 1, zGlobal);
+			uint seedArbre = (uint)((xGlobal * 73856093) ^ (zGlobal * 19349663));
+			int stage = (int)(seedArbre % 10);
+			InventaireArbres[racine] = new DonneesArbre { Stage = (byte)stage, Seed = seedArbre };
+			return;
+		}
+	}
+
+	/// <summary>Assure un minimum visuel : au moins un buisson s'il existe du gazon dans le chunk.</summary>
+	private void AssurerBuissonMinimalDansChunk()
+	{
+		if (InventaireFlore.Count == 0) return;
+		foreach (var kv in InventaireFlore)
+			if (EstTypeBuisson(kv.Value))
+				return;
+
+		bool trouve = false;
+		Vector3I candidat = default;
+		uint hashMin = uint.MaxValue;
+		foreach (var kv in InventaireFlore)
+		{
+			if (kv.Value != FloreTypeGazon) continue;
+			uint h = (uint)(kv.Key.X * 73856093) ^ (uint)(kv.Key.Z * 19349663) ^ (uint)(kv.Key.Y * 83492791);
+			if (!trouve || h < hashMin)
+			{
+				hashMin = h;
+				candidat = kv.Key;
+				trouve = true;
+			}
+		}
+		if (!trouve) return;
+		InventaireFlore[candidat] = ConstruireTypeBuisson(VarianteCouleurBuissonRouge, true);
 	}
 
 	private int CalculerHauteurTerrain(int xGlobal, int zGlobal)
@@ -543,6 +600,7 @@ public partial class Chunk_Serveur : RefCounted
 			if (chanceDePousse > 0f && DeterministicRand(xGlobal, zGlobal) < chanceDePousse)
 				InventaireFlore[pos] = ConstruireTypeBuisson(VarianteCouleurBuissonRouge, DeterministicRand(xGlobal + 17f, zGlobal) < 0.5f);
 		}
+		AssurerBuissonMinimalDansChunk();
 	}
 
 	/// <summary>Scanne la surface chargée et remplit InventaireFlore (chunks du disque). Gazon partout sur ID 1.</summary>
@@ -569,6 +627,7 @@ public partial class Chunk_Serveur : RefCounted
 				if (chanceDePousse > 0f && DeterministicRand(xGlobal, zGlobal) < chanceDePousse)
 					InventaireFlore[posGlobale] = ConstruireTypeBuisson(VarianteCouleurBuissonRouge, DeterministicRand(xGlobal + 17f, zGlobal) < 0.5f);
 			}
+		AssurerBuissonMinimalDansChunk();
 	}
 
 	/// <summary>Crible gravitationnel : purger les buissons dont le bloc support a été miné (évite lévitation).</summary>

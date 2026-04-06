@@ -431,7 +431,11 @@ public partial class Joueur
         else if (id == 999 || id == BlocChutant.ID_BRANCHE || id == IdObjetBaie || ItemPhysique.EstIdRocheMatiere(id) || id == 15 || id == 16 || id == 17 || id == 20 || id == 21 || id == IdObjetCeinturePoches || id == IdObjetCeintureSacoches || id == IdObjetPochetteTier0 || id == IdObjetSacTier0 || id == 30 || id == 32 || id == 34 || id == 105 || id == 106 || id == IdObjetPellePierreTier0 || id == IdObjetPiochePierreTier0 || id == 200)
         {
             Node3D nePose = CreerBlocPose(pointDeChute, mainActive);
-            if (id != 200)
+            // Clic droit rapide : un objet lançable doit se déposer au sol sans mini-impulsion.
+            // La poussée douce reste utile pour les poses via touche Interagir.
+            bool estLancable = EstObjetLancableAuMaintien(mainActive);
+            bool appliquerImpulsionPose = id != 200 && (depuisInteragir || !estLancable);
+            if (appliquerImpulsionPose)
                 AppliquerImpulsionLacherDoux(nePose);
         }
 
@@ -445,6 +449,15 @@ public partial class Joueur
 
         ReinitialiserRotationManuelle();
         RafraichirHUD();
+    }
+
+    private bool EstObjetLancableAuMaintien(SlotInventaire slot)
+    {
+        if (slot.EstVide) return false;
+        bool estTerrainVoxel = slot.ID >= 1 && slot.ID <= 9;
+        bool estAtelier = slot.ID == 200;
+        bool estBuisson = slot.ID == 10 || slot.ID == 11;
+        return !estTerrainVoxel && !estAtelier && !estBuisson;
     }
 
     /// <summary>Clic droit court : si la visée est le sol et l’outil peut faucher, exécute le même fauchage que le clic gauche (gazon 3D → fibres).</summary>

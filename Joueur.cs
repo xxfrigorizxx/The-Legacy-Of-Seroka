@@ -516,15 +516,17 @@ public partial class Joueur : CharacterBody3D
         }
         else if (@event.IsActionReleased("clic_droit"))
         {
+            // PRIORITÉ ABSOLUE : si la visée touche un atelier posé, on ouvre le plan 3x3
+            // avant toute logique de pose/lancer de l'objet en main.
+            if (EssayerOuvrirAtelierSousVisee())
+            {
+                _forceLancer = 0f;
+                return;
+            }
+
             SlotInventaire mainActive = MainGaucheEstActive ? MainGauche : MainDroite;
             if (!mainActive.EstVide)
             {
-                // Clic droit court sur atelier posé : ouvrir le plan de travail.
-                if (_forceLancer < 0.5f && EssayerOuvrirAtelierSousVisee())
-                {
-                    _forceLancer = 0f;
-                    return;
-                }
                 // IDENTIFICATION DE LA MATIÈRE : Est-ce du terrain (Voxel) ?
                 bool estTerrainVoxel = mainActive.ID >= 1 && mainActive.ID <= 9;
                 bool estAtelierEnMain = mainActive.ID == 200;

@@ -52,6 +52,7 @@ public partial class MenuAnatomie : Control
 	private const string CheminEquipementSacSlot = "MarginPrincipal/VBoxPrincipal/CorpsHBox/GrilleEquipCorps/EquipementSacSlot";
 	private const string CheminGrilleAssemblage = "MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/LigneCraft/CadreCraft/GrilleAssemblage";
 	private const string CheminSlotResultatCraft = "MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/LigneCraft/CraftSortie";
+	private const string CheminLigneMainsCeinture = "MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/LigneMainsCeinture";
 
 	private bool _clicsMainsConnectes;
 	private bool _clicsSlotCeintureConnecte;
@@ -1244,13 +1245,19 @@ public partial class MenuAnatomie : Control
 		if (ObtenirGrilleSac() is GridContainer sac)
 		{
 			sac.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
-			// Grille cachée : pas d’expansion verticale (sinon trou sous les mains) ; visible avec sac : prend l’espace restant.
-			sac.SizeFlagsVertical = sac.Visible ? Control.SizeFlags.ExpandFill : Control.SizeFlags.ShrinkBegin;
+			// Le sac ne doit jamais pousser les slots des mains hors écran.
+			sac.SizeFlagsVertical = Control.SizeFlags.ShrinkBegin;
 		}
 		if (ObtenirGrilleCeintureStockage() is GridContainer ceintSt)
 		{
 			ceintSt.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
-			ceintSt.SizeFlagsVertical = ceintSt.Visible ? Control.SizeFlags.ExpandFill : Control.SizeFlags.ShrinkBegin;
+			ceintSt.SizeFlagsVertical = Control.SizeFlags.ShrinkBegin;
+		}
+		if (GetNodeOrNull<HBoxContainer>(CheminLigneMainsCeinture) is HBoxContainer ligneMains)
+		{
+			ligneMains.Visible = true;
+			ligneMains.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+			ligneMains.SizeFlagsVertical = Control.SizeFlags.ShrinkBegin;
 		}
 	}
 
@@ -1394,7 +1401,7 @@ public partial class MenuAnatomie : Control
 			bool afficher = _joueurRef.ASacEquipe();
 			grilleSac.Visible = afficher;
 			grilleSac.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
-			grilleSac.SizeFlagsVertical = afficher ? Control.SizeFlags.ExpandFill : Control.SizeFlags.ShrinkBegin;
+			grilleSac.SizeFlagsVertical = Control.SizeFlags.ShrinkBegin;
 			for (int i = 0; i < grilleSac.GetChildCount(); i++)
 			{
 				if (grilleSac.GetChild(i) is not Control c) continue;
@@ -1415,7 +1422,7 @@ public partial class MenuAnatomie : Control
 			bool afficherC = _joueurRef.ACeintureSacochesEquipe();
 			grilleCeintSt.Visible = afficherC;
 			grilleCeintSt.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
-			grilleCeintSt.SizeFlagsVertical = afficherC ? Control.SizeFlags.ExpandFill : Control.SizeFlags.ShrinkBegin;
+			grilleCeintSt.SizeFlagsVertical = Control.SizeFlags.ShrinkBegin;
 			for (int i = 0; i < grilleCeintSt.GetChildCount() && i < 4; i++)
 			{
 				if (grilleCeintSt.GetChild(i) is not Control c) continue;

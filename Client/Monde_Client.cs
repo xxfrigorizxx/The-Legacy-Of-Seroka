@@ -43,6 +43,10 @@ public partial class Monde_Client : Node3D
 	private List<ChunkData> _fileAttenteSolidification = new List<ChunkData>();
 
 	private List<Vector2I> _chunksACharger = new List<Vector2I>();
+	private readonly HashSet<Vector2I> _prioritaireSetTemp = new HashSet<Vector2I>();
+	private readonly List<Vector2I> _prioritaireListTemp = new List<Vector2I>();
+	private readonly HashSet<Vector2I> _chunksUniquesTemp = new HashSet<Vector2I>();
+	private readonly List<Vector2I> _chunksATuerTemp = new List<Vector2I>();
 	private bool _radarEnCours;
 	private HashSet<(int cx, int cz, int section)> _sectionsAReconstruire = new HashSet<(int, int, int)>();
 	private CharacterBody3D _joueur;
@@ -384,11 +388,11 @@ public partial class Monde_Client : Node3D
 		// 1. PRIORITÉ ABSOLUE : Reconstruire les chunks modifiés (minage/pose) pour que le terrain se mette à jour
 		if (hadModifications)
 		{
-			var chunksUniques = new HashSet<Vector2I>();
+			_chunksUniquesTemp.Clear();
 			foreach (var cible in _sectionsAReconstruire)
-				chunksUniques.Add(new Vector2I(cible.cx, cible.cz));
+				_chunksUniquesTemp.Add(new Vector2I(cible.cx, cible.cz));
 			_sectionsAReconstruire.Clear();
-			foreach (Vector2I coord in chunksUniques)
+			foreach (Vector2I coord in _chunksUniquesTemp)
 				ExecuterReconstructionPrioritaire(coord);
 			// Gel de Production : l'univers s'arrête de naître pendant cette frame.
 			return;
@@ -422,14 +426,14 @@ public partial class Monde_Client : Node3D
 		// Priorité : couvrir RayonDormancePhysique + marge (l’ancien 9×9 était trop petit vs grille 17×17 pour R=8).
 		Vector2I chunkPieds = Gestionnaire_Monde.WorldToChunkCoord(positionObservation, TailleChunk);
 		int rayonPriorite = RayonDormancePhysique + Mathf.Max(0, MargePreloadChunks);
-		var prioritaireSet = new HashSet<Vector2I>();
+		_prioritaireSetTemp.Clear();
 		void AjouterAnneauManquant(Vector2I centre, int rayonDemi)
 		{
 			for (int dx = -rayonDemi; dx <= rayonDemi; dx++)
 				for (int dz = -rayonDemi; dz <= rayonDemi; dz++)
 				{
 					var v = new Vector2I(centre.X + dx, centre.Y + dz);
-					if (!_chunksData.ContainsKey(v)) prioritaireSet.Add(v);
+					if (!_chunksData.ContainsKey(v)) _prioritaireSetTemp.Add(v);
 				}
 		}
 		AjouterAnneauManquant(chunkPieds, rayonPriorite);
@@ -445,11 +449,12 @@ public partial class Monde_Client : Node3D
 				AjouterAnneauManquant(chunkFutur, rayonAvant);
 			}
 		}
-		var prioritaire = new List<Vector2I>(prioritaireSet);
-		if (prioritaire.Count > 0)
+		if (_prioritaireSetTemp.Count > 0)
 		{
-			_chunksACharger.RemoveAll(c => prioritaire.Contains(c));
-			_chunksACharger.InsertRange(0, prioritaire);
+			RetirerChunksDeLaFile(_prioritaireSetTemp);
+			_prioritaireListTemp.Clear();
+			_prioritaireListTemp.AddRange(_prioritaireSetTemp);
+			_chunksACharger.InsertRange(0, _prioritaireListTemp);
 		}
 
 		if (_modificationEnCours) return;
@@ -497,24 +502,25 @@ public partial class Monde_Client : Node3D
 	private void PurgerChunksObsolètesDeLaFile(Vector3 positionObservation)
 	{
 		float rayonMaxCarre = (RenderDistance + 1) * (RenderDistance + 1);
-		_chunksACharger.RemoveAll(c =>
+		for (int i = _chunksACharger.Count - 1; i >= 0; i--)
 		{
-			float d2 = DistanceCarreeAuJoueur(c, positionObservation);
-			return d2 > rayonMaxCarre;
-		});
+			float d2 = DistanceCarreeAuJoueur(_chunksACharger[i], positionObservation);
+			if (d2 > rayonMaxCarre)
+				_chunksACharger.RemoveAt(i);
+		}
 	}
 
 	/// <summary>Sénescence : retire de la mémoire les chunks au-delà du rayon + hystérésis. Libère les RIDs (RenderingServer/PhysicsServer3D).</summary>
 	private void NettoyerChunksObsoles(Vector3 positionObservation)
 	{
 		float seuilCarree = (RenderDistance + 2) * (RenderDistance + 2);
-		var chunksATuer = new List<Vector2I>();
+		_chunksATuerTemp.Clear();
 		foreach (var kv in _chunksData)
 		{
 			if (DistanceCarreeAuJoueur(kv.Key, positionObservation) > seuilCarree)
-				chunksATuer.Add(kv.Key);
+				_chunksATuerTemp.Add(kv.Key);
 		}
-		foreach (Vector2I coord in chunksATuer)
+		foreach (Vector2I coord in _chunksATuerTemp)
 		{
 			if (_chunksData.TryGetValue(coord, out var data))
 			{
@@ -523,6 +529,14 @@ public partial class Monde_Client : Node3D
 				NettoyerRegistreReconstruction(coord);
 			}
 		}
+	}
+
+	private void RetirerChunksDeLaFile(HashSet<Vector2I> aRetirer)
+	{
+		if (aRetirer == null || aRetirer.Count == 0 || _chunksACharger.Count == 0) return;
+		for (int i = _chunksACharger.Count - 1; i >= 0; i--)
+			if (aRetirer.Contains(_chunksACharger[i]))
+				_chunksACharger.RemoveAt(i);
 	}
 
 	/// <summary>Extraction radiale : le chunk à distance minimale de l'épicentre (caméra/joueur). DistanceSquaredTo évite la racine.</summary>
