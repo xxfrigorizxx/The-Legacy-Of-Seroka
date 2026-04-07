@@ -11,6 +11,16 @@ public partial class Gestionnaire_Monde : Node3D
 	[Export] public int HauteurMax = 720;  // Montagnes jusqu'à 700
 	[Export] public int SeedTerrain = 19847;
 	[Export] public int RenderDistance = 200;
+	[Export] public int RenderDistanceDetailChunks = 15;
+	[Export] public int RayonQualiteProcheChunks = 7;
+	[Export] public int RayonGazonVisibleChunks = 12;
+	[Export] public int RayonBuissonsVisibleChunks = 24;
+	[Export] public bool ActiverHorizonLod = false;
+	[Export] public int RayonHorizonChunks = 72;
+	[Export] public float PasHorizonMetres = 20f;
+	[Export] public bool ActiverCullingCameraChunks = true;
+	[Export] public float AngleCullingCameraDeg = 135f;
+	[Export] public int MargeChunksToujoursVisibles = 12;
 	/// <summary>Requêtes réseau / chargement par frame côté client. Monde gigantesque : 4 est trop lent pour que le sol et les collisions suivent la marche.</summary>
 	[Export] public int MaxChunksParFrame = 12;
 	/// <summary>Fuseau horaire du Monde 1. Québec = -5, Paris = +1, UTC = 0.</summary>
@@ -595,6 +605,16 @@ public partial class Gestionnaire_Monde : Node3D
 		_mondeClient.TailleChunk = TailleChunk;
 		_mondeClient.HauteurMax = HauteurMax;
 		_mondeClient.RenderDistance = RenderDistance;
+		_mondeClient.RenderDistanceDetailChunks = RenderDistanceDetailChunks;
+		_mondeClient.RayonQualiteMaxChunks = RayonQualiteProcheChunks;
+		_mondeClient.RayonGazonVisibleChunks = RayonGazonVisibleChunks;
+		_mondeClient.RayonBuissonsVisibleChunks = RayonBuissonsVisibleChunks;
+		_mondeClient.ActiverHorizonLod = ActiverHorizonLod;
+		_mondeClient.RayonHorizonChunks = RayonHorizonChunks;
+		_mondeClient.PasHorizonMetres = PasHorizonMetres;
+		_mondeClient.ActiverCullingCameraChunks = ActiverCullingCameraChunks;
+		_mondeClient.AngleCullingCameraDeg = AngleCullingCameraDeg;
+		_mondeClient.MargeChunksToujoursVisibles = MargeChunksToujoursVisibles;
 		_mondeClient.MaxChunksParFrame = MaxChunksParFrame;
 		_mondeClient.MaterielTerrain = MaterielTerrain ?? GD.Load<Material>("res://Manteau_Planetaire.tres");
 		_mondeClient.Initialiser(
@@ -635,6 +655,7 @@ public partial class Gestionnaire_Monde : Node3D
 		var cycleSolaire = GetParent()?.GetNodeOrNull<Cycle_Solaire>("CycleSolaire");
 		if (cycleSolaire != null)
 		{
+			cycleSolaire.ConfigurerDistanceBrouillardProgressive(RenderDistance, TailleChunk, 2);
 			cycleSolaire.Connect("NouveauJour", Callable.From(() =>
 			{
 				GameState.Instance?.IncrementerJourAbsolu();
@@ -749,10 +770,10 @@ public partial class Gestionnaire_Monde : Node3D
 			var goutte = new MeshInstance3D
 			{
 				Mesh = new QuadMesh { Size = new Vector2(taille, taille) },
-				MaterialOverride = mat,
-				GlobalPosition = centre + new Vector3(rng.RandfRange(-0.04f, 0.04f), 0f, rng.RandfRange(-0.04f, 0.04f))
+				MaterialOverride = mat
 			};
 			_conteneurEffetsEau.AddChild(goutte);
+			goutte.GlobalPosition = centre + new Vector3(rng.RandfRange(-0.04f, 0.04f), 0f, rng.RandfRange(-0.04f, 0.04f));
 
 			Vector3 cibleMontee = centre + new Vector3(Mathf.Cos(angle) * rayon * 0.55f, montee, Mathf.Sin(angle) * rayon * 0.55f);
 			Vector3 cibleDescente = centre + new Vector3(Mathf.Cos(angle) * rayon, rng.RandfRange(0.0f, 0.03f), Mathf.Sin(angle) * rayon);

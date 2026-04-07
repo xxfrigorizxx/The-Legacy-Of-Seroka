@@ -58,6 +58,12 @@ public partial class Chunk_Client : Node3D
 
 	/// <summary>Échelle du gazon (grass.glb) partout sur ID 1. Ajustable pour uniformiser la taille.</summary>
 	public static float EchelleGazon = 2f;
+	/// <summary>Zone proche en chunks: conserve la densité maximale de la flore.</summary>
+	public static int RayonQualiteMaxChunks = 7;
+	/// <summary>Distance max d'affichage du gazon en chunks (au-delà: supprimé).</summary>
+	public static int RayonVisibiliteGazonChunks = 12;
+	/// <summary>Distance max d'affichage des buissons en chunks (LOD lointain possible).</summary>
+	public static int RayonVisibiliteBuissonsChunks = 24;
 
 	[Export] public Material MaterielTerre;
 
@@ -1529,7 +1535,7 @@ void fragment() {
 		return node;
 	}
 
-	private static void ConstruireListesTransformBuissonsDepuisChunkData(ChunkData data, List<Transform3D> pleins, List<Transform3D> vides)
+	private static void ConstruireListesTransformBuissonsDepuisChunkData(ChunkData data, Vector3 positionObservation, List<Transform3D> pleins, List<Transform3D> vides)
 	{
 		pleins.Clear();
 		vides.Clear();
@@ -1537,9 +1543,14 @@ void fragment() {
 		float originX = data.Coordonnees.X * (float)data.TailleChunk;
 		float originZ = data.Coordonnees.Y * (float)data.TailleChunk;
 		Vector3 chunkOrigin = new Vector3(originX, 0, originZ);
+		float rayonBuissons = Mathf.Max(2, RayonVisibiliteBuissonsChunks) * data.TailleChunk;
+		float rayonBuissonsCarre = rayonBuissons * rayonBuissons;
 		foreach (var kv in data.InventaireFlore)
 		{
 			if (!Chunk_Serveur.EstTypeBuisson(kv.Value)) continue;
+			Vector3 posMonde = new Vector3(kv.Key.X + 0.5f, kv.Key.Y + 0.5f, kv.Key.Z + 0.5f);
+			float distCarree = posMonde.DistanceSquaredTo(positionObservation);
+			if (distCarree > rayonBuissonsCarre) continue;
 			Vector3 positionLocale = new Vector3(kv.Key.X, kv.Key.Y + 0.5f, kv.Key.Z) - chunkOrigin + new Vector3(0.5f, 0f, 0.5f);
 			float angle = (float)((kv.Key.X * 73856093 ^ kv.Key.Z * 19349663) % 10000) / 10000f * Mathf.Tau;
 			uint h = (uint)(kv.Key.X * 73856093) ^ (uint)(kv.Key.Z * 19349663) ^ (uint)(kv.Key.Y * 83492791);
@@ -1581,7 +1592,7 @@ void fragment() {
 
 		var pleins = new List<Transform3D>();
 		var vides = new List<Transform3D>();
-		ConstruireListesTransformBuissonsDepuisChunkData(data, pleins, vides);
+		ConstruireListesTransformBuissonsDepuisChunkData(data, positionObservation, pleins, vides);
 
 		if (_cacheMeshPlein == null) _cacheMeshPlein = GenererMeshBuissonProcedural(true);
 		if (_cacheMeshVide == null) _cacheMeshVide = GenererMeshBuissonProcedural(false);
@@ -1627,7 +1638,7 @@ void fragment() {
 
 		var pleins = new List<Transform3D>();
 		var vides = new List<Transform3D>();
-		ConstruireListesTransformBuissonsDepuisChunkData(data, pleins, vides);
+		ConstruireListesTransformBuissonsDepuisChunkData(data, positionObservation, pleins, vides);
 
 		var mmiPlein = nodeFlore.GetNodeOrNull<MultiMeshInstance3D>("BuissonPlein");
 		if (pleins.Count > 0)
@@ -1700,6 +1711,10 @@ void fragment() {
 	{
 		var liste = new List<(Transform3D t, Color c)>();
 		if (data?.InventaireFlore == null || data.InventaireFlore.Count == 0) return liste;
+		float rayonGazon = Mathf.Max(1, RayonVisibiliteGazonChunks) * data.TailleChunk;
+		float rayonGazonCarre = rayonGazon * rayonGazon;
+		float rayonQualite = Mathf.Max(1, RayonQualiteMaxChunks) * data.TailleChunk;
+		float rayonQualiteCarre = rayonQualite * rayonQualite;
 		var zonesSansGazon = new HashSet<Vector3I>();
 		foreach (var kvBuisson in data.InventaireFlore)
 		{
@@ -1714,11 +1729,14 @@ void fragment() {
 		foreach (var kv in data.InventaireFlore)
 		{
 			if (kv.Value != 0 || zonesSansGazon.Contains(kv.Key)) continue; // gazon uniquement, sans voisinage buisson
+			Vector3 posMonde = new Vector3(kv.Key.X + 0.5f, kv.Key.Y + 0.5f, kv.Key.Z + 0.5f);
+			float distCarree = posMonde.DistanceSquaredTo(positionObservation);
+			if (distCarree > rayonGazonCarre) continue;
 			Vector3 positionLocale = new Vector3(kv.Key.X, kv.Key.Y + 0.5f, kv.Key.Z) - chunkOrigin + new Vector3(0.5f, 0f, 0.5f);
 			Color couleurSol = ObtenirCouleurTerrainDepuisChunkData(data, kv.Key.X, kv.Key.Y, kv.Key.Z);
 			Color couleurHerbe = new Color(couleurSol.R * 0.8f, couleurSol.G * 0.8f, couleurSol.B * 0.8f, 1f).Lerp(new Color(0.7f, 0.8f, 1f), 0.1f);
 			uint hashBase = (uint)(kv.Key.X * 73856093) ^ (uint)(kv.Key.Z * 19349663);
-			int densiteGazon = 14;
+			int densiteGazon = distCarree <= rayonQualiteCarre ? 14 : (distCarree <= rayonQualiteCarre * 2.6f ? 7 : 3);
 			for (int i = 0; i < densiteGazon; i++)
 			{
 				uint h_brin = hashBase ^ (uint)(i * 83492791);

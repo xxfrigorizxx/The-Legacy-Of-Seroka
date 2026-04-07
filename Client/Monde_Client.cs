@@ -11,7 +11,24 @@ public partial class Monde_Client : Node3D
 	[Export] public int TailleChunk = 16;
 	[Export] public int HauteurMax = 720;  // Montagnes jusqu'à 700
 	[Export] public int RenderDistance = 200;
+	[Export] public int RenderDistanceDetailChunks = 15;
+	[Export] public int RayonQualiteMaxChunks = 7;
+	[Export] public int RayonGazonVisibleChunks = 12;
+	[Export] public int RayonBuissonsVisibleChunks = 24;
+	[Export] public bool ProfilLodCinematiqueUltraSmooth = true;
+	[Export] public int LODTextureEtapes = 12;
 	[Export] public int MaxChunksParFrame = 12;
+	[Export] public int RayonInitialRequetesChunks = 8;
+	[Export] public float IntervalleExpansionRequetesSec = 0.35f;
+	[Export] public int SeuilBacklogHaut = 36;
+	[Export] public int SeuilBacklogBas = 12;
+	[Export] public bool ActiverHorizonLod = false;
+	[Export] public int RayonHorizonChunks = 72;
+	[Export] public float PasHorizonMetres = 20f;
+	[Export] public float FrequenceMajHorizonSec = 1.2f;
+	[Export] public bool ActiverCullingCameraChunks = true;
+	[Export] public float AngleCullingCameraDeg = 135f;
+	[Export] public int MargeChunksToujoursVisibles = 12;
 	/// <summary>Rayon (en chunks) autour du joueur où les collisions sont actives. Tout dans ce rayon doit être dynamique (réveil immédiat). Au-delà, physique en dormance. 8 chunks ≈ 128 m (évite trous de collision en bordure).</summary>
 	[Export] public int RayonDormancePhysique = 8;
 	/// <summary>Demi-côté (chunks) pour lever l’overlay « Chargement du monde » : 2 = grille 5×5. Ne pas exiger tout le rayon de dormance (17×17) au démarrage sinon chargement quasi infini.</summary>
@@ -31,11 +48,11 @@ public partial class Monde_Client : Node3D
 	/// <summary>File d'attente d'intégration : les chunks (sections + flore) terminés en arrière-plan y sont déposés. Un seul élément est traité par frame pour éviter les micro-freezes.</summary>
 	private ConcurrentQueue<Action> _fileIntegrationMainThread = new ConcurrentQueue<Action>();
 
-	/// <summary>Forge restreinte : file des chunks en attente de calcul (maths). Au plus MaxTravailleurs Task.Run actifs.</summary>
+	/// <summary>Forge restreinte : file des chunks en attente de calcul (maths). Au plus MaxTravailleursCalcul Task.Run actifs.</summary>
 	private readonly object _lockFileAttenteMaths = new object();
 	private List<(ChunkData data, DonneesChunk donnees)> _fileAttenteMathsData = new List<(ChunkData, DonneesChunk)>();
 	private int _chunksEnCoursDeCalcul = 0;
-	private const int MaxTravailleurs = 4;
+	[Export] public int MaxTravailleursCalcul = 8;
 
 	/// <summary>Chunks au format Data-Oriented (RID). Plus de Node pour le terrain.</summary>
 	private Dictionary<Vector2I, ChunkData> _chunksData = new Dictionary<Vector2I, ChunkData>();
@@ -52,6 +69,15 @@ public partial class Monde_Client : Node3D
 	private CharacterBody3D _joueur;
 	private Vector2I _ancienChunkJoueur = new Vector2I(-99999, -99999);
 	private bool _modificationEnCours;
+	private MeshInstance3D _horizonLodMesh;
+	private static StandardMaterial3D _cacheMatHorizon;
+	private Vector2I _centreHorizonCell = new Vector2I(int.MinValue, int.MinValue);
+	private float _timerMajHorizon = 0f;
+	private float _timerCullingCamera = 0f;
+	private readonly List<Vector2I> _fileFloreDifferee = new List<Vector2I>();
+	private readonly HashSet<Vector2I> _setFloreDifferee = new HashSet<Vector2I>();
+	private int _rayonRequetesActuel;
+	private float _timerExpansionRequetes;
 
 	private Action<Vector2I> _enregistrerDemandeChunk;
 	private Action<Vector3, float, float> _demanderDestruction;
@@ -67,6 +93,35 @@ public partial class Monde_Client : Node3D
 		// Assure-toi que les chemins correspondent à ton arborescence exacte
 		_slotGauche = GetNode<Panel>("../HUD_Inventaire/Conteneur_Ancrage/Boite_Slots/Slot_Main_Gauche");
 		_slotDroite = GetNode<Panel>("../HUD_Inventaire/Conteneur_Ancrage/Boite_Slots/Slot_Main_Droite");
+		InitialiserHorizonLointain();
+	}
+
+	private int RayonDetailChunksActif()
+	{
+		int max = Mathf.Max(6, RenderDistance);
+		int detail = Mathf.Clamp(RenderDistanceDetailChunks, 6, max);
+		return Mathf.Min(detail, max);
+	}
+
+	private void AppliquerParametresLodTextureTerrain()
+	{
+		if (!(MaterielTerrain is ShaderMaterial sm)) return;
+		float detailMetres = RayonDetailChunksActif() * TailleChunk;
+		float start = Mathf.Max(240f, Mathf.Max(15f, RayonDetailChunksActif() + 4f) * TailleChunk);
+		if (ProfilLodCinematiqueUltraSmooth) start += TailleChunk * 4f;
+		float end = start + Mathf.Max(1800f, Mathf.Max(RenderDistance, RayonHorizonChunks) * TailleChunk * 8f);
+		float mip = ProfilLodCinematiqueUltraSmooth ? 2.8f : 3.4f;
+		float blend = ProfilLodCinematiqueUltraSmooth ? 0.92f : 0.82f;
+		float jitter = ProfilLodCinematiqueUltraSmooth ? 84f : 56f;
+		float steps = Mathf.Clamp(LODTextureEtapes, 8, 24);
+
+		sm.SetShaderParameter("lod_texture_start", start);
+		sm.SetShaderParameter("lod_texture_end", end);
+		sm.SetShaderParameter("lod_far_mip", mip);
+		sm.SetShaderParameter("lod_steps", steps);
+		sm.SetShaderParameter("lod_step_blend", blend);
+		sm.SetShaderParameter("lod_start_jitter", jitter);
+		_ = detailMetres; // garde explicite la base physique (chunks->mètres) pour future extension.
 	}
 
 	public void Initialiser(CharacterBody3D joueur, int seed, Action<Vector2I> enregistrerDemandeChunk,
@@ -77,6 +132,12 @@ public partial class Monde_Client : Node3D
 		_enregistrerDemandeChunk = enregistrerDemandeChunk;
 		_demanderDestruction = demanderDestruction;
 		_demanderCreation = demanderCreation;
+		Chunk_Client.RayonQualiteMaxChunks = Mathf.Max(1, RayonQualiteMaxChunks);
+		Chunk_Client.RayonVisibiliteGazonChunks = Mathf.Max(1, RayonGazonVisibleChunks);
+		Chunk_Client.RayonVisibiliteBuissonsChunks = Mathf.Max(2, RayonBuissonsVisibleChunks);
+		_rayonRequetesActuel = Mathf.Max(RayonDormancePhysique + 1, RayonInitialRequetesChunks);
+		_timerExpansionRequetes = IntervalleExpansionRequetesSec;
+		AppliquerParametresLodTextureTerrain();
 	}
 
 	public void EnqueueMiseAJourMainThread(Action action) => _misesAJourMainThread.Enqueue(action);
@@ -134,30 +195,11 @@ public partial class Monde_Client : Node3D
 		RenderingServer.Singleton.InstanceSetScenario(instanceRid, world.Scenario);
 		RenderingServer.Singleton.InstanceSetTransform(instanceRid, transformChunk);
 
-		// 3. PhysicsServer3D : corps statique + forme (trimesh depuis le mesh fusionné)
-		Vector3[] faces = mergedMesh.GetFaces();
-		Shape3D shape = null;
-		if (faces != null && faces.Length > 0)
-		{
-			try { shape = mergedMesh.CreateTrimeshShape(); }
-			catch (Exception) { shape = null; }
-		}
-		if (shape == null) { RenderingServer.Singleton.FreeRid(instanceRid); return; }
-		Rid shapeRid = shape.GetRid();
-		Rid bodyRid = PhysicsServer3D.Singleton.BodyCreate();
-		PhysicsServer3D.Singleton.BodySetMode(bodyRid, PhysicsServer3D.BodyMode.Static);
-		// Ne pas insérer dans l'espace ici : dilution physique (un chunk par frame dans _PhysicsProcess).
-		PhysicsServer3D.Singleton.BodySetSpace(bodyRid, default(Rid));
-		PhysicsServer3D.Singleton.BodyAddShape(bodyRid, shapeRid);
-		PhysicsServer3D.Singleton.BodySetState(bodyRid, PhysicsServer3D.BodyState.Transform, transformChunk);
-		PhysicsServer3D.Singleton.BodySetCollisionLayer(bodyRid, 1);
-		PhysicsServer3D.Singleton.BodySetCollisionMask(bodyRid, 1);
-
 		data.VisualInstanceRID = instanceRid;
-		data.PhysicsBodyRID = bodyRid;
-		data.PhysicsShapeRID = shapeRid;
 		data._meshRef = mergedMesh;
-		data._shapeRef = shape;
+		data.PhysicsBodyRID = default;
+		data.PhysicsShapeRID = default;
+		data._shapeRef = null;
 
 		// Flore (gazon + buissons) : retirer l'ancien nœud si réintégration.
 		if (data._nodeFlore != null)
@@ -165,34 +207,27 @@ public partial class Monde_Client : Node3D
 			data._nodeFlore.QueueFree();
 			data._nodeFlore = null;
 		}
-		if (data.InventaireFlore != null && data.InventaireFlore.Count > 0)
-		{
-			Vector3 posObs = ObtenirPositionObservation();
-			var nodeFlore = Chunk_Client.CreerNoeudFlorePourChunkData(data, posObs, TailleChunk);
-			if (nodeFlore != null)
-			{
-				AddChild(nodeFlore);
-				data._nodeFlore = nodeFlore;
-			}
-		}
+		EnfilerFloreChunk(data, ObtenirPositionObservation());
 
-		// Mise en file de solidification : BodySetSpace sera appelé dans _PhysicsProcess (1 chunk/frame).
-		if (!data.EstEnFileSolidification)
-		{
-			_fileAttenteSolidification.Add(data);
-			data.EstEnFileSolidification = true;
-		}
-		// Réveil constant : même rayon que la dormance / la file diluée (caméra = observation).
+		// Physique lazy: créer la hitbox uniquement près du joueur, puis activer dans l'espace.
 		if (_joueur != null)
 		{
 			Vector2I cJoueur = Gestionnaire_Monde.WorldToChunkCoord(ObtenirPositionObservation(), TailleChunk);
 			int dx = Mathf.Abs(data.Coordonnees.X - cJoueur.X);
 			int dz = Mathf.Abs(data.Coordonnees.Y - cJoueur.Y);
-			if (dx <= RayonDormancePhysique && dz <= RayonDormancePhysique && data.PhysicsBodyRID.IsValid)
+			if (dx <= RayonDormancePhysique && dz <= RayonDormancePhysique)
 			{
-				_fileAttenteSolidification.Remove(data);
-				data.EstEnFileSolidification = false;
-				PhysicsServer3D.Singleton.BodySetSpace(data.PhysicsBodyRID, world.Space);
+				AssurerCorpsPhysiqueChunk(data);
+				if (data.PhysicsBodyRID.IsValid)
+				{
+					PhysicsServer3D.Singleton.BodySetSpace(data.PhysicsBodyRID, world.Space);
+					data.EstEnFileSolidification = false;
+				}
+			}
+			else if (!data.EstEnFileSolidification)
+			{
+				_fileAttenteSolidification.Add(data);
+				data.EstEnFileSolidification = true;
 			}
 		}
 
@@ -230,7 +265,7 @@ public partial class Monde_Client : Node3D
 	public void ReserverChunkSpawnPrioritaire(Vector2I coordSpawn)
 	{
 		// Cap strict : au plus ce qu’il faut pour la dormance + marge ; le radar remplira le reste progressivement.
-		int rayonSpawn = Mathf.Min(RenderDistance, Mathf.Max(RayonDormancePhysique + MargePreloadChunks + 8, 12));
+		int rayonSpawn = Mathf.Min(RayonDetailChunksActif(), Mathf.Max(RayonDormancePhysique + MargePreloadChunks + 8, 12));
 		var prioritaire = new List<Vector2I>();
 		for (int dx = -rayonSpawn; dx <= rayonSpawn; dx++)
 			for (int dz = -rayonSpawn; dz <= rayonSpawn; dz++)
@@ -255,27 +290,6 @@ public partial class Monde_Client : Node3D
 	{
 		if (!IsInsideTree()) return; // GARROT SPATIAL : pas de manipulation de chunks si l'arbre s'effondre.
 
-		// PRIORITÉ 1 : Collisions autour du point d'observation (même rayon que dormance) — AVANT TOUT.
-		if (_joueur != null && _fileAttenteSolidification.Count > 0)
-		{
-			Vector2I cJoueur = ObtenirCoordonneesChunkJoueur();
-			World3D w = GetWorld3D();
-			for (int dx = -RayonDormancePhysique; dx <= RayonDormancePhysique && w != null; dx++)
-				for (int dz = -RayonDormancePhysique; dz <= RayonDormancePhysique; dz++)
-				{
-					var c = new Vector2I(cJoueur.X + dx, cJoueur.Y + dz);
-					int idx = _fileAttenteSolidification.FindIndex(d => d.Coordonnees == c);
-					if (idx >= 0)
-					{
-						ChunkData d = _fileAttenteSolidification[idx];
-						_fileAttenteSolidification.RemoveAt(idx);
-						d.EstEnFileSolidification = false;
-						if (d.PhysicsBodyRID.IsValid)
-							PhysicsServer3D.Singleton.BodySetSpace(d.PhysicsBodyRID, w.Space);
-					}
-				}
-		}
-
 		// 2) Intégrations : chargement initial agressif ; exploration : plusieurs par frame pour suivre un monde infini.
 		bool enChargement = !ChunkSousPiedsAPret();
 		int maxIntegrations = enChargement ? 12 : Mathf.Max(1, MaxIntegrationsParFrameExploration);
@@ -288,55 +302,46 @@ public partial class Monde_Client : Node3D
 			integrations++;
 		}
 
-		// 3) Re-solidifier le même rayon après intégrations (chunks intégrés cette frame).
-		if (_joueur != null && _fileAttenteSolidification.Count > 0)
-		{
-			Vector2I cJoueur = ObtenirCoordonneesChunkJoueur();
-			World3D w = GetWorld3D();
-			for (int dx = -RayonDormancePhysique; dx <= RayonDormancePhysique && w != null; dx++)
-				for (int dz = -RayonDormancePhysique; dz <= RayonDormancePhysique; dz++)
-				{
-					var c = new Vector2I(cJoueur.X + dx, cJoueur.Y + dz);
-					int idx = _fileAttenteSolidification.FindIndex(d => d.Coordonnees == c);
-					if (idx >= 0)
-					{
-						ChunkData d = _fileAttenteSolidification[idx];
-						_fileAttenteSolidification.RemoveAt(idx);
-						d.EstEnFileSolidification = false;
-						if (d.PhysicsBodyRID.IsValid)
-							PhysicsServer3D.Singleton.BodySetSpace(d.PhysicsBodyRID, w.Space);
-					}
-				}
-		}
-
-		// 4) Solidification du reste de la file : pendant le chargement plus par frame, en jeu 1/frame.
+		// 3) Solidification physique lissée : crée/active les collisions proches en budget fixe.
 		if (_fileAttenteSolidification.Count > 0)
 		{
 			Vector2I coordObsSolidif = ObtenirCoordonneesChunkJoueur();
-			_fileAttenteSolidification.Sort((a, b) =>
-			{
-				int da = (a.Coordonnees.X - coordObsSolidif.X) * (a.Coordonnees.X - coordObsSolidif.X) + (a.Coordonnees.Y - coordObsSolidif.Y) * (a.Coordonnees.Y - coordObsSolidif.Y);
-				int db = (b.Coordonnees.X - coordObsSolidif.X) * (b.Coordonnees.X - coordObsSolidif.X) + (b.Coordonnees.Y - coordObsSolidif.Y) * (b.Coordonnees.Y - coordObsSolidif.Y);
-				return da.CompareTo(db);
-			});
-			int maxSolidifications = enChargement ? 14 : Mathf.Max(1, MaxSolidificationsParFrameExploration);
+			int maxSolidifications = enChargement ? 10 : Mathf.Max(1, MaxSolidificationsParFrameExploration);
 			int efforts = 0;
 			World3D w = GetWorld3D();
-			// Ne jamais retirer un chunk de la file sans BodySetSpace : sinon collision absente jusqu'à un prochain réveil de dormance.
 			while (_fileAttenteSolidification.Count > 0 && efforts < maxSolidifications)
 			{
-				ChunkData chunkASolidifier = _fileAttenteSolidification[0];
+				int idxProche = 0;
+				int dBest = int.MaxValue;
+				for (int i = 0; i < _fileAttenteSolidification.Count; i++)
+				{
+					ChunkData c = _fileAttenteSolidification[i];
+					int ddx = c.Coordonnees.X - coordObsSolidif.X;
+					int ddz = c.Coordonnees.Y - coordObsSolidif.Y;
+					int d2 = ddx * ddx + ddz * ddz;
+					if (d2 < dBest) { dBest = d2; idxProche = i; }
+				}
+				ChunkData chunkASolidifier = _fileAttenteSolidification[idxProche];
 				int dx = Mathf.Abs(chunkASolidifier.Coordonnees.X - coordObsSolidif.X);
 				int dz = Mathf.Abs(chunkASolidifier.Coordonnees.Y - coordObsSolidif.Y);
-				if (dx <= RayonDormancePhysique && dz <= RayonDormancePhysique && chunkASolidifier.PhysicsBodyRID.IsValid && w != null)
+				if (dx <= RayonDormancePhysique && dz <= RayonDormancePhysique && w != null)
 				{
-					_fileAttenteSolidification.RemoveAt(0);
-					chunkASolidifier.EstEnFileSolidification = false;
-					PhysicsServer3D.Singleton.BodySetSpace(chunkASolidifier.PhysicsBodyRID, w.Space);
+					AssurerCorpsPhysiqueChunk(chunkASolidifier);
+					if (chunkASolidifier.PhysicsBodyRID.IsValid)
+					{
+						_fileAttenteSolidification.RemoveAt(idxProche);
+						chunkASolidifier.EstEnFileSolidification = false;
+						PhysicsServer3D.Singleton.BodySetSpace(chunkASolidifier.PhysicsBodyRID, w.Space);
+					}
+					else
+					{
+						_fileAttenteSolidification.RemoveAt(idxProche);
+						_fileAttenteSolidification.Add(chunkASolidifier);
+					}
 				}
 				else
 				{
-					_fileAttenteSolidification.RemoveAt(0);
+					_fileAttenteSolidification.RemoveAt(idxProche);
 					_fileAttenteSolidification.Add(chunkASolidifier);
 				}
 				efforts++;
@@ -345,21 +350,24 @@ public partial class Monde_Client : Node3D
 
 		// FORGE RESTREINTE : lancer au plus MaxTravailleurs calculs en arrière-plan (tri par distance au joueur).
 		Vector2I obsChunk = ObtenirCoordonneesChunkJoueur();
-		while (Thread.VolatileRead(ref _chunksEnCoursDeCalcul) < MaxTravailleurs)
+		int maxTravailleurs = Mathf.Clamp(MaxTravailleursCalcul, 2, 16);
+		while (Thread.VolatileRead(ref _chunksEnCoursDeCalcul) < maxTravailleurs)
 		{
 			ChunkData chunkData = null;
 			DonneesChunk donnees = null;
 			lock (_lockFileAttenteMaths)
 			{
 				if (_fileAttenteMathsData.Count == 0) break;
-				_fileAttenteMathsData.Sort((a, b) =>
+				int best = 0;
+				float bestD = float.MaxValue;
+				for (int i = 0; i < _fileAttenteMathsData.Count; i++)
 				{
-					float da = (a.data.Coordonnees.X - obsChunk.X) * (a.data.Coordonnees.X - obsChunk.X) + (a.data.Coordonnees.Y - obsChunk.Y) * (a.data.Coordonnees.Y - obsChunk.Y);
-					float db = (b.data.Coordonnees.X - obsChunk.X) * (b.data.Coordonnees.X - obsChunk.X) + (b.data.Coordonnees.Y - obsChunk.Y) * (b.data.Coordonnees.Y - obsChunk.Y);
-					return da.CompareTo(db);
-				});
-				var job = _fileAttenteMathsData[0];
-				_fileAttenteMathsData.RemoveAt(0);
+					var c = _fileAttenteMathsData[i].data.Coordonnees;
+					float d = (c.X - obsChunk.X) * (c.X - obsChunk.X) + (c.Y - obsChunk.Y) * (c.Y - obsChunk.Y);
+					if (d < bestD) { bestD = d; best = i; }
+				}
+				var job = _fileAttenteMathsData[best];
+				_fileAttenteMathsData.RemoveAt(best);
 				chunkData = job.data;
 				donnees = job.donnees;
 			}
@@ -414,7 +422,12 @@ public partial class Monde_Client : Node3D
 		// Position d'observation : Caméra Active (caméra libre) ou corps du joueur — le verrou se base sur la caméra !
 		Camera3D cameraActive = GetViewport()?.GetCamera3D();
 		Vector3 positionObservation = cameraActive != null ? cameraActive.GlobalPosition : (_joueur?.GlobalPosition ?? Vector3.Zero);
+		Vector3 directionObservation = cameraActive != null ? (-cameraActive.GlobalTransform.Basis.Z).Normalized() :
+			(_joueur != null ? (-_joueur.GlobalTransform.Basis.Z).Normalized() : Vector3.Forward);
 		Vector2I chunkObservationActuel = Gestionnaire_Monde.WorldToChunkCoord(positionObservation, TailleChunk);
+		AjusterFenetreRequetes((float)delta);
+		MettreAJourHorizonLointain(positionObservation, (float)delta);
+		AppliquerCullingCameraChunks(positionObservation, directionObservation, (float)delta);
 
 		if (chunkObservationActuel != _ancienChunkJoueur)
 		{
@@ -422,6 +435,9 @@ public partial class Monde_Client : Node3D
 			ActualiserVisibiliteEtTriChunks(positionObservation);
 			ActualiserDormanceChunks(chunkObservationActuel.X, chunkObservationActuel.Y);
 		}
+
+		// Etale la flore sur plusieurs frames (supprime les gros spikes du premier chargement massif).
+		TraiterFloreDifferee(positionObservation, !ChunkSousPiedsAPret() ? 1 : 2);
 
 		// Priorité : couvrir RayonDormancePhysique + marge (l’ancien 9×9 était trop petit vs grille 17×17 pour R=8).
 		Vector2I chunkPieds = Gestionnaire_Monde.WorldToChunkCoord(positionObservation, TailleChunk);
@@ -462,12 +478,15 @@ public partial class Monde_Client : Node3D
 		// 3. Requêtes : extraction radiale + purge obsolètes. Si le chunk sous les pieds n'est pas chargé, on demande plus de chunks (catch-up côté client).
 		PurgerChunksObsolètesDeLaFile(positionObservation);
 		bool chunkPiedsManquant = !_chunksData.ContainsKey(chunkPieds);
-		int nbRequetes = chunkPiedsManquant ? Mathf.Min(MaxChunksParFrame * 3, 32) : MaxChunksParFrame;
+		int backlog = CompterBacklog();
+		int nbRequetes = chunkPiedsManquant ? Mathf.Min(MaxChunksParFrame * 2, 12) : MaxChunksParFrame;
+		if (backlog >= SeuilBacklogHaut) nbRequetes = Mathf.Max(1, nbRequetes / 3);
+		else if (backlog >= SeuilBacklogBas) nbRequetes = Mathf.Max(1, nbRequetes / 2);
 		for (int n = 0; n < nbRequetes && _chunksACharger.Count > 0; n++)
 		{
-			Vector2I chunkCible = ExtraireChunkLePlusProche(_chunksACharger, positionObservation);
+			Vector2I chunkCible = ExtraireChunkLePlusProche(_chunksACharger, positionObservation, directionObservation);
 			float distCarree = DistanceCarreeAuJoueur(chunkCible, positionObservation);
-			float rayonMaxCarre = (RenderDistance + 1) * (RenderDistance + 1);
+			float rayonMaxCarre = (_rayonRequetesActuel + 1) * (_rayonRequetesActuel + 1);
 			if (distCarree > rayonMaxCarre)
 				continue;
 			DemanderChunk(chunkCible);
@@ -479,6 +498,271 @@ public partial class Monde_Client : Node3D
 			_tempsDepuisNettoyage = 0f;
 			NettoyerChunksObsoles(positionObservation);
 		}
+	}
+
+	private void AssurerCorpsPhysiqueChunk(ChunkData data)
+	{
+		if (data == null || data.PhysicsBodyRID.IsValid || data._meshRef == null) return;
+		World3D world = GetWorld3D();
+		if (world == null) return;
+		Vector3[] faces = data._meshRef.GetFaces();
+		if (faces == null || faces.Length == 0) return;
+
+		Shape3D shape = null;
+		try { shape = data._meshRef.CreateTrimeshShape(); }
+		catch (Exception) { shape = null; }
+		if (shape == null) return;
+
+		Transform3D transformChunk = new Transform3D(
+			Basis.Identity,
+			GlobalPosition + new Vector3(data.Coordonnees.X * TailleChunk, 0, data.Coordonnees.Y * TailleChunk));
+
+		Rid shapeRid = shape.GetRid();
+		Rid bodyRid = PhysicsServer3D.Singleton.BodyCreate();
+		PhysicsServer3D.Singleton.BodySetMode(bodyRid, PhysicsServer3D.BodyMode.Static);
+		PhysicsServer3D.Singleton.BodySetSpace(bodyRid, default(Rid));
+		PhysicsServer3D.Singleton.BodyAddShape(bodyRid, shapeRid);
+		PhysicsServer3D.Singleton.BodySetState(bodyRid, PhysicsServer3D.BodyState.Transform, transformChunk);
+		PhysicsServer3D.Singleton.BodySetCollisionLayer(bodyRid, 1);
+		PhysicsServer3D.Singleton.BodySetCollisionMask(bodyRid, 1);
+
+		data.PhysicsShapeRID = shapeRid;
+		data.PhysicsBodyRID = bodyRid;
+		data._shapeRef = shape;
+	}
+
+	private void InitialiserHorizonLointain()
+	{
+		if (!ActiverHorizonLod || _horizonLodMesh != null) return;
+		_horizonLodMesh = new MeshInstance3D { Name = "HorizonLOD" };
+		_horizonLodMesh.CastShadow = GeometryInstance3D.ShadowCastingSetting.Off;
+
+		if (_cacheMatHorizon == null)
+		{
+			_cacheMatHorizon = new StandardMaterial3D
+			{
+				VertexColorUseAsAlbedo = true,
+				AlbedoColor = Colors.White,
+				Roughness = 1f,
+				Metallic = 0f,
+				ShadingMode = BaseMaterial3D.ShadingModeEnum.PerVertex,
+				CullMode = BaseMaterial3D.CullModeEnum.Disabled
+			};
+		}
+		_horizonLodMesh.MaterialOverride = _cacheMatHorizon;
+		AddChild(_horizonLodMesh);
+	}
+
+	private void MettreAJourHorizonLointain(Vector3 positionObservation, float dt)
+	{
+		if (!ActiverHorizonLod || _horizonLodMesh == null) return;
+		_timerMajHorizon -= dt;
+		float pas = Mathf.Max(16f, PasHorizonMetres);
+		Vector2I celluleActuelle = new Vector2I(
+			Mathf.FloorToInt(positionObservation.X / pas),
+			Mathf.FloorToInt(positionObservation.Z / pas));
+		if (_timerMajHorizon > 0f && celluleActuelle == _centreHorizonCell) return;
+
+		_timerMajHorizon = Mathf.Max(0.4f, FrequenceMajHorizonSec);
+		_centreHorizonCell = celluleActuelle;
+
+		float nearRadius = (RayonDetailChunksActif() + 10) * TailleChunk;
+		float farRadius = Mathf.Max(nearRadius + TailleChunk * 10f, RayonHorizonChunks * TailleChunk);
+		if (farRadius <= nearRadius + pas) return;
+
+		float cx = celluleActuelle.X * pas;
+		float cz = celluleActuelle.Y * pas;
+		int n = Mathf.Clamp(Mathf.CeilToInt((farRadius * 2f) / pas) + 1, 16, 200);
+		float startX = cx - farRadius;
+		float startZ = cz - farRadius;
+
+		var st = new SurfaceTool();
+		st.Begin(Mesh.PrimitiveType.Triangles);
+
+		float[,] h = new float[n, n];
+		for (int gz = 0; gz < n; gz++)
+		{
+			float wz = startZ + gz * pas;
+			for (int gx = 0; gx < n; gx++)
+			{
+				float wx = startX + gx * pas;
+				h[gx, gz] = Generateur_Voxel.ObtenirHauteurTerrainMonde((int)wx, (int)wz, _seedTerrain);
+			}
+		}
+
+		for (int gz = 0; gz < n - 1; gz++)
+		{
+			for (int gx = 0; gx < n - 1; gx++)
+			{
+				float x0 = startX + gx * pas;
+				float z0 = startZ + gz * pas;
+				float x1 = x0 + pas;
+				float z1 = z0 + pas;
+
+				float d00 = new Vector2(x0 - positionObservation.X, z0 - positionObservation.Z).Length();
+				float d10 = new Vector2(x1 - positionObservation.X, z0 - positionObservation.Z).Length();
+				float d01 = new Vector2(x0 - positionObservation.X, z1 - positionObservation.Z).Length();
+				float d11 = new Vector2(x1 - positionObservation.X, z1 - positionObservation.Z).Length();
+				if (d00 < nearRadius && d10 < nearRadius && d01 < nearRadius && d11 < nearRadius) continue;
+
+				Vector3 p00 = new Vector3(x0, h[gx, gz], z0);
+				Vector3 p10 = new Vector3(x1, h[gx + 1, gz], z0);
+				Vector3 p01 = new Vector3(x0, h[gx, gz + 1], z1);
+				Vector3 p11 = new Vector3(x1, h[gx + 1, gz + 1], z1);
+
+				Color c00 = CouleurHorizon(h[gx, gz], d00, nearRadius, farRadius);
+				Color c10 = CouleurHorizon(h[gx + 1, gz], d10, nearRadius, farRadius);
+				Color c01 = CouleurHorizon(h[gx, gz + 1], d01, nearRadius, farRadius);
+				Color c11 = CouleurHorizon(h[gx + 1, gz + 1], d11, nearRadius, farRadius);
+
+				st.SetNormal(Vector3.Up); st.SetColor(c00); st.AddVertex(p00);
+				st.SetNormal(Vector3.Up); st.SetColor(c10); st.AddVertex(p10);
+				st.SetNormal(Vector3.Up); st.SetColor(c11); st.AddVertex(p11);
+
+				st.SetNormal(Vector3.Up); st.SetColor(c00); st.AddVertex(p00);
+				st.SetNormal(Vector3.Up); st.SetColor(c11); st.AddVertex(p11);
+				st.SetNormal(Vector3.Up); st.SetColor(c01); st.AddVertex(p01);
+
+			}
+		}
+
+		ArrayMesh mesh = st.Commit();
+		_horizonLodMesh.Mesh = mesh;
+	}
+
+	private static Color CouleurHorizon(float hauteur, float distance, float nearRadius, float farRadius)
+	{
+		float tAlt = Mathf.Clamp((hauteur - 90f) / 190f, 0f, 1f);
+		Color baseC = new Color(0.24f, 0.36f, 0.22f).Lerp(new Color(0.45f, 0.48f, 0.37f), tAlt);
+		float tDist = Mathf.Clamp((distance - nearRadius) / Mathf.Max(1f, farRadius - nearRadius), 0f, 1f);
+		return baseC.Lerp(new Color(0.42f, 0.48f, 0.40f), tDist * 0.45f);
+	}
+
+	private void AppliquerCullingCameraChunks(Vector3 positionObservation, Vector3 directionObservation, float dt)
+	{
+		if (!ActiverCullingCameraChunks) return;
+		_timerCullingCamera -= dt;
+		if (_timerCullingCamera > 0f) return;
+		_timerCullingCamera = 0.03f;
+
+		float cosHalf = Mathf.Cos(Mathf.DegToRad(Mathf.Clamp(AngleCullingCameraDeg, 80f, 175f) * 0.5f));
+		float rayonToujoursVisible = Mathf.Max(RayonDormancePhysique + 1, MargeChunksToujoursVisibles) * TailleChunk;
+		float rayonToujoursVisibleCarre = rayonToujoursVisible * rayonToujoursVisible;
+
+		foreach (var kv in _chunksData)
+		{
+			ChunkData data = kv.Value;
+			Vector3 centre = new Vector3((data.Coordonnees.X + 0.5f) * TailleChunk, positionObservation.Y, (data.Coordonnees.Y + 0.5f) * TailleChunk);
+			Vector3 to = centre - positionObservation;
+			float d2 = to.LengthSquared();
+			bool visible = true;
+			if (d2 > rayonToujoursVisibleCarre)
+			{
+				float len = Mathf.Sqrt(d2);
+				Vector3 dir = to / Mathf.Max(0.0001f, len);
+				float dot = directionObservation.Dot(dir);
+				visible = dot >= cosHalf;
+			}
+
+			if (data.VisualInstanceRID.IsValid)
+				RenderingServer.Singleton.InstanceSetVisible(data.VisualInstanceRID, visible);
+			if (data.WaterInstanceRID.IsValid)
+				RenderingServer.Singleton.InstanceSetVisible(data.WaterInstanceRID, visible);
+			if (data._nodeFlore is Node3D flore)
+				flore.Visible = visible;
+		}
+	}
+
+	private bool EstChunkProche(Vector2I coordChunk, Vector3 positionObservation, int rayonChunks)
+	{
+		Vector2I obs = Gestionnaire_Monde.WorldToChunkCoord(positionObservation, TailleChunk);
+		return Mathf.Abs(coordChunk.X - obs.X) <= rayonChunks && Mathf.Abs(coordChunk.Y - obs.Y) <= rayonChunks;
+	}
+
+	private void EnfilerFloreChunk(ChunkData data, Vector3 positionObservation)
+	{
+		if (data == null || data.InventaireFlore == null || data.InventaireFlore.Count == 0) return;
+		if (EstChunkProche(data.Coordonnees, positionObservation, Mathf.Max(2, RayonQualiteMaxChunks)))
+		{
+			ConstruireFloreChunk(data, positionObservation);
+			return;
+		}
+		if (_setFloreDifferee.Add(data.Coordonnees))
+			_fileFloreDifferee.Add(data.Coordonnees);
+	}
+
+	private void ConstruireFloreChunk(ChunkData data, Vector3 positionObservation)
+	{
+		if (data == null || !_chunksData.ContainsKey(data.Coordonnees)) return;
+		_setFloreDifferee.Remove(data.Coordonnees);
+		_fileFloreDifferee.Remove(data.Coordonnees);
+		if (data._nodeFlore != null || data.InventaireFlore == null || data.InventaireFlore.Count == 0) return;
+		var node = Chunk_Client.CreerNoeudFlorePourChunkData(data, positionObservation, TailleChunk);
+		if (node == null) return;
+		AddChild(node);
+		data._nodeFlore = node;
+	}
+
+	private void TraiterFloreDifferee(Vector3 positionObservation, int budgetParFrame)
+	{
+		int budget = Mathf.Max(0, budgetParFrame);
+		for (int i = 0; i < budget && _fileFloreDifferee.Count > 0; i++)
+		{
+			Vector2I coord = ExtraireChunkLePlusProcheSimple(_fileFloreDifferee, positionObservation);
+			_setFloreDifferee.Remove(coord);
+			if (!_chunksData.TryGetValue(coord, out var data)) continue;
+			ConstruireFloreChunk(data, positionObservation);
+		}
+	}
+
+	private int CompterBacklog()
+	{
+		int pendingMaths;
+		lock (_lockFileAttenteMaths)
+			pendingMaths = _fileAttenteMathsData.Count;
+		return pendingMaths
+			+ _fileIntegrationMainThread.Count
+			+ _fileAttenteSolidification.Count
+			+ _fileFloreDifferee.Count
+			+ Thread.VolatileRead(ref _chunksEnCoursDeCalcul);
+	}
+
+	private void AjusterFenetreRequetes(float dt)
+	{
+		int rayonDetail = RayonDetailChunksActif();
+		if (_rayonRequetesActuel <= 0) _rayonRequetesActuel = Mathf.Max(RayonDormancePhysique + 1, RayonInitialRequetesChunks);
+		_rayonRequetesActuel = Mathf.Clamp(_rayonRequetesActuel, Mathf.Max(RayonDormancePhysique + 1, RayonInitialRequetesChunks), rayonDetail);
+
+		int backlog = CompterBacklog();
+		_timerExpansionRequetes -= dt;
+		if (backlog >= SeuilBacklogHaut)
+		{
+			_rayonRequetesActuel = Mathf.Max(Mathf.Max(RayonDormancePhysique + 1, RayonInitialRequetesChunks), _rayonRequetesActuel - 1);
+			_timerExpansionRequetes = Mathf.Max(0.1f, IntervalleExpansionRequetesSec * 0.6f);
+			return;
+		}
+		if (_timerExpansionRequetes <= 0f && backlog <= SeuilBacklogBas)
+		{
+			_rayonRequetesActuel = Mathf.Min(rayonDetail, _rayonRequetesActuel + 1);
+			_timerExpansionRequetes = Mathf.Max(0.1f, IntervalleExpansionRequetesSec);
+		}
+	}
+
+	private Vector2I ExtraireChunkLePlusProcheSimple(List<Vector2I> liste, Vector3 positionObservation)
+	{
+		if (liste.Count == 0) return Vector2I.Zero;
+		Vector2 posObsV2 = new Vector2(positionObservation.X / TailleChunk, positionObservation.Z / TailleChunk);
+		int best = 0;
+		float bestD = float.MaxValue;
+		for (int i = 0; i < liste.Count; i++)
+		{
+			Vector2 c = new Vector2(liste[i].X, liste[i].Y);
+			float d = c.DistanceSquaredTo(posObsV2);
+			if (d < bestD) { bestD = d; best = i; }
+		}
+		Vector2I v = liste[best];
+		liste.RemoveAt(best);
+		return v;
 	}
 
 	private void ExecuterReconstructionPrioritaire(Vector2I coord)
@@ -501,7 +785,8 @@ public partial class Monde_Client : Node3D
 
 	private void PurgerChunksObsolètesDeLaFile(Vector3 positionObservation)
 	{
-		float rayonMaxCarre = (RenderDistance + 1) * (RenderDistance + 1);
+		int rayonDetail = RayonDetailChunksActif();
+		float rayonMaxCarre = (rayonDetail + 1) * (rayonDetail + 1);
 		for (int i = _chunksACharger.Count - 1; i >= 0; i--)
 		{
 			float d2 = DistanceCarreeAuJoueur(_chunksACharger[i], positionObservation);
@@ -513,7 +798,8 @@ public partial class Monde_Client : Node3D
 	/// <summary>Sénescence : retire de la mémoire les chunks au-delà du rayon + hystérésis. Libère les RIDs (RenderingServer/PhysicsServer3D).</summary>
 	private void NettoyerChunksObsoles(Vector3 positionObservation)
 	{
-		float seuilCarree = (RenderDistance + 2) * (RenderDistance + 2);
+		int rayonDetail = RayonDetailChunksActif();
+		float seuilCarree = (rayonDetail + 2) * (rayonDetail + 2);
 		_chunksATuerTemp.Clear();
 		foreach (var kv in _chunksData)
 		{
@@ -525,6 +811,8 @@ public partial class Monde_Client : Node3D
 			if (_chunksData.TryGetValue(coord, out var data))
 			{
 				_chunksData.Remove(coord);
+				_setFloreDifferee.Remove(coord);
+				_fileFloreDifferee.Remove(coord);
 				data.LibérerRids();
 				NettoyerRegistreReconstruction(coord);
 			}
@@ -540,20 +828,30 @@ public partial class Monde_Client : Node3D
 	}
 
 	/// <summary>Extraction radiale : le chunk à distance minimale de l'épicentre (caméra/joueur). DistanceSquaredTo évite la racine.</summary>
-	private Vector2I ExtraireChunkLePlusProche(List<Vector2I> liste, Vector3 positionObservation)
+	private Vector2I ExtraireChunkLePlusProche(List<Vector2I> liste, Vector3 positionObservation, Vector3 directionObservation)
 	{
 		if (liste.Count == 0) return Vector2I.Zero;
 		Vector2 posObsV2 = new Vector2(positionObservation.X / (float)TailleChunk, positionObservation.Z / (float)TailleChunk);
 		Vector2I chunkCible = liste[0];
-		float distanceMin = float.MaxValue;
+		float scoreMin = float.MaxValue;
 		int indexASupprimer = 0;
+		float rayonNear = Mathf.Max(3, RayonDormancePhysique + 1);
 		for (int i = 0; i < liste.Count; i++)
 		{
 			Vector2 posChunk = new Vector2(liste[i].X, liste[i].Y);
-			float dist = posObsV2.DistanceSquaredTo(posChunk);
-			if (dist < distanceMin)
+			Vector2 to = posChunk - posObsV2;
+			float dist = to.LengthSquared();
+			float score = dist;
+			float d = Mathf.Sqrt(Mathf.Max(0.0001f, dist));
+			if (d > rayonNear)
 			{
-				distanceMin = dist;
+				Vector3 dir = new Vector3(to.X / d, 0f, to.Y / d);
+				float dot = directionObservation.Dot(dir);
+				if (dot < 0f) score += (1f - dot) * 200f;
+			}
+			if (score < scoreMin)
+			{
+				scoreMin = score;
 				chunkCible = liste[i];
 				indexASupprimer = i;
 			}
@@ -612,12 +910,7 @@ public partial class Monde_Client : Node3D
 
 		if (data.InventaireFlore.Count > 0)
 		{
-			var node = Chunk_Client.CreerNoeudFlorePourChunkData(data, posObs, TailleChunk);
-			if (node != null)
-			{
-				AddChild(node);
-				data._nodeFlore = node;
-			}
+			EnfilerFloreChunk(data, posObs);
 		}
 	}
 
@@ -783,6 +1076,7 @@ public partial class Monde_Client : Node3D
 		Vector2 posObsV2 = new Vector2(positionObservation.X / (float)TailleChunk, positionObservation.Z / (float)TailleChunk);
 		int cjX = Gestionnaire_Monde.WorldToChunkCoord(positionObservation.X, positionObservation.Z, TailleChunk).X;
 		int cjZ = Gestionnaire_Monde.WorldToChunkCoord(positionObservation.X, positionObservation.Z, TailleChunk).Y;
+		int rayonDetail = RayonDetailChunksActif();
 		HashSet<Vector2I> chunksCharges = new HashSet<Vector2I>(_chunksData.Keys);
 		List<Vector2I> copieChunksACharger = new List<Vector2I>(_chunksACharger);
 
@@ -791,8 +1085,8 @@ public partial class Monde_Client : Node3D
 			HashSet<Vector2I> dejaVu = new HashSet<Vector2I>(copieChunksACharger);
 			foreach (var c in chunksCharges) dejaVu.Add(c);
 
-			for (int dx = -RenderDistance; dx <= RenderDistance; dx++)
-				for (int dz = -RenderDistance; dz <= RenderDistance; dz++)
+			for (int dx = -rayonDetail; dx <= rayonDetail; dx++)
+				for (int dz = -rayonDetail; dz <= rayonDetail; dz++)
 				{
 					Vector2I coord = new Vector2I(cjX + dx, cjZ + dz);
 					if (dejaVu.Add(coord))
@@ -853,6 +1147,15 @@ public partial class Monde_Client : Node3D
 						_fileAttenteSolidification.Remove(data);
 						data.EstEnFileSolidification = false;
 					}
+				}
+			}
+			else if (!dormant)
+			{
+				// Corps non créé (lazy) : enfile pour création/activation progressive.
+				if (!data.EstEnFileSolidification)
+				{
+					_fileAttenteSolidification.Add(data);
+					data.EstEnFileSolidification = true;
 				}
 			}
 		}

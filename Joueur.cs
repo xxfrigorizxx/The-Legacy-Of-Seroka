@@ -907,7 +907,7 @@ public partial class Joueur : CharacterBody3D
         if (idObjet == 20 || idObjet == 21 || idObjet == IdObjetCeinturePoches || idObjet == IdObjetCeintureSacoches || idObjet == IdObjetPochetteTier0 || idObjet == IdObjetSacTier0) { visuel.MaterialOverride = Atlas_Matiere.ObtenirMaterielCorde(indexChimique, indexMorphologique, niveauTressage); return; }
         if (idObjet == 30 || idObjet == 32)
         {
-            visuel.MaterialOverride = idObjet == 32 && indexChimique == 1
+            visuel.MaterialOverride = idObjet == 32 && indexChimique == 1 && indexBotanique == LSystem_Botanique.IndexChene
                 ? ArbreVivant.ObtenirMaterielBoisTriplanarBatonChenEPale()
                 : ArbreVivant.ObtenirMaterielBoisTriplanar(indexBotanique);
             return;
@@ -1236,7 +1236,7 @@ public partial class Joueur : CharacterBody3D
                     ? ItemPhysique.IndexChimiqueDepuisIdRoche(mainActive.ID)
                     : Mathf.Clamp(mainActive.IndexChimique, 0, ItemPhysique.TableGeologique.Length - 1);
                 matVisuel = boisSculpte
-                    ? (mainActive.ID == 32 && mainActive.IndexChimique == 1
+                    ? (mainActive.ID == 32 && mainActive.IndexChimique == 1 && mainActive.IndexBotanique == LSystem_Botanique.IndexChene
                         ? ArbreVivant.ObtenirMaterielBoisTriplanarBatonChenEPale()
                         : ArbreVivant.ObtenirMaterielBoisTriplanar(mainActive.IndexBotanique))
                     : ItemPhysique.CreerMaterielProcedural(ItemPhysique.EstMatiereSilexParIdObjet(mainActive.ID), chimPourRoche);
@@ -1578,7 +1578,7 @@ public partial class Joueur : CharacterBody3D
             var meshNode = new MeshInstance3D
             {
                 Mesh = meshObj,
-                MaterialOverride = id == 32 && mainActive.IndexChimique == 1
+                MaterialOverride = id == 32 && mainActive.IndexChimique == 1 && mainActive.IndexBotanique == LSystem_Botanique.IndexChene
                     ? ArbreVivant.ObtenirMaterielBoisTriplanarBatonChenEPale()
                     : ArbreVivant.ObtenirMaterielBoisTriplanar(mainActive.IndexBotanique)
             };

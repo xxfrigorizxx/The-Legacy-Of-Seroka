@@ -276,14 +276,43 @@ public partial class Chunk_Serveur : RefCounted
 			if (hauteurSurface < 0 || hauteurSurface >= HauteurMax - 1) continue;
 			if (hauteurSurface <= 2) continue;
 
+			byte matSurface;
 			lock (_verrouVoxel)
 			{
-				if (_materials[x, hauteurSurface, z] != 1) continue; // Herbe uniquement
+				matSurface = _materials[x, hauteurSurface, z];
 			}
 
+			// Tempéré: herbe (1). Froid/enneigé: neige (5) et glace de surface (9) autorisées (pins).
+			bool solTempere = matSurface == 1;
+			bool solFroid = matSurface == 5 || matSurface == 9;
+			if (!solTempere && !solFroid) continue;
+
+			float temperature = _noiseTemperature.GetNoise2D(xGlobal, zGlobal);
 			float humidite = CalculerHumiditeGlobale(xGlobal, zGlobal);
-			if ((humidite + 1f) * 0.5f < 0.2f) continue;
-			if (DeterministicRand(xGlobal * 1.7f, zGlobal * 2.3f) >= chanceArbre) continue;
+			float humiditeNorm = (humidite + 1f) * 0.5f;
+
+			float chanceLocale = chanceArbre;
+			if (temperature < -0.15f)
+			{
+				if (!solFroid) continue;
+				if (humiditeNorm < 0.08f) continue;
+				// Zone neige/pin: sec -> peu d'arbres, et plus il fait froid plus la densité monte.
+				// Plafond conservé à 0.085 (comme avant la dernière modification).
+				float tHumideNeige = Mathf.Clamp((humiditeNorm - 0.08f) / 0.50f, 0f, 1f);
+				float tFroidNeige = Mathf.Clamp((-temperature - 0.15f) / 0.55f, 0f, 1f);
+				float facteurNeige = tHumideNeige * Mathf.Lerp(0.45f, 1.0f, tFroidNeige);
+				chanceLocale = Mathf.Lerp(0.012f, 0.085f, facteurNeige);
+			}
+			else
+			{
+				if (!solTempere) continue;
+				if (humiditeNorm < 0.2f) continue;
+				// Prairie tempérée: sec -> clairsemé, humide -> densité actuelle.
+				float tHumideTempere = Mathf.Clamp((humiditeNorm - 0.2f) / 0.45f, 0f, 1f);
+				chanceLocale = Mathf.Lerp(0.018f, chanceArbre, tHumideTempere);
+			}
+
+			if (DeterministicRand(xGlobal * 1.7f, zGlobal * 2.3f) >= chanceLocale) continue;
 
 			var racine = new Vector3I(xGlobal, hauteurSurface + 1, zGlobal);
 			uint seedArbre = (uint)((xGlobal * 73856093) ^ (zGlobal * 19349663));
@@ -296,7 +325,7 @@ public partial class Chunk_Serveur : RefCounted
 		if (arbreAjoute || InventaireArbres.Count > 0) return;
 
 		// Fallback machine/biome : si le tirage standard n'a rien donné, on force un arbre
-		// sur un point viable (herbe + terrain plat), sans filtrage humidité.
+		// sur un point viable (herbe OU neige), en gardant une cohérence humide minimale.
 		for (int x = 2; x < TailleChunk - 2; x += 2)
 		for (int z = 2; z < TailleChunk - 2; z += 2)
 		{
@@ -308,9 +337,24 @@ public partial class Chunk_Serveur : RefCounted
 			if (hauteurSurface < 0 || hauteurSurface >= HauteurMax - 1) continue;
 			if (hauteurSurface <= 2) continue;
 
+			byte matSurface;
 			lock (_verrouVoxel)
 			{
-				if (_materials[x, hauteurSurface, z] != 1) continue;
+				matSurface = _materials[x, hauteurSurface, z];
+			}
+			bool solTempere = matSurface == 1;
+			bool solFroid = matSurface == 5 || matSurface == 9;
+			if (!solTempere && !solFroid) continue;
+
+			float temperature = _noiseTemperature.GetNoise2D(xGlobal, zGlobal);
+			float humiditeNorm = (CalculerHumiditeGlobale(xGlobal, zGlobal) + 1f) * 0.5f;
+			if (temperature < -0.15f)
+			{
+				if (!solFroid || humiditeNorm < 0.08f) continue;
+			}
+			else
+			{
+				if (!solTempere || humiditeNorm < 0.2f) continue;
 			}
 
 			var racine = new Vector3I(xGlobal, hauteurSurface + 1, zGlobal);

@@ -45,12 +45,13 @@ public partial class Monde_Serveur : Node
 	private HashSet<Vector2I> _chunksEnCoursGeneration = new HashSet<Vector2I>();
 	private int _chunksEnGenerationActive;
 	private static readonly int MaxThreadsGeneration = 4;
-	[Export] public int MultiplicateurCharge = 8; // 16 → 8 pour test (génération /2)
+	[Export] public int MultiplicateurCharge = 2; // Réduit la tempête de tâches pour éviter l'overload CPU.
 	private int LancerMaxTaches => MaxThreadsGeneration * MultiplicateurCharge;
+	[Export] public int MaxArbresSpawnParTick = 6;
 	/// <summary>Budget anti micro-freeze : limite de chunks workers intégrés par frame.</summary>
 	private const int MaxIntegrationsWorkersParTick = 2;
 	/// <summary>Budget anti micro-freeze : limite de demandes chunks traitées par frame.</summary>
-	private const int MaxDemandesChunksParTick = 3;
+	private const int MaxDemandesChunksParTick = 2;
 	/// <summary>Budget anti micro-freeze : limite de chargements disque synchrones par frame.</summary>
 	private const int MaxChargesDisqueParTick = 1;
 	private const int MaxChunksEnvoiParTick = 8;
@@ -82,6 +83,9 @@ public partial class Monde_Serveur : Node
 	/// <summary>Tapis roulant décharge : au plus N chunks sauvegardés/déchargés par frame (évite lag).</summary>
 	private const int MaxChunksDechargeParTick = 2;
 	private List<Vector2I> _chunksEnAttenteDecharge = new List<Vector2I>();
+	private FastNoiseLite _noiseTemperatureArbres;
+	private int _noiseTemperatureArbresSeed = int.MinValue;
+	private readonly Queue<(Vector2I coord, Vector3 pos, int age, uint seed, byte indexBotanique, int joursRattrapage)> _fileSpawnArbres = new Queue<(Vector2I, Vector3, int, uint, byte, int)>();
 
 	public void Initialiser(Node parentPourBlocsChutants, Node parentPourArbres, Action<Vector2I, List<int>> onChunkModifie, Action<Vector2I, DonneesChunk> onEnvoyerChunk = null, Action<Vector2I, Dictionary<Vector3I, byte>> onFloreModifie = null, Action<Vector3I, byte> onVoxelModifie = null, Action<Vector2I> onOrdonnerDestructionChunk = null, Func<Vector3> obtenirPositionJoueur = null)
 	{
@@ -259,6 +263,16 @@ public partial class Monde_Serveur : Node
 
 		// Réveil des pierres dormantes : quand joueur dans 2 chunks, le terrain est chargé → on dégèle
 		ReveillerPierresDansRayon();
+
+		// Spawn progressif des ArbreVivant pour éviter les gros spikes au premier chargement.
+		int nArbres = 0;
+		while (nArbres < Mathf.Max(1, MaxArbresSpawnParTick) && _fileSpawnArbres.Count > 0)
+		{
+			var a = _fileSpawnArbres.Dequeue();
+			if (!_chunks.ContainsKey(a.coord)) continue; // Chunk déjà déchargé entre-temps
+			InstancierArbreVivant(a.pos, a.age, a.seed, a.indexBotanique, a.joursRattrapage);
+			nArbres++;
+		}
 
 		// Goutte-à-goutte : pierres chargées depuis disque, instanciées quand chunk dessiné à l'écran
 		int nPierres = 0;
@@ -924,11 +938,34 @@ public partial class Monde_Serveur : Node
 		catch (Exception ex) { GD.PrintErr($"ZERO-K : Erreur sauvegarde arbres chunk {coord} : {ex.Message}"); }
 	}
 
-	private static byte DeterminerIndexBotaniqueArbre(uint seedArbre)
+	private void AssurerNoiseTemperatureArbres()
+	{
+		if (_noiseTemperatureArbres != null && _noiseTemperatureArbresSeed == SeedTerrain) return;
+		_noiseTemperatureArbres = new FastNoiseLite();
+		_noiseTemperatureArbres.NoiseType = FastNoiseLite.NoiseTypeEnum.Perlin;
+		_noiseTemperatureArbres.Seed = SeedTerrain + 2;
+		_noiseTemperatureArbres.FractalType = FastNoiseLite.FractalTypeEnum.Fbm;
+		_noiseTemperatureArbres.FractalOctaves = 4;
+		_noiseTemperatureArbres.Frequency = 0.0005f;
+		_noiseTemperatureArbresSeed = SeedTerrain;
+	}
+
+	private byte DeterminerIndexBotaniqueArbre(uint seedArbre, int gx, int gz)
 	{
 		// Choix déterministe: un arbre garde la même essence entre chargements.
 		uint h = (seedArbre * 1664525u) + 1013904223u;
 		float r = (h & 0x00FFFFFFu) / 16777216f;
+		AssurerNoiseTemperatureArbres();
+		float temp = _noiseTemperatureArbres?.GetNoise2D(gx, gz) ?? 0f;
+		// Pin uniquement en zone froide/neige (proxy température).
+		// Plus on s'enfonce dans le froid, plus le pin devient dominant.
+		if (temp < -0.2f)
+		{
+			float tFroid = Mathf.Clamp((-temp - 0.2f) / 0.6f, 0f, 1f);
+			float probaPin = Mathf.Lerp(0.25f, 1.0f, tFroid);
+			if (r < probaPin)
+				return LSystem_Botanique.IndexPin;
+		}
 		return (byte)(r < 0.4f ? LSystem_Botanique.IndexBouleau : LSystem_Botanique.IndexChene);
 	}
 
@@ -941,16 +978,25 @@ public partial class Monde_Serveur : Node
 			// Base collée au sol (Y - 0.5 pour éviter troncs flottants)
 			Vector3 pos = new Vector3(kv.Key.X + 0.5f, kv.Key.Y - 0.5f, kv.Key.Z + 0.5f);
 			int age = Mathf.Max(1, kv.Value.Stage + 1);
-			var arbre = new ArbreVivant
-			{
-				AgeEnJours = age,
-				ResistanceActuelle = ArbreVivant.ResistanceMaxPourAge(age),
-				Seed = kv.Value.Seed
-			};
-			arbre.IndexBotanique = DeterminerIndexBotaniqueArbre(kv.Value.Seed);
-			_parentPourArbres.AddChild(arbre);
-			arbre.GlobalPosition = pos;
+			byte indexBotanique = DeterminerIndexBotaniqueArbre(kv.Value.Seed, kv.Key.X, kv.Key.Z);
+			_fileSpawnArbres.Enqueue((coord, pos, age, kv.Value.Seed, indexBotanique, 0));
 		}
+	}
+
+	private void InstancierArbreVivant(Vector3 pos, int age, uint seed, byte indexBotanique, int joursRattrapage)
+	{
+		if (_parentPourArbres == null) return;
+		var arbre = new ArbreVivant
+		{
+			AgeEnJours = Mathf.Max(1, age),
+			ResistanceActuelle = ArbreVivant.ResistanceMaxPourAge(Mathf.Max(1, age)),
+			Seed = seed,
+			IndexBotanique = indexBotanique
+		};
+		_parentPourArbres.AddChild(arbre);
+		arbre.GlobalPosition = pos;
+		if (joursRattrapage > 0)
+			arbre.RattraperCroissance(joursRattrapage, pos);
 	}
 
 	/// <summary>Charge et spawn les arbres depuis disque. Rattrape la croissance du temps passé hors-ligne.</summary>
@@ -997,18 +1043,8 @@ public partial class Monde_Serveur : Node
 					Vector3 pos = new Vector3(gx + 0.5f, gy - 0.5f, gz + 0.5f);
 					uint seedArbre = (uint)((gx * 73856093) ^ (gz * 19349663));
 					int ageCharge = Mathf.Max(1, ageSauvegarde);
-					byte indexBotanique = formatV3 ? indexBotaniqueSauvegarde : DeterminerIndexBotaniqueArbre(seedArbre);
-					var arbre = new ArbreVivant
-					{
-						AgeEnJours = ageCharge,
-						ResistanceActuelle = ArbreVivant.ResistanceMaxPourAge(ageCharge),
-						Seed = seedArbre,
-						IndexBotanique = indexBotanique
-					};
-					_parentPourArbres.AddChild(arbre);
-					arbre.GlobalPosition = pos;
-					if (joursEcoules > 0)
-						arbre.RattraperCroissance(joursEcoules, pos);
+					byte indexBotanique = formatV3 ? indexBotaniqueSauvegarde : DeterminerIndexBotaniqueArbre(seedArbre, gx, gz);
+					_fileSpawnArbres.Enqueue((coord, pos, ageCharge, seedArbre, indexBotanique, joursEcoules));
 				}
 			}
 		}

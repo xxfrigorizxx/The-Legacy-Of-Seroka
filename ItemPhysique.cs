@@ -287,7 +287,7 @@ public partial class ItemPhysique : RigidBody3D
 			if (EstIdRocheMatiere(ID_Objet))
 				visuel.MaterialOverride = CreerMaterielProcedural(EstMatiereSilexParIdObjet(ID_Objet), ch);
 			else if (ID_Objet == 30 || ID_Objet == 32)
-				visuel.MaterialOverride = ID_Objet == 32 && IndexChimique == 1
+				visuel.MaterialOverride = ID_Objet == 32 && IndexChimique == 1 && IndexBotanique == LSystem_Botanique.IndexChene
 					? ArbreVivant.ObtenirMaterielBoisTriplanarBatonChenEPale()
 					: ArbreVivant.ObtenirMaterielBoisTriplanar(IndexBotanique);
 			if (!EstMatiereSilexParIdObjet(ID_Objet) && !_surImpactConnecte)

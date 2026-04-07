@@ -10,6 +10,9 @@ public partial class Cycle_Solaire : Node
 	[Export] private DirectionalLight3D _soleil;
 	[Export] private DirectionalLight3D _lune; // Deuxième lampe (bleutée, ombre activée)
 	[Export] private WorldEnvironment _environnement; // Pour brouillard et ambiance
+	[Export] private int _renderDistanceBrouillardChunks = 23;
+	[Export] private int _tailleChunkBrouillard = 16;
+	[Export] private int _avanceBrouillardChunks = 2;
 
 	/// <summary>Décalage en heures de la dimension actuelle. Monde 1 = 0, Monde 2 = +6, etc.</summary>
 	private double _decalageMondeHeures = 0.0;
@@ -42,7 +45,32 @@ public partial class Cycle_Solaire : Node
 			if (_environnement == null) GD.PrintErr("ZERO-K ALERTE : Nœud 'WorldEnvironment' introuvable !");
 		}
 
+		AppliquerDistanceBrouillardProgressive();
 		GD.Print("Moteur Thermodynamique : EN LIGNE.");
+	}
+
+	public void ConfigurerDistanceBrouillardProgressive(int renderDistanceChunks, int tailleChunk, int avanceChunks = 2)
+	{
+		_renderDistanceBrouillardChunks = Mathf.Max(1, renderDistanceChunks);
+		_tailleChunkBrouillard = Mathf.Max(1, tailleChunk);
+		_avanceBrouillardChunks = Mathf.Max(0, avanceChunks);
+		AppliquerDistanceBrouillardProgressive();
+	}
+
+	private void AppliquerDistanceBrouillardProgressive()
+	{
+		if (_environnement?.Environment == null) return;
+
+		float tailleChunkMetres = Mathf.Max(1f, _tailleChunkBrouillard);
+		int chunkDebut = Mathf.Max(1, _renderDistanceBrouillardChunks - _avanceBrouillardChunks);
+		float debut = chunkDebut * tailleChunkMetres;
+		float fin = (_renderDistanceBrouillardChunks + 2) * tailleChunkMetres; // Laisse une marge pour un fondu doux.
+
+		var env = _environnement.Environment;
+		env.Set("fog_depth_enabled", true);
+		env.Set("fog_depth_begin", debut);
+		env.Set("fog_depth_end", Mathf.Max(debut + tailleChunkMetres, fin));
+		env.Set("fog_depth_curve", 1.15f);
 	}
 
 	public override void _Process(double delta)

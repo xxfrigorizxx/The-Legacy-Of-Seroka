@@ -39,16 +39,51 @@ public partial class ArbreVivant : StaticBody3D
 	private MeshInstance3D _visuelBois;
 	private MeshInstance3D _visuelFeuillage;
 	private CollisionShape3D _hitbox;
+	private Node3D _observationRef;
+	private int _lodActuel = -1;
+	private bool _maillageInitialGenere;
+	private float _attenteGeneration;
+	private float _cooldownLod;
+	private uint _seedEffectif;
+	private float _lodFeuillageActuel = 1f;
+
+	private const float DISTANCE_LOD0 = 130f;
+	private const float DISTANCE_LOD1 = 280f;
+	private const float DISTANCE_LOD2 = 520f;
+	private const float INTERVALLE_MAJ_LOD = 0.55f;
 
 	private static StandardMaterial3D _cacheMatBois;
 	private static StandardMaterial3D _cacheMatBoisTriplanar;
+	private static StandardMaterial3D _cacheMatBoisPin;
+	private static StandardMaterial3D _cacheMatBoisTriplanarPin;
 	private static StandardMaterial3D _cacheMatBoisBouleau;
 	private static StandardMaterial3D _cacheMatBoisTriplanarBouleau;
 	private static StandardMaterial3D _cacheMatBoisBatonChenEPale;
-	private static StandardMaterial3D _cacheMatFeuilles;
+	private static StandardMaterial3D _cacheMatFeuillesCaduc;
+	private static StandardMaterial3D _cacheMatFeuillesPin;
+	private static Texture2D _cacheTextureFeuilleCaduc;
+	private uint SeedForme => _seedEffectif != 0 ? _seedEffectif : Seed;
 
 	public static Material ObtenirMaterielBois(byte indexBotanique = 0)
 	{
+		if (indexBotanique == LSystem_Botanique.IndexPin)
+		{
+			if (_cacheMatBoisPin != null) return _cacheMatBoisPin;
+			var bruit = new FastNoiseLite { Seed = 999, NoiseType = FastNoiseLite.NoiseTypeEnum.Simplex, Frequency = 0.1f };
+			var tex = new NoiseTexture2D { Width = 256, Height = 256, Noise = bruit };
+			var ramp = new Gradient();
+			ramp.AddPoint(0.0f, new Color(0.11f, 0.08f, 0.07f)); // Ecorce sombre
+			ramp.AddPoint(1.0f, new Color(0.24f, 0.18f, 0.15f));
+			tex.ColorRamp = ramp;
+			_cacheMatBoisPin = new StandardMaterial3D
+			{
+				AlbedoTexture = tex,
+				AlbedoColor = new Color(0.26f, 0.19f, 0.15f),
+				Roughness = 0.96f
+			};
+			return _cacheMatBoisPin;
+		}
+
 		if (indexBotanique == LSystem_Botanique.IndexBouleau)
 		{
 			if (_cacheMatBoisBouleau != null) return _cacheMatBoisBouleau;
@@ -82,6 +117,20 @@ public partial class ArbreVivant : StaticBody3D
 	/// <summary>Même texture que le tronc, triplanar monde (ignore les UV locaux dégénérés) + teinte aubier.</summary>
 	public static Material ObtenirMaterielBoisTriplanar(byte indexBotanique = 0)
 	{
+		if (indexBotanique == LSystem_Botanique.IndexPin)
+		{
+			if (_cacheMatBoisTriplanarPin != null) return _cacheMatBoisTriplanarPin;
+			ObtenirMaterielBois(LSystem_Botanique.IndexPin);
+			_cacheMatBoisTriplanarPin = (StandardMaterial3D)_cacheMatBoisPin.Duplicate();
+			_cacheMatBoisTriplanarPin.Uv1Triplanar = true;
+			_cacheMatBoisTriplanarPin.Uv1WorldTriplanar = false;
+			_cacheMatBoisTriplanarPin.Uv1TriplanarSharpness = 2f;
+			// Rendu au sol/objets plus proche de l'écorce réelle du pin (moins jaune clair).
+			_cacheMatBoisTriplanarPin.AlbedoColor = new Color(0.46f, 0.34f, 0.25f);
+			_cacheMatBoisTriplanarPin.CullMode = BaseMaterial3D.CullModeEnum.Disabled;
+			return _cacheMatBoisTriplanarPin;
+		}
+
 		if (indexBotanique == LSystem_Botanique.IndexBouleau)
 		{
 			if (_cacheMatBoisTriplanarBouleau != null) return _cacheMatBoisTriplanarBouleau;
@@ -119,16 +168,48 @@ public partial class ArbreVivant : StaticBody3D
 		return _cacheMatBoisBatonChenEPale;
 	}
 
-	private static Material ObtenirMaterielFeuilles()
+	private static Material ObtenirMaterielFeuilles(byte indexBotanique)
 	{
-		if (_cacheMatFeuilles != null) return _cacheMatFeuilles;
-		_cacheMatFeuilles = new StandardMaterial3D
+		if (indexBotanique == LSystem_Botanique.IndexPin)
 		{
-			AlbedoColor = new Color(0.2f, 0.55f, 0.15f),
+			if (_cacheMatFeuillesPin != null) return _cacheMatFeuillesPin;
+			_cacheMatFeuillesPin = new StandardMaterial3D
+			{
+				AlbedoColor = Colors.White,
+				VertexColorUseAsAlbedo = true,
+				Roughness = 0.93f,
+				Metallic = 0f,
+			ShadingMode = BaseMaterial3D.ShadingModeEnum.PerVertex,
+				CullMode = BaseMaterial3D.CullModeEnum.Disabled
+			};
+			return _cacheMatFeuillesPin;
+		}
+		if (_cacheMatFeuillesCaduc != null) return _cacheMatFeuillesCaduc;
+		if (_cacheTextureFeuilleCaduc == null)
+		{
+			var bruitFeuille = new FastNoiseLite { Seed = 21037 };
+			bruitFeuille.NoiseType = FastNoiseLite.NoiseTypeEnum.Simplex;
+			bruitFeuille.Frequency = 0.16f;
+			bruitFeuille.FractalType = FastNoiseLite.FractalTypeEnum.Fbm;
+			bruitFeuille.FractalOctaves = 3;
+			_cacheTextureFeuilleCaduc = new NoiseTexture2D
+			{
+				Width = 96,
+				Height = 96,
+				Noise = bruitFeuille
+			};
+		}
+		_cacheMatFeuillesCaduc = new StandardMaterial3D
+		{
+			AlbedoColor = Colors.White,
+			VertexColorUseAsAlbedo = true,
+			AlbedoTexture = _cacheTextureFeuilleCaduc,
 			Roughness = 0.95f,
-			Metallic = 0f
+			Metallic = 0f,
+			ShadingMode = BaseMaterial3D.ShadingModeEnum.PerPixel,
+			CullMode = BaseMaterial3D.CullModeEnum.Disabled
 		};
-		return _cacheMatFeuilles;
+		return _cacheMatFeuillesCaduc;
 	}
 
 	public override void _Ready()
@@ -136,14 +217,48 @@ public partial class ArbreVivant : StaticBody3D
 		_visuelBois = new MeshInstance3D { Name = "Bois" };
 		_visuelFeuillage = new MeshInstance3D { Name = "Feuillage" };
 		_hitbox = new CollisionShape3D { Name = "Hitbox" };
+		_visuelFeuillage.CastShadow = GeometryInstance3D.ShadowCastingSetting.Off;
 
 		AddChild(_visuelBois);
 		AddChild(_visuelFeuillage);
 		AddChild(_hitbox);
 
 		AddToGroup("Arbres");
+		uint px = (uint)Mathf.Abs((int)GlobalPosition.X);
+		uint py = (uint)Mathf.Abs((int)GlobalPosition.Y);
+		uint pz = (uint)Mathf.Abs((int)GlobalPosition.Z);
+		uint posHash = (px * 73856093u) ^ (py * 83492791u) ^ (pz * 19349663u);
+		_seedEffectif = Seed ^ posHash ^ (uint)(IndexBotanique * 2654435761u);
 
-		GenererMaillageArbre();
+		// Répartit le coût de spawn sur plusieurs frames (évite le freeze quand une forêt apparaît).
+		float dObs = GlobalPosition.DistanceTo(PositionObservation());
+		float h = Hash(SeedForme, 15000);
+		// Proche joueur: génération immédiate (évite de voir "pop" les feuilles).
+		// Moyen: léger étalement. Loin: étalement plus large pour lisser le coût global.
+		if (dObs <= 110f) _attenteGeneration = 0f;
+		else if (dObs <= 210f) _attenteGeneration = 0.01f + h * 0.10f;
+		else _attenteGeneration = 0.10f + h * 0.55f;
+		_cooldownLod = Hash(SeedForme, 15100) * INTERVALLE_MAJ_LOD;
+		SetProcess(true);
+	}
+
+	public override void _Process(double delta)
+	{
+		float dt = (float)delta;
+		if (!_maillageInitialGenere)
+		{
+			_attenteGeneration -= dt;
+			if (_attenteGeneration <= 0f)
+				RegenererSelonLod(true);
+			return;
+		}
+
+		_cooldownLod -= dt;
+		if (_cooldownLod <= 0f)
+		{
+			_cooldownLod = INTERVALLE_MAJ_LOD + Hash(SeedForme, 15200) * 0.35f;
+			RegenererSelonLod(false);
+		}
 	}
 
 	/// <summary>Appelé à minuit par le serveur (arbres dans chunks actifs). 1 chance sur 20 de grandir.</summary>
@@ -153,7 +268,7 @@ public partial class ArbreVivant : StaticBody3D
 		{
 			AgeEnJours++;
 			ResistanceActuelle = ResistanceMaxPourAge(AgeEnJours);
-			GenererMaillageArbre();
+			RegenererSelonLod(true);
 		}
 	}
 
@@ -176,7 +291,7 @@ public partial class ArbreVivant : StaticBody3D
 		{
 			AgeEnJours += succesCroissance;
 			ResistanceActuelle = ResistanceMaxPourAge(AgeEnJours);
-			GenererMaillageArbre();
+			RegenererSelonLod(true);
 		}
 	}
 
@@ -383,30 +498,87 @@ public partial class ArbreVivant : StaticBody3D
 		return ((h % 10000) / 10000f);
 	}
 
-	private void GenererMaillageArbre()
+	private Vector3 PositionObservation()
 	{
-		// ADN par essence : chêne volumineux vs bouleau plus droit et élancé.
-		int iter = IndexBotanique == LSystem_Botanique.IndexBouleau
-			? Mathf.Clamp(AgeEnJours, 1, 4)
-			: Mathf.Max(2, Mathf.Clamp(AgeEnJours, 1, 6)); // Plus d'itérations = plus de ramification
-		string adnFinal = IndexBotanique == LSystem_Botanique.IndexBouleau
-			? LSystem_Botanique.GenererChaineBouleauOrganique(iter, Seed)
-			: LSystem_Botanique.GenererChaineCheneOrganique(iter, Seed);
+		if (_observationRef == null || !GodotObject.IsInstanceValid(_observationRef))
+		{
+			Node scene = GetTree()?.CurrentScene;
+			_observationRef = scene?.GetNodeOrNull<Node3D>("Joueur/Camera3D")
+				?? scene?.GetNodeOrNull<Node3D>("Joueur");
+		}
+		return _observationRef != null && GodotObject.IsInstanceValid(_observationRef)
+			? _observationRef.GlobalPosition
+			: GlobalPosition;
+	}
+
+	private int EvaluerLodDistance(float distance)
+	{
+		// Hystérésis légère pour éviter les regen en boucle sur les frontières.
+		if (_lodActuel == 0)
+			return distance <= DISTANCE_LOD0 + 8f ? 0 : (distance < DISTANCE_LOD1 ? 1 : (distance < DISTANCE_LOD2 ? 2 : 2));
+		if (_lodActuel == 1)
+			return distance < DISTANCE_LOD0 - 5f ? 0 : (distance <= DISTANCE_LOD1 + 10f ? 1 : 2);
+		if (_lodActuel == 2)
+			return distance < DISTANCE_LOD1 - 8f ? 1 : 2;
+		return distance < DISTANCE_LOD0 ? 0 : (distance < DISTANCE_LOD1 ? 1 : 2);
+	}
+
+	private void RegenererSelonLod(bool forcer)
+	{
+		float distance = GlobalPosition.DistanceTo(PositionObservation());
+		int lod = EvaluerLodDistance(distance);
+		if (!forcer && lod == _lodActuel) return;
+		_lodActuel = lod;
+		GenererMaillageArbre(_lodActuel);
+		_maillageInitialGenere = true;
+	}
+
+	private void GenererMaillageArbre(int lodNiveau = 0)
+	{
+		lodNiveau = Mathf.Clamp(lodNiveau, 0, 2);
+		float facteurFeuillesLod = lodNiveau == 0 ? 1f : (lodNiveau == 1 ? 0.62f : 0.20f);
+		float facteurAiguillesLod = lodNiveau == 0 ? 1f : (lodNiveau == 1 ? 0.60f : 0.18f);
+		_lodFeuillageActuel = facteurFeuillesLod;
+
+		int iter = IndexBotanique switch
+		{
+			LSystem_Botanique.IndexPin => Mathf.Max(2, Mathf.Clamp(AgeEnJours, 1, 4)),
+			LSystem_Botanique.IndexBouleau => Mathf.Max(2, Mathf.Clamp(AgeEnJours, 1, 3)),
+			_ => Mathf.Max(2, Mathf.Clamp(AgeEnJours, 1, 3))
+		};
+		if (lodNiveau >= 1) iter = Mathf.Max(1, iter - 1);
+
+		string adnFinal = "";
+		const int maxAdnLen = 18000;
+		for (;;)
+		{
+			adnFinal = IndexBotanique switch
+			{
+				LSystem_Botanique.IndexPin => LSystem_Botanique.GenererChainePinOrganique(iter, SeedForme),
+				LSystem_Botanique.IndexBouleau => LSystem_Botanique.GenererChaineBouleauOrganique(iter, SeedForme),
+				_ => LSystem_Botanique.GenererChaineCheneOrganique(iter, SeedForme)
+			};
+			if (adnFinal.Length <= maxAdnLen || iter <= 2) break;
+			iter--;
+		}
 
 		var stBois = new SurfaceTool();
 		stBois.Begin(Mesh.PrimitiveType.Triangles);
 
 		var stFeuilles = new SurfaceTool();
 		stFeuilles.Begin(Mesh.PrimitiveType.Triangles);
+		Color couleurFeuillage = CouleurFeuillesArbre();
+		// Couleur portée par les vertex + matériau partagé = beaucoup moins de draw overhead.
+		stFeuilles.SetColor(couleurFeuillage);
 
 		Stack<TortueEtat> pile = new Stack<TortueEtat>();
 		Transform3D tortue = Transform3D.Identity;
 
-		float angleBase = IndexBotanique == LSystem_Botanique.IndexBouleau ? 20f : 35f;
-		float angle = Mathf.DegToRad(angleBase + Hash(Seed, 0) * 20f);
-		float multEpaisseur = 0.75f + Hash(Seed, 1) * 0.5f;
-		float multLongueur = 0.8f + Hash(Seed, 2) * 0.6f;
-		float reductionBranche = 0.72f + Hash(Seed, 3) * 0.18f;
+		float angleBase = IndexBotanique switch { LSystem_Botanique.IndexPin => 80f, LSystem_Botanique.IndexBouleau => 20f, _ => 35f };
+		float angle = Mathf.DegToRad(angleBase + Hash(SeedForme, 0) * 14f);
+		float multEpaisseur = 0.75f + Hash(SeedForme, 1) * 0.5f;
+		float multLongueur = 0.8f + Hash(SeedForme, 2) * 0.6f;
+		float reductionBranche = 0.72f + Hash(SeedForme, 3) * 0.18f;
 		// Bébé arbres (1-2) plus petits ; matures (5+) plus grands
 		float scaleAge = AgeEnJours <= 2 ? 0.4f + 0.2f * AgeEnJours : 1f;
 		float epaisseurBase = (0.12f + 0.06f * AgeEnJours) * multEpaisseur * scaleAge;
@@ -415,11 +587,27 @@ public partial class ArbreVivant : StaticBody3D
 		{
 			// Bouleau plus fin, moins "totem", tronc un peu élancé.
 			epaisseurBase *= 0.72f;
-			longueurSegment *= 0.68f;
-			reductionBranche = 0.78f + Hash(Seed, 3) * 0.10f;
+			// Etages de branches plus rapproches.
+			longueurSegment *= 0.56f;
+			reductionBranche = 0.78f + Hash(SeedForme, 3) * 0.10f;
+		}
+		else if (IndexBotanique == LSystem_Botanique.IndexChene)
+		{
+			// Chêne moins étiré: un peu plus trapu.
+			epaisseurBase *= 1.08f;
+			longueurSegment *= 0.74f;
+			reductionBranche = 0.76f + Hash(SeedForme, 3) * 0.10f;
+		}
+		else if (IndexBotanique == LSystem_Botanique.IndexPin)
+		{
+			// Pin: tronc élancé + conicité marquée.
+			epaisseurBase *= 0.58f;
+			longueurSegment *= 0.52f;
+			reductionBranche = 0.86f + Hash(SeedForme, 3) * 0.06f;
 		}
 
 		_hauteurTroncTotale = 0f;
+		float epaisseurBaseInitiale = epaisseurBase;
 		_rayonTroncBase = epaisseurBase;
 		_rayonTroncSommet = epaisseurBase;
 		float sommeLongueurBranche = 0f;
@@ -428,6 +616,8 @@ public partial class ArbreVivant : StaticBody3D
 
 		bool premierSegmentDeBranche = false;
 		bool estCoupe = false;
+		int compteurJitterYaw = 0;
+		int compteurJitterPitch = 0;
 		foreach (char commande in adnFinal)
 		{
 			switch (commande)
@@ -454,18 +644,36 @@ public partial class ArbreVivant : StaticBody3D
 					if (!estCoupe)
 					{
 						GenererSegmentBranche(stBois, pStart, pEnd, right, forward, rayonDebut, rayonFin);
+						// Pin: aiguilles denses sur le haut du tronc pour éviter un aspect nu.
+						if (IndexBotanique == LSystem_Botanique.IndexPin && epaisseurBaseInitiale > 0.0001f)
+						{
+							float ratioTronc = Mathf.Clamp(rayonDebut / epaisseurBaseInitiale, 0f, 1f);
+							if (ratioTronc < 0.78f)
+								GenererAiguillesPin(stFeuilles, new Transform3D(tortue.Basis, pEnd), AgeEnJours + 2, 0.34f * facteurAiguillesLod);
+						}
 					}
 					epaisseurBase = rayonFin;
 					break;
 				}
 				case 'F':
 				case 'b':
+				case 'c':
 					// BRANCHE ou sous-branche
 				{
 					Vector3 pStart = tortue.Origin;
 					Vector3 right = tortue.Basis.X.Normalized();
 					Vector3 forward = tortue.Basis.Z.Normalized();
-					tortue = tortue.TranslatedLocal(new Vector3(0, longueurSegment, 0));
+					float longueurLocale = longueurSegment;
+					if (IndexBotanique == LSystem_Botanique.IndexPin && epaisseurBaseInitiale > 0.0001f)
+					{
+						// Forme conique: branches basses plus longues, hautes plus courtes.
+						float ratioHauteur = Mathf.Clamp(epaisseurBase / epaisseurBaseInitiale, 0.25f, 1.0f);
+						float facteurCone = 0.24f + 0.20f * Mathf.Pow(ratioHauteur, 1.45f);
+						longueurLocale *= facteurCone;
+					}
+					if (commande == 'b') longueurLocale *= (IndexBotanique == LSystem_Botanique.IndexPin ? 0.74f : 0.86f);
+					else if (commande == 'c') longueurLocale *= (IndexBotanique == LSystem_Botanique.IndexPin ? 0.52f : 0.66f);
+					tortue = tortue.TranslatedLocal(new Vector3(0, longueurLocale, 0));
 					Vector3 pEnd = tortue.Origin;
 					float rayonFin = epaisseurBase * reductionBranche;
 					float rayonDebut = epaisseurBase;
@@ -474,9 +682,9 @@ public partial class ArbreVivant : StaticBody3D
 						rayonDebut = epaisseurBase * 1.12f;
 						premierSegmentDeBranche = false;
 					}
-					float coef = (commande == 'b') ? 0.7f : 1f;
+					float coef = commande == 'b' ? 0.7f : (commande == 'c' ? 0.52f : 1f);
 					nbSegmentsBranche++;
-					sommeLongueurBranche += longueurSegment;
+					sommeLongueurBranche += longueurLocale;
 					sommeEpaisseurBranche += (rayonDebut + rayonFin) * 0.5f * coef;
 					if (!estCoupe)
 					{
@@ -494,9 +702,23 @@ public partial class ArbreVivant : StaticBody3D
 							Transform3D tStart = new Transform3D(tortue.Basis, pStart);
 							Transform3D tMid = new Transform3D(tortue.Basis, pStart.Lerp(pEnd, 0.5f));
 							Transform3D tEnd = new Transform3D(tortue.Basis, pEnd);
-							GenererFeuillagePetit(stFeuilles, tStart, AgeEnJours);
-							if (Hash(Seed, hashBase) < 0.85f) GenererFeuillagePetit(stFeuilles, tMid, AgeEnJours);
-							GenererFeuillagePetit(stFeuilles, tEnd, AgeEnJours);
+							if (IndexBotanique == LSystem_Botanique.IndexPin)
+							{
+								// Pin: aiguilles denses (pas de larges feuilles).
+								GenererAiguillesPin(stFeuilles, tStart, AgeEnJours + 2, 0.58f * facteurAiguillesLod);
+								if (Hash(SeedForme, hashBase + 91) < 0.30f) GenererAiguillesPin(stFeuilles, tMid, AgeEnJours + 2, 0.66f * facteurAiguillesLod);
+								GenererAiguillesPin(stFeuilles, tEnd, AgeEnJours + 2, 0.78f * facteurAiguillesLod);
+							}
+							else
+							{
+								float ratioBranche = epaisseurBaseInitiale > 0.0001f
+									? Mathf.Clamp(((rayonDebut + rayonFin) * 0.5f) / epaisseurBaseInitiale, 0.20f, 1f)
+									: 0.55f;
+								float tailleBase = (0.70f + ratioBranche * 0.95f) * (0.86f + 0.14f * facteurFeuillesLod);
+								GenererFeuillagePetit(stFeuilles, tStart, AgeEnJours, tailleBase * 1.10f, facteurFeuillesLod);
+								GenererFeuillagePetit(stFeuilles, tMid, AgeEnJours, tailleBase * 0.92f, facteurFeuillesLod);
+								GenererFeuillagePetit(stFeuilles, tEnd, AgeEnJours, tailleBase * 0.78f, facteurFeuillesLod);
+							}
 						}
 					}
 					epaisseurBase = rayonFin * coef;
@@ -516,13 +738,36 @@ public partial class ArbreVivant : StaticBody3D
 				}
 				case '+': tortue = tortue.RotatedLocal(Vector3.Right, angle); break;
 				case '-': tortue = tortue.RotatedLocal(Vector3.Right, -angle); break;
+				case 'R': tortue = tortue.RotatedLocal(Vector3.Up, Mathf.Pi / 4f); break;
+				case 'r': tortue = tortue.RotatedLocal(Vector3.Up, -Mathf.Pi / 4f); break;
+				case 'j':
+				{
+					// Jitter déterministe pour casser les couronnes parfaitement symétriques.
+					float amp = IndexBotanique == LSystem_Botanique.IndexPin ? 18f : 10f;
+					float v = Hash(SeedForme, 10000 + compteurJitterYaw++);
+					float yaw = Mathf.DegToRad((v * 2f - 1f) * amp);
+					tortue = tortue.RotatedLocal(Vector3.Up, yaw);
+					break;
+				}
+				case 'v':
+				{
+					float amp = IndexBotanique == LSystem_Botanique.IndexPin ? 4f : 6f;
+					float v = Hash(SeedForme, 11000 + compteurJitterPitch++);
+					float pitch = Mathf.DegToRad((v * 2f - 1f) * amp);
+					tortue = tortue.RotatedLocal(Vector3.Right, pitch);
+					break;
+				}
 				case '>': tortue = tortue.RotatedLocal(Vector3.Forward, angle); break;
 				case '<': tortue = tortue.RotatedLocal(Vector3.Forward, -angle); break;
 				case 'A':
 				case 'B':
 					break;
 				case 'L':
-					if (!estCoupe) GenererFeuillage(stFeuilles, tortue, AgeEnJours);
+					if (!estCoupe)
+					{
+						if (IndexBotanique == LSystem_Botanique.IndexPin) GenererAiguillesPin(stFeuilles, tortue, AgeEnJours + 2, 0.88f * facteurAiguillesLod);
+						else GenererFeuillage(stFeuilles, tortue, AgeEnJours, 0.95f, facteurFeuillesLod);
+					}
 					break;
 			}
 		}
@@ -532,8 +777,10 @@ public partial class ArbreVivant : StaticBody3D
 		if (!estCoupe)
 		{
 			// Évite l'effet "sucette" au sommet du bouleau.
-			if (IndexBotanique == LSystem_Botanique.IndexBouleau) GenererFeuillagePetit(stFeuilles, tortue, Mathf.Max(1, AgeEnJours - 1));
-			else GenererFeuillage(stFeuilles, tortue, AgeEnJours);
+			if (IndexBotanique == LSystem_Botanique.IndexBouleau || IndexBotanique == LSystem_Botanique.IndexPin)
+				if (IndexBotanique == LSystem_Botanique.IndexPin) GenererAiguillesPin(stFeuilles, tortue, AgeEnJours + 2, 0.95f * facteurAiguillesLod);
+				else GenererFeuillagePetit(stFeuilles, tortue, Mathf.Max(1, AgeEnJours - 1), 0.82f, facteurFeuillesLod);
+			else GenererFeuillage(stFeuilles, tortue, AgeEnJours, 0.92f, facteurFeuillesLod);
 		}
 
 		stBois.GenerateNormals();
@@ -544,20 +791,7 @@ public partial class ArbreVivant : StaticBody3D
 
 		stFeuilles.GenerateNormals();
 		_visuelFeuillage.Mesh = stFeuilles.Commit();
-		Color vertFeuille = CouleurFeuillesArbre();
-		var bruitFeuille = new FastNoiseLite { Seed = (int)(Seed + 5000) };
-		bruitFeuille.NoiseType = FastNoiseLite.NoiseTypeEnum.Simplex;
-		bruitFeuille.Frequency = 0.12f;
-		bruitFeuille.FractalType = FastNoiseLite.FractalTypeEnum.Fbm;
-		var texFeuille = new NoiseTexture2D { Width = 64, Height = 64, Noise = bruitFeuille };
-		StandardMaterial3D matFeuille = new StandardMaterial3D
-		{
-			AlbedoColor = vertFeuille,
-			AlbedoTexture = texFeuille,
-			Roughness = 0.9f,
-			CullMode = BaseMaterial3D.CullModeEnum.Disabled
-		};
-		_visuelFeuillage.MaterialOverride = matFeuille;
+		_visuelFeuillage.MaterialOverride = ObtenirMaterielFeuilles(IndexBotanique);
 
 		// FIX CRITIQUE : Hitbox exacte pour permettre de marcher sous les branches et viser le tronc.
 		_hitbox.Shape = meshBois != null && meshBois.GetFaces().Length > 0
@@ -592,128 +826,220 @@ public partial class ArbreVivant : StaticBody3D
 	}
 
 	/// <summary>Cluster de feuillage le long des branches — formes ovales, densité adaptée au rayon.</summary>
-	private void GenererFeuillagePetit(SurfaceTool st, Transform3D tortue, int age)
+	private void GenererFeuillagePetit(SurfaceTool st, Transform3D tortue, int age, float tailleMul = 1f, float lodMul = 1f)
 	{
-		float rayon = 0.55f + age * 0.12f;
+		GenererFeuillesCaducTypePin(st, tortue, age, 0.40f * lodMul, tailleMul);
+	}
+
+	/// <summary>Aiguilles de pin: petits quads étroits orientés radialement, très denses.</summary>
+	private void GenererAiguillesPin(SurfaceTool st, Transform3D tortue, int age, float densiteMul = 1f)
+	{
 		Vector3 centre = tortue.Origin;
-		// Plus de points quand le rayon augmente = pas de vide
-		int nPoints = Mathf.Max(28, (int)(rayon * 45));
+		Vector3 axe = tortue.Basis.Y.Normalized();
+		Vector3 refPerp = tortue.Basis.X.Normalized();
+		if (Mathf.Abs(refPerp.Dot(axe)) > 0.95f) refPerp = tortue.Basis.Z.Normalized();
+		refPerp = (refPerp - axe * axe.Dot(refPerp)).Normalized();
+
+		// Pin optimisé: moins d'instances, mais aiguilles un peu plus grandes.
+		int nPoints = Mathf.Clamp((int)((8 + age * 2) * densiteMul), 5, 14);
+		float rayonBranche = 0.060f + Mathf.Clamp(age * 0.008f, 0f, 0.05f);
+		float demiLongueurSpan = 0.11f + Mathf.Clamp(age * 0.015f, 0f, 0.10f);
 		for (int i = 0; i < nPoints; i++)
 		{
-			float phi = (float)(i % 8) / 8f * Mathf.Pi * 0.9f;
-			float theta = (float)(i / 8) / 3f * Mathf.Tau;
-			Vector3 dir = tortue.Basis * new Vector3(Mathf.Sin(phi) * Mathf.Cos(theta), Mathf.Cos(phi), Mathf.Sin(phi) * Mathf.Sin(theta));
-			Vector3 pos = centre + dir * rayon;
-			// Feuilles ovales (pas carrées) : largeur ≠ hauteur
-			float largeur = (0.18f + Hash(Seed, i) * 0.12f);
-			float hauteur = (0.28f + Hash(Seed, i + 100) * 0.12f);
-			Vector3 right = (Mathf.Abs(dir.Dot(tortue.Basis.X)) < 0.9f ? tortue.Basis.X : tortue.Basis.Z);
-			right = (right - dir * dir.Dot(right)).Normalized();
-			Vector3 fwd = dir.Cross(right).Normalized();
-			Vector3 p0 = pos - right * largeur - fwd * hauteur * 0.5f;
-			Vector3 p1 = pos + right * largeur - fwd * hauteur * 0.5f;
-			Vector3 p2 = pos + right * largeur + fwd * hauteur * 0.5f;
-			Vector3 p3 = pos - right * largeur + fwd * hauteur * 0.5f;
-			st.SetNormal(dir); st.SetUV(Vector2.Zero); st.AddVertex(p0);
-			st.SetNormal(dir); st.SetUV(Vector2.Zero); st.AddVertex(p1);
-			st.SetNormal(dir); st.SetUV(Vector2.Zero); st.AddVertex(p2);
-			st.SetNormal(dir); st.SetUV(Vector2.Zero); st.AddVertex(p0);
-			st.SetNormal(dir); st.SetUV(Vector2.Zero); st.AddVertex(p2);
-			st.SetNormal(dir); st.SetUV(Vector2.Zero); st.AddVertex(p3);
+			float theta = (float)i / nPoints * Mathf.Tau + Hash(SeedForme, 2200 + i) * 0.35f;
+			Vector3 radial = (refPerp.Rotated(axe, theta)).Normalized();
+			float offsetAxe = (Hash(SeedForme, 2300 + i) * 2f - 1f) * demiLongueurSpan;
+			// Point d'ancrage SUR la branche (évite l'effet "nuage qui flotte").
+			Vector3 ancre = centre + axe * offsetAxe + radial * rayonBranche;
+
+			// Aiguilles plus épaisses et longues (x2 env.), sortie depuis l'ancre.
+			float largeur = 0.050f + Hash(SeedForme, 2400 + i) * 0.036f;
+			float longueur = 0.42f + Hash(SeedForme, 2500 + i) * 0.18f;
+			Vector3 dir = (radial * 0.88f - axe * 0.22f).Normalized();
+			Vector3 tangent = dir.Cross(axe);
+			if (tangent.LengthSquared() < 1e-5f) tangent = dir.Cross(refPerp);
+			tangent = tangent.Normalized();
+
+			Vector3 baseG = ancre - tangent * largeur;
+			Vector3 baseD = ancre + tangent * largeur;
+			Vector3 tipC = ancre + dir * longueur;
+			Vector3 n = dir;
+
+			st.SetNormal(n); st.SetUV(new Vector2(0, 1)); st.AddVertex(baseG);
+			st.SetNormal(n); st.SetUV(new Vector2(1, 1)); st.AddVertex(baseD);
+			st.SetNormal(n); st.SetUV(new Vector2(0.5f, 0)); st.AddVertex(tipC);
 		}
 	}
 
-	/// <summary>Sphère de feuillage AAA : densité proportionnelle au rayon (pas de vide), feuilles ovales.</summary>
-	private void GenererFeuillage(SurfaceTool st, Transform3D tortue, int age)
+	/// <summary>Feuilles de chêne/bouleau distribuées comme le pin, mais en lamelles larges (pas d'épines).</summary>
+	private void GenererFeuillesCaducTypePin(SurfaceTool st, Transform3D tortue, int age, float densiteMul = 1f, float tailleMul = 1f)
 	{
-		float rayon = 1.0f + age * 0.35f;
-		float variante = 0.9f + Hash(Seed, 4) * 0.25f;
-		rayon *= variante;
 		Vector3 centre = tortue.Origin;
-		// Densité proportionnelle au rayon : grosse sphère = plus de quads, pas de vide
-		int nRings = Mathf.Clamp((int)(rayon * 10), 12, 22);
-		int nPerRing = Mathf.Clamp((int)(rayon * 12), 14, 28);
-		int total = 0;
-		for (int ring = 1; ring < nRings; ring++)
+		Vector3 axe = tortue.Basis.Y.Normalized();
+		Vector3 refPerp = tortue.Basis.X.Normalized();
+		if (Mathf.Abs(refPerp.Dot(axe)) > 0.95f) refPerp = tortue.Basis.Z.Normalized();
+		refPerp = (refPerp - axe * axe.Dot(refPerp)).Normalized();
+		bool estChene = IndexBotanique == LSystem_Botanique.IndexChene;
+		float echelle = Mathf.Clamp(tailleMul, 0.55f, 1.95f);
+		float coefLargeur = (estChene ? 1.18f : 1.08f) * echelle;
+		float coefLongueur = (estChene ? 0.78f : 0.86f) * echelle;
+		float rayonSphere = ((estChene ? 0.44f : 0.38f) * echelle + Mathf.Clamp(age * 0.015f, 0f, 0.10f)) * 1.90f;
+		int couches = estChene ? 4 : 3;
+		if (_lodFeuillageActuel < 0.70f) couches -= 1;
+		if (_lodFeuillageActuel < 0.40f) couches -= 1;
+		couches = Mathf.Clamp(couches, 1, 4);
+		int pointsBase = Mathf.Clamp((int)((8 + age * 2) * densiteMul * (0.85f + echelle * 0.45f) * 1.35f), 5, 24);
+
+		// Amas sphériques de cartes-feuilles: plus denses et volumétriques.
+		for (int couche = 0; couche < couches; couche++)
 		{
-			float phi = (float)ring / nRings * Mathf.Pi;
-			int count = Mathf.Max(4, (int)(nPerRing * Mathf.Sin(phi)));
-			float rRing = rayon * (0.5f + 0.5f * Hash(Seed, ring));
-			for (int i = 0; i < count; i++)
+			int points = Mathf.Clamp((int)(pointsBase * (0.78f + couche * 0.22f)), 5, 20);
+			float rayonCouche = rayonSphere * (0.50f + couche * 0.33f);
+			float yawBase = Hash(SeedForme, 3200 + couche * 97) * Mathf.Tau;
+			for (int i = 0; i < points; i++)
 			{
-				float theta = (float)i / count * Mathf.Tau + Hash(Seed, ring * 100 + i) * 0.25f;
-				Vector3 dir = new Vector3(Mathf.Sin(phi) * Mathf.Cos(theta), Mathf.Cos(phi), Mathf.Sin(phi) * Mathf.Sin(theta));
-				dir = tortue.Basis * dir;
-				Vector3 pos = centre + dir * rRing;
-				// Feuilles ovales : largeur et hauteur différentes, forme organique
-				float largeur = 0.22f + Hash(Seed, total) * 0.14f;
-				float hauteur = 0.32f + Hash(Seed, total + 500) * 0.16f;
-				Vector3 up = dir;
-				Vector3 right = tortue.Basis.X;
-				if (Mathf.Abs(up.Dot(right)) > 0.99f) right = tortue.Basis.Z;
-				right = (right - up * up.Dot(right)).Normalized();
-				Vector3 fwd = up.Cross(right).Normalized();
-				Vector3 halfR = right * largeur;
-				Vector3 halfF = fwd * hauteur;
-				Vector3 p0 = pos - halfR - halfF;
-				Vector3 p1 = pos + halfR - halfF;
-				Vector3 p2 = pos + halfR + halfF;
-				Vector3 p3 = pos - halfR + halfF;
-				Vector3 n = up;
-				st.SetNormal(n); st.SetUV(new Vector2(0, 1)); st.AddVertex(p0);
-				st.SetNormal(n); st.SetUV(new Vector2(1, 1)); st.AddVertex(p1);
-				st.SetNormal(n); st.SetUV(new Vector2(1, 0)); st.AddVertex(p2);
-				st.SetNormal(n); st.SetUV(new Vector2(0, 1)); st.AddVertex(p0);
-				st.SetNormal(n); st.SetUV(new Vector2(1, 0)); st.AddVertex(p2);
-				st.SetNormal(n); st.SetUV(new Vector2(0, 0)); st.AddVertex(p3);
-				total++;
+				float t = (i + 0.5f) / points;
+				float y = 1f - 2f * t;
+				float r = Mathf.Sqrt(Mathf.Max(0f, 1f - y * y));
+				float theta = i * 2.3999632f + yawBase + Hash(SeedForme, 3300 + couche * 41 + i) * 0.35f;
+				Vector3 local = new Vector3(Mathf.Cos(theta) * r, y, Mathf.Sin(theta) * r);
+				Vector3 dir = (tortue.Basis * local).Normalized();
+				Vector3 ancre = centre + dir * rayonCouche;
+
+				float largeur = (0.52f + Hash(SeedForme, 3700 + couche * 113 + i) * 0.22f) * coefLargeur;
+				float longueur = (0.40f + Hash(SeedForme, 3800 + couche * 131 + i) * 0.16f) * coefLongueur;
+				AjouterTouffeFeuilleTypeBuisson(st, ancre, dir, axe, refPerp, largeur, longueur, 5000 + couche * 257 + i * 31, centre, rayonSphere * 1.12f);
+
+				// Petit amas dans le gros (volume plus naturel) sans le faire partout pour contenir le coût.
+				if (_lodFeuillageActuel > 0.75f && Hash(SeedForme, 8600 + couche * 181 + i) > 0.74f)
+				{
+					Vector3 ancreInterne = ancre - dir * (rayonCouche * 0.24f);
+					AjouterTouffeFeuilleTypeBuisson(
+						st,
+						ancreInterne,
+						dir,
+						axe,
+						refPerp,
+						largeur * 0.62f,
+						longueur * 0.60f,
+						9000 + couche * 293 + i * 47,
+						centre,
+						rayonSphere * 1.12f
+					);
+				}
 			}
 		}
-		// Couche intérieure : comble le vide au centre pour un volume opaque
-		for (int ring = 1; ring < nRings - 2; ring++)
+	}
+
+	private void AjouterTouffeFeuilleTypeBuisson(
+		SurfaceTool st,
+		Vector3 ancre,
+		Vector3 dir,
+		Vector3 axeRef,
+		Vector3 axeFallback,
+		float largeur,
+		float longueur,
+		int saltBase,
+		Vector3 centreCouronne,
+		float rayonMaxCouronne)
+	{
+		// 1 à 2 cartes "blob", chacune en double couche (grande + petite).
+		float seuilDouble = _lodFeuillageActuel > 0.75f ? 0.58f : (_lodFeuillageActuel > 0.45f ? 0.78f : 0.95f);
+		int feuilles = 1; // Optimisation: moitié moins de micro-cartes, compensée par des feuilles plus grandes.
+		for (int i = 0; i < feuilles; i++)
 		{
-			float phi = (float)ring / nRings * Mathf.Pi;
-			int count = Mathf.Max(4, (int)(nPerRing * 0.7f * Mathf.Sin(phi)));
-			float rInner = rayon * (0.35f + 0.25f * Hash(Seed, ring + 1000));
-			for (int i = 0; i < count; i++)
+			float yaw = Hash(SeedForme, saltBase + 17 + i) * Mathf.Tau;
+			float pitch = (Hash(SeedForme, saltBase + 31 + i) * 2f - 1f) * 0.85f;
+			Vector3 dirLeaf = dir.Rotated(axeRef, yaw);
+			Vector3 sideAxis = dirLeaf.Cross(axeRef);
+			if (sideAxis.LengthSquared() < 1e-5f) sideAxis = dirLeaf.Cross(axeFallback);
+			if (sideAxis.LengthSquared() < 1e-5f) sideAxis = dirLeaf.Cross(Vector3.Right);
+			sideAxis = sideAxis.Normalized();
+			dirLeaf = dirLeaf.Rotated(sideAxis, pitch).Normalized();
+
+			Vector3 upAxis = dirLeaf.Cross(sideAxis);
+			if (upAxis.LengthSquared() < 1e-5f) upAxis = axeRef;
+			upAxis = upAxis.Normalized();
+
+			float w = largeur * (0.90f + Hash(SeedForme, saltBase + 47 + i) * 0.34f);
+			float l = longueur * (0.88f + Hash(SeedForme, saltBase + 59 + i) * 0.30f);
+			Vector3 centre =
+				ancre
+				+ sideAxis * ((Hash(SeedForme, saltBase + 71 + i) * 2f - 1f) * 0.07f)
+				+ upAxis * ((Hash(SeedForme, saltBase + 79 + i) * 2f - 1f) * 0.06f);
+
+			// Anti-feuilles volantes: clamp strict dans le volume de couronne.
+			float demiDiag = Mathf.Max(w * 0.5f, l * 0.74f);
+			Vector3 radial = centre - centreCouronne;
+			float dist = radial.Length();
+			if (dist + demiDiag > rayonMaxCouronne)
 			{
-				float theta = (float)i / count * Mathf.Tau + Hash(Seed, (ring + 1000) * 100 + i) * 0.2f;
-				Vector3 dir = new Vector3(Mathf.Sin(phi) * Mathf.Cos(theta), Mathf.Cos(phi), Mathf.Sin(phi) * Mathf.Sin(theta));
-				dir = tortue.Basis * dir;
-				Vector3 pos = centre + dir * rInner;
-				float largeur = 0.18f + Hash(Seed, total + 1000) * 0.1f;
-				float hauteur = 0.26f + Hash(Seed, total + 1500) * 0.12f;
-				Vector3 up = dir;
-				Vector3 right = tortue.Basis.X;
-				if (Mathf.Abs(up.Dot(right)) > 0.99f) right = tortue.Basis.Z;
-				right = (right - up * up.Dot(right)).Normalized();
-				Vector3 fwd = up.Cross(right).Normalized();
-				Vector3 halfR = right * largeur;
-				Vector3 halfF = fwd * hauteur;
-				Vector3 p0 = pos - halfR - halfF;
-				Vector3 p1 = pos + halfR - halfF;
-				Vector3 p2 = pos + halfR + halfF;
-				Vector3 p3 = pos - halfR + halfF;
-				Vector3 n = up;
-				st.SetNormal(n); st.SetUV(new Vector2(0, 1)); st.AddVertex(p0);
-				st.SetNormal(n); st.SetUV(new Vector2(1, 1)); st.AddVertex(p1);
-				st.SetNormal(n); st.SetUV(new Vector2(1, 0)); st.AddVertex(p2);
-				st.SetNormal(n); st.SetUV(new Vector2(0, 1)); st.AddVertex(p0);
-				st.SetNormal(n); st.SetUV(new Vector2(1, 0)); st.AddVertex(p2);
-				st.SetNormal(n); st.SetUV(new Vector2(0, 0)); st.AddVertex(p3);
-				total++;
+				if (dist < 1e-4f) radial = dir;
+				float cible = Mathf.Max(0f, rayonMaxCouronne - demiDiag * 0.92f);
+				centre = centreCouronne + radial.Normalized() * cible;
+			}
+
+			// Couche principale (large) + couche secondaire (plus petite) pour un rendu "balle de feuilles".
+			AjouterFeuillePerforeeTypeBuisson(st, centre, dirLeaf, axeRef, axeFallback, w, l);
+			bool autoriser2e = _lodFeuillageActuel > 0.78f || (_lodFeuillageActuel > 0.42f && Hash(SeedForme, saltBase + 91 + i) > 0.62f);
+			if (autoriser2e)
+			{
+				Vector3 dirLeaf2 = dirLeaf.Rotated(sideAxis, (Hash(SeedForme, saltBase + 97 + i) * 2f - 1f) * 0.45f).Normalized();
+				AjouterFeuillePerforeeTypeBuisson(st, centre, dirLeaf2, sideAxis, axeRef, w * 0.72f, l * 0.66f);
 			}
 		}
+	}
+
+	private static void AjouterFeuillePerforeeTypeBuisson(SurfaceTool st, Vector3 centre, Vector3 dir, Vector3 axeRef, Vector3 axeFallback, float largeur, float longueur)
+	{
+		Vector3 droite = dir.Cross(axeRef);
+		if (droite.LengthSquared() < 1e-5f) droite = dir.Cross(axeFallback);
+		if (droite.LengthSquared() < 1e-5f) droite = dir.Cross(Vector3.Right);
+		droite = droite.Normalized() * (largeur * 0.5f);
+		Vector3 levee = dir * longueur;
+		Vector3 pointes = levee * 0.50f;
+
+		Vector3 departL = centre - droite;
+		Vector3 departR = centre + droite;
+		Vector3 milieuL = centre - droite * 0.62f + levee * 0.24f;
+		Vector3 milieuR = centre + droite * 0.62f + levee * 0.24f;
+		Vector3 sommetL = centre - droite * 0.24f + pointes;
+		Vector3 sommetR = centre + droite * 0.24f + pointes;
+		Vector3 sommetC = centre + levee * 0.74f;
+
+		// Face avant
+		st.SetNormal(dir); st.SetUV(new Vector2(0, 1)); st.AddVertex(departL);
+		st.SetNormal(dir); st.SetUV(new Vector2(0.45f, 0.45f)); st.AddVertex(milieuL);
+		st.SetNormal(dir); st.SetUV(new Vector2(0.35f, 0)); st.AddVertex(sommetL);
+		st.SetNormal(dir); st.SetUV(new Vector2(1, 1)); st.AddVertex(departR);
+		st.SetNormal(dir); st.SetUV(new Vector2(0.65f, 0)); st.AddVertex(sommetR);
+		st.SetNormal(dir); st.SetUV(new Vector2(0.55f, 0.45f)); st.AddVertex(milieuR);
+		st.SetNormal(dir); st.SetUV(new Vector2(0.45f, 0.45f)); st.AddVertex(milieuL);
+		st.SetNormal(dir); st.SetUV(new Vector2(0.55f, 0.45f)); st.AddVertex(milieuR);
+		st.SetNormal(dir); st.SetUV(new Vector2(0.50f, 0.02f)); st.AddVertex(sommetC);
+
+		// Pas de face arrière dupliquée: culling désactivé suffit, moitié moins de triangles.
+	}
+
+	/// <summary>Sphère de feuillage AAA : densité proportionnelle au rayon (pas de vide), feuilles ovales.</summary>
+	private void GenererFeuillage(SurfaceTool st, Transform3D tortue, int age, float tailleMul = 1f, float lodMul = 1f)
+	{
+		float densite = (0.45f + Mathf.Clamp(age - 2, 0, 4) * 0.08f) * lodMul * 0.5f;
+		GenererFeuillesCaducTypePin(st, tortue, age, densite, tailleMul * 2f);
 	}
 
 	private Color CouleurFeuillesArbre()
 	{
-		float h = Hash(Seed, 10);
-		float h2 = Hash(Seed, 11);
-		// Verts vibrants (vivant) : peu de rouge/bleu, vert dominant saturé
-		float r = 0.1f + h * 0.08f;
-		float g = 0.5f + h * 0.35f;
-		float b = 0.08f + h2 * 0.12f;
+		if (IndexBotanique == LSystem_Botanique.IndexPin) return new Color(0.12f, 0.25f, 0.15f); // Aiguilles sombres
+		float h = Hash(SeedForme, 10);
+		float h2 = Hash(SeedForme, 11);
+		// Feuilles caduques: base verte + légère dérive olive/jaune pour casser le "vert plein".
+		float rBase = IndexBotanique == LSystem_Botanique.IndexBouleau ? 0.20f : 0.17f;
+		float gBase = IndexBotanique == LSystem_Botanique.IndexBouleau ? 0.56f : 0.52f;
+		float bBase = IndexBotanique == LSystem_Botanique.IndexBouleau ? 0.13f : 0.11f;
+		float r = rBase + h * 0.12f;
+		float g = gBase + h * 0.25f;
+		float b = bBase + h2 * 0.10f;
 		return new Color(r, g, b);
 	}
 }

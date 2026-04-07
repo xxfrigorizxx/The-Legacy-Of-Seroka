@@ -55,12 +55,25 @@ public static class LSystem_Botanique
 		Flexibilite = 0.25f
 	};
 
+	public static readonly ProfilBotanique Pin = new ProfilBotanique
+	{
+		Nom = "Pin",
+		ID_Tronc = 30,
+		ID_Feuille = 31,
+		MasseDensite = 0.68f,
+		ResistanceHache = 105f,
+		Combustibilite = 330f,
+		ChaleurDegagee = 760f,
+		Flexibilite = 0.3f
+	};
+
 	/// <summary>Index du chêne dans TableBotanique.</summary>
 	public const byte IndexChene = 0;
 	public const byte IndexBouleau = 1; // Nouvelle espece
+	public const byte IndexPin = 2; // Nouvelle espece
 
-	/// <summary>Table des essences. 0=Chêne, 1=Bouleau.</summary>
-	public static readonly ProfilBotanique[] TableBotanique = { Chene, Bouleau };
+	/// <summary>Table des essences. 0=Chêne, 1=Bouleau, 2=Pin.</summary>
+	public static readonly ProfilBotanique[] TableBotanique = { Chene, Bouleau, Pin };
 
 	/// <summary>Retourne le profil botanique pour l'index d'espèce (0 = chêne). Clamp si hors bornes.</summary>
 	public static ProfilBotanique ObtenirProfil(byte indexEspece)
@@ -106,9 +119,9 @@ public static class LSystem_Botanique
 	/// <summary>Chêne organique : angles 360°, 1–4 branches asymétriques, sous-branches possibles. Chaque arbre différent.</summary>
 	public static string GenererChaineCheneOrganique(int iterations, uint seed)
 	{
-		string actuel = "TTTTTA";
+		string actuel = "TTTTA";
 		string[] dirs8 = { "[+B]", "[+>B]", "[>B]", "[->B]", "[-B]", "[-<B]", "[<B]", "[+<B]" };
-		int iterA = 0, iterB = 0, iterb = 0;
+		int iterA = 0, iterB = 0, iterb = 0, iterc = 0;
 		for (int i = 0; i < iterations; i++)
 		{
 			string suivant = "";
@@ -128,7 +141,9 @@ public static class LSystem_Botanique
 						indicesUtilises.Add(idx);
 						branches += dirs8[idx];
 					}
-					suivant += branches + "TTA";
+					// Chêne moins étiré: un étage n'ajoute pas toujours de tronc.
+					bool pousseTronc = RandFromSeed(seed, 500 + iterA * 13) < 0.72f;
+					suivant += branches + (pousseTronc ? "TA" : "A");
 					iterA++;
 				}
 				else if (c == 'B')
@@ -166,10 +181,21 @@ public static class LSystem_Botanique
 				}
 				else if (c == 'b')
 				{
-					// Sous-branche : 2–3 rameaux feuillus, feuillage le long
+					// Sous-branche : ajoute des sous-sous-branches (c) pour éviter les chênes "squelettes".
 					float r = RandFromSeed(seed, iterb * 19 + 200);
-					suivant += r < 0.4f ? "FF[+L][-L][>L]L" : (r < 0.7f ? "FL[+L][-L]L" : "FF[+L]L");
+					suivant += r < 0.30f
+						? "FF[+b][-b][>c][<c]L"
+						: (r < 0.62f
+							? "F[+c]F[-c][>b]L"
+							: "FF[+c][-c][>c][<c]L");
 					iterb++;
+				}
+				else if (c == 'c')
+				{
+					// Sous-sous-branche terminale: petite ramification feuillue, sans récursion.
+					float r = RandFromSeed(seed, 2600 + iterc * 23);
+					suivant += r < 0.5f ? "F[+L][-L]L" : "FF[<L][>L]L";
+					iterc++;
 				}
 				else
 					suivant += c;
@@ -182,8 +208,8 @@ public static class LSystem_Botanique
 	public static string GenererChaineBouleauOrganique(int iterations, uint seed)
 	{
 		// Bouleau : tronc dominant mais NON exponentiel, branches fines concentrées vers le haut.
-		string actuel = "TTA";
-		int iterA = 0, iterb = 0;
+		string actuel = "TA";
+		int iterA = 0, iterb = 0, iterc = 0;
 		for (int i = 0; i < iterations; i++)
 		{
 			string suivant = "";
@@ -192,18 +218,28 @@ public static class LSystem_Botanique
 				if (c == 'A')
 				{
 					float r = RandFromSeed(seed, 700 + iterA * 11);
-					// Une seule poussée de tronc par itération (évite l'effet "colonne infinie").
-					if (r < 0.33f) suivant += "T[+b][<b]A";
-					else if (r < 0.66f) suivant += "T[+b][-b]A";
-					else suivant += "T[<b][->b]A";
+					// Tronc pas systématique: limite l'effet étiré.
+					bool pousseTronc = RandFromSeed(seed, 760 + iterA * 17) < 0.82f;
+					string prefix = pousseTronc ? "T" : "";
+					if (r < 0.33f) suivant += prefix + "[+b][<b][-c]A";
+					else if (r < 0.66f) suivant += prefix + "[+b][-b][>c]A";
+					else suivant += prefix + "[<b][->b][+c]A";
 					iterA++;
 				}
 				else if (c == 'b')
 				{
 					float r = RandFromSeed(seed, 900 + iterb * 13);
-					// Rameaux courts avec feuilles pour former une cime de bouleau.
-					suivant += r < 0.45f ? "FFL[+L][<L]" : (r < 0.75f ? "FL[+L]" : "F[<L]L");
+					// Rameaux de bouleau avec sous-sous-branche pour densifier la silhouette.
+					suivant += r < 0.35f
+						? "FFL[+c][<c][->c]"
+						: (r < 0.70f ? "FL[+b][-c][>c]L" : "F[<c][+c]L");
 					iterb++;
+				}
+				else if (c == 'c')
+				{
+					float r = RandFromSeed(seed, 1700 + iterc * 19);
+					suivant += r < 0.5f ? "F[+L][<L]L" : "FF[<L][->L]L";
+					iterc++;
 				}
 				else
 					suivant += c;
@@ -211,6 +247,68 @@ public static class LSystem_Botanique
 			actuel = suivant;
 		}
 		return actuel;
+	}
+
+	public static string GenererChainePinOrganique(int iterations, uint seed)
+	{
+		// Pin conique: tronc central dominant, 8 directions autour du tronc, sous-branches latérales.
+		// Plus on est bas dans l'arbre, plus des branches peuvent manquer (cassées/absentes) pour casser la symétrie.
+		string axiome = "TTTA";
+		int iterb = 0;
+		for (int i = 0; i < iterations; i++)
+		{
+			string next = "";
+			foreach (char c in axiome)
+			{
+				// A = étage de branches autour du tronc (8 directions), avec trous asymétriques.
+				if (c == 'A')
+				{
+					float t = iterations > 1 ? (float)i / (iterations - 1) : 1f; // 0=base, 1=sommet
+					string[] dirs8 = { "R", "RR", "RRR", "RRRR", "r", "rr", "rrr", "rrrr" };
+
+					// Bas: déjà 3-4 côtés, puis davantage en montant jusqu'à 7-8.
+					int minCible = t < 0.2f ? 3 : (t < 0.45f ? 4 : (t < 0.7f ? 5 : 7));
+					int maxCible = t < 0.2f ? 4 : (t < 0.45f ? 6 : (t < 0.7f ? 7 : 8));
+					int cible = Mathf.Clamp(minCible + (int)(RandFromSeed(seed, 3600 + i * 17) * (maxCible - minCible + 1)), 2, 8);
+					int cibleInter = Mathf.Clamp(Mathf.Max(2, cible - 2), 2, 6);
+
+					// Distribution circulaire (évite l'effet "deux côtés uniquement" sur tout l'arbre).
+					int[] ordreCirculaire = { 0, 4, 2, 6, 1, 5, 3, 7 };
+					int offset = (int)(RandFromSeed(seed, 3700 + i * 29) * 8f) % 8;
+					string couronne = "";
+					for (int k = 0; k < cible; k++)
+					{
+						int idx = ordreCirculaire[(k + offset) % 8];
+						// Jitter latéral uniquement (pas de verticale forte) pour garder des branches surtout horizontales.
+						couronne += "[" + dirs8[idx] + "j+bcbL]";
+					}
+					// Etage intermédiaire: comble visuellement entre deux étages principaux.
+					int offsetInter = (offset + 1 + (int)(RandFromSeed(seed, 3729 + i * 31) * 3f)) % 8;
+					string couronneInter = "";
+					for (int k = 0; k < cibleInter; k++)
+					{
+						int idx = ordreCirculaire[(k + offsetInter) % 8];
+						couronneInter += "[" + dirs8[idx] + "j+bcL]";
+					}
+
+					next += "T" + couronne + "T" + couronneInter + "A";
+				}
+				// b = branche principale + sous-branches latérales.
+				// Le couple R/r + + incline dans des plans différents => vraies ramifications autour de la branche.
+				else if (c == 'b')
+				{
+					float r = RandFromSeed(seed, 4100 + i * 131 + iterb * 17);
+					// Pin: éviter les "bras" interminables -> sous-branches courtes/intermédiaires, très peu de récursion.
+					next += r < 0.56f
+						? "Fj[R+c]Fj[r+c]cL"
+						: (r < 0.82f ? "Fj[RR+c]Fj[rr+c]L" : "Fj[R+F]Fj[r+F]L");
+					iterb++;
+				}
+				else next += c;
+			}
+			axiome = next;
+		}
+		return axiome;
 	}
 
 	/// <summary>L-system asymétrique : branches non obligatoires de chaque côté. Si branche à gauche, pas forcément à droite.</summary>
