@@ -39,8 +39,14 @@ public partial class Monde_Client : Node3D
 	[Export] public float SecondesAnticipationChargement = 2.5f;
 	/// <summary>Intégrations mesh/collision par frame quand le spawn est déjà prêt (exploration). Augmente si le sol met du temps à « se réveiller ».</summary>
 	[Export] public int MaxIntegrationsParFrameExploration = 4;
+	/// <summary>Intégrations mesh/collision par frame pendant le chargement initial (anti-pic CPU/GPU).</summary>
+	[Export] public int MaxIntegrationsParFrameChargement = 8;
 	/// <summary>Solidifications BodySetSpace par frame en exploration (hors chargement initial).</summary>
 	[Export] public int MaxSolidificationsParFrameExploration = 10;
+	/// <summary>Nombre max de chunks de flore (gazon/buissons) construits par frame en exploration.</summary>
+	[Export] public int MaxFloreParFrameExploration = 1;
+	/// <summary>Nombre max de chunks de flore construits par frame pendant le chargement initial.</summary>
+	[Export] public int MaxFloreParFrameChargement = 1;
 
 	private ConcurrentQueue<Action> _misesAJourMainThread = new ConcurrentQueue<Action>();
 	public ConcurrentQueue<Action> _misesAJourUrgentes = new ConcurrentQueue<Action>();
@@ -76,6 +82,7 @@ public partial class Monde_Client : Node3D
 	private float _timerCullingCamera = 0f;
 	private readonly List<Vector2I> _fileFloreDifferee = new List<Vector2I>();
 	private readonly HashSet<Vector2I> _setFloreDifferee = new HashSet<Vector2I>();
+	private readonly Dictionary<Vector2I, ulong> _frameEnqueueFlore = new Dictionary<Vector2I, ulong>();
 	private int _rayonRequetesActuel;
 	private float _timerExpansionRequetes;
 
@@ -292,7 +299,9 @@ public partial class Monde_Client : Node3D
 
 		// 2) Intégrations : chargement initial agressif ; exploration : plusieurs par frame pour suivre un monde infini.
 		bool enChargement = !ChunkSousPiedsAPret();
-		int maxIntegrations = enChargement ? 12 : Mathf.Max(1, MaxIntegrationsParFrameExploration);
+		int maxIntegrations = enChargement
+			? Mathf.Max(1, MaxIntegrationsParFrameChargement)
+			: Mathf.Max(1, MaxIntegrationsParFrameExploration);
 		int integrations = 0;
 		while (integrations < maxIntegrations && _fileIntegrationMainThread.TryDequeue(out var integration))
 		{
@@ -437,7 +446,10 @@ public partial class Monde_Client : Node3D
 		}
 
 		// Etale la flore sur plusieurs frames (supprime les gros spikes du premier chargement massif).
-		TraiterFloreDifferee(positionObservation, !ChunkSousPiedsAPret() ? 1 : 2);
+		int budgetFlore = enChargement
+			? Mathf.Max(1, MaxFloreParFrameChargement)
+			: Mathf.Max(1, MaxFloreParFrameExploration);
+		TraiterFloreDifferee(positionObservation, budgetFlore);
 
 		// Priorité : couvrir RayonDormancePhysique + marge (l’ancien 9×9 était trop petit vs grille 17×17 pour R=8).
 		Vector2I chunkPieds = Gestionnaire_Monde.WorldToChunkCoord(positionObservation, TailleChunk);
@@ -682,13 +694,11 @@ public partial class Monde_Client : Node3D
 	private void EnfilerFloreChunk(ChunkData data, Vector3 positionObservation)
 	{
 		if (data == null || data.InventaireFlore == null || data.InventaireFlore.Count == 0) return;
-		if (EstChunkProche(data.Coordonnees, positionObservation, Mathf.Max(2, RayonQualiteMaxChunks)))
-		{
-			ConstruireFloreChunk(data, positionObservation);
-			return;
-		}
 		if (_setFloreDifferee.Add(data.Coordonnees))
+		{
 			_fileFloreDifferee.Add(data.Coordonnees);
+			_frameEnqueueFlore[data.Coordonnees] = Engine.GetPhysicsFrames();
+		}
 	}
 
 	private void ConstruireFloreChunk(ChunkData data, Vector3 positionObservation)
@@ -696,6 +706,7 @@ public partial class Monde_Client : Node3D
 		if (data == null || !_chunksData.ContainsKey(data.Coordonnees)) return;
 		_setFloreDifferee.Remove(data.Coordonnees);
 		_fileFloreDifferee.Remove(data.Coordonnees);
+		_frameEnqueueFlore.Remove(data.Coordonnees);
 		if (data._nodeFlore != null || data.InventaireFlore == null || data.InventaireFlore.Count == 0) return;
 		var node = Chunk_Client.CreerNoeudFlorePourChunkData(data, positionObservation, TailleChunk);
 		if (node == null) return;
@@ -706,12 +717,24 @@ public partial class Monde_Client : Node3D
 	private void TraiterFloreDifferee(Vector3 positionObservation, int budgetParFrame)
 	{
 		int budget = Mathf.Max(0, budgetParFrame);
-		for (int i = 0; i < budget && _fileFloreDifferee.Count > 0; i++)
+		ulong frameCourante = Engine.GetPhysicsFrames();
+		int traites = 0;
+		int tentatives = _fileFloreDifferee.Count;
+		while (traites < budget && _fileFloreDifferee.Count > 0 && tentatives > 0)
 		{
+			tentatives--;
 			Vector2I coord = ExtraireChunkLePlusProcheSimple(_fileFloreDifferee, positionObservation);
+			if (_frameEnqueueFlore.TryGetValue(coord, out ulong frameAjout) && frameAjout >= frameCourante)
+			{
+				// Laisse au moins 1 frame entre l’intégration du chunk et la création de sa flore.
+				_fileFloreDifferee.Add(coord);
+				continue;
+			}
 			_setFloreDifferee.Remove(coord);
+			_frameEnqueueFlore.Remove(coord);
 			if (!_chunksData.TryGetValue(coord, out var data)) continue;
 			ConstruireFloreChunk(data, positionObservation);
+			traites++;
 		}
 	}
 
@@ -813,6 +836,7 @@ public partial class Monde_Client : Node3D
 				_chunksData.Remove(coord);
 				_setFloreDifferee.Remove(coord);
 				_fileFloreDifferee.Remove(coord);
+				_frameEnqueueFlore.Remove(coord);
 				data.LibérerRids();
 				NettoyerRegistreReconstruction(coord);
 			}
@@ -1059,6 +1083,12 @@ public partial class Monde_Client : Node3D
 	{
 		Camera3D cam = GetViewport()?.GetCamera3D();
 		return cam != null ? cam.GlobalPosition : (_joueur?.GlobalPosition ?? Vector3.Zero);
+	}
+
+	/// <summary>Position d'interaction flore : privilégie le corps joueur (contact sol), sinon fallback observation.</summary>
+	public Vector3 ObtenirPositionInteractionFlore()
+	{
+		return _joueur?.GlobalPosition ?? ObtenirPositionObservation();
 	}
 
 	/// <summary>Position utilisée par le radar (chunk le plus proche). Utilise la caméra active si disponible (caméra libre), sinon le corps du joueur.</summary>

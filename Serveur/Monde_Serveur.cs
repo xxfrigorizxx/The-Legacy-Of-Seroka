@@ -957,15 +957,9 @@ public partial class Monde_Serveur : Node
 		float r = (h & 0x00FFFFFFu) / 16777216f;
 		AssurerNoiseTemperatureArbres();
 		float temp = _noiseTemperatureArbres?.GetNoise2D(gx, gz) ?? 0f;
-		// Pin uniquement en zone froide/neige (proxy température).
-		// Plus on s'enfonce dans le froid, plus le pin devient dominant.
-		if (temp < -0.2f)
-		{
-			float tFroid = Mathf.Clamp((-temp - 0.2f) / 0.6f, 0f, 1f);
-			float probaPin = Mathf.Lerp(0.25f, 1.0f, tFroid);
-			if (r < probaPin)
-				return LSystem_Botanique.IndexPin;
-		}
+		// Zone froide/neige : on verrouille sur pin pour éviter chêne/bouleau sur neige.
+		if (temp < -0.15f)
+			return LSystem_Botanique.IndexPin;
 		return (byte)(r < 0.4f ? LSystem_Botanique.IndexBouleau : LSystem_Botanique.IndexChene);
 	}
 

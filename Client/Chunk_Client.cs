@@ -129,6 +129,7 @@ public partial class Chunk_Client : Node3D
 
 	public override void _Process(double delta)
 	{
+		// Interaction dynamique désactivée : conserve le rendu visuel des brins sans coût CPU de scan.
 		if (_inventaireFloreCache == null || _inventaireFloreCache.Count == 0) return;
 		_frameFlore++;
 		if (_frameFlore % 12 == 0)
@@ -472,14 +473,6 @@ public partial class Chunk_Client : Node3D
 			BuissonPlein = new List<Transform3D>(),
 			BuissonVide = new List<Transform3D>()
 		};
-		var zonesSansGazon = new HashSet<Vector3I>();
-		foreach (var kv in inventaire)
-		{
-			if (!Chunk_Serveur.EstTypeBuisson(kv.Value)) continue;
-			for (int dx = -1; dx <= 1; dx++)
-				for (int dz = -1; dz <= 1; dz++)
-					zonesSansGazon.Add(new Vector3I(kv.Key.X + dx, kv.Key.Y, kv.Key.Z + dz));
-		}
 		Vector3 chunkOrigin = new Vector3(originX, 0, originZ);
 		foreach (var kv in inventaire)
 		{
@@ -487,22 +480,23 @@ public partial class Chunk_Client : Node3D
 			float angle = (float)((kv.Key.X * 73856093 ^ kv.Key.Z * 19349663) % 10000) / 10000f * Mathf.Tau;
 			Vector3 posMonde = new Vector3(kv.Key.X + 0.5f, kv.Key.Y + 0.5f, kv.Key.Z + 0.5f);
 
-			if (kv.Value == 0 && !zonesSansGazon.Contains(kv.Key))
+			if (kv.Value == 0)
 			{
 				Color couleurSol = ObtenirCouleurTerrainApproxThreadSafe(kv.Key.X, kv.Key.Y, kv.Key.Z);
 				Color couleurHerbe = new Color(couleurSol.R * 0.8f, couleurSol.G * 0.8f, couleurSol.B * 0.8f, 1f).Lerp(new Color(0.7f, 0.8f, 1f), 0.1f);
 				uint hashBase = (uint)(kv.Key.X * 73856093) ^ (uint)(kv.Key.Z * 19349663);
-				int densiteGazon = 14;
+				float humidite = CalculerHumiditeGlobale(kv.Key.X, kv.Key.Z);
+				float facteurHum = Mathf.Clamp((humidite + 1f) * 0.5f, 0f, 1f);
+				float facteurHauteur = Mathf.Lerp(1.0f, 1.32f, facteurHum);
+				float facteurLargeur = Mathf.Lerp(0.92f, 1.12f, facteurHum);
+				int densiteGazon = CalculerDensiteGazonSelonHumidite(humidite, 19);
 				for (int i = 0; i < densiteGazon; i++)
 				{
-					uint h_brin = hashBase ^ (uint)(i * 83492791);
-					float offsetX = ((h_brin % 100) / 100f) - 0.5f;
-					float offsetZ = (((h_brin / 100) % 100) / 100f) - 0.5f;
-					float echelleAlea = 0.5f + ((h_brin % 50) / 100f);
-					float angleBrin = (h_brin % 360) * Mathf.Pi / 180f;
+					CalculerVariationBrin(hashBase, i, densiteGazon, out float offsetX, out float offsetZ, out float echelleAlea, out float angleBrin);
 					var tGazon = Transform3D.Identity;
 					tGazon.Origin = positionLocale + new Vector3(offsetX, 0, offsetZ);
-					tGazon.Basis = Basis.Identity.Scaled(new Vector3(EchelleGazon * echelleAlea, EchelleGazon * echelleAlea, EchelleGazon * echelleAlea)).Rotated(Vector3.Up, angleBrin);
+					float baseEchelle = EchelleGazon * echelleAlea;
+					tGazon.Basis = Basis.Identity.Scaled(new Vector3(baseEchelle * facteurLargeur, baseEchelle * facteurHauteur, baseEchelle * facteurLargeur)).Rotated(Vector3.Up, angleBrin);
 					payload.Gazon.Add((tGazon, couleurHerbe, posMonde + new Vector3(offsetX, 0, offsetZ)));
 				}
 			}
@@ -540,6 +534,34 @@ public partial class Chunk_Client : Node3D
 			? sec.Lerp(normal, facteurHum / 0.35f)
 			: normal.Lerp(humide, (facteurHum - 0.35f) / 0.65f);
 		return couleurBase;
+	}
+
+	/// <summary>Densité du gazon pilotée par l'humidité locale : max inchangé en zone humide, réduit en zone sèche.</summary>
+	private int CalculerDensiteGazonSelonHumidite(float humiditeGlobale, int densiteMax)
+	{
+		float facteurHum = Mathf.Clamp((humiditeGlobale + 1f) * 0.5f, 0f, 1f);
+		// Zone sèche plus couverte pour limiter les trous visuels.
+		float multiplicateur = Mathf.Lerp(0.90f, 1.0f, facteurHum);
+		return Mathf.Clamp(Mathf.RoundToInt(densiteMax * multiplicateur), 1, densiteMax);
+	}
+
+	private static void CalculerVariationBrin(uint hashBase, int index, int densiteGazon, out float offsetX, out float offsetZ, out float echelleAlea, out float angleBrin)
+	{
+		// Distribution phyllotaxique + jitter déterministe: casse les rangées "en cube" sans coût mémoire.
+		uint h = hashBase ^ (uint)(index * 83492791);
+		float angleTouffe = ((hashBase & 1023u) / 1023f) * Mathf.Tau;
+		float t = (index + 0.5f) / Mathf.Max(1f, densiteGazon);
+		float rayon = Mathf.Sqrt(t) * 0.56f;
+		float jitterR = ((((h >> 8) & 255u) / 255f) - 0.5f) * 0.10f;
+		rayon = Mathf.Clamp(rayon + jitterR, 0f, 0.64f);
+		float jitterA = (((h & 255u) / 255f) - 0.5f) * 0.65f;
+		float anglePos = index * 2.39996323f + angleTouffe + jitterA;
+		float decalTouffeX = ((((hashBase >> 10) & 255u) / 255f) - 0.5f) * 0.18f;
+		float decalTouffeZ = ((((hashBase >> 18) & 255u) / 255f) - 0.5f) * 0.18f;
+		offsetX = Mathf.Cos(anglePos) * rayon + decalTouffeX;
+		offsetZ = Mathf.Sin(anglePos) * rayon + decalTouffeZ;
+		echelleAlea = 0.74f + (((h >> 16) & 255u) / 255f) * 0.52f;
+		angleBrin = anglePos + ((((h >> 24) & 255u) / 255f) - 0.5f) * 0.70f;
 	}
 
 	/// <summary>Applique le paquet flore sur le Main Thread : un seul passage MultiMesh (1 Draw Call pour toute la végétation du chunk). Filtre le gazon par distance.</summary>
@@ -697,15 +719,6 @@ public partial class Chunk_Client : Node3D
 		var pleins = new List<Transform3D>();
 		var vides = new List<Transform3D>();
 		var gazonInstances = new List<(Transform3D t, Color c)>();
-		var zonesSansGazon = new HashSet<Vector3I>();
-		foreach (var kv in inventaire)
-		{
-			if (!Chunk_Serveur.EstTypeBuisson(kv.Value)) continue;
-			for (int dx = -1; dx <= 1; dx++)
-				for (int dz = -1; dz <= 1; dz++)
-					zonesSansGazon.Add(new Vector3I(kv.Key.X + dx, kv.Key.Y, kv.Key.Z + dz));
-		}
-
 		Vector3 posObs = (GetParent() as Monde_Client)?.ObtenirPositionObservation() ?? chunkOrigin;
 		float rayonCarre = (RAYON_GAZON_CHUNKS * TailleChunk) * (RAYON_GAZON_CHUNKS * TailleChunk);
 
@@ -715,22 +728,23 @@ public partial class Chunk_Client : Node3D
 			float angle = (float)((kv.Key.X * 73856093 ^ kv.Key.Z * 19349663) % 10000) / 10000f * Mathf.Tau;
 			Vector3 posMonde = new Vector3(kv.Key.X + 0.5f, kv.Key.Y + 0.5f, kv.Key.Z + 0.5f);
 
-			if (kv.Value == 0 && !zonesSansGazon.Contains(kv.Key) && posMonde.DistanceSquaredTo(posObs) <= rayonCarre)
+			if (kv.Value == 0 && posMonde.DistanceSquaredTo(posObs) <= rayonCarre)
 			{
 				Color couleurSol = ObtenirCouleurTerrainApprox(kv.Key.X, kv.Key.Y, kv.Key.Z);
 				Color couleurHerbe = new Color(couleurSol.R * 0.8f, couleurSol.G * 0.8f, couleurSol.B * 0.8f, 1f).Lerp(new Color(0.7f, 0.8f, 1f), 0.1f);
 				uint hashBase = (uint)(kv.Key.X * 73856093) ^ (uint)(kv.Key.Z * 19349663);
-				int densiteGazon = 14;
+				float humidite = CalculerHumiditeGlobale(kv.Key.X, kv.Key.Z);
+				float facteurHum = Mathf.Clamp((humidite + 1f) * 0.5f, 0f, 1f);
+				float facteurHauteur = Mathf.Lerp(1.0f, 1.32f, facteurHum);
+				float facteurLargeur = Mathf.Lerp(0.92f, 1.12f, facteurHum);
+				int densiteGazon = CalculerDensiteGazonSelonHumidite(humidite, 19);
 				for (int i = 0; i < densiteGazon; i++)
 				{
-					uint h_brin = hashBase ^ (uint)(i * 83492791);
-					float offsetX = ((h_brin % 100) / 100f) - 0.5f;
-					float offsetZ = (((h_brin / 100) % 100) / 100f) - 0.5f;
-					float echelleAlea = 0.5f + ((h_brin % 50) / 100f);
-					float angleBrin = (h_brin % 360) * Mathf.Pi / 180f;
+					CalculerVariationBrin(hashBase, i, densiteGazon, out float offsetX, out float offsetZ, out float echelleAlea, out float angleBrin);
 					var tGazon = Transform3D.Identity;
 					tGazon.Origin = positionLocale + new Vector3(offsetX, 0, offsetZ);
-					tGazon.Basis = Basis.Identity.Scaled(new Vector3(EchelleGazon * echelleAlea, EchelleGazon * echelleAlea, EchelleGazon * echelleAlea)).Rotated(Vector3.Up, angleBrin);
+					float baseEchelle = EchelleGazon * echelleAlea;
+					tGazon.Basis = Basis.Identity.Scaled(new Vector3(baseEchelle * facteurLargeur, baseEchelle * facteurHauteur, baseEchelle * facteurLargeur)).Rotated(Vector3.Up, angleBrin);
 					gazonInstances.Add((tGazon, couleurHerbe));
 				}
 			}
@@ -757,6 +771,30 @@ public partial class Chunk_Client : Node3D
 	private static Material _cacheMaterielGazonSymbiotique;
 	private static Material _cacheMaterielBuissonProcedural;
 private static Texture2D _cacheTextureFeuilleBuisson;
+	private const int MAX_CONTACTS_GAZON = 6;
+	private const int MAX_CONTACTS_RIGIDES_GAZON_SCAN = 24;
+	private const int MAX_TRACES_CONTACT_GAZON = 18;
+	private const float RAYON_REVEIL_INTERACTION_GAZON = 56f;
+	private const float BONUS_RAYON_REVEIL_SI_JOUEUR_RAPIDE = 34f;
+	private const float VITESSE_OBSERVATION_REVEIL_MAX = 18f;
+	private const float FREINAGE_GAZON_MIN = 0.28f;
+	private const float FREINAGE_GAZON_MAX = 1.35f;
+	private const float DECROISSANCE_TRACE_PAR_SECONDE = 0.16f;
+	private static readonly Vector3[] _contactsGazonMonde = new Vector3[MAX_CONTACTS_GAZON];
+	private static readonly float[] _contactsGazonIntensite = new float[MAX_CONTACTS_GAZON];
+	private static readonly Dictionary<RigidBody3D, float> _dampBaseRigides = new Dictionary<RigidBody3D, float>();
+	private static readonly HashSet<RigidBody3D> _rigidesActifsCeScan = new HashSet<RigidBody3D>();
+	private struct TraceContactGazon
+	{
+		public Vector3 PosMonde;
+		public float Intensite;
+	}
+	private static readonly List<TraceContactGazon> _tracesContactsGazon = new List<TraceContactGazon>();
+	private static Vector3 _dernierePositionObservation = new Vector3(float.NaN, float.NaN, float.NaN);
+	private static ulong _frameDerniereObservation = ulong.MaxValue;
+	private static ulong _frameDerniereMajTraces = ulong.MaxValue;
+	private static ulong _frameDerniereApplicationShader = ulong.MaxValue;
+	private static ulong _frameDernierScanContactsGazon = ulong.MaxValue;
 
 	/// <summary>Couleur approximative du terrain à (x,y,z) — même formule que TerrainVoxel (temp/hum). Pour herbe symbiotique.</summary>
 	private Color ObtenirCouleurTerrainApprox(int xGlobal, int yGlobal, int zGlobal)
@@ -787,7 +825,7 @@ private static Texture2D _cacheTextureFeuilleBuisson;
 		return Mathf.Clamp(macro * 0.85f + micro * 0.15f, -1f, 1f);
 	}
 
-	/// <summary>ShaderMaterial procédural : gazon mat et organique (pas de plastique), vent, dégradé naturel.</summary>
+	/// <summary>ShaderMaterial procédural : gazon mat et organique, sans vent aléatoire ; réaction de contact avec le joueur.</summary>
 	private static Material ObtenirMaterielGazonSymbiotique()
 	{
 		if (_cacheMaterielGazonSymbiotique != null) return _cacheMaterielGazonSymbiotique;
@@ -797,34 +835,373 @@ shader_type spatial;
 render_mode cull_disabled, depth_draw_opaque;
 
 uniform vec3 couleur_pointe = vec3(0.38, 0.52, 0.18);
-uniform float force_vent = 0.15;
-uniform float vitesse_vent = 2.0;
+uniform vec3 contact_pos_0 = vec3(0.0, -99999.0, 0.0);
+uniform vec3 contact_pos_1 = vec3(0.0, -99999.0, 0.0);
+uniform vec3 contact_pos_2 = vec3(0.0, -99999.0, 0.0);
+uniform vec3 contact_pos_3 = vec3(0.0, -99999.0, 0.0);
+uniform vec3 contact_pos_4 = vec3(0.0, -99999.0, 0.0);
+uniform vec3 contact_pos_5 = vec3(0.0, -99999.0, 0.0);
+uniform float contact_pow_0 = 0.0;
+uniform float contact_pow_1 = 0.0;
+uniform float contact_pow_2 = 0.0;
+uniform float contact_pow_3 = 0.0;
+uniform float contact_pow_4 = 0.0;
+uniform float contact_pow_5 = 0.0;
+uniform float rayon_contact = 2.8;
+uniform float force_contact = 1.25;
+varying vec3 v_pos_monde;
+
+float contact_influence(vec3 pos_monde, vec3 contact_pos) {
+	vec2 delta = pos_monde.xz - contact_pos.xz;
+	float dist = length(delta);
+	return 1.0 - smoothstep(0.0, rayon_contact, dist);
+}
+
+vec2 contact_dir(vec3 pos_monde, vec3 contact_pos) {
+	vec2 delta = pos_monde.xz - contact_pos.xz;
+	float dist = length(delta);
+	return dist > 0.0001 ? normalize(delta) : vec2(0.0, 0.0);
+}
 
 void vertex() {
 	vec3 pos_monde = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
-	float influence = 1.0 - UV.y;
-	float vent = sin(TIME * vitesse_vent + pos_monde.x * 0.5 + pos_monde.z * 0.5);
-	VERTEX.x += vent * force_vent * influence;
-	VERTEX.z += cos(TIME * vitesse_vent + pos_monde.x * 0.5) * force_vent * influence;
+	v_pos_monde = pos_monde;
+	float influence = pow(1.0 - UV.y, 1.45);
+	vec2 dir_total = vec2(0.0, 0.0);
+	float contact_total = 0.0;
+
+	float c0 = contact_influence(pos_monde, contact_pos_0) * contact_pow_0;
+	dir_total += contact_dir(pos_monde, contact_pos_0) * c0;
+	contact_total += c0;
+	float c1 = contact_influence(pos_monde, contact_pos_1) * contact_pow_1;
+	dir_total += contact_dir(pos_monde, contact_pos_1) * c1;
+	contact_total += c1;
+	float c2 = contact_influence(pos_monde, contact_pos_2) * contact_pow_2;
+	dir_total += contact_dir(pos_monde, contact_pos_2) * c2;
+	contact_total += c2;
+	float c3 = contact_influence(pos_monde, contact_pos_3) * contact_pow_3;
+	dir_total += contact_dir(pos_monde, contact_pos_3) * c3;
+	contact_total += c3;
+	float c4 = contact_influence(pos_monde, contact_pos_4) * contact_pow_4;
+	dir_total += contact_dir(pos_monde, contact_pos_4) * c4;
+	contact_total += c4;
+	float c5 = contact_influence(pos_monde, contact_pos_5) * contact_pow_5;
+	dir_total += contact_dir(pos_monde, contact_pos_5) * c5;
+	contact_total += c5;
+
+	if (contact_total > 0.0001) {
+		vec2 dir = normalize(dir_total);
+		float contact = pow(clamp(contact_total, 0.0, 1.45), 1.15);
+		float bend = force_contact * contact * influence;
+		vec3 bend_world = vec3(dir.x, 0.0, dir.y) * bend;
+		vec3 bend_local = (inverse(MODEL_MATRIX) * vec4(bend_world, 0.0)).xyz;
+		VERTEX += bend_local;
+		VERTEX.y -= bend * 0.22;
+	}
 }
 
 void fragment() {
 	vec3 couleur_base = COLOR.rgb;
-	vec3 couleur_racine = couleur_base * 0.55;
-	float mix_hauteur = 1.0 - UV.y;
-	mix_hauteur = pow(mix_hauteur, 1.4);
-	vec3 couleur_finale = mix(couleur_racine, couleur_pointe * couleur_base * 1.25, mix_hauteur);
-	float bruit = fract(sin(dot(FRAGCOORD.xy, vec2(12.9898, 78.233))) * 43758.5453);
-	couleur_finale *= 0.92 + bruit * 0.16;
+	float h = 1.0 - UV.y; // 0 = pointe, 1 = base
+	float centre = 1.0 - abs(UV.x * 2.0 - 1.0); // 0 = bord, 1 = nervure centrale
+	float nervure = pow(centre, 1.8);
+
+	// Base plus sombre + pointe légèrement plus lumineuse.
+	vec3 couleur_racine = couleur_base * 0.48;
+	vec3 couleur_sommet = couleur_pointe * couleur_base * 1.30;
+	float mix_hauteur = pow(h, 1.3);
+	vec3 couleur_finale = mix(couleur_racine, couleur_sommet, mix_hauteur);
+
+	// Nervure centrale plus claire, bords un peu assombris.
+	couleur_finale *= mix(0.84, 1.08, nervure);
+
+	// Texture procédurale : stries verticales + micro-variation monde stable.
+	float strie = sin(UV.y * 90.0 + nervure * 6.0);
+	float stries = 0.95 + 0.05 * strie;
+	float bruitMonde = fract(sin(dot(v_pos_monde.xz, vec2(12.9898, 78.233))) * 43758.5453);
+	float bruitFin = fract(sin(dot(v_pos_monde.xz + UV.xy, vec2(41.23, 17.77))) * 12471.137);
+	couleur_finale *= stries * mix(0.92, 1.08, bruitMonde) * mix(0.97, 1.03, bruitFin);
+
+	// Racine ombrée pour un effet tapis plus dense.
+	couleur_finale *= mix(0.78, 1.0, pow(mix_hauteur, 0.75));
 	ALBEDO = couleur_finale;
-	ROUGHNESS = 0.94;
+	ROUGHNESS = mix(0.96, 0.90, nervure);
 	SPECULAR = 0.0;
-	BACKLIGHT = couleur_finale * 0.12;
+	BACKLIGHT = couleur_finale * 0.20;
 }
 ";
 		var mat = new ShaderMaterial { Shader = shader };
 		_cacheMaterielGazonSymbiotique = mat;
 		return mat;
+	}
+
+	private static void MettreAJourInteractionGazon(Vector3 positionObservation)
+	{
+		if (_cacheMaterielGazonSymbiotique is not ShaderMaterial shaderMat) return;
+	ulong frame = Engine.GetPhysicsFrames();
+	if (_frameDerniereApplicationShader == frame) return;
+	MettreAJourContactsGazonDepuisRigides(positionObservation, frame);
+		for (int i = 0; i < MAX_CONTACTS_GAZON; i++)
+	{
+			shaderMat.SetShaderParameter($"contact_pos_{i}", _contactsGazonMonde[i]);
+		shaderMat.SetShaderParameter($"contact_pow_{i}", _contactsGazonIntensite[i]);
+	}
+	_frameDerniereApplicationShader = frame;
+	}
+
+private static void MettreAJourContactsGazonDepuisRigides(Vector3 positionObservation, ulong frame)
+	{
+	MettreAJourDecroissanceTraces(frame);
+		_rigidesActifsCeScan.Clear();
+		float vitesseObservation = CalculerVitesseObservation(positionObservation, frame);
+		float boostReveil = Mathf.Clamp(vitesseObservation / VITESSE_OBSERVATION_REVEIL_MAX, 0f, 1f);
+		float rayonReveil = RAYON_REVEIL_INTERACTION_GAZON + BONUS_RAYON_REVEIL_SI_JOUEUR_RAPIDE * boostReveil;
+		float rayonReveilCarre = rayonReveil * rayonReveil;
+
+		for (int i = 0; i < MAX_CONTACTS_GAZON; i++)
+	{
+			_contactsGazonMonde[i] = new Vector3(0f, -99999f, 0f);
+		_contactsGazonIntensite[i] = 0f;
+	}
+
+	// Joueur : contact principal, intensité guidée par masse/vitesse.
+	float masseJoueur = 82f;
+	float intensiteJoueur = CalculerIntensiteContact(masseJoueur, vitesseObservation);
+	AjouterTraceContact(positionObservation, intensiteJoueur);
+
+	// Le scan lourd des rigid bodies reste limité pour préserver les perfs.
+	bool scanAutorise = _frameDernierScanContactsGazon == ulong.MaxValue || frame - _frameDernierScanContactsGazon >= 1;
+	if (scanAutorise) _frameDernierScanContactsGazon = frame;
+
+		SceneTree tree = Engine.GetMainLoop() as SceneTree;
+	if (tree?.CurrentScene != null && scanAutorise)
+	{
+		var meilleurs = new List<(Node3D body, float dist2, float masse, float vitesseHoriz, RigidBody3D rigid)>(MAX_CONTACTS_RIGIDES_GAZON_SCAN);
+		foreach (Node n in ObtenirTousLesNoeuds(tree.CurrentScene))
+		{
+			if (!EssayerConstruireContactCorps(n, positionObservation, rayonReveilCarre, out var body3D, out float dist2, out float masse, out float vitesseHoriz, out RigidBody3D rb))
+				continue;
+			if (meilleurs.Count < MAX_CONTACTS_RIGIDES_GAZON_SCAN)
+			{
+				meilleurs.Add((body3D, dist2, masse, vitesseHoriz, rb));
+				continue;
+			}
+			int idxPlusLoin = 0;
+			float plusLoin = meilleurs[0].dist2;
+			for (int i = 1; i < meilleurs.Count; i++)
+			{
+				if (meilleurs[i].dist2 <= plusLoin) continue;
+				plusLoin = meilleurs[i].dist2;
+				idxPlusLoin = i;
+			}
+			if (dist2 < plusLoin) meilleurs[idxPlusLoin] = (body3D, dist2, masse, vitesseHoriz, rb);
+		}
+
+		for (int i = 0; i < meilleurs.Count && i < MAX_CONTACTS_RIGIDES_GAZON_SCAN; i++)
+			{
+			var contact = meilleurs[i];
+			float intensite = CalculerIntensiteContact(contact.masse, contact.vitesseHoriz);
+			AjouterTraceContact(contact.body.GlobalPosition, intensite);
+			if (contact.rigid != null)
+			{
+				_rigidesActifsCeScan.Add(contact.rigid);
+				AppliquerFreinageGazonSurRigidBody(contact.rigid, vitesseObservation);
+			}
+			}
+
+		RestaurerRigidesHorsZone();
+	}
+
+	RemplirContactsDepuisTraces(positionObservation);
+	}
+
+	private static bool EssayerConstruireContactCorps(Node n, Vector3 positionObservation, float rayonReveilCarre,
+		out Node3D body3D, out float dist2, out float masse, out float vitesseHoriz, out RigidBody3D rigid)
+	{
+		body3D = null;
+		dist2 = 0f;
+		masse = 0f;
+		vitesseHoriz = 0f;
+		rigid = null;
+
+		if (n is RigidBody3D rb)
+		{
+			if (!rb.IsInsideTree() || !rb.Visible) return false;
+			dist2 = rb.GlobalPosition.DistanceSquaredTo(positionObservation);
+			if (dist2 > rayonReveilCarre) return false;
+			body3D = rb;
+			masse = Mathf.Max(0.2f, rb.Mass);
+			vitesseHoriz = new Vector2(rb.LinearVelocity.X, rb.LinearVelocity.Z).Length();
+			rigid = rb;
+			return true;
+		}
+
+		if (n is CharacterBody3D cb)
+		{
+			if (!cb.IsInsideTree() || !cb.Visible) return false;
+			dist2 = cb.GlobalPosition.DistanceSquaredTo(positionObservation);
+			if (dist2 > rayonReveilCarre) return false;
+			body3D = cb;
+			masse = 82f; // masse gameplay du joueur/PNJ
+			vitesseHoriz = new Vector2(cb.Velocity.X, cb.Velocity.Z).Length();
+			return true;
+		}
+
+		return false;
+	}
+
+	private static float CalculerIntensiteContact(float masse, float vitesseHoriz)
+	{
+		float masseNorm = Mathf.Clamp(Mathf.Log(masse + 1f) / 4.0f, 0.12f, 1.25f);
+		float vitesseNorm = Mathf.Clamp(vitesseHoriz / 8.5f, 0f, 1f);
+		return Mathf.Clamp(0.22f + masseNorm * 0.95f + vitesseNorm * 0.55f, 0.18f, 1.6f);
+	}
+
+	private static void MettreAJourDecroissanceTraces(ulong frame)
+	{
+		if (_frameDerniereMajTraces == ulong.MaxValue)
+		{
+			_frameDerniereMajTraces = frame;
+			return;
+		}
+		ulong dFrames = frame > _frameDerniereMajTraces ? frame - _frameDerniereMajTraces : 1UL;
+		_frameDerniereMajTraces = frame;
+		float dt = (float)dFrames / 60f;
+		float perte = DECROISSANCE_TRACE_PAR_SECONDE * dt;
+		for (int i = _tracesContactsGazon.Count - 1; i >= 0; i--)
+		{
+			var t = _tracesContactsGazon[i];
+			t.Intensite -= perte;
+			if (t.Intensite <= 0.01f) _tracesContactsGazon.RemoveAt(i);
+			else _tracesContactsGazon[i] = t;
+		}
+	}
+
+	private static void AjouterTraceContact(Vector3 posMonde, float intensite)
+	{
+		intensite = Mathf.Clamp(intensite, 0f, 1.6f);
+		for (int i = 0; i < _tracesContactsGazon.Count; i++)
+		{
+			var t = _tracesContactsGazon[i];
+			if (t.PosMonde.DistanceSquaredTo(posMonde) > 0.85f * 0.85f) continue;
+			t.PosMonde = t.PosMonde.Lerp(posMonde, 0.5f);
+			t.Intensite = Mathf.Max(t.Intensite, intensite);
+			_tracesContactsGazon[i] = t;
+			return;
+		}
+		if (_tracesContactsGazon.Count >= MAX_TRACES_CONTACT_GAZON)
+		{
+			int idxMin = 0;
+			float minI = _tracesContactsGazon[0].Intensite;
+			for (int i = 1; i < _tracesContactsGazon.Count; i++)
+			{
+				if (_tracesContactsGazon[i].Intensite >= minI) continue;
+				minI = _tracesContactsGazon[i].Intensite;
+				idxMin = i;
+			}
+			_tracesContactsGazon[idxMin] = new TraceContactGazon { PosMonde = posMonde, Intensite = intensite };
+			return;
+		}
+		_tracesContactsGazon.Add(new TraceContactGazon { PosMonde = posMonde, Intensite = intensite });
+	}
+
+	private static void RemplirContactsDepuisTraces(Vector3 positionObservation)
+	{
+		_contactsGazonMonde[0] = positionObservation;
+		_contactsGazonIntensite[0] = 1.60f;
+		var retenus = new List<TraceContactGazon>(MAX_CONTACTS_GAZON - 1);
+		foreach (var t in _tracesContactsGazon)
+		{
+			if (t.Intensite <= 0.01f) continue;
+			if (t.PosMonde.DistanceSquaredTo(positionObservation) < 0.1f * 0.1f) continue;
+			if (retenus.Count < MAX_CONTACTS_GAZON - 1)
+			{
+				retenus.Add(t);
+				continue;
+			}
+			int idxFaible = 0;
+			float scoreFaible = retenus[0].Intensite;
+			for (int i = 1; i < retenus.Count; i++)
+			{
+				if (retenus[i].Intensite >= scoreFaible) continue;
+				scoreFaible = retenus[i].Intensite;
+				idxFaible = i;
+			}
+			if (t.Intensite > scoreFaible) retenus[idxFaible] = t;
+		}
+		for (int i = 0; i < retenus.Count; i++)
+		{
+			_contactsGazonMonde[i + 1] = retenus[i].PosMonde;
+			_contactsGazonIntensite[i + 1] = retenus[i].Intensite;
+		}
+	}
+
+private static bool EstCorpsAuSol(PhysicsBody3D body)
+	{
+		if (body is CharacterBody3D cb && cb.IsOnFloor()) return true;
+		var monde = body.GetWorld3D();
+		if (monde == null) return false;
+		var from = body.GlobalPosition + new Vector3(0f, 0.2f, 0f);
+		var to = body.GlobalPosition + new Vector3(0f, -1.35f, 0f);
+		var query = PhysicsRayQueryParameters3D.Create(from, to);
+		query.CollideWithAreas = false;
+		query.CollideWithBodies = true;
+		query.Exclude = new Godot.Collections.Array<Rid> { body.GetRid() };
+		var hit = monde.DirectSpaceState.IntersectRay(query);
+		return hit.Count > 0;
+	}
+
+	private static float CalculerVitesseObservation(Vector3 positionObservation, ulong frame)
+	{
+		if (float.IsNaN(_dernierePositionObservation.X) || _frameDerniereObservation == ulong.MaxValue)
+		{
+			_dernierePositionObservation = positionObservation;
+			_frameDerniereObservation = frame;
+			return 0f;
+		}
+		ulong dFrames = frame > _frameDerniereObservation ? frame - _frameDerniereObservation : 1UL;
+		float distance = positionObservation.DistanceTo(_dernierePositionObservation);
+		_dernierePositionObservation = positionObservation;
+		_frameDerniereObservation = frame;
+		// Approximation : vitesse en unités/secondes en supposant ~60 Hz physique.
+		return distance * (60f / Mathf.Max(1f, (float)dFrames));
+	}
+
+	private static void AppliquerFreinageGazonSurRigidBody(RigidBody3D rb, float vitesseObservation)
+	{
+		if (!_dampBaseRigides.ContainsKey(rb))
+			_dampBaseRigides[rb] = rb.LinearDamp;
+
+		float vitesseHoriz = new Vector2(rb.LinearVelocity.X, rb.LinearVelocity.Z).Length();
+		float t = Mathf.Clamp(vitesseHoriz / 7.5f, 0f, 1f);
+		// Petites masses : plus de résistance de l'herbe. Grosses masses : moins de freinage.
+		float facteurMasse = Mathf.Clamp(1.25f - Mathf.Log(rb.Mass + 1f) * 0.35f, 0.45f, 1.4f);
+		float supplement = Mathf.Lerp(FREINAGE_GAZON_MIN, FREINAGE_GAZON_MAX, t) * facteurMasse;
+		rb.LinearDamp = _dampBaseRigides[rb] + supplement;
+		if (rb.Sleeping && (vitesseHoriz > 0.12f || vitesseObservation > 8.5f))
+			rb.Sleeping = false;
+	}
+
+	private static void RestaurerRigidesHorsZone()
+	{
+		if (_dampBaseRigides.Count == 0) return;
+		var aRetirer = new List<RigidBody3D>();
+		foreach (var kv in _dampBaseRigides)
+		{
+			RigidBody3D rb = kv.Key;
+			if (rb == null || !rb.IsInsideTree())
+			{
+				aRetirer.Add(rb);
+				continue;
+			}
+			if (_rigidesActifsCeScan.Contains(rb)) continue;
+			rb.LinearDamp = kv.Value;
+			float vitesseHoriz = new Vector2(rb.LinearVelocity.X, rb.LinearVelocity.Z).Length();
+			if (vitesseHoriz < 0.05f) rb.Sleeping = true;
+			aRetirer.Add(rb);
+		}
+		for (int i = 0; i < aRetirer.Count; i++)
+			_dampBaseRigides.Remove(aRetirer[i]);
 	}
 
 	/// <summary>Expose les meshes buisson procéduraux pour les autres systèmes (ex: bloc chutant).</summary>
@@ -1026,7 +1403,7 @@ void fragment() {
 		st.SetColor(cc); st.AddVertex(c);
 	}
 
-	/// <summary>Génère 3 lames triangulaires (effilées) croisées à 60°. Normales biaisées vers le ciel pour éclairage unifié. Canal COLOR requis pour MultiMesh UseColors.</summary>
+	/// <summary>Génère un bouquet de lames fines pour un rendu moins "pics". Normales biaisées vers le ciel pour éclairage unifié.</summary>
 	private static Mesh GenererMeshGazonProcedural()
 	{
 		var st = new SurfaceTool();
@@ -1035,27 +1412,52 @@ void fragment() {
 		// FIX CRITIQUE : Création du canal de couleur pour autoriser le MultiMesh à peindre !
 		st.SetColor(new Color(1f, 1f, 1f, 1f));
 
-		float w = 0.06f;
-		float h = 0.175f;
+		// Lames plus fines + un peu plus nombreuses : silhouette "tiges" plus naturelle.
+		float w = 0.034f;
+		float h = 0.145f;
 
 		void CreerLame(Vector3 centre, float angleY)
 		{
-			Vector3 dirX = new Vector3(Mathf.Cos(angleY), 0, Mathf.Sin(angleY)) * (w / 2f);
-			Vector3 p0 = centre - dirX;
-			Vector3 p1 = centre + dirX;
-			Vector3 pTop = centre + new Vector3(0, h, 0);
+			Vector3 axe = new Vector3(Mathf.Cos(angleY), 0f, Mathf.Sin(angleY)).Normalized();
+			Vector3 lateral = new Vector3(-axe.Z, 0f, axe.X);
+			float demiBase = w * 0.5f;
+			float demiMilieu = w * 0.28f;
+			float demiSommet = w * 0.10f;
+			Vector3 p0L = centre - axe * demiBase;
+			Vector3 p0R = centre + axe * demiBase;
+			Vector3 centreMilieu = centre + new Vector3(0f, h * 0.55f, 0f) + lateral * 0.020f;
+			Vector3 p1L = centreMilieu - axe * demiMilieu;
+			Vector3 p1R = centreMilieu + axe * demiMilieu;
+			Vector3 centreSommet = centre + new Vector3(0f, h, 0f) + lateral * 0.040f;
+			Vector3 p2L = centreSommet - axe * demiSommet;
+			Vector3 p2R = centreSommet + axe * demiSommet;
 
 			// Normale biaisée vers le ciel (80% Up, 20% plan) : unifie l'éclairage avec le terrain, plus d'effet "X"
-			Vector3 normal = (Vector3.Up * 0.8f + new Vector3(-dirX.Z, 0, dirX.X).Normalized() * 0.2f).Normalized();
+			Vector3 normal = (Vector3.Up * 0.8f + lateral * 0.2f).Normalized();
 
-			st.SetNormal(normal); st.SetUV(new Vector2(0, 1)); st.AddVertex(p0);
-			st.SetNormal(normal); st.SetUV(new Vector2(1, 1)); st.AddVertex(p1);
-			st.SetNormal(normal); st.SetUV(new Vector2(0.5f, 0)); st.AddVertex(pTop);
+			st.SetNormal(normal); st.SetUV(new Vector2(0, 1)); st.AddVertex(p0L);
+			st.SetNormal(normal); st.SetUV(new Vector2(1, 1)); st.AddVertex(p0R);
+			st.SetNormal(normal); st.SetUV(new Vector2(1, 0.45f)); st.AddVertex(p1R);
+			st.SetNormal(normal); st.SetUV(new Vector2(0, 1)); st.AddVertex(p0L);
+			st.SetNormal(normal); st.SetUV(new Vector2(1, 0.45f)); st.AddVertex(p1R);
+			st.SetNormal(normal); st.SetUV(new Vector2(0, 0.45f)); st.AddVertex(p1L);
+			st.SetNormal(normal); st.SetUV(new Vector2(0, 0.45f)); st.AddVertex(p1L);
+			st.SetNormal(normal); st.SetUV(new Vector2(1, 0.45f)); st.AddVertex(p1R);
+			st.SetNormal(normal); st.SetUV(new Vector2(1, 0)); st.AddVertex(p2R);
+			st.SetNormal(normal); st.SetUV(new Vector2(0, 0.45f)); st.AddVertex(p1L);
+			st.SetNormal(normal); st.SetUV(new Vector2(1, 0)); st.AddVertex(p2R);
+			st.SetNormal(normal); st.SetUV(new Vector2(0, 0)); st.AddVertex(p2L);
 		}
 
-		CreerLame(Vector3.Zero, 0f);
-		CreerLame(Vector3.Zero, Mathf.Pi / 3f);
-		CreerLame(Vector3.Zero, 2f * Mathf.Pi / 3f);
+		float rayonTouffe = 0.042f;
+		for (int i = 0; i < 6; i++)
+		{
+			float a = i * (Mathf.Tau / 6f);
+			Vector3 centre = new Vector3(Mathf.Cos(a) * rayonTouffe, 0f, Mathf.Sin(a) * rayonTouffe);
+			float decalage = (i % 2 == 0) ? 0.16f : -0.11f;
+			CreerLame(centre, a + decalage);
+		}
+		CreerLame(Vector3.Zero, Mathf.Pi * 0.23f);
 
 		st.GenerateTangents();
 		return st.Commit();
@@ -1715,20 +2117,12 @@ void fragment() {
 		float rayonGazonCarre = rayonGazon * rayonGazon;
 		float rayonQualite = Mathf.Max(1, RayonQualiteMaxChunks) * data.TailleChunk;
 		float rayonQualiteCarre = rayonQualite * rayonQualite;
-		var zonesSansGazon = new HashSet<Vector3I>();
-		foreach (var kvBuisson in data.InventaireFlore)
-		{
-			if (!Chunk_Serveur.EstTypeBuisson(kvBuisson.Value)) continue;
-			for (int dx = -1; dx <= 1; dx++)
-				for (int dz = -1; dz <= 1; dz++)
-					zonesSansGazon.Add(new Vector3I(kvBuisson.Key.X + dx, kvBuisson.Key.Y, kvBuisson.Key.Z + dz));
-		}
 		float originX = data.Coordonnees.X * (float)data.TailleChunk;
 		float originZ = data.Coordonnees.Y * (float)data.TailleChunk;
 		Vector3 chunkOrigin = new Vector3(originX, 0, originZ);
 		foreach (var kv in data.InventaireFlore)
 		{
-			if (kv.Value != 0 || zonesSansGazon.Contains(kv.Key)) continue; // gazon uniquement, sans voisinage buisson
+			if (kv.Value != 0) continue; // gazon uniquement
 			Vector3 posMonde = new Vector3(kv.Key.X + 0.5f, kv.Key.Y + 0.5f, kv.Key.Z + 0.5f);
 			float distCarree = posMonde.DistanceSquaredTo(positionObservation);
 			if (distCarree > rayonGazonCarre) continue;
@@ -1736,17 +2130,19 @@ void fragment() {
 			Color couleurSol = ObtenirCouleurTerrainDepuisChunkData(data, kv.Key.X, kv.Key.Y, kv.Key.Z);
 			Color couleurHerbe = new Color(couleurSol.R * 0.8f, couleurSol.G * 0.8f, couleurSol.B * 0.8f, 1f).Lerp(new Color(0.7f, 0.8f, 1f), 0.1f);
 			uint hashBase = (uint)(kv.Key.X * 73856093) ^ (uint)(kv.Key.Z * 19349663);
-			int densiteGazon = distCarree <= rayonQualiteCarre ? 14 : (distCarree <= rayonQualiteCarre * 2.6f ? 7 : 3);
+			int densiteBase = distCarree <= rayonQualiteCarre ? 19 : (distCarree <= rayonQualiteCarre * 2.6f ? 11 : 5);
+			float humidite = CalculerHumiditeGlobaleDepuisChunkData(data, kv.Key.X, kv.Key.Z);
+			float facteurHum = Mathf.Clamp((humidite + 1f) * 0.5f, 0f, 1f);
+			float facteurHauteur = Mathf.Lerp(1.0f, 1.32f, facteurHum);
+			float facteurLargeur = Mathf.Lerp(0.92f, 1.12f, facteurHum);
+			int densiteGazon = CalculerDensiteGazonSelonHumiditeChunkData(humidite, densiteBase);
 			for (int i = 0; i < densiteGazon; i++)
 			{
-				uint h_brin = hashBase ^ (uint)(i * 83492791);
-				float offsetX = ((h_brin % 100) / 100f) - 0.5f;
-				float offsetZ = (((h_brin / 100) % 100) / 100f) - 0.5f;
-				float echelleAlea = 0.5f + ((h_brin % 50) / 100f);
-				float angleBrin = (h_brin % 360) * Mathf.Pi / 180f;
+				CalculerVariationBrin(hashBase, i, densiteGazon, out float offsetX, out float offsetZ, out float echelleAlea, out float angleBrin);
 				var t = Transform3D.Identity;
 				t.Origin = positionLocale + new Vector3(offsetX, 0, offsetZ);
-				t.Basis = Basis.Identity.Scaled(new Vector3(EchelleGazon * echelleAlea, EchelleGazon * echelleAlea, EchelleGazon * echelleAlea)).Rotated(Vector3.Up, angleBrin);
+				float baseEchelle = EchelleGazon * echelleAlea;
+				t.Basis = Basis.Identity.Scaled(new Vector3(baseEchelle * facteurLargeur, baseEchelle * facteurHauteur, baseEchelle * facteurLargeur)).Rotated(Vector3.Up, angleBrin);
 				liste.Add((t, couleurHerbe));
 			}
 		}
@@ -1776,6 +2172,20 @@ void fragment() {
 		return Mathf.Clamp(macro * 0.85f + micro * 0.15f, -1f, 1f);
 	}
 
+	/// <summary>Version statique pour ChunkData : max inchangé en humide, réduit en sec.</summary>
+	private static int CalculerDensiteGazonSelonHumiditeChunkData(float humiditeGlobale, int densiteMax)
+	{
+		float facteurHum = Mathf.Clamp((humiditeGlobale + 1f) * 0.5f, 0f, 1f);
+		float multiplicateur = Mathf.Lerp(0.90f, 1.0f, facteurHum);
+		return Mathf.Clamp(Mathf.RoundToInt(densiteMax * multiplicateur), 1, densiteMax);
+	}
+
+	private static bool EstMateriauSupportGazon(byte mat)
+	{
+		// Gazon uniquement sur voxel herbe (ID 1).
+		return mat == 1;
+	}
+
 	/// <summary>Génère l'inventaire flore (gazon) à partir de la surface du chunk. Appelé au chargement pour afficher l'herbe.</summary>
 	private static Dictionary<Vector3I, byte> GenererInventaireFloreDepuisSurface(ChunkData data)
 	{
@@ -1798,14 +2208,14 @@ void fragment() {
 				}
 				if (ySurface < 2) continue;
 				byte mat = data.MaterialsFlat[data.Idx(lx, ySurface, lz)];
-				if (mat != 1) continue; // gazon uniquement sur terre (id 1)
+				if (!EstMateriauSupportGazon(mat)) continue;
 				float dy = data.DensitiesFlat[data.Idx(lx, Math.Min(ySurface + 1, data.HauteurMax), lz)] - data.DensitiesFlat[data.Idx(lx, Math.Max(0, ySurface - 1), lz)];
 				float dx = data.DensitiesFlat[data.Idx(Math.Min(lx + 1, tc), ySurface, lz)] - data.DensitiesFlat[data.Idx(Math.Max(0, lx - 1), ySurface, lz)];
 				float dz = data.DensitiesFlat[data.Idx(lx, ySurface, Math.Min(lz + 1, tc))] - data.DensitiesFlat[data.Idx(lx, ySurface, Math.Max(0, lz - 1))];
 				Vector3 grad = new Vector3(dx, dy, dz);
 				if (grad.LengthSquared() < 0.0001f) continue;
 				Vector3 normal = (-grad).Normalized();
-				if (normal.Y < 0.75f) continue; // seulement si la surface est plate (pas de brin en angle)
+				if (normal.Y < 0.82f) continue; // bloque la flore sur fortes pentes/côtés
 				var posGlobale = new Vector3I(ox + lx, ySurface, oz + lz);
 				inv[posGlobale] = 0; // gazon
 			}

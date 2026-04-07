@@ -18,6 +18,7 @@ public struct ProfilMatiereFlexible
 public static class Atlas_Matiere
 {
     private const float PerteFlexParMix = 0.38f;
+    private const int NiveauCordeSolideTier2 = 2;
 
     public static readonly ProfilMatiereFlexible[] TableMatiereFlexible =
     {
@@ -95,6 +96,11 @@ public static class Atlas_Matiere
 
     public static void ObtenirStatsCorde(int idA, int idB, out float durabilite, out float tensionMax)
     {
+        ObtenirStatsCorde(idA, idB, 0, out durabilite, out tensionMax);
+    }
+
+    public static void ObtenirStatsCorde(int idA, int idB, int niveauQualiteCorde, out float durabilite, out float tensionMax)
+    {
         bool okA = ObtenirProfilFlexible(idA, out var pa);
         bool okB = ObtenirProfilFlexible(idB, out var pb);
         if (!okA && !okB) { durabilite = 6f; tensionMax = 5f; return; }
@@ -105,6 +111,11 @@ public static class Atlas_Matiere
         durabilite = baseDurabilite * 1.35f;
         tensionMax = baseTension * 1.5f;
         if (pa.Fragile || pb.Fragile) durabilite *= 0.75f;
+        if (niveauQualiteCorde >= NiveauCordeSolideTier2)
+        {
+            durabilite *= 2.0f;
+            tensionMax *= 1.35f;
+        }
     }
 
     public static float ObtenirDurabiliteBois(byte indexBotanique)
@@ -122,86 +133,100 @@ public static class Atlas_Matiere
     {
         int idxLame = Mathf.Clamp(rocheLame.ID - ItemPhysique.IdRocheMatiereMin, 0, ItemPhysique.TableGeologique.Length - 1);
         float mineral = ItemPhysique.TableGeologique[idxLame].ResistanceFuture;
-        ObtenirStatsCorde(corde.IndexChimique, corde.IndexMorphologique, out float durCord, out _);
-        float maxDur = mineral * 2.4f + durCord * 12f;
-        maxDur *= Mathf.Max(0.4f, 1f - corde.NiveauFracture * 0.11f);
-        return Mathf.Clamp(maxDur, 55f, 480f);
+        ObtenirStatsCorde(corde.IndexChimique, corde.IndexMorphologique, corde.IndexBotanique, out float durCord, out _);
+        float capPierre = mineral * 0.62f;
+        float capCorde = durCord * 8.0f;
+        float maxDur = Mathf.Min(capPierre, capCorde);
+        return Mathf.Clamp(maxDur, 18f, 140f);
     }
 
     public static float CalculerDurabiliteMaxDagueDepuisSlot(SlotInventaire dague)
     {
         int idxLame = Mathf.Clamp(dague.IndexChimique, 0, ItemPhysique.TableGeologique.Length - 1);
         float mineral = ItemPhysique.TableGeologique[idxLame].ResistanceFuture;
-        ObtenirStatsCorde(dague.IndexMorphologique, dague.IndexTaille, out float durCord, out _);
-        float maxDur = mineral * 2.4f + durCord * 12f;
-        maxDur *= Mathf.Max(0.4f, 1f - dague.NiveauFracture * 0.11f);
-        return Mathf.Clamp(maxDur, 55f, 480f);
+        ObtenirStatsCorde(dague.IndexMorphologique, dague.IndexTaille, dague.NiveauFracture, out float durCord, out _);
+        float capPierre = mineral * 0.62f;
+        float capCorde = durCord * 8.0f;
+        float maxDur = Mathf.Min(capPierre, capCorde);
+        return Mathf.Clamp(maxDur, 18f, 140f);
     }
 
     public static float CalculerDurabiliteMaxNouvelleHachette(SlotInventaire roche, SlotInventaire corde, SlotInventaire baton)
     {
         int idxLame = Mathf.Clamp(roche.ID - ItemPhysique.IdRocheMatiereMin, 0, ItemPhysique.TableGeologique.Length - 1);
         float mineral = ItemPhysique.TableGeologique[idxLame].ResistanceFuture;
-        ObtenirStatsCorde(corde.IndexChimique, corde.IndexMorphologique, out float durCord, out _);
+        ObtenirStatsCorde(corde.IndexChimique, corde.IndexMorphologique, corde.IndexBotanique, out float durCord, out _);
         float durBois = ObtenirDurabiliteBois(baton.IndexBotanique);
-        float maxDur = mineral * 3.5f + durCord * 6f + durBois * 15f;
-        maxDur *= Mathf.Max(0.4f, 1f - corde.NiveauFracture * 0.11f);
-        return Mathf.Clamp(maxDur, 100f, 1000f);
+        float capPierre = mineral * 0.78f;
+        float capCorde = durCord * 6.8f;
+        float capBois = durBois * 4.6f;
+        float maxDur = Mathf.Min(capPierre, Mathf.Min(capCorde, capBois));
+        return Mathf.Clamp(maxDur, 22f, 180f);
     }
 
     public static float CalculerDurabiliteMaxHachetteDepuisSlot(SlotInventaire hachette)
     {
         int idxLame = Mathf.Clamp(hachette.IndexChimique, 0, ItemPhysique.TableGeologique.Length - 1);
         float mineral = ItemPhysique.TableGeologique[idxLame].ResistanceFuture;
-        ObtenirStatsCorde(hachette.IndexMorphologique, hachette.IndexTaille, out float durCord, out _);
+        ObtenirStatsCorde(hachette.IndexMorphologique, hachette.IndexTaille, hachette.NiveauFracture, out float durCord, out _);
         float durBois = ObtenirDurabiliteBois(hachette.IndexBotanique);
-        float maxDur = mineral * 3.5f + durCord * 6f + durBois * 15f;
-        maxDur *= Mathf.Max(0.4f, 1f - hachette.NiveauFracture * 0.11f);
-        return Mathf.Clamp(maxDur, 100f, 1000f);
+        float capPierre = mineral * 0.78f;
+        float capCorde = durCord * 6.8f;
+        float capBois = durBois * 4.6f;
+        float maxDur = Mathf.Min(capPierre, Mathf.Min(capCorde, capBois));
+        return Mathf.Clamp(maxDur, 22f, 180f);
     }
 
     public static float CalculerDurabiliteMaxNouvellePelle(SlotInventaire roche, SlotInventaire corde, SlotInventaire baton)
     {
         int idxLame = Mathf.Clamp(roche.ID - ItemPhysique.IdRocheMatiereMin, 0, ItemPhysique.TableGeologique.Length - 1);
         float mineral = ItemPhysique.TableGeologique[idxLame].ResistanceFuture;
-        ObtenirStatsCorde(corde.IndexChimique, corde.IndexMorphologique, out float durCord, out _);
+        ObtenirStatsCorde(corde.IndexChimique, corde.IndexMorphologique, corde.IndexBotanique, out float durCord, out _);
         float durBois = ObtenirDurabiliteBois(baton.IndexBotanique);
-        float maxDur = mineral * 3.5f + durCord * 6f + durBois * 15f;
-        maxDur *= Mathf.Max(0.4f, 1f - corde.NiveauFracture * 0.11f);
-        return Mathf.Clamp(maxDur, 100f, 1000f);
+        float capPierre = mineral * 0.75f;
+        float capCorde = durCord * 6.6f;
+        float capBois = durBois * 4.9f;
+        float maxDur = Mathf.Min(capPierre, Mathf.Min(capCorde, capBois));
+        return Mathf.Clamp(maxDur, 20f, 170f);
     }
 
     public static float CalculerDurabiliteMaxPelleDepuisSlot(SlotInventaire pelle)
     {
         int idxLame = Mathf.Clamp(pelle.IndexChimique, 0, ItemPhysique.TableGeologique.Length - 1);
         float mineral = ItemPhysique.TableGeologique[idxLame].ResistanceFuture;
-        ObtenirStatsCorde(pelle.IndexMorphologique, pelle.IndexTaille, out float durCord, out _);
+        ObtenirStatsCorde(pelle.IndexMorphologique, pelle.IndexTaille, pelle.NiveauFracture, out float durCord, out _);
         float durBois = ObtenirDurabiliteBois(pelle.IndexBotanique);
-        float maxDur = mineral * 3.5f + durCord * 6f + durBois * 15f;
-        maxDur *= Mathf.Max(0.4f, 1f - pelle.NiveauFracture * 0.11f);
-        return Mathf.Clamp(maxDur, 100f, 1000f);
+        float capPierre = mineral * 0.75f;
+        float capCorde = durCord * 6.6f;
+        float capBois = durBois * 4.9f;
+        float maxDur = Mathf.Min(capPierre, Mathf.Min(capCorde, capBois));
+        return Mathf.Clamp(maxDur, 20f, 170f);
     }
 
     public static float CalculerDurabiliteMaxNouvellePioche(SlotInventaire roche, SlotInventaire corde, SlotInventaire baton)
     {
         int idxLame = Mathf.Clamp(roche.ID - ItemPhysique.IdRocheMatiereMin, 0, ItemPhysique.TableGeologique.Length - 1);
         float mineral = ItemPhysique.TableGeologique[idxLame].ResistanceFuture;
-        ObtenirStatsCorde(corde.IndexChimique, corde.IndexMorphologique, out float durCord, out _);
+        ObtenirStatsCorde(corde.IndexChimique, corde.IndexMorphologique, corde.IndexBotanique, out float durCord, out _);
         float durBois = ObtenirDurabiliteBois(baton.IndexBotanique);
-        float maxDur = mineral * 3.7f + durCord * 6f + durBois * 16f;
-        maxDur *= Mathf.Max(0.4f, 1f - corde.NiveauFracture * 0.11f);
-        return Mathf.Clamp(maxDur, 110f, 1100f);
+        float capPierre = mineral * 0.92f;
+        float capCorde = durCord * 6.1f;
+        float capBois = durBois * 4.3f;
+        float maxDur = Mathf.Min(capPierre, Mathf.Min(capCorde, capBois));
+        return Mathf.Clamp(maxDur, 24f, 190f);
     }
 
     public static float CalculerDurabiliteMaxPiocheDepuisSlot(SlotInventaire pioche)
     {
         int idxLame = Mathf.Clamp(pioche.IndexChimique, 0, ItemPhysique.TableGeologique.Length - 1);
         float mineral = ItemPhysique.TableGeologique[idxLame].ResistanceFuture;
-        ObtenirStatsCorde(pioche.IndexMorphologique, pioche.IndexTaille, out float durCord, out _);
+        ObtenirStatsCorde(pioche.IndexMorphologique, pioche.IndexTaille, pioche.NiveauFracture, out float durCord, out _);
         float durBois = ObtenirDurabiliteBois(pioche.IndexBotanique);
-        float maxDur = mineral * 3.7f + durCord * 6f + durBois * 16f;
-        maxDur *= Mathf.Max(0.4f, 1f - pioche.NiveauFracture * 0.11f);
-        return Mathf.Clamp(maxDur, 110f, 1100f);
+        float capPierre = mineral * 0.92f;
+        float capCorde = durCord * 6.1f;
+        float capBois = durBois * 4.3f;
+        float maxDur = Mathf.Min(capPierre, Mathf.Min(capCorde, capBois));
+        return Mathf.Clamp(maxDur, 24f, 190f);
     }
 
     public static void InitialiserDurabiliteOutilSiBesoin(ref SlotInventaire s)
@@ -379,13 +404,18 @@ public static class Atlas_Matiere
         {
             bool a = ObtenirProfilFlexible(slot.IndexChimique, out var pa);
             bool b = ObtenirProfilFlexible(slot.IndexMorphologique, out var pb);
+            bool solideTier2 = slot.IndexBotanique >= NiveauCordeSolideTier2;
             if (a && b)
-                return $"{pa.Nom}+{pb.Nom}";
+            {
+                if (slot.IndexChimique == 15 && slot.IndexMorphologique == 15)
+                    return solideTier2 ? "Corde d'herbe solide (tier 2)" : "Corde d'herbe";
+                return solideTier2 ? $"Corde solide (tier 2) {pa.Nom}+{pb.Nom}" : $"Corde {pa.Nom}+{pb.Nom}";
+            }
             if (a)
-                return pa.Nom;
+                return solideTier2 ? $"Corde solide (tier 2) {pa.Nom}" : $"Corde {pa.Nom}";
             if (b)
-                return pb.Nom;
-            return "Corde";
+                return solideTier2 ? $"Corde solide (tier 2) {pb.Nom}" : $"Corde {pb.Nom}";
+            return solideTier2 ? "Corde solide (tier 2)" : "Corde";
         }
         if (id == 21)
         {
@@ -471,6 +501,24 @@ public static class Atlas_Matiere
 
         if (ingredients.Count == 2)
         {
+            // 2 cordes d'herbe simples -> 1 corde d'herbe solide tier 2.
+            if (ingredients[0].ID == 20 && ingredients[1].ID == 20
+                && ingredients[0].IndexChimique == 15 && ingredients[0].IndexMorphologique == 15
+                && ingredients[1].IndexChimique == 15 && ingredients[1].IndexMorphologique == 15
+                && ingredients[0].IndexBotanique < NiveauCordeSolideTier2
+                && ingredients[1].IndexBotanique < NiveauCordeSolideTier2)
+            {
+                return new SlotInventaire
+                {
+                    ID = 20,
+                    IndexChimique = 15,
+                    IndexMorphologique = 15,
+                    IndexBotanique = NiveauCordeSolideTier2,
+                    EstUnEclat = false,
+                    NiveauFracture = 0
+                };
+            }
+
             for (int col = 0; col < 2; col++)
             {
                 if (col + strideColonne >= grille.Length) break;
@@ -491,7 +539,7 @@ public static class Atlas_Matiere
                         IndexMorphologique = bas.IndexChimique,
                         IndexTaille = bas.IndexMorphologique,
                         IndexTailleLameRoche = Mathf.Clamp(haut.IndexTaille, 0, 4),
-                        NiveauFracture = bas.NiveauFracture,
+                        NiveauFracture = bas.IndexBotanique,
                         EstUnEclat = false,
                         DurabiliteOutilMax = dMax,
                         DurabiliteOutilActuelle = dMax
@@ -645,7 +693,7 @@ public static class Atlas_Matiere
                 IndexTaille = corde.IndexMorphologique,
                 IndexBotanique = baton.IndexBotanique,
                 EstUnEclat = false,
-                NiveauFracture = corde.NiveauFracture,
+                NiveauFracture = corde.IndexBotanique,
                 DurabiliteOutilMax = dMax,
                 DurabiliteOutilActuelle = dMax
             };
@@ -680,7 +728,7 @@ public static class Atlas_Matiere
                     IndexTaille = corde.IndexMorphologique,
                     IndexBotanique = baton.IndexBotanique,
                     EstUnEclat = false,
-                    NiveauFracture = corde.NiveauFracture,
+                    NiveauFracture = corde.IndexBotanique,
                     DurabiliteOutilMax = dMax,
                     DurabiliteOutilActuelle = dMax
                 };
@@ -710,7 +758,7 @@ public static class Atlas_Matiere
                     IndexTaille = corde.IndexMorphologique,
                     IndexBotanique = baton.IndexBotanique,
                     EstUnEclat = false,
-                    NiveauFracture = corde.NiveauFracture,
+                    NiveauFracture = corde.IndexBotanique,
                     DurabiliteOutilMax = dMax,
                     DurabiliteOutilActuelle = dMax
                 };

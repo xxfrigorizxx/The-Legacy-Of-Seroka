@@ -16,6 +16,7 @@ public partial class Joueur
     private ItemPhysique _atelierCibleRecuperation;
     private const float DureeRecolteBuissonOutilSecondes = 3.0f;
     private const float RayonDetectionBuisson = 1.25f;
+    private const float DistanceMaxViseeDirecteBuisson = 0.55f;
     private float _progressionRecolteBuisson;
     private Vector3 _pointRecolteBuisson;
     private Vector3I _posBuissonRecolte;
@@ -61,6 +62,9 @@ public partial class Joueur
         pointImpact = _rayon.GetCollisionPoint();
         if (_gestionnaireMonde == null) return false;
         if (!_gestionnaireMonde.EssayerDetecterBuissonSousPoint(pointImpact, RayonDetectionBuisson, out Vector3 posMondeBuisson, out typeBuisson))
+            return false;
+        // Evite qu'un buisson "proche" capture l'action quand on vise en fait le gazon a cote.
+        if (pointImpact.DistanceTo(posMondeBuisson) > DistanceMaxViseeDirecteBuisson)
             return false;
         pointBuissonMonde = posMondeBuisson;
         posBuisson = new Vector3I(Mathf.FloorToInt(posMondeBuisson.X), Mathf.FloorToInt(posMondeBuisson.Y), Mathf.FloorToInt(posMondeBuisson.Z));
@@ -122,7 +126,7 @@ public partial class Joueur
         if (!_rayon.IsColliding()) return false;
 
         Node objetTouche = NoeudDepuisColliderRaycast(_rayon.GetCollider());
-        if (objetTouche != null && (objetTouche is ItemPhysique || ResoudreRigidBodyDepuisCollider(objetTouche) != null || objetTouche.IsInGroup("BlocsPoses")))
+        if (objetTouche != null && (objetTouche is ItemPhysique || ResoudreRigidBodyDepuisCollider(objetTouche) != null || objetTouche.IsInGroup("BlocsPoses") || ObtenirArbreDepuisCollider(objetTouche) != null))
             return false;
 
         pointImpactVoxel = _rayon.GetCollisionPoint();
@@ -142,7 +146,7 @@ public partial class Joueur
         if (!_rayon.IsColliding()) return false;
 
         Node objetTouche = NoeudDepuisColliderRaycast(_rayon.GetCollider());
-        if (objetTouche != null && (objetTouche is ItemPhysique || ResoudreRigidBodyDepuisCollider(objetTouche) != null || objetTouche.IsInGroup("BlocsPoses")))
+        if (objetTouche != null && (objetTouche is ItemPhysique || ResoudreRigidBodyDepuisCollider(objetTouche) != null || objetTouche.IsInGroup("BlocsPoses") || ObtenirArbreDepuisCollider(objetTouche) != null))
             return false;
 
         pointImpactVoxel = _rayon.GetCollisionPoint();
@@ -255,7 +259,24 @@ public partial class Joueur
         return false;
     }
 
-    private void EmmettreParticulesMinageMainNue(Vector3 position, Vector3 normale)
+    private static Color ObtenirCouleurParticulesMinage(int idExtrait)
+    {
+        return idExtrait switch
+        {
+            1 => new Color(0.42f, 0.34f, 0.24f),
+            2 => new Color(0.42f, 0.42f, 0.44f),
+            3 => new Color(0.86f, 0.78f, 0.56f),
+            4 => new Color(0.9f, 0.9f, 0.94f),
+            5 => new Color(0.86f, 0.9f, 0.96f),
+            6 => new Color(0.58f, 0.42f, 0.24f),
+            7 => new Color(0.33f, 0.25f, 0.17f),
+            8 => new Color(0.38f, 0.49f, 0.24f),
+            9 => new Color(0.66f, 0.7f, 0.75f),
+            _ => new Color(0.42f, 0.34f, 0.24f)
+        };
+    }
+
+    private void EmmettreParticulesMinageMainNue(Vector3 position, Vector3 normale, int idExtrait)
     {
         if (GetTree()?.CurrentScene == null) return;
         Vector3 n = normale.LengthSquared() > 1e-5f ? normale.Normalized() : Vector3.Up;
@@ -263,7 +284,7 @@ public partial class Joueur
         GetTree().CurrentScene.AddChild(container);
         container.GlobalPosition = position + n * 0.02f;
 
-        var mat = new StandardMaterial3D { AlbedoColor = new Color(0.42f, 0.34f, 0.24f), Roughness = 0.95f, Metallic = 0f };
+        var mat = new StandardMaterial3D { AlbedoColor = ObtenirCouleurParticulesMinage(idExtrait), Roughness = 0.95f, Metallic = 0f };
         for (int i = 0; i < 7; i++)
         {
             var mi = new MeshInstance3D
@@ -387,7 +408,7 @@ public partial class Joueur
         if (_cooldownParticulesMinageMainNue <= 0f)
         {
             _cooldownParticulesMinageMainNue = IntervalleParticulesMinageMainNue;
-            EmmettreParticulesMinageMainNue(pointImpactVoxel, normaleImpact);
+            EmmettreParticulesMinageMainNue(pointImpactVoxel, normaleImpact, idExtrait);
         }
 
         float dureeMinage = pioche ? DureeMinagePiochePierreSecondes : (pelle ? (DureeMinageMainNueSecondes * 0.95f) : DureeMinageMainNueSecondes);
@@ -654,7 +675,8 @@ public partial class Joueur
         SlotInventaire mainActive = MainGaucheEstActive ? MainGauche : MainDroite;
 
         // Dague sur buisson: interdit en coup instantané, uniquement minage maintenu 3s.
-        if (mainActive.ID == 105 && (_gestionnaireMonde?.EssayerDetecterBuissonSousPoint(pointImpact, RayonDetectionBuisson, out _, out _)) == true)
+        if (mainActive.ID == 105 && (_gestionnaireMonde?.EssayerDetecterBuissonSousPoint(pointImpact, RayonDetectionBuisson, out Vector3 posBuisson, out _)) == true
+            && pointImpact.DistanceTo(posBuisson) <= DistanceMaxViseeDirecteBuisson)
         {
             GD.Print("ZERO-K : Maintenez 3s avec la dague pour couper le buisson.");
             return;

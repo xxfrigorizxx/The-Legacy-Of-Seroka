@@ -191,8 +191,10 @@ public partial class Chunk_Serveur : RefCounted
 							byte mat = DeterminerMateriauCroûte((int)xGlobal, (int)zGlobal, (int)globalY, hauteurSurface, temperature, humidite);
 							_materials[x, y, z] = mat;
 							_densities[x, y, z] = 10.0f;
-							// Gazon partout sur herbe (ID 1), buissons à certaines positions — uniquement sur terrain plat
-							if (mat == 1 && TerrainAssezPlat((int)xGlobal, (int)zGlobal))
+							// Gazon uniquement sur voxel herbe (ID 1), uniquement sur terrain plat
+							if (EstMateriauSupportGazon(mat)
+								&& TerrainAssezPlat((int)xGlobal, (int)zGlobal)
+								&& TerrainAvecMargeBord((int)xGlobal, (int)zGlobal))
 							{
 								float altitudeFlore = globalY;
 								if (altitudeFlore > NIVEAU_MIN_FLORE && altitudeFlore < NIVEAU_MAX_FLORE)
@@ -271,6 +273,7 @@ public partial class Chunk_Serveur : RefCounted
 			int xGlobal = ChunkOffsetX * TailleChunk + x;
 			int zGlobal = ChunkOffsetZ * TailleChunk + z;
 			if (!TerrainAssezPlat(xGlobal, zGlobal)) continue;
+			if (!TerrainAvecMargeBord(xGlobal, zGlobal)) continue;
 
 			int hauteurSurface = CalculerHauteurTerrain(xGlobal, zGlobal);
 			if (hauteurSurface < 0 || hauteurSurface >= HauteurMax - 1) continue;
@@ -332,6 +335,7 @@ public partial class Chunk_Serveur : RefCounted
 			int xGlobal = ChunkOffsetX * TailleChunk + x;
 			int zGlobal = ChunkOffsetZ * TailleChunk + z;
 			if (!TerrainAssezPlat(xGlobal, zGlobal)) continue;
+			if (!TerrainAvecMargeBord(xGlobal, zGlobal)) continue;
 
 			int hauteurSurface = CalculerHauteurTerrain(xGlobal, zGlobal);
 			if (hauteurSurface < 0 || hauteurSurface >= HauteurMax - 1) continue;
@@ -459,7 +463,8 @@ public partial class Chunk_Serveur : RefCounted
 	}
 
 	/// <summary>Seuil de pente max (m) : si la hauteur varie de plus sur 1 m, pas de flore (évite lévitation sur bords).</summary>
-	private const float SEUIL_PENTE_MAX = 0.8f;
+	private const float SEUIL_PENTE_MAX = 0.12f;
+	private const float MARGE_BORD_FLORE_METRES = 0.20f;
 
 	/// <summary>Loi de l'inclinaison : vrai si le terrain est assez plat pour la flore.</summary>
 	private bool TerrainAssezPlat(int xGlobal, int zGlobal)
@@ -474,6 +479,20 @@ public partial class Chunk_Serveur : RefCounted
 			Mathf.Max(Mathf.Abs(hauteurEst - h0), Mathf.Abs(hauteurOuest - h0))
 		);
 		return diffMax < SEUIL_PENTE_MAX;
+	}
+
+	private bool TerrainAvecMargeBord(int xGlobal, int zGlobal)
+	{
+		float h0 = CalculerHauteurTerrain(xGlobal, zGlobal);
+		float hN = CalculerHauteurTerrain(xGlobal, zGlobal + 1);
+		float hS = CalculerHauteurTerrain(xGlobal, zGlobal - 1);
+		float hE = CalculerHauteurTerrain(xGlobal + 1, zGlobal);
+		float hO = CalculerHauteurTerrain(xGlobal - 1, zGlobal);
+		// Si on est à moins de 20 cm d'un "bord" (marche), on interdit le spawn.
+		return Mathf.Abs(hN - h0) <= MARGE_BORD_FLORE_METRES
+			&& Mathf.Abs(hS - h0) <= MARGE_BORD_FLORE_METRES
+			&& Mathf.Abs(hE - h0) <= MARGE_BORD_FLORE_METRES
+			&& Mathf.Abs(hO - h0) <= MARGE_BORD_FLORE_METRES;
 	}
 
 	/// <summary>Retourne (hauteur surface, matériau) pour ensemencement. (-1, 0) si pas de sol.</summary>
@@ -514,6 +533,21 @@ public partial class Chunk_Serveur : RefCounted
 		float d4 = hz2 >= 0 ? Mathf.Abs(hz2 - h0) : 0f;
 		float diffMax = Mathf.Max(Mathf.Max(d1, d2), Mathf.Max(d3, d4));
 		return diffMax < SEUIL_PENTE_MAX;
+	}
+
+	private bool TerrainAvecMargeBordDepuisDonnees(int lx, int lz)
+	{
+		int h0 = ObtenirHauteurSurfaceLocale(lx, lz);
+		if (h0 < 0) return false;
+		int hx1 = ObtenirHauteurSurfaceLocale(lx + 1, lz);
+		int hx2 = ObtenirHauteurSurfaceLocale(lx - 1, lz);
+		int hz1 = ObtenirHauteurSurfaceLocale(lx, lz + 1);
+		int hz2 = ObtenirHauteurSurfaceLocale(lx, lz - 1);
+		if (hx1 < 0 || hx2 < 0 || hz1 < 0 || hz2 < 0) return false;
+		return Mathf.Abs(hx1 - h0) <= MARGE_BORD_FLORE_METRES
+			&& Mathf.Abs(hx2 - h0) <= MARGE_BORD_FLORE_METRES
+			&& Mathf.Abs(hz1 - h0) <= MARGE_BORD_FLORE_METRES
+			&& Mathf.Abs(hz2 - h0) <= MARGE_BORD_FLORE_METRES;
 	}
 
 	private byte DeterminerMateriauCroûte(int xGlobal, int zGlobal, int globalY, int hauteurSurface, float temperature, float humidite)
@@ -659,8 +693,9 @@ public partial class Chunk_Serveur : RefCounted
 					{ ySurface = y; break; }
 				if (ySurface < 0) continue;
 				byte mat = _materials[x, ySurface, z];
-				if (mat != 1) continue;
+				if (!EstMateriauSupportGazon(mat)) continue;
 				if (!TerrainAssezPlatDepuisDonnees(x, z)) continue;
+				if (!TerrainAvecMargeBordDepuisDonnees(x, z)) continue;
 				float xGlobal = ChunkOffsetX * TailleChunk + x;
 				float zGlobal = ChunkOffsetZ * TailleChunk + z;
 				float altitudeFlore = ySurface;
@@ -672,6 +707,12 @@ public partial class Chunk_Serveur : RefCounted
 					InventaireFlore[posGlobale] = ConstruireTypeBuisson(VarianteCouleurBuissonRouge, DeterministicRand(xGlobal + 17f, zGlobal) < 0.5f);
 			}
 		AssurerBuissonMinimalDansChunk();
+	}
+
+	private static bool EstMateriauSupportGazon(byte mat)
+	{
+		// Gazon uniquement sur voxel herbe (ID 1).
+		return mat == 1;
 	}
 
 	/// <summary>Crible gravitationnel : purger les buissons dont le bloc support a été miné (évite lévitation).</summary>
@@ -848,9 +889,10 @@ public bool PlanterBuisson(Vector3 pointImpactGlobal, byte typeFlore)
 	if (ySurface < 0) return false;
 	lock (_verrouVoxel)
 	{
-		if (_materials[lx, ySurface, lz] != 1) return false; // Terre uniquement
+		if (!EstMateriauSupportGazon(_materials[lx, ySurface, lz])) return false;
 	}
 	if (!TerrainAssezPlatDepuisDonnees(lx, lz)) return false;
+	if (!TerrainAvecMargeBordDepuisDonnees(lx, lz)) return false;
 	var posGlobale = new Vector3I(ChunkOffsetX * TailleChunk + lx, ySurface, ChunkOffsetZ * TailleChunk + lz);
 	InventaireFlore[posGlobale] = typeFlore;
 	_onFlorePurgée?.Invoke(new Vector2I(ChunkOffsetX, ChunkOffsetZ), new Dictionary<Vector3I, byte>(InventaireFlore));
@@ -1160,6 +1202,8 @@ public bool RecolterBaiesBuisson(Vector3 pointImpactGlobal, float rayon, out int
 
 		foreach (var kv in InventaireFlore)
 		{
+			if (kv.Value != FloreTypeGazon)
+				continue;
 			float dx = (kv.Key.X + 0.5f) - pointImpactGlobal.X;
 			float dz = (kv.Key.Z + 0.5f) - pointImpactGlobal.Z;
 			if (dx * dx + dz * dz > rayon2)
@@ -1175,8 +1219,7 @@ public bool RecolterBaiesBuisson(Vector3 pointImpactGlobal, float rayon, out int
 		{
 			InventaireFlore.Remove(kv.Key);
 			Vector3 posSpawn = new Vector3(kv.Key.X + 0.5f, kv.Key.Y + 0.5f, kv.Key.Z + 0.5f);
-			byte idItem = kv.Value == FloreTypeGazon ? (byte)15 : (byte)(EstBuissonPlein(kv.Value) ? ID_ITEM_BUISSON_PLEIN : ID_ITEM_BUISSON_VIDE);
-			_callbackBlocChutant?.Invoke(posSpawn, idItem);
+			_callbackBlocChutant?.Invoke(posSpawn, 15);
 		}
 		_onFlorePurgée?.Invoke(new Vector2I(ChunkOffsetX, ChunkOffsetZ), new Dictionary<Vector3I, byte>(InventaireFlore));
 	}

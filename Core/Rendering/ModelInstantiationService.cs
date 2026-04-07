@@ -162,7 +162,7 @@ public partial class Joueur
     private static int SignatureSlotCorde20(SlotInventaire s)
     {
         if (s.ID != 20) return -1;
-        return HashCode.Combine(s.IndexChimique, s.IndexMorphologique, s.NiveauFracture);
+        return HashCode.Combine(s.IndexChimique, s.IndexMorphologique, s.NiveauFracture, s.IndexBotanique);
     }
 
     private static int SignatureSlotTissu21(SlotInventaire s)
@@ -398,7 +398,7 @@ public partial class Joueur
         modele.Name = "ModeleArme";
 
         var rng = new RandomNumberGenerator();
-        rng.Seed = unchecked((ulong)(uint)HashCode.Combine(slot.IndexChimique, slot.IndexMorphologique, slot.NiveauFracture, 20));
+        rng.Seed = unchecked((ulong)(uint)HashCode.Combine(slot.IndexChimique, slot.IndexMorphologique, slot.NiveauFracture, slot.IndexBotanique, 20));
 
         void ParcourirMeshes(Node n)
         {

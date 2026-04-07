@@ -62,8 +62,10 @@ adjustment_contrast = 1.25
 [node name="Gestionnaire_Monde" type="Node3D" parent="." unique_id=2015054098]
 script = ExtResource("3_monde")
 RenderDistance = 12
-FuseauHoraireHeures = -17.0
-RayonPreGeneration = 1
+RenderDistanceDetailChunks = 12
+RayonGazonVisibleChunks = 10
+RayonBuissonsVisibleChunks = 20
+FuseauHoraireHeures = -7.0
 MaterielTerrain = ExtResource("14_manteau")
 
 [node name="HUD_Inventaire" type="CanvasLayer" parent="Gestionnaire_Monde" unique_id=1861864172]

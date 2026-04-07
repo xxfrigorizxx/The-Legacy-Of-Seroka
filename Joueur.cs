@@ -904,7 +904,14 @@ public partial class Joueur : CharacterBody3D
                 : new StandardMaterial3D { AlbedoColor = new Color(0.35f, 0.55f, 0.15f), Roughness = 0.9f };
             return;
         }
-        if (idObjet == 20 || idObjet == 21 || idObjet == IdObjetCeinturePoches || idObjet == IdObjetCeintureSacoches || idObjet == IdObjetPochetteTier0 || idObjet == IdObjetSacTier0) { visuel.MaterialOverride = Atlas_Matiere.ObtenirMaterielCorde(indexChimique, indexMorphologique, niveauTressage); return; }
+        if (idObjet == 20 || idObjet == 21 || idObjet == IdObjetCeinturePoches || idObjet == IdObjetCeintureSacoches || idObjet == IdObjetPochetteTier0 || idObjet == IdObjetSacTier0)
+        {
+            int niveauAspect = niveauTressage;
+            if (idObjet == 20 && indexBotanique >= 2)
+                niveauAspect = Mathf.Max(niveauAspect, 2);
+            visuel.MaterialOverride = Atlas_Matiere.ObtenirMaterielCorde(indexChimique, indexMorphologique, niveauAspect);
+            return;
+        }
         if (idObjet == 30 || idObjet == 32)
         {
             visuel.MaterialOverride = idObjet == 32 && indexChimique == 1 && indexBotanique == LSystem_Botanique.IndexChene

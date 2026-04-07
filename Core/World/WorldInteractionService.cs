@@ -385,8 +385,8 @@ public partial class Joueur
                 return;
             }
 
-            if (_gestionnaireMonde != null && _gestionnaireMonde.UseArchitectureReseau)
-                _gestionnaireMonde.AppliquerFauchageGlobal(pointImpact, RayonFauchagePoseAtelier200);
+            // Plus de fauchage automatique a la pose de l'atelier :
+            // cela faisait apparaitre des fibres loin du visuel reel de l'herbe.
 
             // FIX CRITIQUE : On supprime la lecture du voxel hSurf + 1f.
             // L'objet se pose EXACTEMENT sur le point du raycast, ancré par son pivot.
