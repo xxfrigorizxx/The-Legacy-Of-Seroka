@@ -215,7 +215,8 @@ public partial class Joueur
             var slotLiane = new SlotInventaire
             {
                 ID = 16, // Liane (matière dédiée), pas herbe.
-                IndexMorphologique = 0,
+                IndexChimique = 16,
+                IndexMorphologique = 16,
                 IndexTaille = 0,
                 ScaleEclat = Vector3.One
             };
@@ -932,7 +933,7 @@ public partial class Joueur
             float forceCoupe = Mathf.Pow(Mathf.Max(0f, forceImpact), 0.72f) * 0.58f * finesseLame;
             if (mainActive.EstUnEclat && arbre.AgeEnJours <= 2)
                 forceCoupe = Mathf.Max(forceCoupe, arbre.AgeEnJours <= 1 ? 36f : 48f);
-            if (rochePlate && arbre.AgeEnJours <= 2 && !arbreJungle)
+            if (rochePlate && arbre.AgeEnJours <= 2)
             {
                 // Early game: seule la roche plate aide à sortir du hard-lock bois sur jeunes arbres.
                 forceCoupe *= 1.16f;
@@ -953,7 +954,7 @@ public partial class Joueur
                     Vector3 baseDrop = pointImpact + Vector3.Up * 0.7f;
                     for (int i = 0; i < quantiteLianes; i++)
                     {
-                        var slotLiane = new SlotInventaire { ID = 16, IndexMorphologique = 0, IndexTaille = 0, ScaleEclat = Vector3.One };
+                        var slotLiane = new SlotInventaire { ID = 16, IndexChimique = 16, IndexMorphologique = 16, IndexTaille = 0, ScaleEclat = Vector3.One };
                         Vector3 offset = new Vector3(((float)GD.Randf() - 0.5f) * 0.8f, (float)GD.Randf() * 0.5f, ((float)GD.Randf() - 0.5f) * 0.8f);
                         Node3D lianeDrop = CreerBlocPose(baseDrop + offset, slotLiane);
                         if (lianeDrop is RigidBody3D rbLianeDrop)

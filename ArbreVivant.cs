@@ -545,13 +545,11 @@ public partial class ArbreVivant : StaticBody3D
 		if (AgeEnJours <= 2)
 		{
 			// Anti hard-lock early game:
-			// chêne/bouleau/pin/sapin restent entaillables à la roche plate/en pointe.
-			// Jungle (acacia-like) reste plus dure volontairement.
+			// Tous les jeunes arbres (incluant jungle) restent entaillables tôt.
 			float facteurJeune = 1f;
-			if (IndexBotanique == LSystem_Botanique.IndexJungle) facteurJeune = 1.06f;
-			else if (IndexBotanique == LSystem_Botanique.IndexChene) facteurJeune = 0.62f;
+			if (IndexBotanique == LSystem_Botanique.IndexChene) facteurJeune = 0.62f;
 			else if (IndexBotanique == LSystem_Botanique.IndexBouleau) facteurJeune = 0.58f;
-			else facteurJeune = 0.56f; // pin/sapin
+			else facteurJeune = 0.56f; // pin/sapin/jungle
 			seuilRuptureBotanique *= facteurJeune;
 		}
 		if (hachettePrimitive106)
@@ -588,7 +586,7 @@ public partial class ArbreVivant : StaticBody3D
 			float pvMaxTheorique = ResistanceMaxPourAge(AgeEnJours);
 			float plafondParCoup = pvMaxTheorique * (hachettePrimitive106 ? 0.20f : 0.14f);
 			float plancherParCoup = hachettePrimitive106 ? 4.5f : 3.0f;
-			if (!hachettePrimitive106 && AgeEnJours <= 2 && IndexBotanique != LSystem_Botanique.IndexJungle)
+			if (!hachettePrimitive106 && AgeEnJours <= 2)
 				plancherParCoup = Mathf.Max(plancherParCoup, 4.2f);
 			float degats = Mathf.Min(degatsBruts, Mathf.Max(plancherParCoup, plafondParCoup));
 			ResistanceActuelle -= degats;

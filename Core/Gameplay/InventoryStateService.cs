@@ -18,6 +18,15 @@ public partial class Joueur
         return 1;
     }
 
+    public static bool EstVarianteLiane(SlotInventaire s) => !s.EstVide && s.IndexBotanique == Joueur.TagVarianteLiane;
+    public static bool EstVarianteHerbeSolide(SlotInventaire s) => !s.EstVide && s.IndexBotanique == Joueur.TagVarianteHerbeSolide;
+
+    public static bool EstSacTier0Liane(SlotInventaire s) => !s.EstVide && s.ID == Joueur.IdObjetSacTier0 && EstVarianteLiane(s);
+    public static bool EstSacTier0HerbeSolide(SlotInventaire s) => !s.EstVide && s.ID == Joueur.IdObjetSacTier0 && EstVarianteHerbeSolide(s);
+    public static bool EstCeintureSacochesHerbeSolide(SlotInventaire s) => !s.EstVide && s.ID == Joueur.IdObjetCeintureSacoches && EstVarianteHerbeSolide(s);
+    public static int ObtenirCapaciteSacStockage(SlotInventaire sacEquipe) => EstSacTier0HerbeSolide(sacEquipe) ? 2 : 1;
+    public static int ObtenirCapaciteCeintureStockage(SlotInventaire ceintureEquipe) => EstCeintureSacochesHerbeSolide(ceintureEquipe) ? 8 : 4;
+
     public static bool SontEmpilables(SlotInventaire a, SlotInventaire b)
     {
         if (a.EstVide || b.EstVide) return false;
@@ -48,7 +57,7 @@ public partial class Joueur
         if (EquipementSacDos.EstVide || EquipementSacDos.ID != IdObjetSacTier0) return;
         if (string.IsNullOrEmpty(EquipementSacDos.CleConteneur))
             EquipementSacDos.CleConteneur = GenererCleConteneur();
-        _memoireStockageSacs[EquipementSacDos.CleConteneur] = CopierSlots(GrilleSacStockage, 1);
+        _memoireStockageSacs[EquipementSacDos.CleConteneur] = CopierSlots(GrilleSacStockage, ObtenirCapaciteSacStockage(EquipementSacDos));
     }
 
     private void SauvegarderStockageCeintureSacochesEquipeDansMemoire()
@@ -56,37 +65,39 @@ public partial class Joueur
         if (EquipementCeinture.EstVide || EquipementCeinture.ID != IdObjetCeintureSacoches) return;
         if (string.IsNullOrEmpty(EquipementCeinture.CleConteneur))
             EquipementCeinture.CleConteneur = GenererCleConteneur();
-        _memoireStockageSacs[EquipementCeinture.CleConteneur] = CopierSlots(GrilleCeintureStockage, 4);
+        _memoireStockageSacs[EquipementCeinture.CleConteneur] = CopierSlots(GrilleCeintureStockage, ObtenirCapaciteCeintureStockage(EquipementCeinture));
     }
 
     private void ChargerStockageDepuisSacEquipe()
     {
+        int capacite = ObtenirCapaciteSacStockage(EquipementSacDos);
         if (EquipementSacDos.EstVide || EquipementSacDos.ID != IdObjetSacTier0)
         {
-            GrilleSacStockage = new SlotInventaire[1];
+            GrilleSacStockage = new SlotInventaire[capacite];
             return;
         }
         if (string.IsNullOrEmpty(EquipementSacDos.CleConteneur))
             EquipementSacDos.CleConteneur = GenererCleConteneur();
         if (_memoireStockageSacs.TryGetValue(EquipementSacDos.CleConteneur, out var slots))
-            GrilleSacStockage = CopierSlots(slots, 1);
+            GrilleSacStockage = CopierSlots(slots, capacite);
         else
-            GrilleSacStockage = new SlotInventaire[1];
+            GrilleSacStockage = new SlotInventaire[capacite];
     }
 
     private void ChargerStockageDepuisCeintureSacochesEquipe()
     {
+        int capacite = ObtenirCapaciteCeintureStockage(EquipementCeinture);
         if (EquipementCeinture.EstVide || EquipementCeinture.ID != IdObjetCeintureSacoches)
         {
-            GrilleCeintureStockage = new SlotInventaire[4];
+            GrilleCeintureStockage = new SlotInventaire[capacite];
             return;
         }
         if (string.IsNullOrEmpty(EquipementCeinture.CleConteneur))
             EquipementCeinture.CleConteneur = GenererCleConteneur();
         if (_memoireStockageSacs.TryGetValue(EquipementCeinture.CleConteneur, out var slots))
-            GrilleCeintureStockage = CopierSlots(slots, 4);
+            GrilleCeintureStockage = CopierSlots(slots, capacite);
         else
-            GrilleCeintureStockage = new SlotInventaire[4];
+            GrilleCeintureStockage = new SlotInventaire[capacite];
     }
 
     public ref SlotInventaire RefSlotSac(int idx) => ref GrilleSacStockage[idx];

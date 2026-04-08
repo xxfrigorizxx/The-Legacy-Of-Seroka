@@ -66,6 +66,10 @@ public partial class Joueur : CharacterBody3D
     public const string MetaTailleLameRoche = "TailleLameRoche";
     /// <summary>Sac tier 0 équipable (slot dos) : 1 case de stockage persistante.</summary>
     public const int IdObjetSacTier0 = 101;
+    /// <summary>Tag botanique réservé aux variantes liane (pochette/sac) pour les règles gameplay.</summary>
+    public const byte TagVarianteLiane = 16;
+    /// <summary>Tag botanique réservé aux variantes corde d'herbe solide (pochette/sac/ceinture).</summary>
+    public const byte TagVarianteHerbeSolide = 17;
     /// <summary>Alias historique (= <see cref="IdObjetSacTier0"/>).</summary>
     public const int IdObjetSacDos = 101;
     /// <summary>Ceinture tissée (102) : slot corps uniquement, sans stockage.</summary>

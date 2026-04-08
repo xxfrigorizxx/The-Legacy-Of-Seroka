@@ -126,6 +126,59 @@ public partial class MenuAnatomie : Control
 		return g ?? FindChild("GrilleCeintureStockage", true, false) as GridContainer;
 	}
 
+	private Panel CreerCaseStockageSupplementaire(GridContainer grille, int idx)
+	{
+		Panel p = new Panel { Name = $"SlotAuto_{idx}", CustomMinimumSize = new Vector2(96, 96), MouseFilter = Control.MouseFilterEnum.Stop };
+		if (grille != null && grille.GetChildCount() > 0 && grille.GetChild(0) is Panel template)
+		{
+			p.CustomMinimumSize = template.CustomMinimumSize;
+			if (template.GetThemeStylebox("panel") is StyleBox sb)
+				p.AddThemeStyleboxOverride("panel", (StyleBox)sb.Duplicate());
+		}
+		grille?.AddChild(p);
+		return p;
+	}
+
+	private void ConnecterCaseStockageSiNecessaire(Panel p, int modeClic, int idx)
+	{
+		if (p == null) return;
+		string cleMeta = $"ClickBound_{modeClic}";
+		if (p.HasMeta(cleMeta)) return;
+		p.GuiInput += e => TraiterClicInventaire(e, modeClic, idx);
+		p.SetMeta(cleMeta, true);
+	}
+
+	private void AssurerCapaciteGrillesStockage()
+	{
+		if (_joueurRef == null) return;
+		int capSac = _joueurRef.ASacEquipe() ? Joueur.ObtenirCapaciteSacStockage(_joueurRef.EquipementSacDos) : 1;
+		int capCeinture = _joueurRef.ACeintureSacochesEquipe() ? Joueur.ObtenirCapaciteCeintureStockage(_joueurRef.EquipementCeinture) : 4;
+
+		if (ObtenirGrilleSac() is GridContainer grilleSac)
+		{
+			grilleSac.Columns = Mathf.Max(1, Mathf.Min(2, capSac));
+			while (grilleSac.GetChildCount() < capSac)
+				CreerCaseStockageSupplementaire(grilleSac, grilleSac.GetChildCount());
+			for (int i = 0; i < grilleSac.GetChildCount(); i++)
+			{
+				if (grilleSac.GetChild(i) is Panel p)
+					ConnecterCaseStockageSiNecessaire(p, 6, i);
+			}
+		}
+
+		if (ObtenirGrilleCeintureStockage() is GridContainer grilleCeinture)
+		{
+			grilleCeinture.Columns = capCeinture > 4 ? 4 : Mathf.Max(1, capCeinture);
+			while (grilleCeinture.GetChildCount() < capCeinture)
+				CreerCaseStockageSupplementaire(grilleCeinture, grilleCeinture.GetChildCount());
+			for (int i = 0; i < grilleCeinture.GetChildCount(); i++)
+			{
+				if (grilleCeinture.GetChild(i) is Panel p)
+					ConnecterCaseStockageSiNecessaire(p, 7, i);
+			}
+		}
+	}
+
 	public void Initialiser(Joueur joueur)
 	{
 		_joueurRef = joueur;
@@ -260,20 +313,27 @@ public partial class MenuAnatomie : Control
 			{
 				int idx = i;
 				if (grilleSac.GetChild(i) is Panel cp)
+				{
 					Branche(cp, e => TraiterClicInventaire(e, 6, idx));
+					cp.SetMeta("ClickBound_6", true);
+				}
 			}
 		}
 		if (!_clicsGrilleCeintureStockageConnectes && ObtenirGrilleCeintureStockage() is GridContainer grilleCeint)
 		{
 			_clicsGrilleCeintureStockageConnectes = true;
 			grilleCeint.MouseFilter = Control.MouseFilterEnum.Ignore;
-			for (int i = 0; i < grilleCeint.GetChildCount() && i < 4; i++)
+			for (int i = 0; i < grilleCeint.GetChildCount(); i++)
 			{
 				int idx = i;
 				if (grilleCeint.GetChild(i) is Panel cp)
+				{
 					Branche(cp, e => TraiterClicInventaire(e, 7, idx));
+					cp.SetMeta("ClickBound_7", true);
+				}
 			}
 		}
+		AssurerCapaciteGrillesStockage();
 	}
 
 	private void TraiterClicInventaire(InputEvent e, int mode, int craftIdx = -1)
@@ -324,13 +384,15 @@ public partial class MenuAnatomie : Control
 		}
 		else if (mode == 6 && craftIdx >= 0)
 		{
-			if (!_joueurRef.ASacEquipe() || craftIdx != 0) return;
-			InteragirCurseurAvecSlot(ref _joueurRef.RefSlotSac(0), clicGauche, clicDroit);
+			int capSac = Joueur.ObtenirCapaciteSacStockage(_joueurRef.EquipementSacDos);
+			if (!_joueurRef.ASacEquipe() || craftIdx < 0 || craftIdx >= capSac) return;
+			InteragirCurseurAvecSlot(ref _joueurRef.RefSlotSac(craftIdx), clicGauche, clicDroit, slotSacStockage: true);
 		}
 		else if (mode == 7 && craftIdx >= 0)
 		{
-			if (!_joueurRef.ACeintureSacochesEquipe() || craftIdx < 0 || craftIdx >= 4) return;
-			InteragirCurseurAvecSlot(ref _joueurRef.RefSlotCeintureStockage(craftIdx), clicGauche, clicDroit);
+			int capCeinture = Joueur.ObtenirCapaciteCeintureStockage(_joueurRef.EquipementCeinture);
+			if (!_joueurRef.ACeintureSacochesEquipe() || craftIdx < 0 || craftIdx >= capCeinture) return;
+			InteragirCurseurAvecSlot(ref _joueurRef.RefSlotCeintureStockage(craftIdx), clicGauche, clicDroit, slotCeintureStockage: true);
 		}
 		else
 			return;
@@ -346,20 +408,40 @@ public partial class MenuAnatomie : Control
 		return s;
 	}
 
-	private static bool PeutEmpiler(SlotInventaire a, SlotInventaire b) => Joueur.SontEmpilables(a, b) && Joueur.ObtenirPileMax(a) > 1;
+	private static bool PeutEmpiler(SlotInventaire a, SlotInventaire b, int maxPile) => Joueur.SontEmpilables(a, b) && maxPile > 1;
 
-	private void InteragirCurseurAvecSlot(ref SlotInventaire slot, bool clicGauche, bool clicDroit)
+	private int ObtenirMultiplicateurPileSlotSac()
+	{
+		if (_joueurRef == null || !_joueurRef.ASacEquipe()) return 1;
+		return Joueur.EstSacTier0Liane(_joueurRef.EquipementSacDos) ? 2 : 1;
+	}
+
+	private int ObtenirMultiplicateurPileSlotCeinture()
+	{
+		if (_joueurRef == null || !_joueurRef.ACeintureSacochesEquipe()) return 1;
+		return Joueur.EstVarianteLiane(_joueurRef.EquipementCeinture) ? 2 : 1;
+	}
+
+	private int ObtenirPileMaxContexte(SlotInventaire slot, bool slotSacStockage, bool slotCeintureStockage)
+	{
+		int max = Joueur.ObtenirPileMax(slot);
+		if (slotSacStockage) max *= ObtenirMultiplicateurPileSlotSac();
+		if (slotCeintureStockage) max *= ObtenirMultiplicateurPileSlotCeinture();
+		return max;
+	}
+
+	private void InteragirCurseurAvecSlot(ref SlotInventaire slot, bool clicGauche, bool clicDroit, bool slotSacStockage = false, bool slotCeintureStockage = false)
 	{
 		if (clicGauche)
 		{
-			InteractionClicGauche(ref slot);
+			InteractionClicGauche(ref slot, slotSacStockage, slotCeintureStockage);
 			return;
 		}
 		if (clicDroit)
-			InteractionClicDroit(ref slot);
+			InteractionClicDroit(ref slot, slotSacStockage, slotCeintureStockage);
 	}
 
-	private void InteractionClicGauche(ref SlotInventaire slot)
+	private void InteractionClicGauche(ref SlotInventaire slot, bool slotSacStockage, bool slotCeintureStockage)
 	{
 		if (_curseurMenu.EstVide)
 		{
@@ -375,9 +457,9 @@ public partial class MenuAnatomie : Control
 			_curseurMenu = new SlotInventaire();
 			return;
 		}
-		if (PeutEmpiler(slot, _curseurMenu))
+		int max = ObtenirPileMaxContexte(slot, slotSacStockage, slotCeintureStockage);
+		if (PeutEmpiler(slot, _curseurMenu, max))
 		{
-			int max = Joueur.ObtenirPileMax(slot);
 			int qDst = Joueur.ObtenirQuantiteSlot(slot);
 			int qSrc = Joueur.ObtenirQuantiteSlot(_curseurMenu);
 			int place = Mathf.Max(0, max - qDst);
@@ -398,7 +480,7 @@ public partial class MenuAnatomie : Control
 		slot.Quantite = Joueur.ObtenirQuantiteSlot(slot);
 	}
 
-	private void InteractionClicDroit(ref SlotInventaire slot)
+	private void InteractionClicDroit(ref SlotInventaire slot, bool slotSacStockage, bool slotCeintureStockage)
 	{
 		if (_curseurMenu.EstVide)
 		{
@@ -420,8 +502,8 @@ public partial class MenuAnatomie : Control
 			else _curseurMenu.Quantite = qSrc;
 			return;
 		}
-		if (!PeutEmpiler(slot, _curseurMenu)) return;
-		int max = Joueur.ObtenirPileMax(slot);
+		int max = ObtenirPileMaxContexte(slot, slotSacStockage, slotCeintureStockage);
+		if (!PeutEmpiler(slot, _curseurMenu, max)) return;
 		int qDst = Joueur.ObtenirQuantiteSlot(slot);
 		if (qDst >= max) return;
 		slot.Quantite = qDst + 1;
@@ -727,8 +809,9 @@ public partial class MenuAnatomie : Control
 				if (cur.GetParent() == grilleSac && cur is Panel)
 				{
 					int idx = cur.GetIndex();
-					if (!_joueurRef.ASacEquipe() || idx != 0) break;
-					slot = _joueurRef.RefSlotSac(0);
+					int capSac = Joueur.ObtenirCapaciteSacStockage(_joueurRef.EquipementSacDos);
+					if (!_joueurRef.ASacEquipe() || idx < 0 || idx >= capSac) break;
+					slot = _joueurRef.RefSlotSac(idx);
 					return true;
 				}
 			}
@@ -740,7 +823,8 @@ public partial class MenuAnatomie : Control
 				if (cur.GetParent() == grilleCeint && cur is Panel)
 				{
 					int idx = cur.GetIndex();
-					if (!_joueurRef.ACeintureSacochesEquipe() || idx < 0 || idx >= 4) break;
+					int capCeinture = Joueur.ObtenirCapaciteCeintureStockage(_joueurRef.EquipementCeinture);
+					if (!_joueurRef.ACeintureSacochesEquipe() || idx < 0 || idx >= capCeinture) break;
 					slot = _joueurRef.RefSlotCeintureStockage(idx);
 					return true;
 				}
@@ -1398,6 +1482,8 @@ public partial class MenuAnatomie : Control
 
 		if (ObtenirGrilleSac() is GridContainer grilleSac)
 		{
+			AssurerCapaciteGrillesStockage();
+			int capSac = Joueur.ObtenirCapaciteSacStockage(_joueurRef.EquipementSacDos);
 			bool afficher = _joueurRef.ASacEquipe();
 			grilleSac.Visible = afficher;
 			grilleSac.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
@@ -1405,36 +1491,38 @@ public partial class MenuAnatomie : Control
 			for (int i = 0; i < grilleSac.GetChildCount(); i++)
 			{
 				if (grilleSac.GetChild(i) is not Control c) continue;
-				bool visCase = afficher && i == 0;
+				bool visCase = afficher && i < capSac;
 				c.Visible = visCase;
 				if (c is Panel p && TrouverOuCreerLabel(p, " ") is Label l)
 				{
-					string nomSac = visCase ? Atlas_Matiere.ObtenirNomObjet(_joueurRef.RefSlotSac(0)) : "";
-					int q = visCase ? Joueur.ObtenirQuantiteSlot(_joueurRef.RefSlotSac(0)) : 0;
+					string nomSac = visCase ? Atlas_Matiere.ObtenirNomObjet(_joueurRef.RefSlotSac(i)) : "";
+					int q = visCase ? Joueur.ObtenirQuantiteSlot(_joueurRef.RefSlotSac(i)) : 0;
 					l.Text = string.IsNullOrEmpty(nomSac) ? " " : (q > 1 ? $"{nomSac} x{q}" : nomSac);
-					RafraichirQuantiteSlot(p, visCase ? _joueurRef.RefSlotSac(0) : new SlotInventaire());
+					RafraichirQuantiteSlot(p, visCase ? _joueurRef.RefSlotSac(i) : new SlotInventaire());
 				}
 			}
 		}
 
 		if (ObtenirGrilleCeintureStockage() is GridContainer grilleCeintSt)
 		{
+			AssurerCapaciteGrillesStockage();
+			int capCeinture = Joueur.ObtenirCapaciteCeintureStockage(_joueurRef.EquipementCeinture);
 			bool afficherC = _joueurRef.ACeintureSacochesEquipe();
 			grilleCeintSt.Visible = afficherC;
 			grilleCeintSt.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
 			grilleCeintSt.SizeFlagsVertical = Control.SizeFlags.ShrinkBegin;
-			for (int i = 0; i < grilleCeintSt.GetChildCount() && i < 4; i++)
+			for (int i = 0; i < grilleCeintSt.GetChildCount(); i++)
 			{
 				if (grilleCeintSt.GetChild(i) is not Control c) continue;
-				bool visCase = afficherC;
+				bool visCase = afficherC && i < capCeinture;
 				c.Visible = visCase;
 				if (c is Panel p && TrouverOuCreerLabel(p, " ") is Label l)
 				{
-					var sl = _joueurRef.RefSlotCeintureStockage(i);
+					var sl = visCase ? _joueurRef.RefSlotCeintureStockage(i) : new SlotInventaire();
 					string nom = visCase ? Atlas_Matiere.ObtenirNomObjet(sl) : "";
 					int q = visCase ? Joueur.ObtenirQuantiteSlot(sl) : 0;
 					l.Text = string.IsNullOrEmpty(nom) ? " " : (q > 1 ? $"{nom} x{q}" : nom);
-					RafraichirQuantiteSlot(p, visCase ? sl : new SlotInventaire());
+					RafraichirQuantiteSlot(p, sl);
 				}
 			}
 		}

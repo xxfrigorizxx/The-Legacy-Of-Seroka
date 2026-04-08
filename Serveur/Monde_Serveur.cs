@@ -53,6 +53,7 @@ public partial class Monde_Serveur : Node
 	/// <summary>Budget CPU de spawn pierres par tick (ms). Sécurité anti micro-freeze MMO.</summary>
 	[Export] public float BudgetMsSpawnPierresParTick = 0.70f;
 	[Export] public bool ModeEssencesPartoutTemporaire = false;
+	[Export] public float RatioJungleModeTest = 0.35f;
 	/// <summary>Budget anti micro-freeze : limite de chunks workers intégrés par frame.</summary>
 	private const int MaxIntegrationsWorkersParTick = 2;
 	/// <summary>Budget anti micro-freeze : limite de demandes chunks traitées par frame.</summary>
@@ -1063,11 +1064,9 @@ public partial class Monde_Serveur : Node
 		// Choix déterministe: un arbre garde la même essence entre chargements.
 		uint h = (seedArbre * 1664525u) + 1013904223u;
 		float r = (h & 0x00FFFFFFu) / 16777216f;
-		// Diagnostic temporaire:
-		// - garde les essences normales par biome
-		// - injecte aussi de la jungle partout pour tester coupe/lianes.
-		bool junglePartout = ModeEssencesPartoutTemporaire && r < 0.36f;
-		if (junglePartout)
+		// Mode test: injecte beaucoup de jungle partout, sans supprimer totalement les autres essences.
+		float ratioJungleTest = Mathf.Clamp(RatioJungleModeTest, 0f, 0.95f);
+		if (ModeEssencesPartoutTemporaire && r < ratioJungleTest)
 			return LSystem_Botanique.IndexJungle;
 		AssurerNoiseTemperatureArbres();
 		float temp = _noiseTemperatureArbres?.GetNoise2D(gx, gz) ?? 0f;

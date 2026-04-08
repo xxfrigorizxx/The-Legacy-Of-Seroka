@@ -555,7 +555,11 @@ public static class Atlas_Matiere
         static bool EstSlotRochePlateCraft(SlotInventaire s) =>
             !s.EstVide && ItemPhysique.EstIdRocheMatiere(s.ID) && s.IndexMorphologique == 1
             && (s.IndexTaille == 0 || s.IndexTaille == 1);
-        static bool EstSlotCordeCraft(SlotInventaire s) => !s.EstVide && s.ID == 20;
+        static bool EstSlotCordeOuLianeCraft(SlotInventaire s) => !s.EstVide && (s.ID == 20 || s.ID == 16);
+        static bool EstSlotCordeHerbeSolideCraft(SlotInventaire s) =>
+            !s.EstVide && s.ID == 20 && s.IndexChimique == 15 && s.IndexMorphologique == 15 && s.IndexBotanique >= NiveauCordeSolideTier2;
+        static bool EstSlotTissuHerbeSolideCraft(SlotInventaire s) =>
+            !s.EstVide && s.ID == 21 && Joueur.EstVarianteHerbeSolide(s);
         // Outils à durabilité: autorise corde (20) OU liane brute (16) comme ligature.
         static bool EstSlotLigatureOutilCraft(SlotInventaire s) => !s.EstVide && (s.ID == 20 || s.ID == 16);
         static SlotInventaire NormaliserLigatureOutil(SlotInventaire s)
@@ -599,17 +603,22 @@ public static class Atlas_Matiere
         // RECETTE ATELIER : 6 cordes (20) → ceinture à poches (102). Formes : 2×3 (colonnes gauche/droite) ou 3×2 (lignes haut/bas).
         if (grilleCraft3x3Table && grille.Length >= 9)
         {
-            bool blocGauche = EstSlotCordeCraft(grille[0]) && EstSlotCordeCraft(grille[1]) && EstSlotCordeCraft(grille[3]) && EstSlotCordeCraft(grille[4]) && EstSlotCordeCraft(grille[6]) && EstSlotCordeCraft(grille[7])
+            bool blocGauche = EstSlotCordeOuLianeCraft(grille[0]) && EstSlotCordeOuLianeCraft(grille[1]) && EstSlotCordeOuLianeCraft(grille[3]) && EstSlotCordeOuLianeCraft(grille[4]) && EstSlotCordeOuLianeCraft(grille[6]) && EstSlotCordeOuLianeCraft(grille[7])
                 && grille[2].EstVide && grille[5].EstVide && grille[8].EstVide;
-            bool blocDroit = EstSlotCordeCraft(grille[1]) && EstSlotCordeCraft(grille[2]) && EstSlotCordeCraft(grille[4]) && EstSlotCordeCraft(grille[5]) && EstSlotCordeCraft(grille[7]) && EstSlotCordeCraft(grille[8])
+            bool blocDroit = EstSlotCordeOuLianeCraft(grille[1]) && EstSlotCordeOuLianeCraft(grille[2]) && EstSlotCordeOuLianeCraft(grille[4]) && EstSlotCordeOuLianeCraft(grille[5]) && EstSlotCordeOuLianeCraft(grille[7]) && EstSlotCordeOuLianeCraft(grille[8])
                 && grille[0].EstVide && grille[3].EstVide && grille[6].EstVide;
-            bool blocHaut = EstSlotCordeCraft(grille[0]) && EstSlotCordeCraft(grille[1]) && EstSlotCordeCraft(grille[2]) && EstSlotCordeCraft(grille[3]) && EstSlotCordeCraft(grille[4]) && EstSlotCordeCraft(grille[5])
+            bool blocHaut = EstSlotCordeOuLianeCraft(grille[0]) && EstSlotCordeOuLianeCraft(grille[1]) && EstSlotCordeOuLianeCraft(grille[2]) && EstSlotCordeOuLianeCraft(grille[3]) && EstSlotCordeOuLianeCraft(grille[4]) && EstSlotCordeOuLianeCraft(grille[5])
                 && grille[6].EstVide && grille[7].EstVide && grille[8].EstVide;
-            bool blocBas = EstSlotCordeCraft(grille[3]) && EstSlotCordeCraft(grille[4]) && EstSlotCordeCraft(grille[5]) && EstSlotCordeCraft(grille[6]) && EstSlotCordeCraft(grille[7]) && EstSlotCordeCraft(grille[8])
+            bool blocBas = EstSlotCordeOuLianeCraft(grille[3]) && EstSlotCordeOuLianeCraft(grille[4]) && EstSlotCordeOuLianeCraft(grille[5]) && EstSlotCordeOuLianeCraft(grille[6]) && EstSlotCordeOuLianeCraft(grille[7]) && EstSlotCordeOuLianeCraft(grille[8])
                 && grille[0].EstVide && grille[1].EstVide && grille[2].EstVide;
             if (blocGauche || blocDroit || blocHaut || blocBas)
             {
                 SlotInventaire refC = blocGauche ? grille[0] : blocDroit ? grille[1] : blocHaut ? grille[0] : grille[3];
+                bool ceintureHerbeSolide =
+                    (blocGauche && EstSlotCordeHerbeSolideCraft(grille[0]) && EstSlotCordeHerbeSolideCraft(grille[1]) && EstSlotCordeHerbeSolideCraft(grille[3]) && EstSlotCordeHerbeSolideCraft(grille[4]) && EstSlotCordeHerbeSolideCraft(grille[6]) && EstSlotCordeHerbeSolideCraft(grille[7]))
+                    || (blocDroit && EstSlotCordeHerbeSolideCraft(grille[1]) && EstSlotCordeHerbeSolideCraft(grille[2]) && EstSlotCordeHerbeSolideCraft(grille[4]) && EstSlotCordeHerbeSolideCraft(grille[5]) && EstSlotCordeHerbeSolideCraft(grille[7]) && EstSlotCordeHerbeSolideCraft(grille[8]))
+                    || (blocHaut && EstSlotCordeHerbeSolideCraft(grille[0]) && EstSlotCordeHerbeSolideCraft(grille[1]) && EstSlotCordeHerbeSolideCraft(grille[2]) && EstSlotCordeHerbeSolideCraft(grille[3]) && EstSlotCordeHerbeSolideCraft(grille[4]) && EstSlotCordeHerbeSolideCraft(grille[5]))
+                    || (blocBas && EstSlotCordeHerbeSolideCraft(grille[3]) && EstSlotCordeHerbeSolideCraft(grille[4]) && EstSlotCordeHerbeSolideCraft(grille[5]) && EstSlotCordeHerbeSolideCraft(grille[6]) && EstSlotCordeHerbeSolideCraft(grille[7]) && EstSlotCordeHerbeSolideCraft(grille[8]));
                 int nf;
                 if (blocGauche)
                     nf = Mathf.Max(Mathf.Max(Mathf.Max(grille[0].NiveauFracture, grille[1].NiveauFracture), Mathf.Max(grille[3].NiveauFracture, grille[4].NiveauFracture)), Mathf.Max(grille[6].NiveauFracture, grille[7].NiveauFracture));
@@ -624,6 +633,7 @@ public static class Atlas_Matiere
                     ID = Joueur.IdObjetCeinturePoches,
                     IndexChimique = refC.IndexChimique,
                     IndexMorphologique = refC.IndexMorphologique,
+                    IndexBotanique = ceintureHerbeSolide ? Joueur.TagVarianteHerbeSolide : LSystem_Botanique.IndexChene,
                     NiveauFracture = nf,
                     EstUnEclat = false
                 };
@@ -631,16 +641,19 @@ public static class Atlas_Matiere
 
             // RECETTE ATELIER : Pochette tier 0 (103)
             // Patron strict : [1]=tissu, [4]=corde tressée, [7]=tissu ; tout le reste vide.
-            bool pochetteTier0 = EstSlotTissuCraft(grille[1]) && EstSlotCordeCraft(grille[4]) && EstSlotTissuCraft(grille[7])
+            bool pochetteTier0 = EstSlotTissuCraft(grille[1]) && EstSlotCordeOuLianeCraft(grille[4]) && EstSlotTissuCraft(grille[7])
                 && grille[0].EstVide && grille[2].EstVide && grille[3].EstVide && grille[5].EstVide && grille[6].EstVide && grille[8].EstVide;
             if (pochetteTier0)
             {
                 int nf = Mathf.Max(grille[1].NiveauFracture, Mathf.Max(grille[4].NiveauFracture, grille[7].NiveauFracture));
+                bool versionLiane = grille[4].ID == 16;
+                bool versionHerbeSolide = EstSlotCordeHerbeSolideCraft(grille[4]) && EstSlotTissuHerbeSolideCraft(grille[1]) && EstSlotTissuHerbeSolideCraft(grille[7]);
                 return new SlotInventaire
                 {
                     ID = Joueur.IdObjetPochetteTier0,
                     IndexChimique = grille[4].IndexChimique,
                     IndexMorphologique = grille[4].IndexMorphologique,
+                    IndexBotanique = versionLiane ? Joueur.TagVarianteLiane : (versionHerbeSolide ? Joueur.TagVarianteHerbeSolide : LSystem_Botanique.IndexChene),
                     NiveauFracture = nf,
                     EstUnEclat = false
                 };
@@ -651,17 +664,20 @@ public static class Atlas_Matiere
             // [0]=vide [1]=ficelle [2]=vide
             // [3]=vide [4]=pochette [5]=vide
             // [6]=vide [7]=vide [8]=vide
-            bool sacTier0 = grille[0].EstVide && EstSlotCordeCraft(grille[1]) && grille[2].EstVide
+            bool sacTier0 = grille[0].EstVide && EstSlotCordeOuLianeCraft(grille[1]) && grille[2].EstVide
                 && grille[3].EstVide && !grille[4].EstVide && grille[4].ID == Joueur.IdObjetPochetteTier0 && grille[5].EstVide
                 && grille[6].EstVide && grille[7].EstVide && grille[8].EstVide;
             if (sacTier0)
             {
+                bool versionLiane = grille[1].ID == 16 && Joueur.EstVarianteLiane(grille[4]);
+                bool versionHerbeSolide = EstSlotCordeHerbeSolideCraft(grille[1]) && Joueur.EstVarianteHerbeSolide(grille[4]);
                 int nf = Mathf.Max(grille[1].NiveauFracture, grille[4].NiveauFracture);
                 return new SlotInventaire
                 {
                     ID = Joueur.IdObjetSacTier0,
                     IndexChimique = grille[1].IndexChimique,
                     IndexMorphologique = grille[1].IndexMorphologique,
+                    IndexBotanique = versionLiane ? Joueur.TagVarianteLiane : (versionHerbeSolide ? Joueur.TagVarianteHerbeSolide : LSystem_Botanique.IndexChene),
                     NiveauFracture = nf,
                     EstUnEclat = false
                 };
@@ -676,12 +692,19 @@ public static class Atlas_Matiere
             if (ceintureSacoches)
             {
                 var refB = grille[4];
+                bool versionLiane = Joueur.EstVarianteLiane(refB)
+                    && Joueur.EstVarianteLiane(grille[0]) && Joueur.EstVarianteLiane(grille[2])
+                    && Joueur.EstVarianteLiane(grille[6]) && Joueur.EstVarianteLiane(grille[8]);
+                bool versionHerbeSolide = Joueur.EstVarianteHerbeSolide(refB)
+                    && Joueur.EstVarianteHerbeSolide(grille[0]) && Joueur.EstVarianteHerbeSolide(grille[2])
+                    && Joueur.EstVarianteHerbeSolide(grille[6]) && Joueur.EstVarianteHerbeSolide(grille[8]);
                 int nf = Mathf.Max(Mathf.Max(grille[0].NiveauFracture, grille[2].NiveauFracture), Mathf.Max(Mathf.Max(grille[6].NiveauFracture, grille[8].NiveauFracture), refB.NiveauFracture));
                 return new SlotInventaire
                 {
                     ID = Joueur.IdObjetCeintureSacoches,
                     IndexChimique = refB.IndexChimique,
                     IndexMorphologique = refB.IndexMorphologique,
+                    IndexBotanique = versionLiane ? Joueur.TagVarianteLiane : (versionHerbeSolide ? Joueur.TagVarianteHerbeSolide : LSystem_Botanique.IndexChene),
                     NiveauFracture = nf,
                     EstUnEclat = false
                 };
@@ -689,17 +712,20 @@ public static class Atlas_Matiere
         }
 
         // RECETTE : 4 cordes (20) en carré 2×2 strict — poche (Q) : cases 0–3 ; établi : coin haut-gauche 0,1,3,4 et rien d’autre sur le 3×3 (sinon ceinture / autres recettes).
-        bool tissu2x2 = EstSlotCordeCraft(c0) && EstSlotCordeCraft(c1) && EstSlotCordeCraft(c2) && EstSlotCordeCraft(c3);
+        bool tissu2x2 = EstSlotCordeOuLianeCraft(c0) && EstSlotCordeOuLianeCraft(c1) && EstSlotCordeOuLianeCraft(c2) && EstSlotCordeOuLianeCraft(c3);
         if (tissu2x2 && grilleCraft3x3Table && grille.Length >= 9)
             tissu2x2 = grille[2].EstVide && grille[5].EstVide && grille[6].EstVide && grille[7].EstVide && grille[8].EstVide;
         if (tissu2x2)
         {
+            bool tissuHerbeSolide = EstSlotCordeHerbeSolideCraft(c0) && EstSlotCordeHerbeSolideCraft(c1)
+                && EstSlotCordeHerbeSolideCraft(c2) && EstSlotCordeHerbeSolideCraft(c3);
             int nf = Mathf.Max(Mathf.Max(c0.NiveauFracture, c1.NiveauFracture), Mathf.Max(c2.NiveauFracture, c3.NiveauFracture));
             return new SlotInventaire
             {
                 ID = 21,
                 IndexChimique = c0.IndexChimique,
                 IndexMorphologique = c0.IndexMorphologique,
+                IndexBotanique = tissuHerbeSolide ? Joueur.TagVarianteHerbeSolide : LSystem_Botanique.IndexChene,
                 NiveauFracture = nf,
                 EstUnEclat = false
             };

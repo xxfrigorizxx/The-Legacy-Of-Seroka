@@ -27,6 +27,8 @@ public partial class Gestionnaire_Monde : Node3D
 	[Export] public double FuseauHoraireHeures = -5;
 	[Export] public bool PreGenererAuDemarrage = false;
 	[Export] public int RayonPreGeneration = 2;
+	[Export] public bool ModeEssencesPartoutTemporaire = false;
+	[Export] public float RatioJungleModeTest = 0.30f;
 	[Export] public Material MaterielTerrain;
 	/// <summary>Matériau eau (océan). Créé automatiquement dans _Ready à partir de EauTriplanar.gdshader. Non exposé à l'éditeur.</summary>
 	public Material MaterielEau;
@@ -599,6 +601,8 @@ public partial class Gestionnaire_Monde : Node3D
 		_mondeServeur.SeedTerrain = GetNode<GameState>("/root/GameState").SeedTerrainActuel;
 		_mondeServeur.RenderDistance = RenderDistance;
 		_mondeServeur.FuseauHoraireHeures = FuseauHoraireHeures;
+		_mondeServeur.ModeEssencesPartoutTemporaire = ModeEssencesPartoutTemporaire;
+		_mondeServeur.RatioJungleModeTest = RatioJungleModeTest;
 		_mondeServeur.MaterielTerrain = MaterielTerrain ?? GD.Load<Material>("res://Manteau_Planetaire.tres");
 
 		_mondeClient = new Monde_Client();
