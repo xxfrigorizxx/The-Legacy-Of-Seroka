@@ -110,6 +110,13 @@ public partial class Monde_Client : Node3D
 		return Mathf.Min(detail, max);
 	}
 
+	/// <summary>Rayon de chargement réseau/terrain réel. Indépendant du rayon de détail visuel.</summary>
+	private int RayonChargementChunksActif()
+	{
+		int rendu = Mathf.Max(RayonDormancePhysique + 1, RenderDistance);
+		return Mathf.Max(rendu, RayonDetailChunksActif());
+	}
+
 	private void AppliquerParametresLodTextureTerrain()
 	{
 		if (!(MaterielTerrain is ShaderMaterial sm)) return;
@@ -272,7 +279,7 @@ public partial class Monde_Client : Node3D
 	public void ReserverChunkSpawnPrioritaire(Vector2I coordSpawn)
 	{
 		// Cap strict : au plus ce qu’il faut pour la dormance + marge ; le radar remplira le reste progressivement.
-		int rayonSpawn = Mathf.Min(RayonDetailChunksActif(), Mathf.Max(RayonDormancePhysique + MargePreloadChunks + 8, 12));
+		int rayonSpawn = Mathf.Min(RayonChargementChunksActif(), Mathf.Max(RayonDormancePhysique + MargePreloadChunks + 8, 12));
 		var prioritaire = new List<Vector2I>();
 		for (int dx = -rayonSpawn; dx <= rayonSpawn; dx++)
 			for (int dz = -rayonSpawn; dz <= rayonSpawn; dz++)
@@ -752,7 +759,7 @@ public partial class Monde_Client : Node3D
 
 	private void AjusterFenetreRequetes(float dt)
 	{
-		int rayonDetail = RayonDetailChunksActif();
+		int rayonDetail = RayonChargementChunksActif();
 		if (_rayonRequetesActuel <= 0) _rayonRequetesActuel = Mathf.Max(RayonDormancePhysique + 1, RayonInitialRequetesChunks);
 		_rayonRequetesActuel = Mathf.Clamp(_rayonRequetesActuel, Mathf.Max(RayonDormancePhysique + 1, RayonInitialRequetesChunks), rayonDetail);
 
@@ -808,7 +815,7 @@ public partial class Monde_Client : Node3D
 
 	private void PurgerChunksObsolètesDeLaFile(Vector3 positionObservation)
 	{
-		int rayonDetail = RayonDetailChunksActif();
+		int rayonDetail = RayonChargementChunksActif();
 		float rayonMaxCarre = (rayonDetail + 1) * (rayonDetail + 1);
 		for (int i = _chunksACharger.Count - 1; i >= 0; i--)
 		{
@@ -821,7 +828,7 @@ public partial class Monde_Client : Node3D
 	/// <summary>Sénescence : retire de la mémoire les chunks au-delà du rayon + hystérésis. Libère les RIDs (RenderingServer/PhysicsServer3D).</summary>
 	private void NettoyerChunksObsoles(Vector3 positionObservation)
 	{
-		int rayonDetail = RayonDetailChunksActif();
+		int rayonDetail = RayonChargementChunksActif();
 		float seuilCarree = (rayonDetail + 2) * (rayonDetail + 2);
 		_chunksATuerTemp.Clear();
 		foreach (var kv in _chunksData)
@@ -1106,7 +1113,7 @@ public partial class Monde_Client : Node3D
 		Vector2 posObsV2 = new Vector2(positionObservation.X / (float)TailleChunk, positionObservation.Z / (float)TailleChunk);
 		int cjX = Gestionnaire_Monde.WorldToChunkCoord(positionObservation.X, positionObservation.Z, TailleChunk).X;
 		int cjZ = Gestionnaire_Monde.WorldToChunkCoord(positionObservation.X, positionObservation.Z, TailleChunk).Y;
-		int rayonDetail = RayonDetailChunksActif();
+		int rayonDetail = RayonChargementChunksActif();
 		HashSet<Vector2I> chunksCharges = new HashSet<Vector2I>(_chunksData.Keys);
 		List<Vector2I> copieChunksACharger = new List<Vector2I>(_chunksACharger);
 

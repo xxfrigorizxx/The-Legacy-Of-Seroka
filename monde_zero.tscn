@@ -49,10 +49,10 @@ fog_sun_scatter = 0.09
 fog_density = 0.2702
 fog_sky_affect = 0.116
 volumetric_fog_enabled = true
-volumetric_fog_density = 0.0349
-volumetric_fog_albedo = Color(0.27299985, 0.2765208, 0.26430112, 1)
-volumetric_fog_detail_spread = 1.8467174
-volumetric_fog_ambient_inject = 5.84
+volumetric_fog_density = 0.0128
+volumetric_fog_albedo = Color(0.21025047, 0.21025047, 0.21025047, 1)
+volumetric_fog_detail_spread = 6.0
+volumetric_fog_ambient_inject = 1.74
 volumetric_fog_sky_affect = 0.116
 volumetric_fog_temporal_reprojection_enabled = false
 adjustment_contrast = 1.25
@@ -61,10 +61,8 @@ adjustment_contrast = 1.25
 
 [node name="Gestionnaire_Monde" type="Node3D" parent="." unique_id=2015054098]
 script = ExtResource("3_monde")
-RenderDistance = 12
-RenderDistanceDetailChunks = 12
 RayonQualiteProcheChunks = 6
-FuseauHoraireHeures = -10.0
+FuseauHoraireHeures = -12.0
 MaterielTerrain = ExtResource("14_manteau")
 
 [node name="HUD_Inventaire" type="CanvasLayer" parent="Gestionnaire_Monde" unique_id=1861864172]
