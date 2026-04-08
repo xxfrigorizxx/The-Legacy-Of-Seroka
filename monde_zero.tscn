@@ -61,6 +61,8 @@ adjustment_contrast = 1.25
 
 [node name="Gestionnaire_Monde" type="Node3D" parent="." unique_id=2015054098]
 script = ExtResource("3_monde")
+RenderDistance = 15
+RenderDistanceDetailChunks = 12
 RayonQualiteProcheChunks = 6
 FuseauHoraireHeures = -12.0
 MaterielTerrain = ExtResource("14_manteau")

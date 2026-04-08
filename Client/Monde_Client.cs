@@ -22,6 +22,10 @@ public partial class Monde_Client : Node3D
 	[Export] public float IntervalleExpansionRequetesSec = 0.35f;
 	[Export] public int SeuilBacklogHaut = 36;
 	[Export] public int SeuilBacklogBas = 12;
+	[Export] public float IntervalleProgressionForceeRayonSec = 1.6f;
+	[Export] public bool ModeAutoDiagnosticAdaptatif = true;
+	[Export] public int FpsCibleAutoDiagnostic = 60;
+	[Export] public float RatioChargeMinimumAuto = 0.28f;
 	[Export] public bool ActiverHorizonLod = false;
 	[Export] public int RayonHorizonChunks = 72;
 	[Export] public float PasHorizonMetres = 20f;
@@ -37,6 +41,7 @@ public partial class Monde_Client : Node3D
 	[Export] public int MargePreloadChunks = 4;
 	/// <summary>Anticipation du déplacement (s) : une 2ᵉ zone de priorité autour de la position future pour marches longues dans une direction.</summary>
 	[Export] public float SecondesAnticipationChargement = 2.5f;
+	[Export] public float IntervalleRafraichissementRadarImmobile = 0.55f;
 	/// <summary>Intégrations mesh/collision par frame quand le spawn est déjà prêt (exploration). Augmente si le sol met du temps à « se réveiller ».</summary>
 	[Export] public int MaxIntegrationsParFrameExploration = 4;
 	/// <summary>Intégrations mesh/collision par frame pendant le chargement initial (anti-pic CPU/GPU).</summary>
@@ -85,6 +90,21 @@ public partial class Monde_Client : Node3D
 	private readonly Dictionary<Vector2I, ulong> _frameEnqueueFlore = new Dictionary<Vector2I, ulong>();
 	private int _rayonRequetesActuel;
 	private float _timerExpansionRequetes;
+	private float _timerProgressionForceeRayon = 0f;
+	private float _timerRafraichissementRadarImmobile = 0f;
+	private Vector3 _derniereDirectionRadar = Vector3.Forward;
+	private const int EpaisseurAnneauRadar = 3;
+	private const int MaxAjoutsRadarParPasse = 1400;
+	private float _fpsMoyenneAuto = 60f;
+	private float _ratioChargeAuto = 1f;
+	private int _maxAjoutsRadarParPasseDyn = MaxAjoutsRadarParPasse;
+	private int _maxRequetesDyn = 12;
+	private int _maxTravailleursDyn = 8;
+	private int _maxTransitionsDormanceDyn = 64;
+	private float _intervalleCullingDyn = 0.03f;
+	private float _intervalleRadarImmobileDyn = 0.55f;
+	private float _facteurMouvementAuto = 1f;
+	private Vector2I _obsChunkDormance = new Vector2I(-99999, -99999);
 
 	private Action<Vector2I> _enregistrerDemandeChunk;
 	private Action<Vector3, float, float> _demanderDestruction;
@@ -115,6 +135,15 @@ public partial class Monde_Client : Node3D
 	{
 		int rendu = Mathf.Max(RayonDormancePhysique + 1, RenderDistance);
 		return Mathf.Max(rendu, RayonDetailChunksActif());
+	}
+
+	/// <summary>Rayon radar préparé à l'avance: progresse avec la fenêtre de requêtes pour éviter les pics CPU à très grande distance.</summary>
+	private int RayonRadarPreparationActif()
+	{
+		int minRadar = Mathf.Max(RayonDormancePhysique + 2, RayonInitialRequetesChunks);
+		int cible = RayonChargementChunksActif();
+		int progressif = Mathf.Max(minRadar, _rayonRequetesActuel + 6);
+		return Mathf.Clamp(progressif, minRadar, cible);
 	}
 
 	private void AppliquerParametresLodTextureTerrain()
@@ -151,7 +180,55 @@ public partial class Monde_Client : Node3D
 		Chunk_Client.RayonVisibiliteBuissonsChunks = Mathf.Max(2, RayonBuissonsVisibleChunks);
 		_rayonRequetesActuel = Mathf.Max(RayonDormancePhysique + 1, RayonInitialRequetesChunks);
 		_timerExpansionRequetes = IntervalleExpansionRequetesSec;
+		_timerProgressionForceeRayon = IntervalleProgressionForceeRayonSec;
+		_intervalleRadarImmobileDyn = IntervalleRafraichissementRadarImmobile;
 		AppliquerParametresLodTextureTerrain();
+	}
+
+	private void MettreAJourAutoDiagnostic(float dt)
+	{
+		if (!ModeAutoDiagnosticAdaptatif)
+		{
+			_ratioChargeAuto = 1f;
+			_facteurMouvementAuto = 1f;
+			_maxAjoutsRadarParPasseDyn = MaxAjoutsRadarParPasse;
+			_maxRequetesDyn = Mathf.Max(1, MaxChunksParFrame);
+			_maxTravailleursDyn = Mathf.Clamp(MaxTravailleursCalcul, 2, 16);
+			_maxTransitionsDormanceDyn = 64;
+			_intervalleCullingDyn = 0.03f;
+			_intervalleRadarImmobileDyn = IntervalleRafraichissementRadarImmobile;
+			return;
+		}
+
+		float fps = (float)Engine.GetFramesPerSecond();
+		if (fps > 1f)
+		{
+			float alpha = Mathf.Clamp(dt * 2.0f, 0.04f, 0.22f);
+			_fpsMoyenneAuto = Mathf.Lerp(_fpsMoyenneAuto, fps, alpha);
+		}
+
+		float cible = Mathf.Clamp(FpsCibleAutoDiagnostic, 35, 240);
+		float ratio = Mathf.Clamp(_fpsMoyenneAuto / cible, RatioChargeMinimumAuto, 1.15f);
+		if (_fpsMoyenneAuto < 35f) ratio *= 0.82f;
+		else if (_fpsMoyenneAuto < 45f) ratio *= 0.90f;
+		_ratioChargeAuto = Mathf.Clamp(ratio, RatioChargeMinimumAuto, 1.1f);
+
+		float vitesseXZ = 0f;
+		if (_joueur != null)
+		{
+			Vector3 vel = _joueur.Velocity;
+			vitesseXZ = new Vector2(vel.X, vel.Z).Length();
+		}
+		float tMouvement = Mathf.Clamp((vitesseXZ - 0.8f) / 5.5f, 0f, 1f);
+		_facteurMouvementAuto = Mathf.Lerp(1f, 0.62f, tMouvement);
+		float ratioStable = Mathf.Clamp(_ratioChargeAuto * _facteurMouvementAuto, RatioChargeMinimumAuto, 1.05f);
+
+		_maxAjoutsRadarParPasseDyn = Mathf.Clamp(Mathf.RoundToInt(MaxAjoutsRadarParPasse * ratioStable), 220, MaxAjoutsRadarParPasse);
+		_maxRequetesDyn = Mathf.Clamp(Mathf.RoundToInt(MaxChunksParFrame * Mathf.Lerp(0.55f, 1.45f, ratioStable)), 2, 56);
+		_maxTravailleursDyn = Mathf.Clamp(Mathf.RoundToInt(MaxTravailleursCalcul * Mathf.Lerp(0.6f, 1.2f, ratioStable)), 2, 16);
+		_maxTransitionsDormanceDyn = Mathf.Clamp(Mathf.RoundToInt(Mathf.Lerp(14f, 96f, ratioStable)), 12, 120);
+		_intervalleCullingDyn = Mathf.Lerp(0.06f, 0.018f, ratioStable);
+		_intervalleRadarImmobileDyn = IntervalleRafraichissementRadarImmobile * Mathf.Lerp(1.6f, 0.78f, ratioStable);
 	}
 
 	public void EnqueueMiseAJourMainThread(Action action) => _misesAJourMainThread.Enqueue(action);
@@ -303,12 +380,15 @@ public partial class Monde_Client : Node3D
 	public override void _PhysicsProcess(double delta)
 	{
 		if (!IsInsideTree()) return; // GARROT SPATIAL : pas de manipulation de chunks si l'arbre s'effondre.
+		float dt = (float)delta;
+		MettreAJourAutoDiagnostic(dt);
 
 		// 2) Intégrations : chargement initial agressif ; exploration : plusieurs par frame pour suivre un monde infini.
 		bool enChargement = !ChunkSousPiedsAPret();
-		int maxIntegrations = enChargement
+		int baseIntegrations = enChargement
 			? Mathf.Max(1, MaxIntegrationsParFrameChargement)
 			: Mathf.Max(1, MaxIntegrationsParFrameExploration);
+		int maxIntegrations = Mathf.Clamp(Mathf.RoundToInt(baseIntegrations * Mathf.Lerp(0.62f, 1.2f, _ratioChargeAuto)), 1, Mathf.Max(1, baseIntegrations + 2));
 		int integrations = 0;
 		while (integrations < maxIntegrations && _fileIntegrationMainThread.TryDequeue(out var integration))
 		{
@@ -322,7 +402,8 @@ public partial class Monde_Client : Node3D
 		if (_fileAttenteSolidification.Count > 0)
 		{
 			Vector2I coordObsSolidif = ObtenirCoordonneesChunkJoueur();
-			int maxSolidifications = enChargement ? 10 : Mathf.Max(1, MaxSolidificationsParFrameExploration);
+			int baseSolidifications = enChargement ? 10 : Mathf.Max(1, MaxSolidificationsParFrameExploration);
+			int maxSolidifications = Mathf.Clamp(Mathf.RoundToInt(baseSolidifications * Mathf.Lerp(0.65f, 1.2f, _ratioChargeAuto)), 1, Mathf.Max(1, baseSolidifications + 2));
 			int efforts = 0;
 			World3D w = GetWorld3D();
 			while (_fileAttenteSolidification.Count > 0 && efforts < maxSolidifications)
@@ -366,7 +447,7 @@ public partial class Monde_Client : Node3D
 
 		// FORGE RESTREINTE : lancer au plus MaxTravailleurs calculs en arrière-plan (tri par distance au joueur).
 		Vector2I obsChunk = ObtenirCoordonneesChunkJoueur();
-		int maxTravailleurs = Mathf.Clamp(MaxTravailleursCalcul, 2, 16);
+		int maxTravailleurs = _maxTravailleursDyn;
 		while (Thread.VolatileRead(ref _chunksEnCoursDeCalcul) < maxTravailleurs)
 		{
 			ChunkData chunkData = null;
@@ -441,15 +522,33 @@ public partial class Monde_Client : Node3D
 		Vector3 directionObservation = cameraActive != null ? (-cameraActive.GlobalTransform.Basis.Z).Normalized() :
 			(_joueur != null ? (-_joueur.GlobalTransform.Basis.Z).Normalized() : Vector3.Forward);
 		Vector2I chunkObservationActuel = Gestionnaire_Monde.WorldToChunkCoord(positionObservation, TailleChunk);
-		AjusterFenetreRequetes((float)delta);
-		MettreAJourHorizonLointain(positionObservation, (float)delta);
-		AppliquerCullingCameraChunks(positionObservation, directionObservation, (float)delta);
+		_obsChunkDormance = chunkObservationActuel;
+		AjusterFenetreRequetes(dt);
+		MettreAJourHorizonLointain(positionObservation, dt);
+		AppliquerCullingCameraChunks(positionObservation, directionObservation, dt);
+		ActualiserDormanceChunks(_obsChunkDormance.X, _obsChunkDormance.Y, _maxTransitionsDormanceDyn);
 
 		if (chunkObservationActuel != _ancienChunkJoueur)
 		{
 			_ancienChunkJoueur = chunkObservationActuel;
 			ActualiserVisibiliteEtTriChunks(positionObservation);
-			ActualiserDormanceChunks(chunkObservationActuel.X, chunkObservationActuel.Y);
+			_derniereDirectionRadar = directionObservation;
+			_timerRafraichissementRadarImmobile = _intervalleRadarImmobileDyn;
+		}
+		else
+		{
+			// Reste immobile: continue de préparer la map par vagues.
+			_timerRafraichissementRadarImmobile -= dt;
+			float dot = _derniereDirectionRadar.Normalized().Dot(directionObservation.Normalized());
+			bool rotationImportante = dot < 0.86f;
+			if ((_timerRafraichissementRadarImmobile <= 0f || rotationImportante) && !_radarEnCours)
+			{
+				ActualiserVisibiliteEtTriChunks(positionObservation);
+				_derniereDirectionRadar = directionObservation;
+				_timerRafraichissementRadarImmobile = rotationImportante
+					? Mathf.Max(0.12f, _intervalleRadarImmobileDyn * 0.45f)
+					: _intervalleRadarImmobileDyn;
+			}
 		}
 
 		// Etale la flore sur plusieurs frames (supprime les gros spikes du premier chargement massif).
@@ -498,7 +597,7 @@ public partial class Monde_Client : Node3D
 		PurgerChunksObsolètesDeLaFile(positionObservation);
 		bool chunkPiedsManquant = !_chunksData.ContainsKey(chunkPieds);
 		int backlog = CompterBacklog();
-		int nbRequetes = chunkPiedsManquant ? Mathf.Min(MaxChunksParFrame * 2, 12) : MaxChunksParFrame;
+		int nbRequetes = chunkPiedsManquant ? Mathf.Min(_maxRequetesDyn * 2, 20) : _maxRequetesDyn;
 		if (backlog >= SeuilBacklogHaut) nbRequetes = Mathf.Max(1, nbRequetes / 3);
 		else if (backlog >= SeuilBacklogBas) nbRequetes = Mathf.Max(1, nbRequetes / 2);
 		for (int n = 0; n < nbRequetes && _chunksACharger.Count > 0; n++)
@@ -511,7 +610,7 @@ public partial class Monde_Client : Node3D
 			DemanderChunk(chunkCible);
 		}
 
-		_tempsDepuisNettoyage += (float)delta;
+		_tempsDepuisNettoyage += dt;
 		if (_tempsDepuisNettoyage >= IntervalleNettoyageChunks)
 		{
 			_tempsDepuisNettoyage = 0f;
@@ -662,7 +761,7 @@ public partial class Monde_Client : Node3D
 		if (!ActiverCullingCameraChunks) return;
 		_timerCullingCamera -= dt;
 		if (_timerCullingCamera > 0f) return;
-		_timerCullingCamera = 0.03f;
+		_timerCullingCamera = _intervalleCullingDyn;
 
 		float cosHalf = Mathf.Cos(Mathf.DegToRad(Mathf.Clamp(AngleCullingCameraDeg, 80f, 175f) * 0.5f));
 		float rayonToujoursVisible = Mathf.Max(RayonDormancePhysique + 1, MargeChunksToujoursVisibles) * TailleChunk;
@@ -683,11 +782,13 @@ public partial class Monde_Client : Node3D
 				visible = dot >= cosHalf;
 			}
 
+			if (data.CullingVisible == visible) continue;
+			data.CullingVisible = visible;
 			if (data.VisualInstanceRID.IsValid)
 				RenderingServer.Singleton.InstanceSetVisible(data.VisualInstanceRID, visible);
 			if (data.WaterInstanceRID.IsValid)
 				RenderingServer.Singleton.InstanceSetVisible(data.WaterInstanceRID, visible);
-			if (data._nodeFlore is Node3D flore)
+			if (data._nodeFlore is Node3D flore && flore.Visible != visible)
 				flore.Visible = visible;
 		}
 	}
@@ -717,6 +818,7 @@ public partial class Monde_Client : Node3D
 		if (data._nodeFlore != null || data.InventaireFlore == null || data.InventaireFlore.Count == 0) return;
 		var node = Chunk_Client.CreerNoeudFlorePourChunkData(data, positionObservation, TailleChunk);
 		if (node == null) return;
+		node.Visible = data.CullingVisible;
 		AddChild(node);
 		data._nodeFlore = node;
 	}
@@ -765,16 +867,25 @@ public partial class Monde_Client : Node3D
 
 		int backlog = CompterBacklog();
 		_timerExpansionRequetes -= dt;
+		_timerProgressionForceeRayon -= dt;
 		if (backlog >= SeuilBacklogHaut)
 		{
 			_rayonRequetesActuel = Mathf.Max(Mathf.Max(RayonDormancePhysique + 1, RayonInitialRequetesChunks), _rayonRequetesActuel - 1);
 			_timerExpansionRequetes = Mathf.Max(0.1f, IntervalleExpansionRequetesSec * 0.6f);
-			return;
 		}
-		if (_timerExpansionRequetes <= 0f && backlog <= SeuilBacklogBas)
+		else if (_timerExpansionRequetes <= 0f && backlog <= SeuilBacklogBas)
+		{
+			int gap = Mathf.Max(0, rayonDetail - _rayonRequetesActuel);
+			int pas = gap > 40 ? 2 : 1;
+			_rayonRequetesActuel = Mathf.Min(rayonDetail, _rayonRequetesActuel + pas);
+			_timerExpansionRequetes = Mathf.Max(0.1f, IntervalleExpansionRequetesSec);
+		}
+
+		// Même sous charge, le rayon avance lentement pour éviter un "blocage complet" du chargement lointain.
+		if (_timerProgressionForceeRayon <= 0f && _rayonRequetesActuel < rayonDetail)
 		{
 			_rayonRequetesActuel = Mathf.Min(rayonDetail, _rayonRequetesActuel + 1);
-			_timerExpansionRequetes = Mathf.Max(0.1f, IntervalleExpansionRequetesSec);
+			_timerProgressionForceeRayon = Mathf.Max(0.5f, IntervalleProgressionForceeRayonSec);
 		}
 	}
 
@@ -815,8 +926,9 @@ public partial class Monde_Client : Node3D
 
 	private void PurgerChunksObsolètesDeLaFile(Vector3 positionObservation)
 	{
-		int rayonDetail = RayonChargementChunksActif();
-		float rayonMaxCarre = (rayonDetail + 1) * (rayonDetail + 1);
+		// Garde la file alignée sur la vague radar active (pas tout le RenderDistance d'un coup).
+		int rayonRadar = RayonRadarPreparationActif();
+		float rayonMaxCarre = (rayonRadar + 2) * (rayonRadar + 2);
 		for (int i = _chunksACharger.Count - 1; i >= 0; i--)
 		{
 			float d2 = DistanceCarreeAuJoueur(_chunksACharger[i], positionObservation);
@@ -1113,7 +1225,7 @@ public partial class Monde_Client : Node3D
 		Vector2 posObsV2 = new Vector2(positionObservation.X / (float)TailleChunk, positionObservation.Z / (float)TailleChunk);
 		int cjX = Gestionnaire_Monde.WorldToChunkCoord(positionObservation.X, positionObservation.Z, TailleChunk).X;
 		int cjZ = Gestionnaire_Monde.WorldToChunkCoord(positionObservation.X, positionObservation.Z, TailleChunk).Y;
-		int rayonDetail = RayonChargementChunksActif();
+		int rayonRadar = RayonRadarPreparationActif();
 		HashSet<Vector2I> chunksCharges = new HashSet<Vector2I>(_chunksData.Keys);
 		List<Vector2I> copieChunksACharger = new List<Vector2I>(_chunksACharger);
 
@@ -1121,13 +1233,20 @@ public partial class Monde_Client : Node3D
 		{
 			HashSet<Vector2I> dejaVu = new HashSet<Vector2I>(copieChunksACharger);
 			foreach (var c in chunksCharges) dejaVu.Add(c);
-
-			for (int dx = -rayonDetail; dx <= rayonDetail; dx++)
-				for (int dz = -rayonDetail; dz <= rayonDetail; dz++)
+			int rayonInterieur = Mathf.Max(0, rayonRadar - EpaisseurAnneauRadar);
+			int ajoutes = 0;
+			for (int dx = -rayonRadar; dx <= rayonRadar && ajoutes < _maxAjoutsRadarParPasseDyn; dx++)
+				for (int dz = -rayonRadar; dz <= rayonRadar && ajoutes < _maxAjoutsRadarParPasseDyn; dz++)
 				{
+					int adx = Mathf.Abs(dx);
+					int adz = Mathf.Abs(dz);
+					if (adx < rayonInterieur && adz < rayonInterieur) continue; // Remplit l'anneau courant uniquement.
 					Vector2I coord = new Vector2I(cjX + dx, cjZ + dz);
 					if (dejaVu.Add(coord))
+					{
 						copieChunksACharger.Add(coord);
+						ajoutes++;
+					}
 				}
 
 			// Tri radial strict : distance au carré depuis l'épicentre (évite racine carrée)
@@ -1145,19 +1264,33 @@ public partial class Monde_Client : Node3D
 
 	private void AppliquerNouveauTriRadar(Vector2I[] nouvelleListeTriee)
 	{
-		_chunksACharger = new List<Vector2I>(nouvelleListeTriee);
+		if (nouvelleListeTriee == null || nouvelleListeTriee.Length == 0)
+		{
+			_chunksACharger.Clear();
+			_radarEnCours = false;
+			return;
+		}
+		int rayonRadar = RayonRadarPreparationActif();
+		int cap = Mathf.Clamp((2 * rayonRadar + 1) * (2 * rayonRadar + 1), 256, 16000);
+		int n = Mathf.Min(cap, nouvelleListeTriee.Length);
+		var compacte = new List<Vector2I>(n);
+		for (int i = 0; i < n; i++) compacte.Add(nouvelleListeTriee[i]);
+		_chunksACharger = compacte;
 		_radarEnCours = false;
 		// Le dépilage est fait dans _PhysicsProcess (usine en continu, 60 TPS)
 	}
 
-	/// <summary>Dormance physique : tout dans un rayon de RayonDormancePhysique chunks autour du joueur doit avoir les collisions actives (dynamique). Au réveil, on réactive immédiatement le body pour ne jamais traverser le sol.</summary>
-	private void ActualiserDormanceChunks(int obsChunkX, int obsChunkZ)
+	/// <summary>Dormance physique progressive: limite les transitions BodySetSpace par frame pour supprimer les micro-spikes.</summary>
+	private void ActualiserDormanceChunks(int obsChunkX, int obsChunkZ, int maxTransitions)
 	{
 		World3D world = GetWorld3D();
 		if (world == null) return;
 		Rid space = world.Space;
+		int transitions = 0;
+		int limite = Mathf.Max(1, maxTransitions);
 		foreach (var kv in _chunksData)
 		{
+			if (transitions >= limite) break;
 			var data = kv.Value;
 			int dx = Mathf.Abs(data.Coordonnees.X - obsChunkX);
 			int dz = Mathf.Abs(data.Coordonnees.Y - obsChunkZ);
@@ -1169,6 +1302,7 @@ public partial class Monde_Client : Node3D
 				if (dormant)
 				{
 					PhysicsServer3D.Singleton.BodySetSpace(data.PhysicsBodyRID, default(Rid));
+					transitions++;
 					if (data.EstEnFileSolidification)
 					{
 						_fileAttenteSolidification.Remove(data);
@@ -1179,6 +1313,7 @@ public partial class Monde_Client : Node3D
 				{
 					// Réveil dynamique : activer les collisions tout de suite dans le rayon (pas de file).
 					PhysicsServer3D.Singleton.BodySetSpace(data.PhysicsBodyRID, space);
+					transitions++;
 					if (data.EstEnFileSolidification)
 					{
 						_fileAttenteSolidification.Remove(data);

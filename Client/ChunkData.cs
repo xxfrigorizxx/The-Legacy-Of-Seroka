@@ -37,6 +37,8 @@ public class ChunkData
 	public int Tz { get; set; }
 
 	public bool Dormant { get; set; }
+	/// <summary>Etat de visibilité calculé par le culling caméra (évite de spammer InstanceSetVisible).</summary>
+	public bool CullingVisible { get; set; } = true;
 	/// <summary>True tant que le chunk attend dans la file de solidification physique (évite doublons).</summary>
 	public bool EstEnFileSolidification { get; set; }
 
