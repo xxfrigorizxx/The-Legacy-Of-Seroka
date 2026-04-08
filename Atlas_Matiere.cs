@@ -125,6 +125,8 @@ public static class Atlas_Matiere
             0 => 18.0f, // Chêne : robuste
             1 => 13.0f, // Bouleau : tendre
             2 => 8.0f,  // Pin : résineux tendre
+            3 => 7.0f,  // 📖 Sapin : Très tendre, similaire au Pin
+            4 => 3.5f,  // 📖 Kapokier : Catastrophique pour forger un manche d'outil
             _ => 10.0f
         };
     }
@@ -293,7 +295,7 @@ public static class Atlas_Matiere
         }
         if (id == 200)
         {
-            string essence = slot.IndexBotanique switch { 0 => "Chêne", 1 => "Bouleau", 2 => "Pin", _ => "Bois" };
+            string essence = slot.IndexBotanique switch { 0 => "Chêne", 1 => "Bouleau", 2 => "Pin", 3 => "Sapin", 4 => "Fromager", _ => "Bois" };
             return $"Atelier Primitif en {essence}";
         }
         if (id == 106)
@@ -380,14 +382,14 @@ public static class Atlas_Matiere
             return flex.Nom;
         if (id == 30)
         {
-            string essence = slot.IndexBotanique switch { 0 => "Chêne", 1 => "Bouleau", 2 => "Pin", _ => "Bois" };
+            string essence = slot.IndexBotanique switch { 0 => "Chêne", 1 => "Bouleau", 2 => "Pin", 3 => "Sapin", 4 => "Fromager", _ => "Bois" };
             string longueur = slot.IndexTaille switch { 0 => "Tronc Brut", 1 => "Bûche Standard", 2 => "Demi-Bûche Courte", 3 => "Rondin", _ => "Morceau" };
             string fente = slot.IndexMorphologique switch { 0 => "", 1 => " (Fendue en 2)", 2 => " (Fendue en 4)", 3 => " (Fendue en 8)", _ => " (Éclat)" };
             return $"{longueur}{fente} de {essence}";
         }
         if (id == 32)
         {
-            string essence = slot.IndexBotanique switch { 0 => "Chêne", 1 => "Bouleau", 2 => "Pin", _ => "Bois" };
+            string essence = slot.IndexBotanique switch { 0 => "Chêne", 1 => "Bouleau", 2 => "Pin", 3 => "Sapin", 4 => "Fromager", _ => "Bois" };
             string longueur = slot.IndexTaille switch { 0 => "Brin brut", 1 => "Bâton standard", 2 => "Demi-bâton", 3 => "Rondin fin", _ => "Morceau" };
             string fente = slot.IndexMorphologique switch { 0 => "", 1 => " (Fendu en 2)", 2 => " (Fendu en 4)", 3 => " (Planchette)", _ => "" };
             float zL = slot.ScaleEclat.Z;
@@ -528,18 +530,19 @@ public static class Atlas_Matiere
                 // Dague : uniquement petite roche en pointe (morph 3, taille mini ou petite).
                 bool estPetiteRochePointe = ItemPhysique.EstIdRocheMatiere(haut.ID) && haut.IndexMorphologique == 3
                     && (haut.IndexTaille == 0 || haut.IndexTaille == 1);
-                bool estCorde = bas.ID == 20;
+                bool estCorde = EstSlotLigatureOutilCraft(bas);
                 if (estPetiteRochePointe && estCorde)
                 {
-                    float dMax = CalculerDurabiliteMaxNouvelleDague(haut, bas);
+                    SlotInventaire ligature = NormaliserLigatureOutil(bas);
+                    float dMax = CalculerDurabiliteMaxNouvelleDague(haut, ligature);
                     return new SlotInventaire
                     {
                         ID = 105,
                         IndexChimique = haut.ID - ItemPhysique.IdRocheMatiereMin,
-                        IndexMorphologique = bas.IndexChimique,
-                        IndexTaille = bas.IndexMorphologique,
+                        IndexMorphologique = ligature.IndexChimique,
+                        IndexTaille = ligature.IndexMorphologique,
                         IndexTailleLameRoche = Mathf.Clamp(haut.IndexTaille, 0, 4),
-                        NiveauFracture = bas.IndexBotanique,
+                        NiveauFracture = ligature.IndexBotanique,
                         EstUnEclat = false,
                         DurabiliteOutilMax = dMax,
                         DurabiliteOutilActuelle = dMax
@@ -553,6 +556,26 @@ public static class Atlas_Matiere
             !s.EstVide && ItemPhysique.EstIdRocheMatiere(s.ID) && s.IndexMorphologique == 1
             && (s.IndexTaille == 0 || s.IndexTaille == 1);
         static bool EstSlotCordeCraft(SlotInventaire s) => !s.EstVide && s.ID == 20;
+        // Outils à durabilité: autorise corde (20) OU liane brute (16) comme ligature.
+        static bool EstSlotLigatureOutilCraft(SlotInventaire s) => !s.EstVide && (s.ID == 20 || s.ID == 16);
+        static SlotInventaire NormaliserLigatureOutil(SlotInventaire s)
+        {
+            if (s.ID == 20) return s;
+            if (s.ID == 16)
+            {
+                // Encodage "corde mono-liane" pour le calcul de durabilité des outils.
+                return new SlotInventaire
+                {
+                    ID = 20,
+                    IndexChimique = 16,
+                    IndexMorphologique = 16,
+                    IndexBotanique = 0,
+                    EstUnEclat = false,
+                    NiveauFracture = 0
+                };
+            }
+            return s;
+        }
         static bool EstSlotTissuCraft(SlotInventaire s) => !s.EstVide && s.ID == 21;
         static bool EstSlotBatonCraft(SlotInventaire s) => !s.EstVide && s.ID == 32;
         static bool EstSlotPochetteTier0Craft(SlotInventaire s) => !s.EstVide && s.ID == Joueur.IdObjetPochetteTier0;
@@ -699,10 +722,10 @@ public static class Atlas_Matiere
             };
         }
 
-        if (EstSlotRochePlateCraft(c0) && EstSlotCordeCraft(c1) && c2.EstVide && EstSlotBatonCraft(c3))
-            return ConstruireHachette106(c0, c1, c3);
-        if (EstSlotCordeCraft(c0) && EstSlotRochePlateCraft(c1) && EstSlotBatonCraft(c2) && c3.EstVide)
-            return ConstruireHachette106(c1, c0, c2);
+        if (EstSlotRochePlateCraft(c0) && EstSlotLigatureOutilCraft(c1) && c2.EstVide && EstSlotBatonCraft(c3))
+            return ConstruireHachette106(c0, NormaliserLigatureOutil(c1), c3);
+        if (EstSlotLigatureOutilCraft(c0) && EstSlotRochePlateCraft(c1) && EstSlotBatonCraft(c2) && c3.EstVide)
+            return ConstruireHachette106(c1, NormaliserLigatureOutil(c0), c2);
 
         // Pelle pierre tier0 (107) : colonne verticale en 3x3 atelier [1]=bâton façonné (toute essence), [4]=ficelle, [7]=petite roche ovale.
         static bool EstSlotBatonFaconneCraft(SlotInventaire s) =>
@@ -710,14 +733,14 @@ public static class Atlas_Matiere
         static bool EstSlotPetiteRocheOvaleCraft(SlotInventaire s) =>
             !s.EstVide && ItemPhysique.EstIdRocheMatiere(s.ID) && s.IndexMorphologique == 2 && (s.IndexTaille == 0 || s.IndexTaille == 1);
         if (grilleCraft3x3Table && grille.Length >= 9
-            && EstSlotBatonFaconneCraft(grille[1]) && EstSlotCordeCraft(grille[4]) && EstSlotPetiteRocheOvaleCraft(grille[7]))
+            && EstSlotBatonFaconneCraft(grille[1]) && EstSlotLigatureOutilCraft(grille[4]) && EstSlotPetiteRocheOvaleCraft(grille[7]))
         {
             bool autresVides = grille[0].EstVide && grille[2].EstVide && grille[3].EstVide
                 && grille[5].EstVide && grille[6].EstVide && grille[8].EstVide;
             if (autresVides)
             {
                 SlotInventaire roche = grille[7];
-                SlotInventaire corde = grille[4];
+                SlotInventaire corde = NormaliserLigatureOutil(grille[4]);
                 SlotInventaire baton = grille[1];
                 float dMax = CalculerDurabiliteMaxNouvellePelle(roche, corde, baton);
                 return new SlotInventaire
@@ -740,14 +763,14 @@ public static class Atlas_Matiere
         // Pioche pierre tier0 (108) 3x3:
         // [1]=petite roche en pointe, [2]=ficelle, [3]=petite roche en pointe, [5]=bâton façonné, [8]=bâton façonné.
         if (grilleCraft3x3Table && grille.Length >= 9
-            && EstSlotPetiteRochePointeCraft(grille[0]) && EstSlotCordeCraft(grille[1]) && EstSlotPetiteRochePointeCraft(grille[2])
+            && EstSlotPetiteRochePointeCraft(grille[0]) && EstSlotLigatureOutilCraft(grille[1]) && EstSlotPetiteRochePointeCraft(grille[2])
             && EstSlotBatonFaconneCraft(grille[4]) && EstSlotBatonFaconneCraft(grille[7]))
         {
             bool autresVides = grille[3].EstVide && grille[5].EstVide && grille[6].EstVide && grille[8].EstVide;
             if (autresVides)
             {
                 SlotInventaire roche = grille[0];
-                SlotInventaire corde = grille[1];
+                SlotInventaire corde = NormaliserLigatureOutil(grille[1]);
                 SlotInventaire baton = grille[4];
                 float dMax = CalculerDurabiliteMaxNouvellePioche(roche, corde, baton);
                 return new SlotInventaire

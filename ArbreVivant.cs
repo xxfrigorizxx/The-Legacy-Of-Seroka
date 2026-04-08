@@ -35,6 +35,7 @@ public partial class ArbreVivant : StaticBody3D
 	private float _rayonTroncSommet;
 	private float _longueurBrancheMoyenne;
 	private float _epaisseurBrancheMoyenne;
+	private float _progressionLianesJungle = 1f; // 1 = pleine longueur, diminue après coupe puis repousse.
 
 	private MeshInstance3D _visuelBois;
 	private MeshInstance3D _visuelFeuillage;
@@ -50,18 +51,28 @@ public partial class ArbreVivant : StaticBody3D
 	private const float DISTANCE_LOD0 = 130f;
 	private const float DISTANCE_LOD1 = 280f;
 	private const float DISTANCE_LOD2 = 520f;
-	private const float INTERVALLE_MAJ_LOD = 0.55f;
+	private const float INTERVALLE_MAJ_LOD = 0.75f;
+	private const int BUDGET_GENERATION_INIT_PAR_FRAME = 2;
+	private static ulong _frameBudgetGenerationInit;
+	private static int _resteBudgetGenerationInit;
 
 	private static StandardMaterial3D _cacheMatBois;
 	private static StandardMaterial3D _cacheMatBoisTriplanar;
 	private static StandardMaterial3D _cacheMatBoisPin;
 	private static StandardMaterial3D _cacheMatBoisTriplanarPin;
+	private static StandardMaterial3D _cacheMatBoisSapin;
+	private static StandardMaterial3D _cacheMatBoisTriplanarSapin;
+	private static StandardMaterial3D _cacheMatBoisJungle;
+	private static StandardMaterial3D _cacheMatBoisTriplanarJungle;
 	private static StandardMaterial3D _cacheMatBoisBouleau;
 	private static StandardMaterial3D _cacheMatBoisTriplanarBouleau;
 	private static StandardMaterial3D _cacheMatBoisBatonChenEPale;
 	private static StandardMaterial3D _cacheMatFeuillesCaduc;
 	private static StandardMaterial3D _cacheMatFeuillesPin;
+	private static StandardMaterial3D _cacheMatFeuillesJungle;
 	private static Texture2D _cacheTextureFeuilleCaduc;
+	private static Texture2D _cacheTextureFeuilleJungle;
+	private static readonly Color CouleurLianeJungle = new Color(0.18f, 0.34f, 0.16f);
 	private uint SeedForme => _seedEffectif != 0 ? _seedEffectif : Seed;
 
 	public static Material ObtenirMaterielBois(byte indexBotanique = 0)
@@ -82,6 +93,42 @@ public partial class ArbreVivant : StaticBody3D
 				Roughness = 0.96f
 			};
 			return _cacheMatBoisPin;
+		}
+
+		if (indexBotanique == LSystem_Botanique.IndexSapin)
+		{
+			if (_cacheMatBoisSapin != null) return _cacheMatBoisSapin;
+			var bruit = new FastNoiseLite { Seed = 1337, NoiseType = FastNoiseLite.NoiseTypeEnum.Simplex, Frequency = 0.09f };
+			var tex = new NoiseTexture2D { Width = 256, Height = 256, Noise = bruit };
+			var ramp = new Gradient();
+			ramp.AddPoint(0.0f, new Color(0.10f, 0.08f, 0.07f));
+			ramp.AddPoint(1.0f, new Color(0.27f, 0.21f, 0.17f));
+			tex.ColorRamp = ramp;
+			_cacheMatBoisSapin = new StandardMaterial3D
+			{
+				AlbedoTexture = tex,
+				AlbedoColor = new Color(0.30f, 0.22f, 0.18f),
+				Roughness = 0.95f
+			};
+			return _cacheMatBoisSapin;
+		}
+
+		if (indexBotanique == LSystem_Botanique.IndexJungle)
+		{
+			if (_cacheMatBoisJungle != null) return _cacheMatBoisJungle;
+			var bruit = new FastNoiseLite { Seed = 1717, NoiseType = FastNoiseLite.NoiseTypeEnum.Simplex, Frequency = 0.085f };
+			var tex = new NoiseTexture2D { Width = 256, Height = 256, Noise = bruit };
+			var ramp = new Gradient();
+			ramp.AddPoint(0.0f, new Color(0.24f, 0.17f, 0.11f));
+			ramp.AddPoint(1.0f, new Color(0.46f, 0.34f, 0.22f));
+			tex.ColorRamp = ramp;
+			_cacheMatBoisJungle = new StandardMaterial3D
+			{
+				AlbedoTexture = tex,
+				AlbedoColor = new Color(0.50f, 0.37f, 0.24f),
+				Roughness = 0.94f
+			};
+			return _cacheMatBoisJungle;
 		}
 
 		if (indexBotanique == LSystem_Botanique.IndexBouleau)
@@ -131,6 +178,32 @@ public partial class ArbreVivant : StaticBody3D
 			return _cacheMatBoisTriplanarPin;
 		}
 
+		if (indexBotanique == LSystem_Botanique.IndexSapin)
+		{
+			if (_cacheMatBoisTriplanarSapin != null) return _cacheMatBoisTriplanarSapin;
+			ObtenirMaterielBois(LSystem_Botanique.IndexSapin);
+			_cacheMatBoisTriplanarSapin = (StandardMaterial3D)_cacheMatBoisSapin.Duplicate();
+			_cacheMatBoisTriplanarSapin.Uv1Triplanar = true;
+			_cacheMatBoisTriplanarSapin.Uv1WorldTriplanar = false;
+			_cacheMatBoisTriplanarSapin.Uv1TriplanarSharpness = 2f;
+			_cacheMatBoisTriplanarSapin.AlbedoColor = new Color(0.52f, 0.40f, 0.32f);
+			_cacheMatBoisTriplanarSapin.CullMode = BaseMaterial3D.CullModeEnum.Disabled;
+			return _cacheMatBoisTriplanarSapin;
+		}
+
+		if (indexBotanique == LSystem_Botanique.IndexJungle)
+		{
+			if (_cacheMatBoisTriplanarJungle != null) return _cacheMatBoisTriplanarJungle;
+			ObtenirMaterielBois(LSystem_Botanique.IndexJungle);
+			_cacheMatBoisTriplanarJungle = (StandardMaterial3D)_cacheMatBoisJungle.Duplicate();
+			_cacheMatBoisTriplanarJungle.Uv1Triplanar = true;
+			_cacheMatBoisTriplanarJungle.Uv1WorldTriplanar = false;
+			_cacheMatBoisTriplanarJungle.Uv1TriplanarSharpness = 2f;
+			_cacheMatBoisTriplanarJungle.AlbedoColor = new Color(0.66f, 0.50f, 0.33f);
+			_cacheMatBoisTriplanarJungle.CullMode = BaseMaterial3D.CullModeEnum.Disabled;
+			return _cacheMatBoisTriplanarJungle;
+		}
+
 		if (indexBotanique == LSystem_Botanique.IndexBouleau)
 		{
 			if (_cacheMatBoisTriplanarBouleau != null) return _cacheMatBoisTriplanarBouleau;
@@ -170,7 +243,7 @@ public partial class ArbreVivant : StaticBody3D
 
 	private static Material ObtenirMaterielFeuilles(byte indexBotanique)
 	{
-		if (indexBotanique == LSystem_Botanique.IndexPin)
+		if (indexBotanique == LSystem_Botanique.IndexPin || indexBotanique == LSystem_Botanique.IndexSapin)
 		{
 			if (_cacheMatFeuillesPin != null) return _cacheMatFeuillesPin;
 			_cacheMatFeuillesPin = new StandardMaterial3D
@@ -183,6 +256,41 @@ public partial class ArbreVivant : StaticBody3D
 				CullMode = BaseMaterial3D.CullModeEnum.Disabled
 			};
 			return _cacheMatFeuillesPin;
+		}
+		if (indexBotanique == LSystem_Botanique.IndexJungle)
+		{
+			if (_cacheMatFeuillesJungle != null) return _cacheMatFeuillesJungle;
+			if (_cacheTextureFeuilleJungle == null)
+			{
+				var bruitFeuilleJungle = new FastNoiseLite { Seed = 42042 };
+				bruitFeuilleJungle.NoiseType = FastNoiseLite.NoiseTypeEnum.Cellular;
+				bruitFeuilleJungle.Frequency = 0.13f;
+				bruitFeuilleJungle.FractalType = FastNoiseLite.FractalTypeEnum.Fbm;
+				bruitFeuilleJungle.FractalOctaves = 2;
+				var texJungle = new NoiseTexture2D
+				{
+					Width = 128,
+					Height = 128,
+					Noise = bruitFeuilleJungle
+				};
+				var rampJungle = new Gradient();
+				rampJungle.AddPoint(0.0f, new Color(0.08f, 0.22f, 0.10f));
+				rampJungle.AddPoint(0.55f, new Color(0.18f, 0.45f, 0.20f));
+				rampJungle.AddPoint(1.0f, new Color(0.11f, 0.30f, 0.14f));
+				texJungle.ColorRamp = rampJungle;
+				_cacheTextureFeuilleJungle = texJungle;
+			}
+			_cacheMatFeuillesJungle = new StandardMaterial3D
+			{
+				AlbedoColor = Colors.White,
+				VertexColorUseAsAlbedo = true,
+				AlbedoTexture = _cacheTextureFeuilleJungle,
+				Roughness = 0.90f,
+				Metallic = 0f,
+				ShadingMode = BaseMaterial3D.ShadingModeEnum.PerPixel,
+				CullMode = BaseMaterial3D.CullModeEnum.Disabled
+			};
+			return _cacheMatFeuillesJungle;
 		}
 		if (_cacheMatFeuillesCaduc != null) return _cacheMatFeuillesCaduc;
 		if (_cacheTextureFeuilleCaduc == null)
@@ -229,17 +337,43 @@ public partial class ArbreVivant : StaticBody3D
 		uint pz = (uint)Mathf.Abs((int)GlobalPosition.Z);
 		uint posHash = (px * 73856093u) ^ (py * 83492791u) ^ (pz * 19349663u);
 		_seedEffectif = Seed ^ posHash ^ (uint)(IndexBotanique * 2654435761u);
+		if (IndexBotanique == LSystem_Botanique.IndexJungle)
+		{
+			// Jeune jungle: lianes courtes, elles se développent avec l'âge.
+			float jitter = 0.82f + Hash(SeedForme, 19111) * 0.18f;
+			_progressionLianesJungle = ProgressionLianesCibleSelonAge(AgeEnJours) * jitter;
+		}
 
 		// Répartit le coût de spawn sur plusieurs frames (évite le freeze quand une forêt apparaît).
 		float dObs = GlobalPosition.DistanceTo(PositionObservation());
 		float h = Hash(SeedForme, 15000);
-		// Proche joueur: génération immédiate (évite de voir "pop" les feuilles).
-		// Moyen: léger étalement. Loin: étalement plus large pour lisser le coût global.
-		if (dObs <= 110f) _attenteGeneration = 0f;
-		else if (dObs <= 210f) _attenteGeneration = 0.01f + h * 0.10f;
-		else _attenteGeneration = 0.10f + h * 0.55f;
+		// Proche joueur: quasi immédiat avec léger jitter pour éviter les gros spikes.
+		// Moyen/loin: étalement plus large pour lisser le coût global.
+		if (dObs <= 110f) _attenteGeneration = h * 0.08f;
+		else if (dObs <= 210f) _attenteGeneration = 0.04f + h * 0.22f;
+		else _attenteGeneration = 0.35f + h * 2.40f;
 		_cooldownLod = Hash(SeedForme, 15100) * INTERVALLE_MAJ_LOD;
 		SetProcess(true);
+	}
+
+	private static bool ConsommerBudgetGenerationInitiale()
+	{
+		ulong frame = Engine.GetProcessFrames();
+		if (_frameBudgetGenerationInit != frame)
+		{
+			_frameBudgetGenerationInit = frame;
+			int budget = BUDGET_GENERATION_INIT_PAR_FRAME;
+			float fps = (float)Engine.GetFramesPerSecond();
+			if (fps > 0f)
+			{
+				if (fps < 42f) budget = 1;
+				else if (fps > 95f) budget = BUDGET_GENERATION_INIT_PAR_FRAME + 1;
+			}
+			_resteBudgetGenerationInit = Mathf.Max(1, budget);
+		}
+		if (_resteBudgetGenerationInit <= 0) return false;
+		_resteBudgetGenerationInit--;
+		return true;
 	}
 
 	public override void _Process(double delta)
@@ -249,14 +383,26 @@ public partial class ArbreVivant : StaticBody3D
 		{
 			_attenteGeneration -= dt;
 			if (_attenteGeneration <= 0f)
-				RegenererSelonLod(true);
+			{
+				// Anti micro-freeze: limite stricte du nombre d'arbres qui génèrent leur 1er maillage par frame.
+				if (ConsommerBudgetGenerationInitiale())
+					RegenererSelonLod(true);
+				else
+					_attenteGeneration = 0.02f + Hash(SeedForme, 15050) * 0.05f;
+			}
 			return;
 		}
 
 		_cooldownLod -= dt;
 		if (_cooldownLod <= 0f)
 		{
-			_cooldownLod = INTERVALLE_MAJ_LOD + Hash(SeedForme, 15200) * 0.35f;
+			float distance = GlobalPosition.DistanceTo(PositionObservation());
+			float intervalleLod = INTERVALLE_MAJ_LOD;
+			if (distance > DISTANCE_LOD1) intervalleLod = 1.20f;
+			if (distance > DISTANCE_LOD2) intervalleLod = 2.00f;
+			// Sapin: optimisation légère sans changer le rendu final (moins de recalculs LOD).
+			if (IndexBotanique == LSystem_Botanique.IndexSapin) intervalleLod *= 1.25f;
+			_cooldownLod = intervalleLod + Hash(SeedForme, 15200) * 0.45f;
 			RegenererSelonLod(false);
 		}
 	}
@@ -264,10 +410,25 @@ public partial class ArbreVivant : StaticBody3D
 	/// <summary>Appelé à minuit par le serveur (arbres dans chunks actifs). 1 chance sur 20 de grandir.</summary>
 	public void VieillirUnJour()
 	{
-		if (GD.Randf() <= CHANCE_CROISSANCE)
+		bool aGrandi = GD.Randf() <= CHANCE_CROISSANCE;
+		bool lianesOntRepousse = false;
+		if (aGrandi)
 		{
 			AgeEnJours++;
 			ResistanceActuelle = ResistanceMaxPourAge(AgeEnJours);
+			if (IndexBotanique == LSystem_Botanique.IndexJungle)
+			{
+				float cible = ProgressionLianesCibleSelonAge(AgeEnJours);
+				if (_progressionLianesJungle < cible)
+				{
+					// Repousse liée à la croissance de l'arbre (même chance/jour, pas de repousse infinie quotidienne).
+					_progressionLianesJungle = Mathf.Clamp(_progressionLianesJungle + 0.34f, 0f, cible);
+					lianesOntRepousse = true;
+				}
+			}
+		}
+		if (aGrandi || lianesOntRepousse)
+		{
 			RegenererSelonLod(true);
 		}
 	}
@@ -291,8 +452,78 @@ public partial class ArbreVivant : StaticBody3D
 		{
 			AgeEnJours += succesCroissance;
 			ResistanceActuelle = ResistanceMaxPourAge(AgeEnJours);
-			RegenererSelonLod(true);
 		}
+		if (IndexBotanique == LSystem_Botanique.IndexJungle)
+		{
+			float cible = ProgressionLianesCibleSelonAge(AgeEnJours);
+			if (_progressionLianesJungle < cible)
+			{
+				// Hors-ligne: la repousse suit uniquement les "jours de croissance" tirés ci-dessus.
+				if (succesCroissance > 0)
+					_progressionLianesJungle = Mathf.Clamp(_progressionLianesJungle + succesCroissance * 0.30f, 0f, cible);
+			}
+		}
+		if (succesCroissance > 0)
+			RegenererSelonLod(true);
+	}
+
+	private static float ProgressionLianesCibleSelonAge(int age)
+	{
+		if (age <= 1) return 0.18f;
+		if (age == 2) return 0.34f;
+		if (age == 3) return 0.52f;
+		if (age == 4) return 0.70f;
+		if (age == 5) return 0.82f;
+		return 1f;
+	}
+
+	/// <summary>Coupe une liane de jungle avec la dague. Retourne true si une liane est récoltée.</summary>
+	public bool EssayerCouperLiane(Vector3 pointImpactMonde, Vector3 directionFrappe, out Vector3 posSpawnLiane)
+	{
+		posSpawnLiane = pointImpactMonde;
+		if (IndexBotanique != LSystem_Botanique.IndexJungle) return false;
+		if (!EstPointCibleLiane(pointImpactMonde)) return false;
+		Vector3 hitLocal = GlobalTransform.AffineInverse() * pointImpactMonde;
+		float hTronc = Mathf.Max(0.25f, _hauteurTroncTotale);
+		float hNorm = Mathf.Clamp(hitLocal.Y / hTronc, 0f, 1f);
+		// Les lianes exploitables sont sur la moitié haute/canopée.
+		if (hNorm < 0.45f) return false;
+		if (ChanceLianesJungleSelonAge(AgeEnJours) * _progressionLianesJungle < 0.06f) return false;
+
+		// Plus de plancher à 0.25: évite la récolte infinie.
+		_progressionLianesJungle = Mathf.Clamp(_progressionLianesJungle - 0.34f, 0f, 1f);
+		RegenererSelonLod(true);
+		posSpawnLiane = pointImpactMonde + directionFrappe.Normalized() * 0.18f + Vector3.Up * 0.12f;
+		return true;
+	}
+
+	/// <summary>Vrai seulement si l'impact vise la zone volumique de liane (pas le tronc entier).</summary>
+	public bool EstPointCibleLiane(Vector3 pointImpactMonde)
+	{
+		if (IndexBotanique != LSystem_Botanique.IndexJungle) return false;
+		if (ChanceLianesJungleSelonAge(AgeEnJours) * _progressionLianesJungle < 0.06f) return false;
+
+		Vector3 hitLocal = GlobalTransform.AffineInverse() * pointImpactMonde;
+		float hTronc = Mathf.Max(0.25f, _hauteurTroncTotale);
+		float hNorm = hitLocal.Y / hTronc;
+		// Zone verticale réaliste des lianes: haut de tronc + canopée.
+		if (hNorm < 0.20f || hNorm > 1.45f) return false;
+
+		float distAxis = Mathf.Sqrt(hitLocal.X * hitLocal.X + hitLocal.Z * hitLocal.Z);
+		float hClamp = Mathf.Clamp(hNorm, 0f, 1f);
+		float rayonTronc = 0.2f * (1f - hClamp * 0.6f) * (AgeEnJours * 0.5f);
+		rayonTronc = Mathf.Max(0.05f, rayonTronc);
+
+		// Oblige de viser en dehors du fût, mais pas dans le vide loin de l'arbre.
+		bool horsTronc = distAxis > (rayonTronc + 0.16f);
+		bool dansVolumeLiane = distAxis < (rayonTronc + 1.35f);
+		if (horsTronc && dansVolumeLiane) return true;
+
+		// Fallback gameplay: le raycast tape souvent le collider du tronc (pas la géométrie des lianes).
+		// On autorise donc une zone "près du tronc haut" pour ne pas bloquer la récolte au viseur.
+		bool zoneVerticaleToleree = hNorm >= 0.35f && hNorm <= 1.30f;
+		bool procheTroncTolere = distAxis <= (rayonTronc + 0.55f);
+		return zoneVerticaleToleree && procheTroncTolere;
 	}
 
 	/// <summary>Applique des dégâts (minage avec pierre/silex). Loi du Rebond : force sous le seuil = zéro dégât.</summary>
@@ -304,10 +535,25 @@ public partial class ArbreVivant : StaticBody3D
 	/// <returns>0 = Rebond, 1 = Touché (tronc), 2 = Arbre abattu, 3 = Branche amputée.</returns>
 	public int SubirDegats(Vector3 pointImpactMonde, Vector3 directionFrappe, float forceImpact, float epaisseurLame, bool hachettePrimitive106 = false)
 	{
+		ProfilBotanique profil = LSystem_Botanique.ObtenirProfil(IndexBotanique);
+		float facteurEssence = Mathf.Clamp(profil.ResistanceHache / 150f, 0.72f, 1.45f);
 		// Jeunes arbres (tier 1–2) : seuil plus bas pour outils taillés / mains nues. Vieux : un peu plus d’inertie requise.
 		float seuilRuptureBotanique = AgeEnJours <= 2
 			? (20f + AgeEnJours * 12f)
 			: (30f + AgeEnJours * 15f + 0.4f * AgeEnJours * AgeEnJours);
+		seuilRuptureBotanique *= facteurEssence;
+		if (AgeEnJours <= 2)
+		{
+			// Anti hard-lock early game:
+			// chêne/bouleau/pin/sapin restent entaillables à la roche plate/en pointe.
+			// Jungle (acacia-like) reste plus dure volontairement.
+			float facteurJeune = 1f;
+			if (IndexBotanique == LSystem_Botanique.IndexJungle) facteurJeune = 1.06f;
+			else if (IndexBotanique == LSystem_Botanique.IndexChene) facteurJeune = 0.62f;
+			else if (IndexBotanique == LSystem_Botanique.IndexBouleau) facteurJeune = 0.58f;
+			else facteurJeune = 0.56f; // pin/sapin
+			seuilRuptureBotanique *= facteurJeune;
+		}
 		if (hachettePrimitive106)
 			seuilRuptureBotanique *= 0.82f;
 		if (forceImpact < seuilRuptureBotanique)
@@ -337,7 +583,15 @@ public partial class ArbreVivant : StaticBody3D
 			float multiplicateur = 0.12f / Mathf.Max(0.01f, epaisseurEstimee);
 			if (hachettePrimitive106)
 				multiplicateur *= 1.22f;
-			ResistanceActuelle -= forceImpact * Mathf.Clamp(multiplicateur, 0.1f, 5f);
+			float degatsBruts = forceImpact * Mathf.Clamp(multiplicateur, 0.1f, 2.4f);
+			// Anti one-shot: chaque coup enlève une portion bornée des PV max, puis l’arbre cède après une vraie série d’entailles.
+			float pvMaxTheorique = ResistanceMaxPourAge(AgeEnJours);
+			float plafondParCoup = pvMaxTheorique * (hachettePrimitive106 ? 0.20f : 0.14f);
+			float plancherParCoup = hachettePrimitive106 ? 4.5f : 3.0f;
+			if (!hachettePrimitive106 && AgeEnJours <= 2 && IndexBotanique != LSystem_Botanique.IndexJungle)
+				plancherParCoup = Mathf.Max(plancherParCoup, 4.2f);
+			float degats = Mathf.Min(degatsBruts, Mathf.Max(plancherParCoup, plafondParCoup));
+			ResistanceActuelle -= degats;
 			if (ResistanceActuelle <= 0f)
 			{
 				DeclencherChuteArbre(directionFrappe);
@@ -375,7 +629,9 @@ public partial class ArbreVivant : StaticBody3D
 		int segmentsTronc = Mathf.Max(1, Mathf.CeilToInt(_hauteurTroncTotale / 1.0f));
 		cadavre.SetMeta("SegmentsRestants", segmentsTronc);
 		cadavre.SetMeta("SegmentsInitiaux", segmentsTronc);
-		cadavre.SetMeta("BranchesRestantes", 2 + AgeEnJours);
+		// Standardise l'ébranchage: même les très vieux arbres ne demandent pas des dizaines de frappes "bâton".
+		int branchesRestantes = Mathf.Clamp(2 + Mathf.CeilToInt(_hauteurTroncTotale * 0.55f), 3, 10);
+		cadavre.SetMeta("BranchesRestantes", branchesRestantes);
 
 		cadavre.AngularDampMode = RigidBody3D.DampMode.Replace;
 		cadavre.AngularDamp = 4.0f;
@@ -543,10 +799,17 @@ public partial class ArbreVivant : StaticBody3D
 		int iter = IndexBotanique switch
 		{
 			LSystem_Botanique.IndexPin => Mathf.Max(2, Mathf.Clamp(AgeEnJours, 1, 4)),
+			LSystem_Botanique.IndexSapin => Mathf.Max(2, Mathf.Clamp(AgeEnJours, 1, 4)),
+			LSystem_Botanique.IndexJungle => Mathf.Max(2, Mathf.Clamp(AgeEnJours, 1, 5)),
 			LSystem_Botanique.IndexBouleau => Mathf.Max(2, Mathf.Clamp(AgeEnJours, 1, 3)),
 			_ => Mathf.Max(2, Mathf.Clamp(AgeEnJours, 1, 3))
 		};
-		if (lodNiveau >= 1) iter = Mathf.Max(1, iter - 1);
+		if (lodNiveau >= 1)
+		{
+			// Jungle: garder plus de complexité au loin pour éviter l’effet "4 branches".
+			if (IndexBotanique == LSystem_Botanique.IndexJungle) iter = Mathf.Max(2, iter - 1);
+			else iter = Mathf.Max(1, iter - 1);
+		}
 
 		string adnFinal = "";
 		const int maxAdnLen = 18000;
@@ -555,6 +818,8 @@ public partial class ArbreVivant : StaticBody3D
 			adnFinal = IndexBotanique switch
 			{
 				LSystem_Botanique.IndexPin => LSystem_Botanique.GenererChainePinOrganique(iter, SeedForme),
+				LSystem_Botanique.IndexSapin => LSystem_Botanique.GenererChaineSapinOrganique(iter, SeedForme),
+				LSystem_Botanique.IndexJungle => LSystem_Botanique.GenererChaineJungleOrganique(iter, SeedForme),
 				LSystem_Botanique.IndexBouleau => LSystem_Botanique.GenererChaineBouleauOrganique(iter, SeedForme),
 				_ => LSystem_Botanique.GenererChaineCheneOrganique(iter, SeedForme)
 			};
@@ -574,7 +839,14 @@ public partial class ArbreVivant : StaticBody3D
 		Stack<TortueEtat> pile = new Stack<TortueEtat>();
 		Transform3D tortue = Transform3D.Identity;
 
-		float angleBase = IndexBotanique switch { LSystem_Botanique.IndexPin => 80f, LSystem_Botanique.IndexBouleau => 20f, _ => 35f };
+		float angleBase = IndexBotanique switch
+		{
+			LSystem_Botanique.IndexPin => 80f,
+			LSystem_Botanique.IndexSapin => 62f,
+			LSystem_Botanique.IndexJungle => 28f,
+			LSystem_Botanique.IndexBouleau => 20f,
+			_ => 35f
+		};
 		float angle = Mathf.DegToRad(angleBase + Hash(SeedForme, 0) * 14f);
 		float multEpaisseur = 0.75f + Hash(SeedForme, 1) * 0.5f;
 		float multLongueur = 0.8f + Hash(SeedForme, 2) * 0.6f;
@@ -605,6 +877,20 @@ public partial class ArbreVivant : StaticBody3D
 			longueurSegment *= 0.52f;
 			reductionBranche = 0.86f + Hash(SeedForme, 3) * 0.06f;
 		}
+		else if (IndexBotanique == LSystem_Botanique.IndexSapin)
+		{
+			// Sapin: conique mais plus fourni que le pin.
+			epaisseurBase *= 0.62f;
+			longueurSegment *= 0.50f;
+			reductionBranche = 0.83f + Hash(SeedForme, 3) * 0.06f;
+		}
+		else if (IndexBotanique == LSystem_Botanique.IndexJungle)
+		{
+			// Jungle: tronc haut et robuste, conicité lente pour éviter l'effet "aiguille".
+			epaisseurBase *= 1.24f;
+			longueurSegment *= 0.72f;
+			reductionBranche = 0.90f + Hash(SeedForme, 3) * 0.04f;
+		}
 
 		_hauteurTroncTotale = 0f;
 		float epaisseurBaseInitiale = epaisseurBase;
@@ -632,6 +918,8 @@ public partial class ArbreVivant : StaticBody3D
 					Vector3 pEnd = tortue.Origin;
 					float rayonFin = epaisseurBase * reductionBranche;
 					float rayonDebut = epaisseurBase;
+					if (IndexBotanique == LSystem_Botanique.IndexJungle && epaisseurBaseInitiale > 0.0001f)
+						rayonFin = Mathf.Max(rayonFin, epaisseurBaseInitiale * 0.19f);
 					_hauteurTroncTotale += longueurSegment;
 					_rayonTroncSommet = rayonFin;
 					if (!estCoupe)
@@ -644,12 +932,15 @@ public partial class ArbreVivant : StaticBody3D
 					if (!estCoupe)
 					{
 						GenererSegmentBranche(stBois, pStart, pEnd, right, forward, rayonDebut, rayonFin);
-						// Pin: aiguilles denses sur le haut du tronc pour éviter un aspect nu.
-						if (IndexBotanique == LSystem_Botanique.IndexPin && epaisseurBaseInitiale > 0.0001f)
+						// Conifères: aiguilles sur le haut du tronc pour éviter un aspect nu.
+						if ((IndexBotanique == LSystem_Botanique.IndexPin || IndexBotanique == LSystem_Botanique.IndexSapin) && epaisseurBaseInitiale > 0.0001f)
 						{
 							float ratioTronc = Mathf.Clamp(rayonDebut / epaisseurBaseInitiale, 0f, 1f);
 							if (ratioTronc < 0.78f)
-								GenererAiguillesPin(stFeuilles, new Transform3D(tortue.Basis, pEnd), AgeEnJours + 2, 0.34f * facteurAiguillesLod);
+							{
+								float densite = IndexBotanique == LSystem_Botanique.IndexSapin ? 0.28f : 0.34f;
+								GenererAiguillesConifere(stFeuilles, new Transform3D(tortue.Basis, pEnd), AgeEnJours + 2, densite * facteurAiguillesLod, IndexBotanique == LSystem_Botanique.IndexSapin);
+							}
 						}
 					}
 					epaisseurBase = rayonFin;
@@ -664,15 +955,32 @@ public partial class ArbreVivant : StaticBody3D
 					Vector3 right = tortue.Basis.X.Normalized();
 					Vector3 forward = tortue.Basis.Z.Normalized();
 					float longueurLocale = longueurSegment;
-					if (IndexBotanique == LSystem_Botanique.IndexPin && epaisseurBaseInitiale > 0.0001f)
+					if ((IndexBotanique == LSystem_Botanique.IndexPin || IndexBotanique == LSystem_Botanique.IndexSapin) && epaisseurBaseInitiale > 0.0001f)
 					{
 						// Forme conique: branches basses plus longues, hautes plus courtes.
 						float ratioHauteur = Mathf.Clamp(epaisseurBase / epaisseurBaseInitiale, 0.25f, 1.0f);
-						float facteurCone = 0.24f + 0.20f * Mathf.Pow(ratioHauteur, 1.45f);
+						float facteurCone = IndexBotanique == LSystem_Botanique.IndexSapin
+							? 0.42f + 0.22f * Mathf.Pow(ratioHauteur, 1.18f)
+							: 0.24f + 0.20f * Mathf.Pow(ratioHauteur, 1.45f);
+						// Sapin: étage bas encore plus long pour approcher du sol.
+						if (IndexBotanique == LSystem_Botanique.IndexSapin && ratioHauteur > 0.82f)
+							facteurCone *= 1.22f;
+						if (IndexBotanique == LSystem_Botanique.IndexSapin && ratioHauteur > 0.93f)
+							facteurCone *= 1.16f;
 						longueurLocale *= facteurCone;
 					}
-					if (commande == 'b') longueurLocale *= (IndexBotanique == LSystem_Botanique.IndexPin ? 0.74f : 0.86f);
-					else if (commande == 'c') longueurLocale *= (IndexBotanique == LSystem_Botanique.IndexPin ? 0.52f : 0.66f);
+					if (commande == 'b')
+					{
+						if (IndexBotanique == LSystem_Botanique.IndexPin) longueurLocale *= 0.74f;
+						else if (IndexBotanique == LSystem_Botanique.IndexSapin) longueurLocale *= 0.78f;
+						else longueurLocale *= 0.86f;
+					}
+					else if (commande == 'c')
+					{
+						if (IndexBotanique == LSystem_Botanique.IndexPin) longueurLocale *= 0.52f;
+						else if (IndexBotanique == LSystem_Botanique.IndexSapin) longueurLocale *= 0.56f;
+						else longueurLocale *= 0.66f;
+					}
 					tortue = tortue.TranslatedLocal(new Vector3(0, longueurLocale, 0));
 					Vector3 pEnd = tortue.Origin;
 					float rayonFin = epaisseurBase * reductionBranche;
@@ -702,22 +1010,37 @@ public partial class ArbreVivant : StaticBody3D
 							Transform3D tStart = new Transform3D(tortue.Basis, pStart);
 							Transform3D tMid = new Transform3D(tortue.Basis, pStart.Lerp(pEnd, 0.5f));
 							Transform3D tEnd = new Transform3D(tortue.Basis, pEnd);
-							if (IndexBotanique == LSystem_Botanique.IndexPin)
+							if (IndexBotanique == LSystem_Botanique.IndexPin || IndexBotanique == LSystem_Botanique.IndexSapin)
 							{
-								// Pin: aiguilles denses (pas de larges feuilles).
-								GenererAiguillesPin(stFeuilles, tStart, AgeEnJours + 2, 0.58f * facteurAiguillesLod);
-								if (Hash(SeedForme, hashBase + 91) < 0.30f) GenererAiguillesPin(stFeuilles, tMid, AgeEnJours + 2, 0.66f * facteurAiguillesLod);
-								GenererAiguillesPin(stFeuilles, tEnd, AgeEnJours + 2, 0.78f * facteurAiguillesLod);
+								// Conifères: aiguilles denses (pas de larges feuilles).
+								bool estSapin = IndexBotanique == LSystem_Botanique.IndexSapin;
+								GenererAiguillesConifere(stFeuilles, tStart, AgeEnJours + 2, (estSapin ? 0.72f : 0.58f) * facteurAiguillesLod, estSapin);
+								if (Hash(SeedForme, hashBase + 91) < (estSapin ? 0.55f : 0.30f))
+									GenererAiguillesConifere(stFeuilles, tMid, AgeEnJours + 2, (estSapin ? 0.82f : 0.66f) * facteurAiguillesLod, estSapin);
+								GenererAiguillesConifere(stFeuilles, tEnd, AgeEnJours + 2, (estSapin ? 0.92f : 0.78f) * facteurAiguillesLod, estSapin);
 							}
 							else
 							{
 								float ratioBranche = epaisseurBaseInitiale > 0.0001f
 									? Mathf.Clamp(((rayonDebut + rayonFin) * 0.5f) / epaisseurBaseInitiale, 0.20f, 1f)
 									: 0.55f;
-								float tailleBase = (0.70f + ratioBranche * 0.95f) * (0.86f + 0.14f * facteurFeuillesLod);
-								GenererFeuillagePetit(stFeuilles, tStart, AgeEnJours, tailleBase * 1.10f, facteurFeuillesLod);
-								GenererFeuillagePetit(stFeuilles, tMid, AgeEnJours, tailleBase * 0.92f, facteurFeuillesLod);
-								GenererFeuillagePetit(stFeuilles, tEnd, AgeEnJours, tailleBase * 0.78f, facteurFeuillesLod);
+								bool canopeeValide = IndexBotanique != LSystem_Botanique.IndexJungle || ratioBranche >= 0.28f;
+								if (canopeeValide)
+								{
+									float tailleBase = (0.70f + ratioBranche * 0.95f) * (0.86f + 0.14f * facteurFeuillesLod);
+									if (IndexBotanique == LSystem_Botanique.IndexJungle) tailleBase *= 1.36f;
+									GenererFeuillagePetit(stFeuilles, tStart, AgeEnJours, tailleBase * 1.10f, facteurFeuillesLod);
+									GenererFeuillagePetit(stFeuilles, tMid, AgeEnJours, tailleBase * 0.92f, facteurFeuillesLod);
+									GenererFeuillagePetit(stFeuilles, tEnd, AgeEnJours, tailleBase * 0.78f, facteurFeuillesLod);
+									if (IndexBotanique == LSystem_Botanique.IndexJungle)
+									{
+										float chanceLiane = ChanceLianesJungleSelonAge(AgeEnJours);
+										if (Hash(SeedForme, hashBase + 501) < chanceLiane * 0.78f)
+											GenererLianesJungle(stFeuilles, tEnd, AgeEnJours, 0.90f + chanceLiane * 0.65f);
+										if (Hash(SeedForme, hashBase + 641) < chanceLiane * 0.48f)
+											GenererLianesTroncJungle(stFeuilles, tStart, AgeEnJours);
+									}
+								}
 							}
 						}
 					}
@@ -743,7 +1066,7 @@ public partial class ArbreVivant : StaticBody3D
 				case 'j':
 				{
 					// Jitter déterministe pour casser les couronnes parfaitement symétriques.
-					float amp = IndexBotanique == LSystem_Botanique.IndexPin ? 18f : 10f;
+					float amp = IndexBotanique == LSystem_Botanique.IndexPin ? 18f : (IndexBotanique == LSystem_Botanique.IndexSapin ? 12f : 10f);
 					float v = Hash(SeedForme, 10000 + compteurJitterYaw++);
 					float yaw = Mathf.DegToRad((v * 2f - 1f) * amp);
 					tortue = tortue.RotatedLocal(Vector3.Up, yaw);
@@ -751,7 +1074,7 @@ public partial class ArbreVivant : StaticBody3D
 				}
 				case 'v':
 				{
-					float amp = IndexBotanique == LSystem_Botanique.IndexPin ? 4f : 6f;
+					float amp = IndexBotanique == LSystem_Botanique.IndexPin ? 4f : (IndexBotanique == LSystem_Botanique.IndexSapin ? 5f : 6f);
 					float v = Hash(SeedForme, 11000 + compteurJitterPitch++);
 					float pitch = Mathf.DegToRad((v * 2f - 1f) * amp);
 					tortue = tortue.RotatedLocal(Vector3.Right, pitch);
@@ -765,7 +1088,8 @@ public partial class ArbreVivant : StaticBody3D
 				case 'L':
 					if (!estCoupe)
 					{
-						if (IndexBotanique == LSystem_Botanique.IndexPin) GenererAiguillesPin(stFeuilles, tortue, AgeEnJours + 2, 0.88f * facteurAiguillesLod);
+						if (IndexBotanique == LSystem_Botanique.IndexPin || IndexBotanique == LSystem_Botanique.IndexSapin)
+							GenererAiguillesConifere(stFeuilles, tortue, AgeEnJours + 2, 0.88f * facteurAiguillesLod, IndexBotanique == LSystem_Botanique.IndexSapin);
 						else GenererFeuillage(stFeuilles, tortue, AgeEnJours, 0.95f, facteurFeuillesLod);
 					}
 					break;
@@ -777,9 +1101,19 @@ public partial class ArbreVivant : StaticBody3D
 		if (!estCoupe)
 		{
 			// Évite l'effet "sucette" au sommet du bouleau.
-			if (IndexBotanique == LSystem_Botanique.IndexBouleau || IndexBotanique == LSystem_Botanique.IndexPin)
-				if (IndexBotanique == LSystem_Botanique.IndexPin) GenererAiguillesPin(stFeuilles, tortue, AgeEnJours + 2, 0.95f * facteurAiguillesLod);
-				else GenererFeuillagePetit(stFeuilles, tortue, Mathf.Max(1, AgeEnJours - 1), 0.82f, facteurFeuillesLod);
+			if (IndexBotanique == LSystem_Botanique.IndexBouleau || IndexBotanique == LSystem_Botanique.IndexPin || IndexBotanique == LSystem_Botanique.IndexSapin || IndexBotanique == LSystem_Botanique.IndexJungle)
+				if (IndexBotanique == LSystem_Botanique.IndexPin || IndexBotanique == LSystem_Botanique.IndexSapin)
+					GenererAiguillesConifere(stFeuilles, tortue, AgeEnJours + 2, 0.95f * facteurAiguillesLod, IndexBotanique == LSystem_Botanique.IndexSapin);
+				else
+				{
+					GenererFeuillagePetit(stFeuilles, tortue, Mathf.Max(1, AgeEnJours - 1), IndexBotanique == LSystem_Botanique.IndexJungle ? 1.32f : 0.82f, facteurFeuillesLod);
+					if (IndexBotanique == LSystem_Botanique.IndexJungle)
+					{
+						float chanceLianeSommet = ChanceLianesJungleSelonAge(AgeEnJours) * 0.85f;
+						if (Hash(SeedForme, 19877 + AgeEnJours) < chanceLianeSommet)
+							GenererLianesJungle(stFeuilles, tortue, AgeEnJours, 1.05f);
+					}
+				}
 			else GenererFeuillage(stFeuilles, tortue, AgeEnJours, 0.92f, facteurFeuillesLod);
 		}
 
@@ -831,8 +1165,8 @@ public partial class ArbreVivant : StaticBody3D
 		GenererFeuillesCaducTypePin(st, tortue, age, 0.40f * lodMul, tailleMul);
 	}
 
-	/// <summary>Aiguilles de pin: petits quads étroits orientés radialement, très denses.</summary>
-	private void GenererAiguillesPin(SurfaceTool st, Transform3D tortue, int age, float densiteMul = 1f)
+	/// <summary>Aiguilles de conifère: pin (longues) ou sapin (plus courtes et plus fournies).</summary>
+	private void GenererAiguillesConifere(SurfaceTool st, Transform3D tortue, int age, float densiteMul = 1f, bool estSapin = false)
 	{
 		Vector3 centre = tortue.Origin;
 		Vector3 axe = tortue.Basis.Y.Normalized();
@@ -840,10 +1174,11 @@ public partial class ArbreVivant : StaticBody3D
 		if (Mathf.Abs(refPerp.Dot(axe)) > 0.95f) refPerp = tortue.Basis.Z.Normalized();
 		refPerp = (refPerp - axe * axe.Dot(refPerp)).Normalized();
 
-		// Pin optimisé: moins d'instances, mais aiguilles un peu plus grandes.
-		int nPoints = Mathf.Clamp((int)((8 + age * 2) * densiteMul), 5, 14);
-		float rayonBranche = 0.060f + Mathf.Clamp(age * 0.008f, 0f, 0.05f);
-		float demiLongueurSpan = 0.11f + Mathf.Clamp(age * 0.015f, 0f, 0.10f);
+		// Sapin: plus de points, aiguilles plus courtes et plus proches de la branche.
+		int maxPoints = estSapin ? 18 : 14;
+		int nPoints = Mathf.Clamp((int)((8 + age * 2) * densiteMul), 5, maxPoints);
+		float rayonBranche = (estSapin ? 0.050f : 0.060f) + Mathf.Clamp(age * (estSapin ? 0.006f : 0.008f), 0f, estSapin ? 0.04f : 0.05f);
+		float demiLongueurSpan = (estSapin ? 0.09f : 0.11f) + Mathf.Clamp(age * (estSapin ? 0.012f : 0.015f), 0f, estSapin ? 0.08f : 0.10f);
 		for (int i = 0; i < nPoints; i++)
 		{
 			float theta = (float)i / nPoints * Mathf.Tau + Hash(SeedForme, 2200 + i) * 0.35f;
@@ -852,10 +1187,11 @@ public partial class ArbreVivant : StaticBody3D
 			// Point d'ancrage SUR la branche (évite l'effet "nuage qui flotte").
 			Vector3 ancre = centre + axe * offsetAxe + radial * rayonBranche;
 
-			// Aiguilles plus épaisses et longues (x2 env.), sortie depuis l'ancre.
-			float largeur = 0.050f + Hash(SeedForme, 2400 + i) * 0.036f;
-			float longueur = 0.42f + Hash(SeedForme, 2500 + i) * 0.18f;
-			Vector3 dir = (radial * 0.88f - axe * 0.22f).Normalized();
+			float largeur = (estSapin ? 0.038f : 0.050f) + Hash(SeedForme, 2400 + i) * (estSapin ? 0.026f : 0.036f);
+			float longueur = (estSapin ? 0.25f : 0.42f) + Hash(SeedForme, 2500 + i) * (estSapin ? 0.12f : 0.18f);
+			Vector3 dir = estSapin
+				? (radial * 0.90f - axe * 0.12f).Normalized()
+				: (radial * 0.88f - axe * 0.22f).Normalized();
 			Vector3 tangent = dir.Cross(axe);
 			if (tangent.LengthSquared() < 1e-5f) tangent = dir.Cross(refPerp);
 			tangent = tangent.Normalized();
@@ -871,6 +1207,157 @@ public partial class ArbreVivant : StaticBody3D
 		}
 	}
 
+	/// <summary>Probabilité de lianes jungle selon âge: ~0 à 1 an, puis augmente avec le temps.</summary>
+	private static float ChanceLianesJungleSelonAge(int age)
+	{
+		if (age <= 1) return 0.01f;   // quasi aucune à 1 an
+		if (age == 2) return 0.18f;
+		if (age == 3) return 0.34f;
+		if (age == 4) return 0.50f;
+		if (age == 5) return 0.62f;
+		return Mathf.Clamp(0.62f + (age - 5) * 0.06f, 0.62f, 0.96f);
+	}
+
+	/// <summary>Lianes pendantes de canopée pour les arbres de jungle (mesh 3D tubulaire).</summary>
+	private void GenererLianesJungle(SurfaceTool st, Transform3D tortue, int age, float densiteMul = 1f)
+	{
+		if (IndexBotanique != LSystem_Botanique.IndexJungle) return;
+		float chance = ChanceLianesJungleSelonAge(age) * _progressionLianesJungle;
+		Color couleurFeuillage = CouleurFeuillesArbre();
+		st.SetColor(CouleurLianeJungle);
+
+		Vector3 centre = tortue.Origin;
+		Vector3 axe = tortue.Basis.Y.Normalized();
+		Vector3 refPerp = tortue.Basis.X.Normalized();
+		if (Mathf.Abs(refPerp.Dot(axe)) > 0.95f) refPerp = tortue.Basis.Z.Normalized();
+		refPerp = (refPerp - axe * axe.Dot(refPerp)).Normalized();
+
+		int n = Mathf.Clamp((int)((1 + age * 0.90f) * densiteMul), 1, 14);
+		int nbAjoutees = 0;
+		for (int i = 0; i < n; i++)
+		{
+			if (Hash(SeedForme, 16950 + i + age * 11) > chance) continue;
+			float theta = (float)i / Mathf.Max(1, n) * Mathf.Tau + Hash(SeedForme, 17000 + i) * 0.62f;
+			Vector3 radial = refPerp.Rotated(axe, theta).Normalized();
+			Vector3 ancre = centre + radial * (0.10f + Hash(SeedForme, 17100 + i) * 0.18f);
+			float longueur = (0.85f + Hash(SeedForme, 17200 + i) * (1.20f + age * 0.10f)) * Mathf.Lerp(0.30f, 1f, _progressionLianesJungle);
+			float rayon = 0.030f + Hash(SeedForme, 17300 + i) * 0.016f;
+			bool viserSol = Hash(SeedForme, 17750 + i + age * 9) < 0.62f;
+			AjouterLianeTubulaire(st, ancre, longueur, rayon, radial, 17600 + i * 17, viserSol, CouleurLianeJungle);
+			nbAjoutees++;
+		}
+
+		// Sécurité visuelle: garantit au moins une liane exploitable sur arbres non bébé.
+		if (nbAjoutees == 0 && age >= 2 && chance > 0.08f)
+		{
+			Vector3 radial = refPerp.Rotated(axe, Hash(SeedForme, 18888 + age) * Mathf.Tau).Normalized();
+			Vector3 ancre = centre + radial * 0.16f;
+			float longueur = (1.10f + Hash(SeedForme, 18911 + age) * 1.35f) * Mathf.Lerp(0.35f, 1f, _progressionLianesJungle);
+			float rayon = 0.036f;
+			AjouterLianeTubulaire(st, ancre, longueur, rayon, radial, 18977 + age * 17, true, CouleurLianeJungle);
+		}
+		st.SetColor(couleurFeuillage);
+	}
+
+	/// <summary>Liane collée au tronc, plus courte, générée aléatoirement.</summary>
+	private void GenererLianesTroncJungle(SurfaceTool st, Transform3D tortue, int age)
+	{
+		if (IndexBotanique != LSystem_Botanique.IndexJungle) return;
+		float chance = ChanceLianesJungleSelonAge(age) * 0.72f * _progressionLianesJungle;
+		if (Hash(SeedForme, 17400 + age) > chance) return;
+		Color couleurFeuillage = CouleurFeuillesArbre();
+		st.SetColor(CouleurLianeJungle);
+
+		Vector3 centre = tortue.Origin;
+		Vector3 radial = tortue.Basis.X.Normalized();
+		if (radial.LengthSquared() < 1e-5f) radial = Vector3.Right;
+		Vector3 ancre = centre + radial * (0.06f + Hash(SeedForme, 17470 + age) * 0.06f);
+		float longueur = (0.55f + Hash(SeedForme, 17500 + age) * 0.75f) * Mathf.Lerp(0.30f, 1f, _progressionLianesJungle);
+		float rayon = 0.022f + Hash(SeedForme, 17600 + age) * 0.010f;
+		AjouterLianeTubulaire(st, ancre, longueur, rayon, radial, 18100 + age * 13, false, CouleurLianeJungle);
+		st.SetColor(couleurFeuillage);
+	}
+
+	/// <summary>Liane 3D: tube courbé texturé (pas un simple plan).</summary>
+	private void AjouterLianeTubulaire(SurfaceTool st, Vector3 ancre, float longueur, float rayonBase, Vector3 radial, int saltBase, bool viserSol, Color couleur)
+	{
+		// Pousse vers le sol: ajuste la longueur selon un raycast vertical.
+		var space = GetWorld3D()?.DirectSpaceState;
+		bool toucheSol = false;
+		if (space != null)
+		{
+			Vector3 bas = ancre + Vector3.Down * 220f;
+			var q = PhysicsRayQueryParameters3D.Create(ancre, bas);
+			q.CollisionMask = 1;
+			q.Exclude = new Godot.Collections.Array<Rid> { GetRid() };
+			var hit = space.IntersectRay(q);
+			if (hit.Count > 0 && hit.ContainsKey("position"))
+			{
+				toucheSol = true;
+				Vector3 sol = hit["position"].AsVector3();
+				float distSol = Mathf.Max(0.10f, ancre.DistanceTo(sol) - 0.10f);
+				if (viserSol)
+				{
+					// Certaines lianes vont vraiment près du sol.
+					float cibleSol = distSol * Mathf.Lerp(0.88f, 0.98f, _progressionLianesJungle);
+					longueur = Mathf.Clamp(cibleSol, 0.30f, distSol);
+				}
+				else
+				{
+					float cibleSol = distSol * Mathf.Lerp(0.65f, 0.92f, _progressionLianesJungle);
+					longueur = Mathf.Clamp(Mathf.Max(longueur, cibleSol), 0.25f, distSol);
+				}
+			}
+		}
+		if (viserSol && !toucheSol)
+			longueur = Mathf.Max(longueur, 6.5f);
+		const int segments = 6;
+		Vector3 prev = ancre;
+		for (int s = 1; s <= segments; s++)
+		{
+			float t = (float)s / segments;
+			float sway = (Hash(SeedForme, saltBase + s * 3) * 2f - 1f) * 0.06f;
+			Vector3 offsetLateral = radial * (Mathf.Sin(t * Mathf.Pi) * 0.08f + sway);
+			Vector3 curr = ancre + Vector3.Down * (longueur * t) + offsetLateral;
+			float rayon = Mathf.Max(0.0025f, rayonBase * (1f - t * 0.55f));
+			AjouterTubeSegmentLiane(st, prev, curr, rayon, 5, couleur);
+			prev = curr;
+		}
+	}
+
+	private static void AjouterTubeSegmentLiane(SurfaceTool st, Vector3 start, Vector3 end, float rayon, int cotes, Color couleur)
+	{
+		Vector3 axis = end - start;
+		float len = axis.Length();
+		if (len < 1e-4f) return;
+		axis /= len;
+
+		Vector3 upRef = Mathf.Abs(axis.Dot(Vector3.Up)) > 0.92f ? Vector3.Right : Vector3.Up;
+		Vector3 right = axis.Cross(upRef).Normalized();
+		Vector3 forward = right.Cross(axis).Normalized();
+
+		for (int i = 0; i < cotes; i++)
+		{
+			int n = (i + 1) % cotes;
+			float a0 = (float)i / cotes * Mathf.Tau;
+			float a1 = (float)n / cotes * Mathf.Tau;
+			Vector3 d0 = (Mathf.Cos(a0) * right + Mathf.Sin(a0) * forward).Normalized();
+			Vector3 d1 = (Mathf.Cos(a1) * right + Mathf.Sin(a1) * forward).Normalized();
+			Vector3 s0 = start + d0 * rayon;
+			Vector3 s1 = start + d1 * rayon;
+			Vector3 e0 = end + d0 * rayon;
+			Vector3 e1 = end + d1 * rayon;
+
+			st.SetColor(couleur); st.SetNormal(d0); st.SetUV(new Vector2((float)i / cotes, 0)); st.AddVertex(s0);
+			st.SetColor(couleur); st.SetNormal(d1); st.SetUV(new Vector2((float)n / cotes, 0)); st.AddVertex(s1);
+			st.SetColor(couleur); st.SetNormal(d0); st.SetUV(new Vector2((float)i / cotes, 1)); st.AddVertex(e0);
+
+			st.SetColor(couleur); st.SetNormal(d1); st.SetUV(new Vector2((float)n / cotes, 0)); st.AddVertex(s1);
+			st.SetColor(couleur); st.SetNormal(d1); st.SetUV(new Vector2((float)n / cotes, 1)); st.AddVertex(e1);
+			st.SetColor(couleur); st.SetNormal(d0); st.SetUV(new Vector2((float)i / cotes, 1)); st.AddVertex(e0);
+		}
+	}
+
 	/// <summary>Feuilles de chêne/bouleau distribuées comme le pin, mais en lamelles larges (pas d'épines).</summary>
 	private void GenererFeuillesCaducTypePin(SurfaceTool st, Transform3D tortue, int age, float densiteMul = 1f, float tailleMul = 1f)
 	{
@@ -880,15 +1367,18 @@ public partial class ArbreVivant : StaticBody3D
 		if (Mathf.Abs(refPerp.Dot(axe)) > 0.95f) refPerp = tortue.Basis.Z.Normalized();
 		refPerp = (refPerp - axe * axe.Dot(refPerp)).Normalized();
 		bool estChene = IndexBotanique == LSystem_Botanique.IndexChene;
+		bool estJungle = IndexBotanique == LSystem_Botanique.IndexJungle;
+		float maturiteJungle = estJungle ? Mathf.Clamp((age - 1f) / 6f, 0f, 1f) : 1f;
 		float echelle = Mathf.Clamp(tailleMul, 0.55f, 1.95f);
-		float coefLargeur = (estChene ? 1.18f : 1.08f) * echelle;
-		float coefLongueur = (estChene ? 0.78f : 0.86f) * echelle;
-		float rayonSphere = ((estChene ? 0.44f : 0.38f) * echelle + Mathf.Clamp(age * 0.015f, 0f, 0.10f)) * 1.90f;
+		float coefLargeur = (estJungle ? 1.34f : (estChene ? 1.18f : 1.08f)) * echelle * (estJungle ? Mathf.Lerp(0.86f, 1f, maturiteJungle) : 1f);
+		float coefLongueur = (estJungle ? 1.12f : (estChene ? 0.78f : 0.86f)) * echelle * (estJungle ? Mathf.Lerp(0.88f, 1f, maturiteJungle) : 1f);
+		float rayonSphere = ((estJungle ? 0.44f : (estChene ? 0.44f : 0.38f)) * echelle + Mathf.Clamp(age * 0.015f, 0f, 0.10f)) * 1.90f;
 		int couches = estChene ? 4 : 3;
+		if (estJungle) couches = age <= 2 ? 2 : (age <= 4 ? 3 : 4);
 		if (_lodFeuillageActuel < 0.70f) couches -= 1;
 		if (_lodFeuillageActuel < 0.40f) couches -= 1;
 		couches = Mathf.Clamp(couches, 1, 4);
-		int pointsBase = Mathf.Clamp((int)((8 + age * 2) * densiteMul * (0.85f + echelle * 0.45f) * 1.35f), 5, 24);
+		int pointsBase = Mathf.Clamp((int)((8 + age * 2) * densiteMul * (0.85f + echelle * 0.45f) * (estJungle ? 0.72f : 1.35f)), 5, estJungle ? 14 : 24);
 
 		// Amas sphériques de cartes-feuilles: plus denses et volumétriques.
 		for (int couche = 0; couche < couches; couche++)
@@ -908,27 +1398,78 @@ public partial class ArbreVivant : StaticBody3D
 
 				float largeur = (0.52f + Hash(SeedForme, 3700 + couche * 113 + i) * 0.22f) * coefLargeur;
 				float longueur = (0.40f + Hash(SeedForme, 3800 + couche * 131 + i) * 0.16f) * coefLongueur;
+				// Jungle utilise la même géométrie que chêne/bouleau (moins "carré/épine"), mais garde sa texture matériau dédiée.
 				AjouterTouffeFeuilleTypeBuisson(st, ancre, dir, axe, refPerp, largeur, longueur, 5000 + couche * 257 + i * 31, centre, rayonSphere * 1.12f);
 
 				// Petit amas dans le gros (volume plus naturel) sans le faire partout pour contenir le coût.
-				if (_lodFeuillageActuel > 0.75f && Hash(SeedForme, 8600 + couche * 181 + i) > 0.74f)
+				if (_lodFeuillageActuel > 0.75f && Hash(SeedForme, 8600 + couche * 181 + i) > (estJungle ? Mathf.Lerp(0.90f, 0.78f, maturiteJungle) : 0.74f))
 				{
 					Vector3 ancreInterne = ancre - dir * (rayonCouche * 0.24f);
-					AjouterTouffeFeuilleTypeBuisson(
-						st,
-						ancreInterne,
-						dir,
-						axe,
-						refPerp,
-						largeur * 0.62f,
-						longueur * 0.60f,
-						9000 + couche * 293 + i * 47,
-						centre,
-						rayonSphere * 1.12f
-					);
+					AjouterTouffeFeuilleTypeBuisson(st, ancreInterne, dir, axe, refPerp, largeur * 0.62f, longueur * 0.60f, 9000 + couche * 293 + i * 47, centre, rayonSphere * 1.12f);
 				}
 			}
 		}
+	}
+
+	private void AjouterTouffeFeuilleJungle(
+		SurfaceTool st,
+		Vector3 ancre,
+		Vector3 dir,
+		Vector3 axeRef,
+		Vector3 axeFallback,
+		float largeur,
+		float longueur,
+		int saltBase,
+		Vector3 centreCouronne,
+		float rayonMaxCouronne)
+	{
+		float yaw = Hash(SeedForme, saltBase + 17) * Mathf.Tau;
+		float pitch = (Hash(SeedForme, saltBase + 31) * 2f - 1f) * 0.48f;
+		Vector3 dirLeaf = dir.Rotated(axeRef, yaw);
+		Vector3 sideAxis = dirLeaf.Cross(axeRef);
+		if (sideAxis.LengthSquared() < 1e-5f) sideAxis = dirLeaf.Cross(axeFallback);
+		if (sideAxis.LengthSquared() < 1e-5f) sideAxis = dirLeaf.Cross(Vector3.Right);
+		sideAxis = sideAxis.Normalized();
+		dirLeaf = dirLeaf.Rotated(sideAxis, pitch).Normalized();
+		Vector3 centre = ancre + sideAxis * ((Hash(SeedForme, saltBase + 71) * 2f - 1f) * 0.04f);
+
+		float demiDiag = Mathf.Max(largeur * 0.5f, longueur * 0.52f);
+		Vector3 radial = centre - centreCouronne;
+		float dist = radial.Length();
+		if (dist + demiDiag > rayonMaxCouronne)
+		{
+			if (dist < 1e-4f) radial = dir;
+			float cible = Mathf.Max(0f, rayonMaxCouronne - demiDiag * 0.90f);
+			centre = centreCouronne + radial.Normalized() * cible;
+		}
+
+		AjouterFeuilleJungleLarge(st, centre, dirLeaf, axeRef, axeFallback, largeur, longueur);
+		if (_lodFeuillageActuel > 0.45f && Hash(SeedForme, saltBase + 91) > 0.38f)
+		{
+			Vector3 dirLeaf2 = dirLeaf.Rotated(sideAxis, (Hash(SeedForme, saltBase + 97) * 2f - 1f) * 0.32f).Normalized();
+			AjouterFeuilleJungleLarge(st, centre, dirLeaf2, sideAxis, axeRef, largeur * 0.78f, longueur * 0.72f);
+		}
+	}
+
+	private static void AjouterFeuilleJungleLarge(SurfaceTool st, Vector3 centre, Vector3 dir, Vector3 axeRef, Vector3 axeFallback, float largeur, float longueur)
+	{
+		Vector3 droite = dir.Cross(axeRef);
+		if (droite.LengthSquared() < 1e-5f) droite = dir.Cross(axeFallback);
+		if (droite.LengthSquared() < 1e-5f) droite = dir.Cross(Vector3.Right);
+		droite = droite.Normalized() * (largeur * 0.5f);
+		Vector3 avant = dir * longueur;
+		Vector3 p0 = centre - droite;
+		Vector3 p1 = centre + droite;
+		Vector3 p2 = centre - droite * 0.82f + avant;
+		Vector3 p3 = centre + droite * 0.82f + avant;
+		Vector3 n = dir;
+
+		st.SetNormal(n); st.SetUV(new Vector2(0, 1)); st.AddVertex(p0);
+		st.SetNormal(n); st.SetUV(new Vector2(1, 1)); st.AddVertex(p1);
+		st.SetNormal(n); st.SetUV(new Vector2(0, 0)); st.AddVertex(p2);
+		st.SetNormal(n); st.SetUV(new Vector2(1, 1)); st.AddVertex(p1);
+		st.SetNormal(n); st.SetUV(new Vector2(1, 0)); st.AddVertex(p3);
+		st.SetNormal(n); st.SetUV(new Vector2(0, 0)); st.AddVertex(p2);
 	}
 
 	private void AjouterTouffeFeuilleTypeBuisson(
@@ -1031,6 +1572,8 @@ public partial class ArbreVivant : StaticBody3D
 	private Color CouleurFeuillesArbre()
 	{
 		if (IndexBotanique == LSystem_Botanique.IndexPin) return new Color(0.12f, 0.25f, 0.15f); // Aiguilles sombres
+		if (IndexBotanique == LSystem_Botanique.IndexSapin) return new Color(0.16f, 0.30f, 0.20f); // Vert froid plus réaliste
+		if (IndexBotanique == LSystem_Botanique.IndexJungle) return new Color(0.11f, 0.43f, 0.21f); // Vert tropical saturé
 		float h = Hash(SeedForme, 10);
 		float h2 = Hash(SeedForme, 11);
 		// Feuilles caduques: base verte + légère dérive olive/jaune pour casser le "vert plein".

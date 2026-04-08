@@ -47,7 +47,12 @@ public partial class Monde_Serveur : Node
 	private static readonly int MaxThreadsGeneration = 4;
 	[Export] public int MultiplicateurCharge = 2; // Réduit la tempête de tâches pour éviter l'overload CPU.
 	private int LancerMaxTaches => MaxThreadsGeneration * MultiplicateurCharge;
-	[Export] public int MaxArbresSpawnParTick = 6;
+	[Export] public int MaxArbresSpawnParTick = 2;
+	/// <summary>Budget CPU de spawn arbres par tick (ms). Sécurité anti micro-freeze MMO.</summary>
+	[Export] public float BudgetMsSpawnArbresParTick = 0.90f;
+	/// <summary>Budget CPU de spawn pierres par tick (ms). Sécurité anti micro-freeze MMO.</summary>
+	[Export] public float BudgetMsSpawnPierresParTick = 0.70f;
+	[Export] public bool ModeEssencesPartoutTemporaire = false;
 	/// <summary>Budget anti micro-freeze : limite de chunks workers intégrés par frame.</summary>
 	private const int MaxIntegrationsWorkersParTick = 2;
 	/// <summary>Budget anti micro-freeze : limite de demandes chunks traitées par frame.</summary>
@@ -85,7 +90,27 @@ public partial class Monde_Serveur : Node
 	private List<Vector2I> _chunksEnAttenteDecharge = new List<Vector2I>();
 	private FastNoiseLite _noiseTemperatureArbres;
 	private int _noiseTemperatureArbresSeed = int.MinValue;
+	private FastNoiseLite _noiseHumiditeArbres;
+	private int _noiseHumiditeArbresSeed = int.MinValue;
+	private FastNoiseLite _noiseBiomeForetArbres;
+	private int _noiseBiomeForetArbresSeed = int.MinValue;
 	private readonly Queue<(Vector2I coord, Vector3 pos, int age, uint seed, byte indexBotanique, int joursRattrapage)> _fileSpawnArbres = new Queue<(Vector2I, Vector3, int, uint, byte, int)>();
+
+	private int CalculerBudgetSpawnAdaptatif(int budgetBase)
+	{
+		int baseSafe = Mathf.Max(1, budgetBase);
+		float fps = (float)Engine.GetFramesPerSecond();
+		if (fps <= 0f) return baseSafe;
+		if (fps < 38f) return Mathf.Max(1, baseSafe / 3);
+		if (fps < 52f) return Mathf.Max(1, baseSafe / 2);
+		if (fps > 90f) return baseSafe + 1;
+		return baseSafe;
+	}
+	private const int PoolVariantesArbreParAge = 50;
+	private const int PoolAgesPregenArbre = 5;
+	private const int PoolEspecesArbre = 5; // chene, bouleau, pin, sapin, jungle
+	private readonly uint[,,] _poolSeedsArbres = new uint[PoolEspecesArbre, PoolAgesPregenArbre, PoolVariantesArbreParAge];
+	private int _seedPoolArbres = int.MinValue;
 
 	public void Initialiser(Node parentPourBlocsChutants, Node parentPourArbres, Action<Vector2I, List<int>> onChunkModifie, Action<Vector2I, DonneesChunk> onEnvoyerChunk = null, Action<Vector2I, Dictionary<Vector3I, byte>> onFloreModifie = null, Action<Vector3I, byte> onVoxelModifie = null, Action<Vector2I> onOrdonnerDestructionChunk = null, Func<Vector3> obtenirPositionJoueur = null)
 	{
@@ -100,7 +125,48 @@ public partial class Monde_Serveur : Node
 		string nom = GameState.Instance?.NomMondeActuel ?? "MonMonde";
 		DirAccess.MakeDirRecursiveAbsolute($"user://saves/{nom}/chunks");
 		GD.Print($"ZERO-K : Dossier chunks actif = user://saves/{nom}/chunks/ (lecture ET écriture)");
+		AssurerPoolSeedsArbresPregen();
 		CreerPoolsRochesParTaille();
+	}
+
+	private static uint MelangerPool(uint x)
+	{
+		x ^= x >> 16;
+		x *= 0x7FEB352Du;
+		x ^= x >> 15;
+		x *= 0x846CA68Bu;
+		x ^= x >> 16;
+		return x;
+	}
+
+	/// <summary>Construit le pool de variantes d'arbres (50 par essence x âge 1..5) à la création du monde.</summary>
+	private void AssurerPoolSeedsArbresPregen()
+	{
+		if (_seedPoolArbres == SeedTerrain) return;
+		for (int espece = 0; espece < PoolEspecesArbre; espece++)
+		for (int ageIdx = 0; ageIdx < PoolAgesPregenArbre; ageIdx++)
+		for (int variante = 0; variante < PoolVariantesArbreParAge; variante++)
+		{
+			uint baseH = (uint)(
+				SeedTerrain * 2654435761u
+				^ (uint)(espece * 374761393)
+				^ (uint)((ageIdx + 1) * 668265263)
+				^ (uint)(variante * 2246822519u));
+			uint seed = MelangerPool(baseH);
+			if (seed == 0u) seed = (uint)(12345 + espece * 97 + ageIdx * 31 + variante * 7);
+			_poolSeedsArbres[espece, ageIdx, variante] = seed;
+		}
+		_seedPoolArbres = SeedTerrain;
+	}
+
+	/// <summary>Retourne une seed du pool pour les âges 1..5 (nouveaux chunks), sinon conserve la seed dynamique.</summary>
+	private uint SelectionnerSeedArbreDepuisPool(byte indexBotanique, int age, int gx, int gz, uint seedOriginale)
+	{
+		if (age < 1 || age > PoolAgesPregenArbre) return seedOriginale;
+		int espece = Mathf.Clamp(indexBotanique, 0, PoolEspecesArbre - 1);
+		uint h = (uint)(gx * 73856093) ^ (uint)(gz * 19349663) ^ seedOriginale;
+		int variante = (int)(h % PoolVariantesArbreParAge);
+		return _poolSeedsArbres[espece, age - 1, variante];
 	}
 
 	/// <summary>Sauvegarde d'urgence : sauvegarde tous les chunks chargés (robuste même si un drapeau EstModifie a été raté).</summary>
@@ -266,8 +332,12 @@ public partial class Monde_Serveur : Node
 
 		// Spawn progressif des ArbreVivant pour éviter les gros spikes au premier chargement.
 		int nArbres = 0;
-		while (nArbres < Mathf.Max(1, MaxArbresSpawnParTick) && _fileSpawnArbres.Count > 0)
+		int budgetArbresTick = CalculerBudgetSpawnAdaptatif(MaxArbresSpawnParTick);
+		ulong t0Arbres = Time.GetTicksUsec();
+		ulong budgetUsArbres = (ulong)Mathf.Max(200f, BudgetMsSpawnArbresParTick * 1000f);
+		while (nArbres < budgetArbresTick && _fileSpawnArbres.Count > 0)
 		{
+			if (Time.GetTicksUsec() - t0Arbres >= budgetUsArbres) break;
 			var a = _fileSpawnArbres.Dequeue();
 			if (!_chunks.ContainsKey(a.coord)) continue; // Chunk déjà déchargé entre-temps
 			InstancierArbreVivant(a.pos, a.age, a.seed, a.indexBotanique, a.joursRattrapage);
@@ -276,8 +346,12 @@ public partial class Monde_Serveur : Node
 
 		// Goutte-à-goutte : pierres chargées depuis disque, instanciées quand chunk dessiné à l'écran
 		int nPierres = 0;
-		while (nPierres < MaxPierresParFrame && _filePierresAInstancier.Count > 0)
+		int budgetPierresTick = CalculerBudgetSpawnAdaptatif(MaxPierresParFrame);
+		ulong t0Pierres = Time.GetTicksUsec();
+		ulong budgetUsPierres = (ulong)Mathf.Max(160f, BudgetMsSpawnPierresParTick * 1000f);
+		while (nPierres < budgetPierresTick && _filePierresAInstancier.Count > 0)
 		{
+			if (Time.GetTicksUsec() - t0Pierres >= budgetUsPierres) break;
 			var (pos, id, idx, chim) = _filePierresAInstancier.Dequeue();
 			// Plus la roche est loin du niveau d'eau (Y=103), plus elle peut prendre une forme cassée (2e moitié du cache)
 			if (idx < 0)
@@ -950,30 +1024,84 @@ public partial class Monde_Serveur : Node
 		_noiseTemperatureArbresSeed = SeedTerrain;
 	}
 
+	private void AssurerNoiseBiomeForetArbres()
+	{
+		if (_noiseBiomeForetArbres != null && _noiseBiomeForetArbresSeed == SeedTerrain) return;
+		_noiseBiomeForetArbres = new FastNoiseLite();
+		_noiseBiomeForetArbres.NoiseType = FastNoiseLite.NoiseTypeEnum.Perlin;
+		_noiseBiomeForetArbres.Seed = SeedTerrain + 77;
+		_noiseBiomeForetArbres.FractalType = FastNoiseLite.FractalTypeEnum.Fbm;
+		_noiseBiomeForetArbres.FractalOctaves = 3;
+		_noiseBiomeForetArbres.Frequency = 0.00028f;
+		_noiseBiomeForetArbresSeed = SeedTerrain;
+	}
+
+	private void AssurerNoiseHumiditeArbres()
+	{
+		if (_noiseHumiditeArbres != null && _noiseHumiditeArbresSeed == SeedTerrain) return;
+		_noiseHumiditeArbres = new FastNoiseLite();
+		_noiseHumiditeArbres.NoiseType = FastNoiseLite.NoiseTypeEnum.Perlin;
+		_noiseHumiditeArbres.Seed = SeedTerrain + 3;
+		_noiseHumiditeArbres.FractalType = FastNoiseLite.FractalTypeEnum.Fbm;
+		_noiseHumiditeArbres.FractalOctaves = 4;
+		_noiseHumiditeArbres.Frequency = 0.0006f;
+		_noiseHumiditeArbresSeed = SeedTerrain;
+	}
+
+	/// <summary>0=sans arbres, 1=bouleau seul, 2=mixte, 3=chêne seul (tempéré uniquement).</summary>
+	private int DeterminerBiomeForetTempere(int gx, int gz)
+	{
+		float n = _noiseBiomeForetArbres?.GetNoise2D(gx, gz) ?? 0f;
+		if (n < -0.44f) return 0;
+		if (n < -0.08f) return 1;
+		if (n < 0.28f) return 2;
+		return 3;
+	}
+
 	private byte DeterminerIndexBotaniqueArbre(uint seedArbre, int gx, int gz)
 	{
 		// Choix déterministe: un arbre garde la même essence entre chargements.
 		uint h = (seedArbre * 1664525u) + 1013904223u;
 		float r = (h & 0x00FFFFFFu) / 16777216f;
+		// Diagnostic temporaire:
+		// - garde les essences normales par biome
+		// - injecte aussi de la jungle partout pour tester coupe/lianes.
+		bool junglePartout = ModeEssencesPartoutTemporaire && r < 0.36f;
+		if (junglePartout)
+			return LSystem_Botanique.IndexJungle;
 		AssurerNoiseTemperatureArbres();
 		float temp = _noiseTemperatureArbres?.GetNoise2D(gx, gz) ?? 0f;
-		// Zone froide/neige : on verrouille sur pin pour éviter chêne/bouleau sur neige.
+		AssurerNoiseHumiditeArbres();
+		float humidite = _noiseHumiditeArbres?.GetNoise2D(gx, gz) ?? 0f;
+		// Zone froide/neige: sapin majoritaire en froid modere, pin plus frequent en grand froid.
+		if (temp < -0.32f)
+			return (byte)(r < 0.72f ? LSystem_Botanique.IndexPin : LSystem_Botanique.IndexSapin);
 		if (temp < -0.15f)
-			return LSystem_Botanique.IndexPin;
-		return (byte)(r < 0.4f ? LSystem_Botanique.IndexBouleau : LSystem_Botanique.IndexChene);
+			return (byte)(r < 0.76f ? LSystem_Botanique.IndexSapin : LSystem_Botanique.IndexPin);
+		// Jungle: très humide + chaud (on garde les zones neigeuses inchangées).
+		if (temp > 0.22f && humidite > 0.62f)
+			return (byte)(r < 0.70f ? LSystem_Botanique.IndexJungle : LSystem_Botanique.IndexChene);
+		AssurerNoiseBiomeForetArbres();
+		int biome = DeterminerBiomeForetTempere(gx, gz);
+		if (biome == 1) return LSystem_Botanique.IndexBouleau; // zone bouleaux
+		if (biome == 3) return LSystem_Botanique.IndexChene;   // zone chênes
+		// Mixte (et vieux saves en zone sans arbres): mélange local d'essences.
+		return (byte)(r < 0.50f ? LSystem_Botanique.IndexBouleau : LSystem_Botanique.IndexChene);
 	}
 
 	/// <summary>Spawn les ArbreVivant 3D pour ce chunk (procédural ou chargé).</summary>
 	private void SpawnerArbresChunk(Vector2I coord, Chunk_Serveur chunk)
 	{
 		if (_parentPourArbres == null || chunk.InventaireArbres.Count == 0) return;
+		AssurerPoolSeedsArbresPregen();
 		foreach (var kv in chunk.InventaireArbres)
 		{
 			// Base collée au sol (Y - 0.5 pour éviter troncs flottants)
 			Vector3 pos = new Vector3(kv.Key.X + 0.5f, kv.Key.Y - 0.5f, kv.Key.Z + 0.5f);
 			int age = Mathf.Max(1, kv.Value.Stage + 1);
 			byte indexBotanique = DeterminerIndexBotaniqueArbre(kv.Value.Seed, kv.Key.X, kv.Key.Z);
-			_fileSpawnArbres.Enqueue((coord, pos, age, kv.Value.Seed, indexBotanique, 0));
+			uint seedPregen = SelectionnerSeedArbreDepuisPool(indexBotanique, age, kv.Key.X, kv.Key.Z, kv.Value.Seed);
+			_fileSpawnArbres.Enqueue((coord, pos, age, seedPregen, indexBotanique, 0));
 		}
 	}
 

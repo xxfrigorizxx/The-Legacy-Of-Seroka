@@ -67,13 +67,39 @@ public static class LSystem_Botanique
 		Flexibilite = 0.3f
 	};
 
+	public static readonly ProfilBotanique Sapin = new ProfilBotanique
+	{
+		Nom = "Sapin",
+		ID_Tronc = 30,
+		ID_Feuille = 31,
+		MasseDensite = 0.71f,
+		ResistanceHache = 118f,
+		Combustibilite = 320f,
+		ChaleurDegagee = 770f,
+		Flexibilite = 0.28f
+	};
+
+	public static readonly ProfilBotanique Jungle = new ProfilBotanique
+	{
+		Nom = "Fromager (Kapokier)",
+		ID_Tronc = 30,
+		ID_Feuille = 31,
+		MasseDensite = 0.35f,   // 📖 FIX CRITIQUE : Extrêmement léger (flotte comme un bouchon)
+		ResistanceHache = 60f,  // 📖 FIX CRITIQUE : Bois spongieux, s'abat très rapidement
+		Combustibilite = 150f,  // 📖 Brûle comme une allumette
+		ChaleurDegagee = 450f,  // 📖 Ne fait pas de bonnes braises
+		Flexibilite = 0.10f
+	};
+
 	/// <summary>Index du chêne dans TableBotanique.</summary>
 	public const byte IndexChene = 0;
 	public const byte IndexBouleau = 1; // Nouvelle espece
 	public const byte IndexPin = 2; // Nouvelle espece
+	public const byte IndexSapin = 3; // Conifere de climat froid modere
+	public const byte IndexJungle = 4; // Arbre tropical a couronne haute
 
-	/// <summary>Table des essences. 0=Chêne, 1=Bouleau, 2=Pin.</summary>
-	public static readonly ProfilBotanique[] TableBotanique = { Chene, Bouleau, Pin };
+	/// <summary>Table des essences. 0=Chêne, 1=Bouleau, 2=Pin, 3=Sapin, 4=Jungle.</summary>
+	public static readonly ProfilBotanique[] TableBotanique = { Chene, Bouleau, Pin, Sapin, Jungle };
 
 	/// <summary>Retourne le profil botanique pour l'index d'espèce (0 = chêne). Clamp si hors bornes.</summary>
 	public static ProfilBotanique ObtenirProfil(byte indexEspece)
@@ -302,6 +328,116 @@ public static class LSystem_Botanique
 					next += r < 0.56f
 						? "Fj[R+c]Fj[r+c]cL"
 						: (r < 0.82f ? "Fj[RR+c]Fj[rr+c]L" : "Fj[R+F]Fj[r+F]L");
+					iterb++;
+				}
+				else next += c;
+			}
+			axiome = next;
+		}
+		return axiome;
+	}
+
+	public static string GenererChaineSapinOrganique(int iterations, uint seed)
+	{
+		// Sapin: conifere plus touffu que le pin, etage quasi continu du bas vers le haut.
+		// On démarre plus bas qu'avant pour avoir des branches proches du sol.
+		string axiome = "TA";
+		int iterb = 0;
+		for (int i = 0; i < iterations; i++)
+		{
+			string next = "";
+			foreach (char c in axiome)
+			{
+				if (c == 'A')
+				{
+					float t = iterations > 1 ? (float)i / (iterations - 1) : 1f; // 0=base, 1=sommet
+					string[] dirs8 = { "R", "RR", "RRR", "RRRR", "r", "rr", "rrr", "rrrr" };
+					// Croissance progressive: jeune sapin = moins d'étages/branches, mature = silhouette pleine.
+					int bonusMaturite = Mathf.Clamp(iterations - 2, 0, 3);
+					int minCible = t < 0.25f ? (3 + bonusMaturite) : (t < 0.7f ? (3 + bonusMaturite) : (2 + bonusMaturite));
+					int maxCible = t < 0.25f ? (5 + bonusMaturite) : (t < 0.7f ? (5 + bonusMaturite) : (4 + bonusMaturite));
+					int cible = Mathf.Clamp(minCible + (int)(RandFromSeed(seed, 5200 + i * 17) * (maxCible - minCible + 1)), 3, 8);
+					int[] ordre = { 0, 4, 2, 6, 1, 5, 3, 7 };
+					int offset = (int)(RandFromSeed(seed, 5300 + i * 29) * 8f) % 8;
+					string couronne = "";
+					for (int k = 0; k < cible; k++)
+					{
+						int idx = ordre[(k + offset) % 8];
+						// Orientation clairement descendante: "jupe" de sapin jusqu'au bas du tronc.
+						couronne += "[" + dirs8[idx] + "j--bbcbL]";
+					}
+					next += "T" + couronne + "A";
+				}
+				else if (c == 'b')
+				{
+					float r = RandFromSeed(seed, 6100 + i * 131 + iterb * 19);
+					next += r < 0.58f
+						? "Fj[R+b]Fj[r+b][+c][-c]L"
+						: (r < 0.86f ? "Fj[RR+c]Fj[rr+c]L" : "Fj[R+F][r+F]L");
+					iterb++;
+				}
+				else next += c;
+			}
+			axiome = next;
+		}
+		return axiome;
+	}
+
+	public static string GenererChaineJungleOrganique(int iterations, uint seed)
+	{
+		// Arbre de jungle: long tronc nu, canopée concentrée dans le tiers supérieur.
+		string axiome = "TTTTTA";
+		int iterB = 0;
+		int iterb = 0;
+		for (int i = 0; i < iterations; i++)
+		{
+			string next = "";
+			foreach (char c in axiome)
+			{
+				if (c == 'A')
+				{
+					float t = iterations > 1 ? (float)i / (iterations - 1) : 1f; // 0=bas, 1=sommet
+					if (t < 0.55f)
+					{
+						// Bas et milieu: surtout tronc.
+						next += "TTA";
+						continue;
+					}
+
+					// Haut: couronne très dense, multi-étages, avec sous-branches.
+					string[] dirs8 = { "R", "RR", "RRR", "RRRR", "r", "rr", "rrr", "rrrr" };
+					int[] ordre = { 0, 4, 2, 6, 1, 5, 3, 7 };
+					int cible = t < 0.8f ? 6 : 8;
+					int offset = (int)(RandFromSeed(seed, 7800 + i * 17) * 8f) % 8;
+					string couronne = "";
+					for (int k = 0; k < cible; k++)
+					{
+						int idx = ordre[(k + offset) % 8];
+						couronne += "[" + dirs8[idx] + "jv+BB[+b][-b]L]";
+					}
+					int offsetInter = (offset + 1 + (int)(RandFromSeed(seed, 7849 + i * 31) * 3f)) % 8;
+					string couronneInter = "";
+					for (int k = 0; k < Mathf.Max(3, cible - 2); k++)
+					{
+						int idx = ordre[(k + offsetInter) % 8];
+						couronneInter += "[" + dirs8[idx] + "j+BbL]";
+					}
+					next += "T" + couronne + "T" + couronneInter + "A";
+				}
+				else if (c == 'B')
+				{
+					float r = RandFromSeed(seed, 8200 + i * 19 + iterB * 7);
+					next += r < 0.40f
+						? "FFj[+b][<b][>b]L"
+						: (r < 0.75f ? "Fj[+b][-b][>b]L" : "FFj[+b][-b][<b][>b]L");
+					iterB++;
+				}
+				else if (c == 'b')
+				{
+					float r = RandFromSeed(seed, 8600 + i * 23 + iterb * 11);
+					next += r < 0.36f
+						? "Fj[+L][<L][>L]L"
+						: (r < 0.72f ? "FFj[->L][>L]L" : "Fj[+L][-L][>L]L");
 					iterb++;
 				}
 				else next += c;

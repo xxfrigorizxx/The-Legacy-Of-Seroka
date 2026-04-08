@@ -1751,6 +1751,7 @@ public partial class Joueur : CharacterBody3D
     }
 
     private float _tempsAttenteSpawn;
+    private bool _verrouSpawnActif = true;
 
     public override void _PhysicsProcess(double delta)
     {
@@ -1776,16 +1777,28 @@ public partial class Joueur : CharacterBody3D
 
         Vector3 velocity = Velocity;
         bool spawnPret = _gestionnaireMonde == null || _gestionnaireMonde.EstSpawnPret();
-
-        if (!spawnPret)
+        if (_verrouSpawnActif)
         {
-            _tempsAttenteSpawn += dt;
-            velocity = Vector3.Zero;
-            Velocity = velocity;
-            MoveAndSlide();
-            return;
+            if (!spawnPret)
+            {
+                _tempsAttenteSpawn += dt;
+                // Anti soft-lock: si le sol/collision tarde trop, on rend le contrôle au joueur.
+                if (_tempsAttenteSpawn <= 8f)
+                {
+                    velocity = Vector3.Zero;
+                    Velocity = velocity;
+                    MoveAndSlide();
+                    return;
+                }
+                GD.PrintErr("ZERO-K : Déverrouillage déplacement forcé (spawn non prêt trop longtemps).");
+                _verrouSpawnActif = false;
+            }
+            else
+            {
+                _verrouSpawnActif = false;
+            }
+            _tempsAttenteSpawn = 0f;
         }
-        _tempsAttenteSpawn = 0f;
 
         int idMilieu = _gestionnaireMonde?.ObtenirMatiereExacte(GlobalPosition + Vector3.Up * 0.8f) ?? 1;
         bool estDansEau = (idMilieu == 4);

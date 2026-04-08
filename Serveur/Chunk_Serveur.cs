@@ -25,6 +25,7 @@ public partial class Chunk_Serveur : RefCounted
 	private FastNoiseLite _noiseCavernes;
 	private FastNoiseLite _noiseRivieres;
 	private FastNoiseLite _noiseNeige;
+	private FastNoiseLite _noiseBiomeForet;
 
 	private const float Isolevel = 0.0f;
 	private const int NiveauEau = 103;  // +1 m
@@ -150,6 +151,14 @@ public partial class Chunk_Serveur : RefCounted
 		_noiseNeige.NoiseType = FastNoiseLite.NoiseTypeEnum.Perlin;
 		_noiseNeige.Seed = seed + 10;
 		_noiseNeige.Frequency = 0.008f;  // Variation locale naturelle de la limite des neiges
+
+		// Macro-biomes forestiers tempérés (zones: sans arbres, bouleaux, chênes, mixte).
+		_noiseBiomeForet = new FastNoiseLite();
+		_noiseBiomeForet.NoiseType = FastNoiseLite.NoiseTypeEnum.Perlin;
+		_noiseBiomeForet.Seed = seed + 77;
+		_noiseBiomeForet.FractalType = FastNoiseLite.FractalTypeEnum.Fbm;
+		_noiseBiomeForet.FractalOctaves = 3;
+		_noiseBiomeForet.Frequency = 0.00028f;
 	}
 
 	public bool EstPret => _densities != null;
@@ -201,9 +210,7 @@ public partial class Chunk_Serveur : RefCounted
 								{
 									var posGlobale = new Vector3I((int)xGlobal, (int)globalY, (int)zGlobal);
 									InventaireFlore[posGlobale] = FloreTypeGazon; // Gazon seul par défaut
-									float chanceDePousse = CalculerChanceBuisson(xGlobal, zGlobal);
-									if (chanceDePousse > 0f && DeterministicRand(xGlobal, zGlobal) < chanceDePousse)
-										InventaireFlore[posGlobale] = ConstruireTypeBuisson(VarianteCouleurBuissonRouge, DeterministicRand(xGlobal + 17f, zGlobal) < 0.5f);
+									EssayerPromouvoirGazonEnBuisson(posGlobale, xGlobal, zGlobal);
 								}
 							}
 						}
@@ -266,6 +273,14 @@ public partial class Chunk_Serveur : RefCounted
 	{
 		const float chanceArbre = 0.06f;
 		const int espacementMin = 4;
+		int xCentre = ChunkOffsetX * TailleChunk + TailleChunk / 2;
+		int zCentre = ChunkOffsetZ * TailleChunk + TailleChunk / 2;
+		float tempCentre = _noiseTemperature.GetNoise2D(xCentre, zCentre);
+		float humCentreNorm = (CalculerHumiditeGlobale(xCentre, zCentre) + 1f) * 0.5f;
+		bool chunkJungleCentre = tempCentre > 0.22f && humCentreNorm > 0.78f;
+		bool chunkSansArbresTempere = tempCentre >= -0.15f
+			&& !chunkJungleCentre
+			&& DeterminerBiomeForetTempere(xCentre, zCentre) == 0;
 		bool arbreAjoute = false;
 		for (int x = 2; x < TailleChunk - 2; x += espacementMin)
 		for (int z = 2; z < TailleChunk - 2; z += espacementMin)
@@ -293,6 +308,7 @@ public partial class Chunk_Serveur : RefCounted
 			float temperature = _noiseTemperature.GetNoise2D(xGlobal, zGlobal);
 			float humidite = CalculerHumiditeGlobale(xGlobal, zGlobal);
 			float humiditeNorm = (humidite + 1f) * 0.5f;
+			bool estJungle = temperature > 0.22f && humiditeNorm > 0.78f;
 
 			float chanceLocale = chanceArbre;
 			if (temperature < -0.15f)
@@ -310,9 +326,22 @@ public partial class Chunk_Serveur : RefCounted
 			{
 				if (!solTempere) continue;
 				if (humiditeNorm < 0.2f) continue;
-				// Prairie tempérée: sec -> clairsemé, humide -> densité actuelle.
-				float tHumideTempere = Mathf.Clamp((humiditeNorm - 0.2f) / 0.45f, 0f, 1f);
-				chanceLocale = Mathf.Lerp(0.018f, chanceArbre, tHumideTempere);
+				if (estJungle)
+				{
+					// Jungle chaude/humide: densité haute.
+					float tJungle = Mathf.Clamp((humiditeNorm - 0.78f) / 0.22f, 0f, 1f);
+					chanceLocale = Mathf.Lerp(0.078f, 0.145f, tJungle);
+				}
+				else
+				{
+					int biomeForet = DeterminerBiomeForetTempere(xGlobal, zGlobal);
+					if (biomeForet == 0) continue; // biome "clairière/plaine" sans arbres
+					// Prairie tempérée: sec -> clairsemé, humide -> densité actuelle.
+					float tHumideTempere = Mathf.Clamp((humiditeNorm - 0.2f) / 0.45f, 0f, 1f);
+					chanceLocale = Mathf.Lerp(0.018f, chanceArbre, tHumideTempere);
+					if (biomeForet == 2) chanceLocale *= 0.92f; // mixte: un peu plus aéré
+					else chanceLocale *= 1.08f; // monospécifique: un peu plus dense
+				}
 			}
 
 			if (DeterministicRand(xGlobal * 1.7f, zGlobal * 2.3f) >= chanceLocale) continue;
@@ -326,6 +355,7 @@ public partial class Chunk_Serveur : RefCounted
 		}
 
 		if (arbreAjoute || InventaireArbres.Count > 0) return;
+		if (chunkSansArbresTempere) return;
 
 		// Fallback machine/biome : si le tirage standard n'a rien donné, on force un arbre
 		// sur un point viable (herbe OU neige), en gardant une cohérence humide minimale.
@@ -352,6 +382,7 @@ public partial class Chunk_Serveur : RefCounted
 
 			float temperature = _noiseTemperature.GetNoise2D(xGlobal, zGlobal);
 			float humiditeNorm = (CalculerHumiditeGlobale(xGlobal, zGlobal) + 1f) * 0.5f;
+			bool estJungle = temperature > 0.22f && humiditeNorm > 0.78f;
 			if (temperature < -0.15f)
 			{
 				if (!solFroid || humiditeNorm < 0.08f) continue;
@@ -359,6 +390,7 @@ public partial class Chunk_Serveur : RefCounted
 			else
 			{
 				if (!solTempere || humiditeNorm < 0.2f) continue;
+				if (!estJungle && DeterminerBiomeForetTempere(xGlobal, zGlobal) == 0) continue;
 			}
 
 			var racine = new Vector3I(xGlobal, hauteurSurface + 1, zGlobal);
@@ -367,6 +399,57 @@ public partial class Chunk_Serveur : RefCounted
 			InventaireArbres[racine] = new DonneesArbre { Stage = (byte)stage, Seed = seedArbre };
 			return;
 		}
+	}
+
+	/// <summary>0=sans arbres, 1=bouleau seul, 2=mixte, 3=chêne seul (tempéré uniquement).</summary>
+	private int DeterminerBiomeForetTempere(int xGlobal, int zGlobal)
+	{
+		float n = _noiseBiomeForet?.GetNoise2D(xGlobal, zGlobal) ?? 0f;
+		if (n < -0.44f) return 0;
+		if (n < -0.08f) return 1;
+		if (n < 0.28f) return 2;
+		return 3;
+	}
+
+	private bool EstZoneJungle(float xGlobal, float zGlobal)
+	{
+		float temperature = _noiseTemperature.GetNoise2D(xGlobal, zGlobal);
+		float humiditeNorm = (CalculerHumiditeGlobale(xGlobal, zGlobal) + 1f) * 0.5f;
+		return temperature > 0.22f && humiditeNorm > 0.72f;
+	}
+
+	private bool PeutPlacerBuissonAvecEspacement(Vector3I pos, int rayonCases)
+	{
+		for (int dx = -rayonCases; dx <= rayonCases; dx++)
+		for (int dz = -rayonCases; dz <= rayonCases; dz++)
+		{
+			if (dx == 0 && dz == 0) continue;
+			Vector3I voisin = new Vector3I(pos.X + dx, pos.Y, pos.Z + dz);
+			if (InventaireFlore.TryGetValue(voisin, out byte typeVoisin) && EstTypeBuisson(typeVoisin))
+				return false;
+		}
+		return true;
+	}
+
+	private byte DeterminerVarianteBuisson(float xGlobal, float zGlobal, bool estJungle)
+	{
+		if (!estJungle) return VarianteCouleurBuissonRouge;
+		// Jungle: pool ouvert 0..120 (future-proof pour nouvelles variantes).
+		float r = DeterministicRand(xGlobal * 0.77f + 11f, zGlobal * 1.13f + 23f);
+		int variante = Mathf.Clamp((int)(r * 121f), 0, 120);
+		return (byte)variante;
+	}
+
+	private void EssayerPromouvoirGazonEnBuisson(Vector3I posGlobale, float xGlobal, float zGlobal)
+	{
+		float chanceDePousse = CalculerChanceBuisson(xGlobal, zGlobal);
+		if (chanceDePousse <= 0f || DeterministicRand(xGlobal, zGlobal) >= chanceDePousse) return;
+		bool estJungle = EstZoneJungle(xGlobal, zGlobal);
+		int rayonEspacement = estJungle ? 2 : 1;
+		if (!PeutPlacerBuissonAvecEspacement(posGlobale, rayonEspacement)) return;
+		byte variante = DeterminerVarianteBuisson(xGlobal, zGlobal, estJungle);
+		bool plein = DeterministicRand(xGlobal + 17f, zGlobal) < 0.5f;
+		InventaireFlore[posGlobale] = ConstruireTypeBuisson(variante, plein);
 	}
 
 	/// <summary>Assure un minimum visuel : au moins un buisson s'il existe du gazon dans le chunk.</summary>
@@ -392,7 +475,9 @@ public partial class Chunk_Serveur : RefCounted
 			}
 		}
 		if (!trouve) return;
-		InventaireFlore[candidat] = ConstruireTypeBuisson(VarianteCouleurBuissonRouge, true);
+		bool estJungle = EstZoneJungle(candidat.X, candidat.Z);
+		byte variante = DeterminerVarianteBuisson(candidat.X, candidat.Z, estJungle);
+		InventaireFlore[candidat] = ConstruireTypeBuisson(variante, true);
 	}
 
 	private int CalculerHauteurTerrain(int xGlobal, int zGlobal)
@@ -451,7 +536,7 @@ public partial class Chunk_Serveur : RefCounted
 		return Mathf.Clamp(macro * 0.85f + micro * 0.15f, -1f, 1f);
 	}
 
-	/// <summary>Probabilité de transformer un gazon en buisson selon l'humidité locale.</summary>
+	/// <summary>Probabilité de transformer un gazon en buisson selon humidité + biome tempéré/jungle.</summary>
 	private float CalculerChanceBuisson(float xGlobal, float zGlobal)
 	{
 		float humiditeBrute = CalculerHumiditeGlobale(xGlobal, zGlobal);
@@ -459,6 +544,17 @@ public partial class Chunk_Serveur : RefCounted
 		if (humiditeNorm <= 0.28f) return 0f;
 		float t = (humiditeNorm - 0.28f) / 0.72f;
 		float chance = 0.003f + t * 0.045f;
+		// Jungle: plus de buissons (espacement appliqué séparément).
+		if (EstZoneJungle(xGlobal, zGlobal))
+			chance *= 1.55f;
+		// Tempéré uniquement: distribution des baies par biome forêt.
+		float temperature = _noiseTemperature.GetNoise2D(xGlobal, zGlobal);
+		if (temperature >= -0.15f)
+		{
+			int biome = DeterminerBiomeForetTempere((int)xGlobal, (int)zGlobal);
+			if (biome == 2) chance *= 1.35f;      // Mixte (bouleau + chêne): plus forte densité de baies.
+			else if (biome == 0) chance *= 0.50f; // Zone tempérée sans arbres: deux fois moins que l’actuel.
+		}
 		return Mathf.Clamp(chance, 0f, 0.05f);
 	}
 
@@ -564,12 +660,17 @@ public partial class Chunk_Serveur : RefCounted
 		// Plusieurs stades temp/hum avec seuils progressifs (transitions lentes)
 		if (temperature > 0.4f)  // Très chaud
 		{
+			// Jungle: chaud + très humide => herbe dominante (boue conservée par taches).
+			if (humidite > 0.62f)
+				return _noiseHumiditeDetail.GetNoise2D(xGlobal * 1.7f + 400f, zGlobal * 1.7f + 400f) > 0.42f ? (byte)7 : (byte)1;
 			if (humidite > 0.4f) return 8;   // Argile humide
 			if (humidite > 0.1f) return 6;   // Terre aride
 			return 1;   // Sec mais pas assez pour sable → herbe jaunâtre (shader)
 		}
 		if (temperature > 0.15f)  // Chaud
 		{
+			if (humidite > 0.60f)
+				return _noiseHumiditeDetail.GetNoise2D(xGlobal * 1.6f + 900f, zGlobal * 1.6f + 900f) > 0.46f ? (byte)7 : (byte)1;
 			if (humidite > 0.35f) return 8;
 			if (humidite > 0.0f) return 6;
 			return 1;   // Sec → herbe (shader jaunâtre)
@@ -674,9 +775,7 @@ public partial class Chunk_Serveur : RefCounted
 			if (!InventaireFlore.TryGetValue(pos, out byte typeFlore) || typeFlore != FloreTypeGazon) continue;
 			float xGlobal = pos.X;
 			float zGlobal = pos.Z;
-			float chanceDePousse = CalculerChanceBuisson(xGlobal, zGlobal);
-			if (chanceDePousse > 0f && DeterministicRand(xGlobal, zGlobal) < chanceDePousse)
-				InventaireFlore[pos] = ConstruireTypeBuisson(VarianteCouleurBuissonRouge, DeterministicRand(xGlobal + 17f, zGlobal) < 0.5f);
+			EssayerPromouvoirGazonEnBuisson(pos, xGlobal, zGlobal);
 		}
 		AssurerBuissonMinimalDansChunk();
 	}
@@ -702,9 +801,7 @@ public partial class Chunk_Serveur : RefCounted
 				if (altitudeFlore <= NIVEAU_MIN_FLORE || altitudeFlore >= NIVEAU_MAX_FLORE) continue;
 				var posGlobale = new Vector3I((int)xGlobal, ySurface, (int)zGlobal);
 				InventaireFlore[posGlobale] = FloreTypeGazon;
-				float chanceDePousse = CalculerChanceBuisson(xGlobal, zGlobal);
-				if (chanceDePousse > 0f && DeterministicRand(xGlobal, zGlobal) < chanceDePousse)
-					InventaireFlore[posGlobale] = ConstruireTypeBuisson(VarianteCouleurBuissonRouge, DeterministicRand(xGlobal + 17f, zGlobal) < 0.5f);
+				EssayerPromouvoirGazonEnBuisson(posGlobale, xGlobal, zGlobal);
 			}
 		AssurerBuissonMinimalDansChunk();
 	}

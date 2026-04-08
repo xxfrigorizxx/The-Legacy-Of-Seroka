@@ -15,12 +15,21 @@ public partial class Joueur
     private float _cooldownParticulesRecuperationAtelier;
     private ItemPhysique _atelierCibleRecuperation;
     private const float DureeRecolteBuissonOutilSecondes = 3.0f;
+    private const float DureeRecolteLianeDagueSecondes = 2.0f;
     private const float RayonDetectionBuisson = 1.25f;
     private const float DistanceMaxViseeDirecteBuisson = 0.55f;
+    private const float IntervalleParticulesMinageBuisson = 0.11f;
+    private const float IntervalleParticulesMinageLiane = 0.10f;
     private float _progressionRecolteBuisson;
+    private float _cooldownParticulesMinageBuisson;
+    private float _progressionRecolteLianeDague;
+    private float _cooldownParticulesMinageLiane;
+    private float _tempsPerteCibleLiane;
     private Vector3 _pointRecolteBuisson;
+    private Vector3 _pointRecolteLiane;
     private Vector3I _posBuissonRecolte;
     private bool _aCibleBuissonRecolte;
+    private ArbreVivant _arbreCibleLiane;
     private bool _bloquerActionClicGaucheApresMinageBuisson;
 
     private static bool EstMatiereMinableMainNue(int idMatiere)
@@ -43,10 +52,21 @@ public partial class Joueur
         _cooldownParticulesRecuperationAtelier = 0f;
         _atelierCibleRecuperation = null;
         _progressionRecolteBuisson = 0f;
+        _cooldownParticulesMinageBuisson = 0f;
         _aCibleBuissonRecolte = false;
         _pointRecolteBuisson = Vector3.Zero;
         _posBuissonRecolte = default;
         _bloquerActionClicGaucheApresMinageBuisson = false;
+        ReinitialiserMinageLianeDagueProgression();
+    }
+
+    private void ReinitialiserMinageLianeDagueProgression()
+    {
+        _progressionRecolteLianeDague = 0f;
+        _cooldownParticulesMinageLiane = 0f;
+        _tempsPerteCibleLiane = 0f;
+        _pointRecolteLiane = Vector3.Zero;
+        _arbreCibleLiane = null;
     }
 
     private bool EssayerObtenirCibleBuisson(out Vector3 pointImpact, out Vector3 pointBuissonMonde, out Vector3I posBuisson, out byte typeBuisson)
@@ -80,6 +100,7 @@ public partial class Joueur
         if (!EssayerObtenirCibleBuisson(out Vector3 pointImpact, out Vector3 pointBuissonMonde, out Vector3I posBuisson, out byte typeBuisson))
         {
             _progressionRecolteBuisson = 0f;
+            _cooldownParticulesMinageBuisson = 0f;
             _aCibleBuissonRecolte = false;
             return false;
         }
@@ -89,9 +110,18 @@ public partial class Joueur
             _aCibleBuissonRecolte = true;
             _posBuissonRecolte = posBuisson;
             _progressionRecolteBuisson = 0f;
+            _cooldownParticulesMinageBuisson = 0f;
         }
         _pointRecolteBuisson = pointBuissonMonde;
         _progressionRecolteBuisson += dt;
+        _cooldownParticulesMinageBuisson -= dt;
+        if (_cooldownParticulesMinageBuisson <= 0f)
+        {
+            _cooldownParticulesMinageBuisson = IntervalleParticulesMinageBuisson;
+            Vector3 normale = _rayon != null && _rayon.IsColliding() ? _rayon.GetCollisionNormal() : Vector3.Up;
+            // Retour visuel permanent pendant minage maintenu du buisson.
+            EmmettreParticulesMinageMainNue(pointImpact, normale, 8);
+        }
         if (_progressionRecolteBuisson < DureeRecolteBuissonOutilSecondes)
             return true;
 
@@ -112,7 +142,104 @@ public partial class Joueur
             _bloquerActionClicGaucheApresMinageBuisson = true;
         }
         _progressionRecolteBuisson = 0f;
+        _cooldownParticulesMinageBuisson = 0f;
         _aCibleBuissonRecolte = false;
+        return true;
+    }
+
+    /// <summary>Dague sur liane jungle: maintien 2s pour couper/récolter.</summary>
+    private bool MettreAJourRecolteLianeDague(float dt, SlotInventaire mainActive)
+    {
+        if (mainActive.ID != 105)
+        {
+            ReinitialiserMinageLianeDagueProgression();
+            return false;
+        }
+
+        _rayon.ForceRaycastUpdate();
+        if (!_rayon.IsColliding())
+        {
+            ReinitialiserMinageLianeDagueProgression();
+            return false;
+        }
+
+        Node objetTouche = NoeudDepuisColliderRaycast(_rayon.GetCollider());
+        ArbreVivant arbre = ObtenirArbreDepuisCollider(objetTouche);
+        if (arbre == null || arbre.IndexBotanique != LSystem_Botanique.IndexJungle)
+        {
+            ReinitialiserMinageLianeDagueProgression();
+            return false;
+        }
+
+        Vector3 pointImpact = _rayon.GetCollisionPoint();
+        Vector3 normaleImpact = _rayon.GetCollisionNormal();
+        Vector3 directionFrappe = -_camera.GlobalTransform.Basis.Z.Normalized();
+        bool cibleLianeValide = arbre.EstPointCibleLiane(pointImpact);
+
+        if (_arbreCibleLiane != arbre)
+        {
+            _arbreCibleLiane = arbre;
+            _progressionRecolteLianeDague = 0f;
+            _cooldownParticulesMinageLiane = 0f;
+            _tempsPerteCibleLiane = 0f;
+        }
+
+        if (!cibleLianeValide)
+        {
+            // Petite grâce anti-jitter: évite de reset la progression au moindre frame perdu.
+            _tempsPerteCibleLiane += dt;
+            if (_tempsPerteCibleLiane > 0.30f)
+            {
+                ReinitialiserMinageLianeDagueProgression();
+                return false;
+            }
+            return true;
+        }
+        _tempsPerteCibleLiane = 0f;
+
+        _pointRecolteLiane = pointImpact;
+        _progressionRecolteLianeDague += dt;
+        _cooldownParticulesMinageLiane -= dt;
+        if (_cooldownParticulesMinageLiane <= 0f)
+        {
+            _cooldownParticulesMinageLiane = IntervalleParticulesMinageLiane;
+            EmmettreParticulesMinageMainNue(pointImpact, normaleImpact, 8);
+        }
+
+        if (_progressionRecolteLianeDague < DureeRecolteLianeDagueSecondes)
+            return true;
+
+        if (arbre.EssayerCouperLiane(_pointRecolteLiane, directionFrappe, out Vector3 posSpawnLiane))
+        {
+            JouerSonEtEffetCoupeArbre(_pointRecolteLiane);
+            var slotLiane = new SlotInventaire
+            {
+                ID = 16, // Liane (matière dédiée), pas herbe.
+                IndexMorphologique = 0,
+                IndexTaille = 0,
+                ScaleEclat = Vector3.One
+            };
+            if (!EssayerAjouterDansInventaire(slotLiane))
+            {
+                // Fallback sol si inventaire plein.
+                Node3D liane = CreerBlocPose(posSpawnLiane, slotLiane);
+                if (liane is RigidBody3D rbLiane)
+                    rbLiane.ApplyCentralImpulse(directionFrappe.Normalized() * 1.2f + Vector3.Up * 0.9f);
+                GD.Print("ZERO-K : Inventaire plein, liane déposée au sol.");
+            }
+            else
+            {
+                RafraichirHUD();
+            }
+            AppliquerUsureOutilMainActive(1.15f);
+            GD.Print("ZERO-K : Liane coupée (2s) et ajoutée à l'inventaire.");
+        }
+        else
+        {
+            GD.Print("ZERO-K : Cette zone n'a pas de liane exploitable.");
+        }
+
+        ReinitialiserMinageLianeDagueProgression();
         return true;
     }
 
@@ -379,6 +506,9 @@ public partial class Joueur
         _progressionRecuperationAtelier = 0f;
         _cooldownParticulesRecuperationAtelier = 0f;
         _atelierCibleRecuperation = null;
+
+        if (dague && MettreAJourRecolteLianeDague(dt, mainActive))
+            return;
 
         if ((dague || pelle) && MettreAJourRecolteBuissonOutil(dt, mainActive))
             return;
@@ -771,21 +901,67 @@ public partial class Joueur
         ArbreVivant arbre = ObtenirArbreDepuisCollider(objetTouche);
         if (arbre != null)
         {
+            bool arbreJungle = arbre.IndexBotanique == LSystem_Botanique.IndexJungle;
+            bool rochePlate = ItemPhysique.EstIdRocheMatiere(mainActive.ID)
+                && (mainActive.IndexMorphologique == 1 || mainActive.IndexMorphologique == 2);
+            bool rochePointe = ItemPhysique.EstIdRocheMatiere(mainActive.ID) && mainActive.IndexMorphologique == 3;
+            // Dague sur liane: désormais en maintien (2s), pas en clic instantané.
+            if (mainActive.ID == 105 && arbre.IndexBotanique == LSystem_Botanique.IndexJungle)
+            {
+                GD.Print("ZERO-K : Maintenez le clic avec la dague pendant 2s pour couper la liane.");
+                return;
+            }
+
             bool outilTranchantPourArbre = mainActive.ID == 106
                 || mainActive.EstUnEclat
-                || (ItemPhysique.EstIdRocheMatiere(mainActive.ID) && (mainActive.IndexMorphologique == 1 || mainActive.IndexMorphologique == 3));
-            if (!outilTranchantPourArbre) return;
+                || rochePlate
+                || rochePointe;
+            if (!outilTranchantPourArbre)
+            {
+                GD.Print("ZERO-K : Pour entamer un arbre, utilisez une roche matière aplatie (plate/ovale), un éclat, ou une hachette.");
+                return;
+            }
+            if (rochePointe && arbre.AgeEnJours <= 2)
+            {
+                GD.Print("ZERO-K : Sur jeune arbre (âge 1-2), seule la roche plate entame le bois.");
+                return;
+            }
 
-            float forceCoupe = forceImpact;
+            // Normalisation anti-explosion: la chaîne de multiplicateurs amont peut sinon one-shot tout (bois/roche).
+            float finesseLame = Mathf.Clamp(0.11f / Mathf.Max(0.02f, epaisseurLame), 0.55f, 1.35f);
+            float forceCoupe = Mathf.Pow(Mathf.Max(0f, forceImpact), 0.72f) * 0.58f * finesseLame;
             if (mainActive.EstUnEclat && arbre.AgeEnJours <= 2)
                 forceCoupe = Mathf.Max(forceCoupe, arbre.AgeEnJours <= 1 ? 36f : 48f);
+            if (rochePlate && arbre.AgeEnJours <= 2 && !arbreJungle)
+            {
+                // Early game: seule la roche plate aide à sortir du hard-lock bois sur jeunes arbres.
+                forceCoupe *= 1.16f;
+                forceCoupe = Mathf.Max(forceCoupe, arbre.AgeEnJours <= 1 ? 34f : 45f);
+            }
             if (mainActive.ID == 106)
-                forceCoupe *= 1.14f;
+                forceCoupe *= 1.08f;
 
             int resultatCoupe = arbre.SubirDegats(pointImpact, directionFrappe, forceCoupe, epaisseurLame, mainActive.ID == 106);
             if (resultatCoupe == 0) GD.Print("ZERO-K : Rebond. La force d'impact est insuffisante pour entamer ce bois.");
             else if (resultatCoupe == 1) JouerSonEtEffetCoupeArbre(pointImpact);
-            else if (resultatCoupe == 2) { JouerSonEtEffetCoupeArbre(pointImpact); GD.Print("ZERO-K : Arbre abattu."); }
+            else if (resultatCoupe == 2)
+            {
+                JouerSonEtEffetCoupeArbre(pointImpact);
+                if (arbreJungle)
+                {
+                    int quantiteLianes = 2 + Mathf.Clamp(arbre.AgeEnJours / 2, 0, 5);
+                    Vector3 baseDrop = pointImpact + Vector3.Up * 0.7f;
+                    for (int i = 0; i < quantiteLianes; i++)
+                    {
+                        var slotLiane = new SlotInventaire { ID = 16, IndexMorphologique = 0, IndexTaille = 0, ScaleEclat = Vector3.One };
+                        Vector3 offset = new Vector3(((float)GD.Randf() - 0.5f) * 0.8f, (float)GD.Randf() * 0.5f, ((float)GD.Randf() - 0.5f) * 0.8f);
+                        Node3D lianeDrop = CreerBlocPose(baseDrop + offset, slotLiane);
+                        if (lianeDrop is RigidBody3D rbLianeDrop)
+                            rbLianeDrop.ApplyCentralImpulse(directionFrappe.Normalized() * 1.1f + Vector3.Up * 1.4f);
+                    }
+                }
+                GD.Print("ZERO-K : Arbre abattu.");
+            }
             else if (resultatCoupe == 3) { JouerSonEtEffetCoupeArbre(pointImpact); GD.Print("ZERO-K : Branche amputée."); }
             return;
         }
@@ -823,6 +999,8 @@ public partial class Joueur
 
             int age = rbCible.HasMeta("Age") ? (int)rbCible.GetMeta("Age").AsInt32() : 1;
             int branchesRestantes = rbCible.HasMeta("BranchesRestantes") ? (int)rbCible.GetMeta("BranchesRestantes").AsInt32() : 0;
+            // Migration/standardisation: anciens cadavres peuvent avoir des valeurs absurdes (incoupables ou spam bâtons).
+            branchesRestantes = Mathf.Clamp(branchesRestantes, 0, 10);
             byte essenceBois = rbCible.HasMeta("IndexBotanique")
                 ? (byte)Mathf.Clamp(rbCible.GetMeta("IndexBotanique").AsInt32(), 0, 255)
                 : LSystem_Botanique.IndexChene;

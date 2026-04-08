@@ -579,7 +579,31 @@ public partial class ItemPhysique : RigidBody3D
 		if (forceImpact < seuil)
 			return 0;
 
-		ResistanceActuelle -= forceImpact;
+		float degats = forceImpact;
+		float capPourcent;
+		if (EstIdRocheMatiere(ID_Objet))
+		{
+			degats *= 0.060f;
+			capPourcent = 0.26f;
+		}
+		else if (ID_Objet == 30 || ID_Objet == 32)
+		{
+			degats *= 0.080f;
+			capPourcent = 0.34f;
+		}
+		else if (EstMatiereSilexParIdObjet(ID_Objet))
+		{
+			degats *= 0.065f;
+			capPourcent = 0.28f;
+		}
+		else
+		{
+			degats *= 0.10f;
+			capPourcent = 0.36f;
+		}
+		float capParCoup = Mathf.Max(4f, ResistanceActuelle * capPourcent);
+		degats = Mathf.Min(degats, capParCoup);
+		ResistanceActuelle -= degats;
 		if (ResistanceActuelle <= 0)
 		{
 			FracturerPublic(dirVue, pointImpact);
