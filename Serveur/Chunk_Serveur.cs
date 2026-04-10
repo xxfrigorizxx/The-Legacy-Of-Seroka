@@ -485,6 +485,7 @@ public partial class Chunk_Serveur : RefCounted
 		float bruitBrut = _noiseSurface.GetNoise2D(xGlobal, zGlobal);
 		float bruitNormalise = (bruitBrut + 1.0f) / 2.0f;
 		float relief = Mathf.Pow(bruitNormalise, 3.0f);  // Exposant 3 : plaine/collines/montagnes
+		float humiditeNorm = (CalculerHumiditeGlobale(xGlobal, zGlobal) + 1f) * 0.5f;
 
 		// Plaine : plaines basses 103-105 (biais fort vers 103) + plaine principale 105-118
 		float bruitPlaine = _noiseErosion.GetNoise2D(xGlobal * 0.0003f, zGlobal * 0.0003f);
@@ -512,13 +513,37 @@ public partial class Chunk_Serveur : RefCounted
 		poidsBase = poidsBase * poidsBase * (3f - 2f * poidsBase);
 		float hauteurHaut = 118f + hTier2 + hMontagnes;
 		int hauteurBase = (int)(rampBase * poidsBase + hauteurHaut * (1f - poidsBase));
+
+		// Macro-océan rare: grandes cuvettes marines avec quelques îles éparses.
+		float oceanMacro = _noiseErosion.GetNoise2D(xGlobal * 0.000085f + 12000f, zGlobal * 0.000085f + 12000f);
+		if (oceanMacro > 0.62f)
+		{
+			float tOcean = Mathf.Clamp((oceanMacro - 0.62f) / 0.38f, 0f, 1f);
+			float oceanSmooth = tOcean * tOcean * (3f - 2f * tOcean);
+			hauteurBase -= (int)(oceanSmooth * 48f);
+
+			// Îles rares dans l'océan (archipels sporadiques).
+			float ileMacro = _noiseSurface.GetNoise2D(xGlobal * 0.00042f + 21000f, zGlobal * 0.00042f + 21000f);
+			float ileDetail = _noiseErosion.GetNoise2D(xGlobal * 0.0018f + 26000f, zGlobal * 0.0018f + 26000f);
+			if (ileMacro > 0.70f && ileDetail > 0.78f)
+			{
+				float tIle = Mathf.Clamp((Mathf.Min(ileMacro, ileDetail) - 0.70f) / 0.30f, 0f, 1f);
+				float boostIle = 8f + (tIle * tIle * 30f);
+				hauteurBase += (int)boostIle;
+			}
+		}
+
 		float crevasseBrute = _noiseRivieres.GetNoise2D(xGlobal, zGlobal);
 		int profondeurEau = 0;
-		if (crevasseBrute > 0.12f)
+		// Zones boueuses/humides: plus de rivières (seuil abaissé + creusement un peu plus fort).
+		float tHumide = Mathf.Clamp((humiditeNorm - 0.56f) / 0.44f, 0f, 1f);
+		float seuilRiviere = Mathf.Lerp(0.12f, 0.045f, tHumide);
+		if (crevasseBrute > seuilRiviere)
 		{
-			float intensiteRiviera = (crevasseBrute - 0.12f) / 0.88f;
+			float intensiteRiviera = (crevasseBrute - seuilRiviere) / Mathf.Max(0.05f, 1f - seuilRiviere);
 			float tSmooth = intensiteRiviera * intensiteRiviera * (3f - 2f * intensiteRiviera);  // Descente très douce vers l'eau
-			profondeurEau = (int)(tSmooth * 22.0f);
+			float profondeurMax = Mathf.Lerp(22f, 30f, tHumide);
+			profondeurEau = (int)(tSmooth * profondeurMax);
 		}
 		return hauteurBase - profondeurEau;
 	}
@@ -650,6 +675,7 @@ public partial class Chunk_Serveur : RefCounted
 	{
 		float bruitNeige = _noiseNeige.GetNoise2D(xGlobal, zGlobal);
 		float bruitRoche = _noiseNeige.GetNoise2D(xGlobal + 500f, zGlobal);
+		float bruitDesert = _noiseHumiditeDetail.GetNoise2D(xGlobal * 1.9f + 17000f, zGlobal * 1.9f + 17000f);
 		int seuilNeigeLocal = SeuilNeigeBase + (int)(bruitNeige * 5f);   // 245-255
 		int seuilRocheLocal = SeuilMontagneRoche + (int)(bruitRoche * 8f); // 200-215
 		if (globalY >= seuilNeigeLocal) return 5;  // NEIGE
@@ -657,6 +683,9 @@ public partial class Chunk_Serveur : RefCounted
 		if (globalY <= NiveauPlage) return (humidite > 0.2f) ? (byte)7 : (byte)3;  // Plage : seuil doux
 		// Sable UNIQUEMENT quand très sec ET très chaud (temp + humidité liés logiquement)
 		if (temperature > 0.5f && humidite < -0.5f) return 3;  // Désert : sable
+		bool desertSableFort = temperature > 0.36f && humidite < -0.28f && bruitDesert > -0.05f;
+		bool desertSableModere = temperature > 0.26f && humidite < -0.22f && bruitDesert > 0.26f;
+		if (desertSableFort || desertSableModere) return 3;
 		// Plusieurs stades temp/hum avec seuils progressifs (transitions lentes)
 		if (temperature > 0.4f)  // Très chaud
 		{
@@ -664,6 +693,7 @@ public partial class Chunk_Serveur : RefCounted
 			if (humidite > 0.62f)
 				return _noiseHumiditeDetail.GetNoise2D(xGlobal * 1.7f + 400f, zGlobal * 1.7f + 400f) > 0.42f ? (byte)7 : (byte)1;
 			if (humidite > 0.4f) return 8;   // Argile humide
+			if (humidite < -0.18f && bruitDesert > -0.18f) return 3; // Désert chaud: sable dominant.
 			if (humidite > 0.1f) return 6;   // Terre aride
 			return 1;   // Sec mais pas assez pour sable → herbe jaunâtre (shader)
 		}
@@ -672,6 +702,7 @@ public partial class Chunk_Serveur : RefCounted
 			if (humidite > 0.60f)
 				return _noiseHumiditeDetail.GetNoise2D(xGlobal * 1.6f + 900f, zGlobal * 1.6f + 900f) > 0.46f ? (byte)7 : (byte)1;
 			if (humidite > 0.35f) return 8;
+			if (humidite < -0.30f && bruitDesert > 0.08f) return 3; // Désert tempéré chaud (sable en nappes).
 			if (humidite > 0.0f) return 6;
 			return 1;   // Sec → herbe (shader jaunâtre)
 		}

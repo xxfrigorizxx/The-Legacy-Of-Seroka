@@ -553,9 +553,7 @@ public partial class ArbreVivant : StaticBody3D
 			seuilRuptureBotanique *= facteurJeune;
 		}
 		if (hachettePrimitive106)
-			seuilRuptureBotanique *= 0.82f;
-		if (forceImpact < seuilRuptureBotanique)
-			return 0;
+			seuilRuptureBotanique *= 0.70f;
 
 		Vector3 hitLocal = GlobalTransform.AffineInverse() * pointImpactMonde;
 		float distAxis = Mathf.Sqrt(hitLocal.X * hitLocal.X + hitLocal.Z * hitLocal.Z);
@@ -568,6 +566,23 @@ public partial class ArbreVivant : StaticBody3D
 		float rayonAxe = hNormTronc < 1f / 3f ? 0.52f : (hNormTronc < 2f / 3f ? 0.46f : 0.40f);
 		bool estLeTronc = hitLocal.Y <= hTronc * 1.05f && distAxis < rayonAxe;
 		float epaisseurEstimee = estLeTronc ? epaisseurTronc : 0.05f;
+
+		// Hachette bien orientée : même si l'impact est faible, le tronc prend toujours des copeaux (progression garantie).
+		if (hachettePrimitive106 && estLeTronc && forceImpact < seuilRuptureBotanique)
+		{
+			float pvMaxTheorique = ResistanceMaxPourAge(AgeEnJours);
+			float degatsGarantis = Mathf.Max(1.9f, pvMaxTheorique * 0.009f);
+			ResistanceActuelle -= degatsGarantis;
+			if (ResistanceActuelle <= 0f)
+			{
+				DeclencherChuteArbre(directionFrappe);
+				return 2;
+			}
+			return 1;
+		}
+
+		if (forceImpact < seuilRuptureBotanique)
+			return 0;
 
 		// Roc / lame très épaisse : pas de taille fine sur tronc mature — sauf vraie hachette (tranchant + masse).
 		if (!hachettePrimitive106 && AgeEnJours >= 3 && epaisseurLame > 0.05f)
@@ -757,8 +772,12 @@ public partial class ArbreVivant : StaticBody3D
 		if (_observationRef == null || !GodotObject.IsInstanceValid(_observationRef))
 		{
 			Node scene = GetTree()?.CurrentScene;
+			_observationRef = GetViewport()?.GetCamera3D();
+			if (_observationRef == null || !GodotObject.IsInstanceValid(_observationRef))
+			{
 			_observationRef = scene?.GetNodeOrNull<Node3D>("Joueur/Camera3D")
 				?? scene?.GetNodeOrNull<Node3D>("Joueur");
+			}
 		}
 		return _observationRef != null && GodotObject.IsInstanceValid(_observationRef)
 			? _observationRef.GlobalPosition

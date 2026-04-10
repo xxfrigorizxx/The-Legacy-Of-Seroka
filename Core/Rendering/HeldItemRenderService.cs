@@ -5,6 +5,9 @@ public partial class Joueur
 {
     private void MettreAJourObjetEnMain()
     {
+        if (_objetEnMain == null || !GodotObject.IsInstanceValid(_objetEnMain))
+            return;
+
         var main = MainGaucheEstActive ? MainGauche : MainDroite;
         if (main.EstVide || !EstObjetAvecVisuel(main.ID))
         {
@@ -305,7 +308,7 @@ public partial class Joueur
             _objetEnMain.RotationDegrees = new Vector3(-6f + _rotationManuelleX, 25f + _rotationManuelleY, 0f + _rotationManuelleZ);
             return;
         }
-        if (main.ID == 200)
+        if (main.ID == 200 || main.ID == IdObjetRackBatons)
         {
             _objetEnMain.Mesh = null;
             _objetEnMain.MaterialOverride = null;
@@ -321,16 +324,20 @@ public partial class Joueur
                 _objetEnMain.RemoveMeta(MetaSignatureCeinture102);
             if (_objetEnMain.HasMeta(MetaSignatureCeinture104))
                 _objetEnMain.RemoveMeta(MetaSignatureCeinture104);
-            int sig = SignatureSlotAtelier200(main);
-            int prev = _objetEnMain.HasMeta(MetaSignatureAtelier200) ? (int)_objetEnMain.GetMeta(MetaSignatureAtelier200).AsInt32() : -1;
+            if (_objetEnMain.HasMeta(MetaSignatureRack109))
+                _objetEnMain.RemoveMeta(MetaSignatureRack109);
+            int sig = main.ID == 200 ? SignatureSlotAtelier200(main) : SignatureSlotRack109(main);
+            string cleSig = main.ID == 200 ? MetaSignatureAtelier200 : MetaSignatureRack109;
+            int prev = _objetEnMain.HasMeta(cleSig) ? (int)_objetEnMain.GetMeta(cleSig).AsInt32() : -1;
             bool manqueModele = _objetEnMain.FindChild("ModeleArme", true, false) == null;
             if (manqueModele || sig != prev)
             {
                 NettoyerModelesEnfants(_objetEnMain);
-                InstancierModeleAtelierPrimitif(_objetEnMain, main);
-                _objetEnMain.SetMeta(MetaSignatureAtelier200, sig);
+                if (main.ID == 200) InstancierModeleAtelierPrimitif(_objetEnMain, main);
+                else InstancierModeleRackBatons(_objetEnMain, main);
+                _objetEnMain.SetMeta(cleSig, sig);
             }
-            _objetEnMain.Scale = Vector3.One * 0.35f;
+            _objetEnMain.Scale = Vector3.One * (main.ID == 200 ? 0.35f : 0.42f);
             _objetEnMain.RotationDegrees = new Vector3(0 + _rotationManuelleX, 90 + _rotationManuelleY, 0 + _rotationManuelleZ);
             return;
         }
@@ -341,6 +348,8 @@ public partial class Joueur
             _objetEnMain.RemoveMeta(MetaSignatureHachette106);
         if (_objetEnMain.HasMeta(MetaSignatureAtelier200))
             _objetEnMain.RemoveMeta(MetaSignatureAtelier200);
+        if (_objetEnMain.HasMeta(MetaSignatureRack109))
+            _objetEnMain.RemoveMeta(MetaSignatureRack109);
         if (_objetEnMain.HasMeta(MetaSignatureCorde20))
             _objetEnMain.RemoveMeta(MetaSignatureCorde20);
         if (_objetEnMain.HasMeta(MetaSignatureTissu21))
@@ -690,7 +699,7 @@ public partial class Joueur
             meshNode.RotationDegrees = new Vector3(0f, 28f, 0f);
             return;
         }
-        if (slot.ID == 200)
+        if (slot.ID == 200 || slot.ID == IdObjetRackBatons)
         {
             meshNode.Mesh = null;
             meshNode.MaterialOverride = null;
@@ -706,16 +715,20 @@ public partial class Joueur
                 meshNode.RemoveMeta(MetaSignatureCeinture102);
             if (meshNode.HasMeta(MetaSignatureCeinture104))
                 meshNode.RemoveMeta(MetaSignatureCeinture104);
-            int sig = SignatureSlotAtelier200(slot);
-            int prev = meshNode.HasMeta(MetaSignatureAtelier200) ? (int)meshNode.GetMeta(MetaSignatureAtelier200).AsInt32() : -1;
+            if (meshNode.HasMeta(MetaSignatureRack109))
+                meshNode.RemoveMeta(MetaSignatureRack109);
+            int sig = slot.ID == 200 ? SignatureSlotAtelier200(slot) : SignatureSlotRack109(slot);
+            string cleSig = slot.ID == 200 ? MetaSignatureAtelier200 : MetaSignatureRack109;
+            int prev = meshNode.HasMeta(cleSig) ? (int)meshNode.GetMeta(cleSig).AsInt32() : -1;
             bool manque = meshNode.FindChild("ModeleArme", true, false) == null;
             if (manque || sig != prev)
             {
                 NettoyerModelesEnfants(meshNode);
-                InstancierModeleAtelierPrimitif(meshNode, slot);
-                meshNode.SetMeta(MetaSignatureAtelier200, sig);
+                if (slot.ID == 200) InstancierModeleAtelierPrimitif(meshNode, slot);
+                else InstancierModeleRackBatons(meshNode, slot);
+                meshNode.SetMeta(cleSig, sig);
             }
-            meshNode.Scale = Vector3.One * 0.8f;
+            meshNode.Scale = Vector3.One * (slot.ID == 200 ? 0.8f : 0.92f);
             meshNode.RotationDegrees = new Vector3(0f, 45f, 0f);
             return;
         }
@@ -726,6 +739,8 @@ public partial class Joueur
             meshNode.RemoveMeta(MetaSignatureHachette106);
         if (meshNode.HasMeta(MetaSignatureAtelier200))
             meshNode.RemoveMeta(MetaSignatureAtelier200);
+        if (meshNode.HasMeta(MetaSignatureRack109))
+            meshNode.RemoveMeta(MetaSignatureRack109);
         if (meshNode.HasMeta(MetaSignatureCorde20))
             meshNode.RemoveMeta(MetaSignatureCorde20);
         if (meshNode.HasMeta(MetaSignatureTissu21))

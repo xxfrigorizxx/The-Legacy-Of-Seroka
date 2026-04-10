@@ -1,0 +1,64 @@
+[gd_scene format=3 uid="uid://c3xvor615sane"]
+
+[ext_resource type="Script" uid="uid://bd888g1yguo4a" path="res://Joueur.cs" id="1_joueur"]
+[ext_resource type="PackedScene" uid="uid://rht2h3qy68qn" path="res://Modeles/Entites/Humain/humain.glb" id="2_humain"]
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape_jambe"]
+radius = 0.075
+height = 0.56
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape_corps"]
+radius = 0.19
+height = 0.4
+
+[sub_resource type="SphereShape3D" id="SphereShape_tete"]
+radius = 0.105
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape_bras"]
+radius = 0.055
+height = 0.34
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape_reference_rig"]
+radius = 0.4
+height = 1.65
+
+[node name="Joueur" type="CharacterBody3D" unique_id=510261729]
+script = ExtResource("1_joueur")
+ForcerBasCollisionLocalPourAlignementPieds = nan
+
+[node name="HitboxJambeG" type="CollisionShape3D" parent="." unique_id=1020862906]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.11, -0.44, 0)
+shape = SubResource("CapsuleShape_jambe")
+
+[node name="HitboxJambeD" type="CollisionShape3D" parent="." unique_id=521056790]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.11, -0.44, 0)
+shape = SubResource("CapsuleShape_jambe")
+
+[node name="HitboxCorps" type="CollisionShape3D" parent="." unique_id=115319990]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.12, 0)
+shape = SubResource("CapsuleShape_corps")
+
+[node name="HitboxTete" type="CollisionShape3D" parent="." unique_id=1790703886]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.58, 0)
+shape = SubResource("SphereShape_tete")
+
+[node name="HitboxBrasG" type="CollisionShape3D" parent="." unique_id=1882119853]
+transform = Transform3D(0.309017, 0.951057, 0, -0.951057, 0.309017, 0, 0, 0, 1, -0.27, 0.05, 0)
+shape = SubResource("CapsuleShape_bras")
+
+[node name="HitboxBrasD" type="CollisionShape3D" parent="." unique_id=1422937448]
+transform = Transform3D(0.309017, -0.951057, 0, 0.951057, 0.309017, 0, 0, 0, 1, 0.27, 0.05, 0)
+shape = SubResource("CapsuleShape_bras")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=876146706]
+shape = SubResource("CapsuleShape_reference_rig")
+disabled = true
+
+[node name="HumainRigRoot" parent="." unique_id=1874817993 instance=ExtResource("2_humain")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.357, -0.0030086637)
+
+[node name="Camera3D" type="Camera3D" parent="." unique_id=575999209]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.087361574, 0)
+
+[node name="RayCast3D" type="RayCast3D" parent="Camera3D" unique_id=933977458]
+target_position = Vector3(0, 0, -12)

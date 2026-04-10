@@ -52,6 +52,9 @@ public partial class Monde_Serveur : Node
 	[Export] public float BudgetMsSpawnArbresParTick = 0.90f;
 	/// <summary>Budget CPU de spawn pierres par tick (ms). Sécurité anti micro-freeze MMO.</summary>
 	[Export] public float BudgetMsSpawnPierresParTick = 0.70f;
+	[Export] public bool ModeAntiMicroFreezeStrict = true;
+	[Export] public float FacteurSpawnStrict = 0.72f;
+	[Export] public int RayonSecuriteTerrainReveilPierres = 1;
 	[Export] public bool ModeEssencesPartoutTemporaire = false;
 	[Export] public float RatioJungleModeTest = 0.35f;
 	/// <summary>Budget anti micro-freeze : limite de chunks workers intégrés par frame.</summary>
@@ -87,7 +90,8 @@ public partial class Monde_Serveur : Node
 	private float _tempsDepuisVerifDecharge;
 	private const float IntervalleEvaluationTectonique = 0.5f;
 	/// <summary>Tapis roulant décharge : au plus N chunks sauvegardés/déchargés par frame (évite lag).</summary>
-	private const int MaxChunksDechargeParTick = 2;
+	[Export] public int MaxChunksDechargeParTick = 2;
+	[Export] public float BudgetMsDechargeParTick = 0.80f;
 	private List<Vector2I> _chunksEnAttenteDecharge = new List<Vector2I>();
 	private FastNoiseLite _noiseTemperatureArbres;
 	private int _noiseTemperatureArbresSeed = int.MinValue;
@@ -96,6 +100,9 @@ public partial class Monde_Serveur : Node
 	private FastNoiseLite _noiseBiomeForetArbres;
 	private int _noiseBiomeForetArbresSeed = int.MinValue;
 	private readonly Queue<(Vector2I coord, Vector3 pos, int age, uint seed, byte indexBotanique, int joursRattrapage)> _fileSpawnArbres = new Queue<(Vector2I, Vector3, int, uint, byte, int)>();
+	private const int MagicArbresV2 = 0x5A4B3251;
+	private const int MagicArbresV3 = 0x5A4B3252;
+	private const int MagicArbresV4 = 0x5A4B3253;
 
 	private int CalculerBudgetSpawnAdaptatif(int budgetBase)
 	{
@@ -106,6 +113,28 @@ public partial class Monde_Serveur : Node
 		if (fps < 52f) return Mathf.Max(1, baseSafe / 2);
 		if (fps > 90f) return baseSafe + 1;
 		return baseSafe;
+	}
+
+	private float CalculerFacteurPressionSpawn()
+	{
+		float facteur = 1f;
+		float fps = (float)Engine.GetFramesPerSecond();
+		if (fps > 0f)
+		{
+			if (fps < 55f) facteur *= 0.82f;
+			if (fps < 48f) facteur *= 0.72f;
+			if (fps < 40f) facteur *= 0.58f;
+		}
+
+		int chargeObjets = _fileSpawnArbres.Count + _filePierresAInstancier.Count;
+		if (chargeObjets > 220) facteur *= 0.84f;
+		if (chargeObjets > 520) facteur *= 0.72f;
+		if (chargeObjets > 900) facteur *= 0.62f;
+
+		if (ModeAntiMicroFreezeStrict)
+			facteur *= Mathf.Clamp(FacteurSpawnStrict, 0.45f, 1f);
+
+		return Mathf.Clamp(facteur, 0.22f, 1f);
 	}
 	private const int PoolVariantesArbreParAge = 50;
 	private const int PoolAgesPregenArbre = 5;
@@ -174,6 +203,7 @@ public partial class Monde_Serveur : Node
 	public void SauvegarderMondeEntier()
 	{
 		GD.Print("ZERO-K : Lancement du Râle d'Agonie. Sauvegarde des Chunks modifiés...");
+		ForcerInstanciationArbresEnAttente();
 		int chunksSauves = 0;
 		foreach (var kvp in _chunks)
 		{
@@ -226,7 +256,7 @@ public partial class Monde_Serveur : Node
 				continue; // Chunk déjà ressuscité du disque — ignorer le résultat procédural.
 			if (!_chunks.ContainsKey(result.coord))
 				_chunks[result.coord] = result.chunk;
-			SpawnerArbresChunk(result.coord, result.chunk);
+			SpawnerArbresChunkAvecPrioriteSauvegarde(result.coord, result.chunk);
 			// Envoi client uniquement APRÈS stase remplie, sinon LibererRochesChunk trouve une liste vide
 			DeclencherEnsemencement(result.coord, result.chunk, TailleChunk, (coord, ch) =>
 				_fileEnvoiReseau.Enqueue(new ColisChunk { Coord = coord, Donnees = ch.ObtenirDonneesPourClient() }));
@@ -302,7 +332,7 @@ public partial class Monde_Serveur : Node
 
 				// BRANCHE COMMUNE : Chunk ressuscité. Pierres + Arbres. Spawn quand chunk demandé (visible écran).
 				_chunks[chunkCible] = chunkActuel;
-				SpawnerArbresChunk(chunkCible, chunkActuel);
+				SpawnerArbresChunkAvecPrioriteSauvegarde(chunkCible, chunkActuel);
 				if (!ChargerEtSpawnerPierresChunk(chunkCible))
 				{
 					// Attendre que l'ensemencement asynchrone finisse AVANT d'envoyer le chunk au réseau
@@ -330,12 +360,13 @@ public partial class Monde_Serveur : Node
 
 		// Réveil des pierres dormantes : quand joueur dans 2 chunks, le terrain est chargé → on dégèle
 		ReveillerPierresDansRayon();
+		float facteurPressionSpawn = CalculerFacteurPressionSpawn();
 
 		// Spawn progressif des ArbreVivant pour éviter les gros spikes au premier chargement.
 		int nArbres = 0;
-		int budgetArbresTick = CalculerBudgetSpawnAdaptatif(MaxArbresSpawnParTick);
+		int budgetArbresTick = Mathf.Max(1, Mathf.RoundToInt(CalculerBudgetSpawnAdaptatif(MaxArbresSpawnParTick) * facteurPressionSpawn));
 		ulong t0Arbres = Time.GetTicksUsec();
-		ulong budgetUsArbres = (ulong)Mathf.Max(200f, BudgetMsSpawnArbresParTick * 1000f);
+		ulong budgetUsArbres = (ulong)Mathf.Max(110f, BudgetMsSpawnArbresParTick * 1000f * facteurPressionSpawn);
 		while (nArbres < budgetArbresTick && _fileSpawnArbres.Count > 0)
 		{
 			if (Time.GetTicksUsec() - t0Arbres >= budgetUsArbres) break;
@@ -347,9 +378,9 @@ public partial class Monde_Serveur : Node
 
 		// Goutte-à-goutte : pierres chargées depuis disque, instanciées quand chunk dessiné à l'écran
 		int nPierres = 0;
-		int budgetPierresTick = CalculerBudgetSpawnAdaptatif(MaxPierresParFrame);
+		int budgetPierresTick = Mathf.Max(1, Mathf.RoundToInt(CalculerBudgetSpawnAdaptatif(MaxPierresParFrame) * Mathf.Clamp(facteurPressionSpawn * 0.95f, 0.2f, 1f)));
 		ulong t0Pierres = Time.GetTicksUsec();
-		ulong budgetUsPierres = (ulong)Mathf.Max(160f, BudgetMsSpawnPierresParTick * 1000f);
+		ulong budgetUsPierres = (ulong)Mathf.Max(95f, BudgetMsSpawnPierresParTick * 1000f * Mathf.Clamp(facteurPressionSpawn * 0.9f, 0.2f, 1f));
 		while (nPierres < budgetPierresTick && _filePierresAInstancier.Count > 0)
 		{
 			if (Time.GetTicksUsec() - t0Pierres >= budgetUsPierres) break;
@@ -519,7 +550,6 @@ public partial class Monde_Serveur : Node
 			return null;
 		}
 		ChargerFloreChunk(coord, chunk);
-		ChargerArbresChunk(coord, chunk);
 		return chunk;
 	}
 
@@ -837,6 +867,17 @@ public partial class Monde_Serveur : Node
 	/// <summary>Rayon en unités : pierres gelées se réveillent quand joueur entre (2 chunks = terrain chargé).</summary>
 	private float RayonActivationPierres => RAYON_ACTIVATION_PIERRES_CHUNKS * TailleChunk;
 
+	private bool TerrainChargeAutourPosition(Vector3 posMonde)
+	{
+		Vector2I c = Gestionnaire_Monde.WorldToChunkCoord(posMonde, TailleChunk);
+		int rayon = Mathf.Clamp(RayonSecuriteTerrainReveilPierres, 0, 2);
+		for (int dx = -rayon; dx <= rayon; dx++)
+			for (int dz = -rayon; dz <= rayon; dz++)
+				if (!_chunks.ContainsKey(new Vector2I(c.X + dx, c.Y + dz)))
+					return false;
+		return true;
+	}
+
 	/// <summary>Réveille les objets dynamiques dans le rayon, endort les lointains (charge CPU réduite côté serveur).</summary>
 	private void ReveillerPierresDansRayon()
 	{
@@ -855,10 +896,18 @@ public partial class Monde_Serveur : Node
 			float distCarre = posRb.DistanceSquaredTo(posJoueur);
 			if (distCarre <= rayonCarre)
 			{
-				if (id != 200)
+				bool terrainPret = TerrainChargeAutourPosition(posRb);
+				if (id != 200 && terrainPret)
 				{
 					rb.Freeze = false; // Réveiller : gravité + collisions
 					rb.Sleeping = false;
+				}
+				else if (id != 200)
+				{
+					rb.LinearVelocity = Vector3.Zero;
+					rb.AngularVelocity = Vector3.Zero;
+					rb.Sleeping = true;
+					rb.Freeze = true;
 				}
 			}
 			else
@@ -977,7 +1026,14 @@ public partial class Monde_Serveur : Node
 	/// <summary>Sauvegarde les ArbreVivant dans ce chunk. Fichier chunk_X_Y_arbres.bin.</summary>
 	private void SauvegarderArbresChunk(Vector2I coord)
 	{
-		if (_parentPourArbres == null) return;
+		// Pendant la fermeture, cette méthode peut être rappelée alors que le parent d'arbres
+		// n'est plus dans l'arbre de scène. Dans cet état, la collecte retourne 0 et
+		// écrase les fichiers *_arbres.bin avec un inventaire vide.
+		if (_parentPourArbres == null
+			|| !GodotObject.IsInstanceValid(_parentPourArbres)
+			|| !_parentPourArbres.IsInsideTree())
+			return;
+		ForcerInstanciationArbresEnAttente(coord);
 		float xMin = coord.X * TailleChunk;
 		float xMax = (coord.X + 1) * TailleChunk;
 		float zMin = coord.Y * TailleChunk;
@@ -998,9 +1054,11 @@ public partial class Monde_Serveur : Node
 		{
 			using (var w = new BinaryWriter(File.Open(chemin, FileMode.Create)))
 			{
-				w.Write(0x5A4B3252); // MAGIC V3 = temps + index botanique
+				w.Write(MagicArbresV4); // MAGIC V4 = jour + horodatage réel + index botanique
 				int jourActuel = GameState.Instance != null ? GameState.Instance.JourAbsolu : 0;
+				long unixNow = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
 				w.Write(jourActuel);
+				w.Write(unixNow);
 				w.Write(arbres.Count);
 				foreach (var (pos, age, indexBotanique) in arbres)
 				{
@@ -1104,6 +1162,13 @@ public partial class Monde_Serveur : Node
 		}
 	}
 
+	/// <summary>Priorité au disque: si un save arbres existe, on le charge; sinon fallback procédural du chunk.</summary>
+	private void SpawnerArbresChunkAvecPrioriteSauvegarde(Vector2I coord, Chunk_Serveur chunk)
+	{
+		if (!ChargerArbresChunk(coord, chunk))
+			SpawnerArbresChunk(coord, chunk);
+	}
+
 	private void InstancierArbreVivant(Vector3 pos, int age, uint seed, byte indexBotanique, int joursRattrapage)
 	{
 		if (_parentPourArbres == null) return;
@@ -1121,26 +1186,29 @@ public partial class Monde_Serveur : Node
 	}
 
 	/// <summary>Charge et spawn les arbres depuis disque. Rattrape la croissance du temps passé hors-ligne.</summary>
-	private void ChargerArbresChunk(Vector2I coord, Chunk_Serveur chunk)
+	private bool ChargerArbresChunk(Vector2I coord, Chunk_Serveur chunk)
 	{
-		if (_parentPourArbres == null) return;
+		if (_parentPourArbres == null) return false;
 		string nom = GameState.Instance?.NomMondeActuel ?? "MonMonde";
 		string chemin = ProjectSettings.GlobalizePath($"user://saves/{nom}/chunks/chunk_{coord.X}_{coord.Y}_arbres.bin");
-		if (!File.Exists(chemin)) return;
+		if (!File.Exists(chemin)) return false;
 		try
 		{
 			using (var r = new BinaryReader(File.Open(chemin, FileMode.Open, System.IO.FileAccess.Read, FileShare.Read)))
 			{
 				int magic = r.ReadInt32();
 				int jourDeSauvegarde = 0;
-				bool formatV3 = magic == 0x5A4B3252;
-				if (magic == 0x5A4B3251 || formatV3) // V2/V3 avec temps
+				long unixSauvegarde = 0L;
+				bool formatV3 = magic == MagicArbresV3;
+				bool formatV4 = magic == MagicArbresV4;
+				if (magic == MagicArbresV2 || formatV3 || formatV4) // V2+ avec jour de sauvegarde
 					jourDeSauvegarde = r.ReadInt32();
-				else if (magic != 0x5A4B3250)
-					return; // Format inconnu
+				if (formatV4)
+					unixSauvegarde = r.ReadInt64();
+				else if (magic != 0x5A4B3250 && !formatV3 && magic != MagicArbresV2)
+					return false; // Format inconnu
 
-				int jourActuel = GameState.Instance != null ? GameState.Instance.JourAbsolu : 0;
-				int joursEcoules = Mathf.Max(0, jourActuel - jourDeSauvegarde);
+				int joursEcoules = CalculerJoursRattrapageArbres(jourDeSauvegarde, unixSauvegarde);
 				int count = r.ReadInt32();
 
 				for (int i = 0; i < count; i++)
@@ -1148,10 +1216,10 @@ public partial class Monde_Serveur : Node
 					int gx = r.ReadInt32(), gy = r.ReadInt32(), gz = r.ReadInt32();
 					int ageSauvegarde;
 					byte indexBotaniqueSauvegarde;
-					if (magic == 0x5A4B3251 || formatV3)
+					if (magic == MagicArbresV2 || formatV3 || formatV4)
 					{
 						ageSauvegarde = r.ReadInt32();
-						indexBotaniqueSauvegarde = formatV3 ? r.ReadByte() : LSystem_Botanique.IndexChene;
+						indexBotaniqueSauvegarde = (formatV3 || formatV4) ? r.ReadByte() : LSystem_Botanique.IndexChene;
 					}
 					else
 					{
@@ -1164,12 +1232,49 @@ public partial class Monde_Serveur : Node
 					Vector3 pos = new Vector3(gx + 0.5f, gy - 0.5f, gz + 0.5f);
 					uint seedArbre = (uint)((gx * 73856093) ^ (gz * 19349663));
 					int ageCharge = Mathf.Max(1, ageSauvegarde);
-					byte indexBotanique = formatV3 ? indexBotaniqueSauvegarde : DeterminerIndexBotaniqueArbre(seedArbre, gx, gz);
+					byte indexBotanique = (formatV3 || formatV4) ? indexBotaniqueSauvegarde : DeterminerIndexBotaniqueArbre(seedArbre, gx, gz);
 					_fileSpawnArbres.Enqueue((coord, pos, ageCharge, seedArbre, indexBotanique, joursEcoules));
 				}
 			}
+			return true;
 		}
-		catch (Exception ex) { GD.PrintErr($"ZERO-K : Erreur chargement arbres chunk {coord} : {ex.Message}"); }
+		catch (Exception ex)
+		{
+			GD.PrintErr($"ZERO-K : Erreur chargement arbres chunk {coord} : {ex.Message}");
+			return false;
+		}
+	}
+
+	private int CalculerJoursRattrapageArbres(int jourDeSauvegarde, long unixSauvegarde)
+	{
+		int jourActuel = GameState.Instance != null ? GameState.Instance.JourAbsolu : 0;
+		int joursJeu = Mathf.Max(0, jourActuel - jourDeSauvegarde);
+		if (unixSauvegarde <= 0L) return joursJeu;
+		long unixNow = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+		long deltaSec = Math.Max(0L, unixNow - unixSauvegarde);
+		int joursReels = (int)(deltaSec / 86400L);
+		return Mathf.Max(joursJeu, joursReels);
+	}
+
+	/// <summary>Vide la file de spawn arbres avant sauvegarde pour éviter les fichiers vides lors d'un reload rapide.</summary>
+	private void ForcerInstanciationArbresEnAttente(Vector2I? filtreCoord = null)
+	{
+		if (_fileSpawnArbres.Count == 0) return;
+		var restant = new Queue<(Vector2I coord, Vector3 pos, int age, uint seed, byte indexBotanique, int joursRattrapage)>();
+		while (_fileSpawnArbres.Count > 0)
+		{
+			var a = _fileSpawnArbres.Dequeue();
+			bool coordOk = !filtreCoord.HasValue || a.coord == filtreCoord.Value;
+			if (!coordOk)
+			{
+				restant.Enqueue(a);
+				continue;
+			}
+			if (!_chunks.ContainsKey(a.coord)) continue;
+			InstancierArbreVivant(a.pos, a.age, a.seed, a.indexBotanique, a.joursRattrapage);
+		}
+		while (restant.Count > 0)
+			_fileSpawnArbres.Enqueue(restant.Dequeue());
 	}
 
 	/// <summary>Retire du monde les ArbreVivant dont la position est dans le chunk (décharge).</summary>
@@ -1571,9 +1676,14 @@ public partial class Monde_Serveur : Node
 	private void ProcesserDechargeProgressive()
 	{
 		if (_chunksEnAttenteDecharge.Count == 0 || _onOrdonnerDestructionChunk == null) return;
+		float facteurPression = CalculerFacteurPressionSpawn();
+		int budgetChunks = Mathf.Max(1, Mathf.RoundToInt(CalculerBudgetSpawnAdaptatif(Mathf.Max(1, MaxChunksDechargeParTick)) * Mathf.Clamp(facteurPression * 0.9f, 0.2f, 1f)));
+		ulong t0 = Time.GetTicksUsec();
+		ulong budgetUs = (ulong)Mathf.Max(140f, BudgetMsDechargeParTick * 1000f * Mathf.Clamp(facteurPression, 0.2f, 1f));
 		int traites = 0;
-		while (traites < MaxChunksDechargeParTick && _chunksEnAttenteDecharge.Count > 0)
+		while (traites < budgetChunks && _chunksEnAttenteDecharge.Count > 0)
 		{
+			if (Time.GetTicksUsec() - t0 >= budgetUs) break;
 			Vector2I coord = _chunksEnAttenteDecharge[0];
 			_chunksEnAttenteDecharge.RemoveAt(0);
 			if (_chunks.TryGetValue(coord, out var chunk))
@@ -1581,6 +1691,7 @@ public partial class Monde_Serveur : Node
 				chunk.SauvegarderChunkSurDisque();
 				SauvegarderFloreChunk(coord, chunk);
 				SauvegarderPierresChunk(coord);
+				ForcerInstanciationArbresEnAttente(coord);
 				SauvegarderArbresChunk(coord);
 				RetirerPierresChunk(coord);
 				RetirerArbresChunk(coord);

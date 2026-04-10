@@ -3,6 +3,11 @@ public partial class Joueur
     /// <summary>Analyse la grille craft ; le détail des recettes est dans <see cref="Atlas_Matiere.EvaluerRecette"/>.</summary>
     public void VerifierRecettes()
     {
+        if (StockageRackBatonsOuvert)
+        {
+            SlotResultatCraft = new SlotInventaire();
+            return;
+        }
         SlotInventaire[] g = ObtenirGrilleCraftAffichee();
         if (g == null) return;
         SlotResultatCraft = Atlas_Matiere.EvaluerRecette(g, CraftGrille3x3AuTable);

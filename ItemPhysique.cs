@@ -272,6 +272,19 @@ public partial class ItemPhysique : RigidBody3D
 			FreezeMode = FreezeModeEnum.Static;
 			return;
 		}
+		if (ID_Objet == Joueur.IdObjetRackBatons)
+		{
+			Mass = 1200f;
+			GravityScale = 0f;
+			ResistanceActuelle = 65f;
+			Scale = Vector3.One;
+			LinearVelocity = Vector3.Zero;
+			AngularVelocity = Vector3.Zero;
+			Sleeping = true;
+			Freeze = true;
+			FreezeMode = FreezeModeEnum.Static;
+			return;
+		}
 
 		if (visuel == null || hitbox == null) return;
 

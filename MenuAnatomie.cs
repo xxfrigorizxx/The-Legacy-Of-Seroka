@@ -23,6 +23,7 @@ public partial class MenuAnatomie : Control
 
 	private Label _lblMainGauche;
 	private Label _lblMainDroite;
+	private Label _lblModeRack;
 	private bool _abonneViewport;
 	private SubViewportContainer _vpMenuGauche;
 	private SubViewportContainer _vpMenuDroite;
@@ -357,6 +358,17 @@ public partial class MenuAnatomie : Control
 			var g = _joueurRef.ObtenirGrilleCraftAffichee();
 			if (g == null || craftIdx >= g.Length)
 				return;
+            if (_joueurRef.StockageRackBatonsOuvert)
+            {
+                TraiterClicRackBatons(ref _joueurRef.RefSlotCraft(craftIdx), clicGauche, clicDroit);
+                if (_joueurRef.RackBatonsOuvert != null && GodotObject.IsInstanceValid(_joueurRef.RackBatonsOuvert))
+                    _joueurRef.SynchroniserVisuelRackBatons(_joueurRef.RackBatonsOuvert);
+                _joueurRef.VerifierRecettes();
+                GetViewport()?.SetInputAsHandled();
+                _joueurRef.RafraichirHUD();
+                RafraichirMenu();
+                return;
+            }
 			InteragirCurseurAvecSlot(ref _joueurRef.RefSlotCraft(craftIdx), clicGauche, clicDroit);
 			_joueurRef.VerifierRecettes();
 		}
@@ -392,13 +404,90 @@ public partial class MenuAnatomie : Control
 		{
 			int capCeinture = Joueur.ObtenirCapaciteCeintureStockage(_joueurRef.EquipementCeinture);
 			if (!_joueurRef.ACeintureSacochesEquipe() || craftIdx < 0 || craftIdx >= capCeinture) return;
-			InteragirCurseurAvecSlot(ref _joueurRef.RefSlotCeintureStockage(craftIdx), clicGauche, clicDroit, slotCeintureStockage: true);
+			InteragirCurseurAvecSlot(ref _joueurRef.RefSlotCeintureStockage(craftIdx), clicGauche, clicDroit, slotCeintureStockage: true, indexSlotCeinture: craftIdx);
 		}
 		else
 			return;
 
 		GetViewport()?.SetInputAsHandled();
 		_joueurRef.RafraichirHUD();
+	}
+
+	private int CompterQuantiteTotaleRack()
+	{
+		if (_joueurRef == null || !_joueurRef.StockageRackBatonsOuvert) return 0;
+		return _joueurRef.CompterQuantiteRackBatons();
+	}
+
+	private static bool EstItemRackBatons(SlotInventaire s) => Joueur.EstSlotStockableRackBatons(s);
+
+	private void DeposerDepuisCurseurVersRack(ref SlotInventaire destination, int quantiteSouhaitee)
+	{
+		if (_joueurRef == null || _curseurMenu.EstVide || !EstItemRackBatons(_curseurMenu)) return;
+		int qCur = Joueur.ObtenirQuantiteSlot(_curseurMenu);
+		if (qCur <= 0) return;
+		int espaceGlobal = Mathf.Max(0, 30 - CompterQuantiteTotaleRack());
+		if (espaceGlobal <= 0) return;
+
+		if (destination.EstVide)
+		{
+			int move = Mathf.Min(Mathf.Min(qCur, quantiteSouhaitee), Mathf.Min(espaceGlobal, 30));
+			if (move <= 0) return;
+			destination = _curseurMenu;
+			destination.Quantite = move;
+			if (qCur - move <= 0) _curseurMenu = new SlotInventaire();
+			else _curseurMenu.Quantite = qCur - move;
+			return;
+		}
+
+		if (!Joueur.SontEmpilables(destination, _curseurMenu)) return;
+		int qDst = Joueur.ObtenirQuantiteSlot(destination);
+		int moveStack = Mathf.Min(Mathf.Min(qCur, quantiteSouhaitee), Mathf.Min(espaceGlobal, 30 - qDst));
+		if (moveStack <= 0) return;
+		destination.Quantite = qDst + moveStack;
+		if (qCur - moveStack <= 0) _curseurMenu = new SlotInventaire();
+		else _curseurMenu.Quantite = qCur - moveStack;
+	}
+
+	private void TraiterClicRackBatons(ref SlotInventaire slotRack, bool clicGauche, bool clicDroit)
+	{
+		// Rack dédié: uniquement bâtons/branches (ID 30/32), capacité globale 30 unités, dépôt partiel intelligent.
+		if (clicGauche)
+		{
+			if (_curseurMenu.EstVide)
+			{
+				if (!slotRack.EstVide)
+				{
+					_curseurMenu = slotRack;
+					_curseurMenu.Quantite = Joueur.ObtenirQuantiteSlot(_curseurMenu);
+					slotRack = new SlotInventaire();
+				}
+			}
+			else
+			{
+				DeposerDepuisCurseurVersRack(ref slotRack, int.MaxValue);
+			}
+			return;
+		}
+
+		if (clicDroit)
+		{
+			if (_curseurMenu.EstVide)
+			{
+				if (!slotRack.EstVide)
+				{
+					int q = Joueur.ObtenirQuantiteSlot(slotRack);
+					_curseurMenu = slotRack;
+					_curseurMenu.Quantite = 1;
+					if (q <= 1) slotRack = new SlotInventaire();
+					else slotRack.Quantite = q - 1;
+				}
+			}
+			else
+			{
+				DeposerDepuisCurseurVersRack(ref slotRack, 1);
+			}
+		}
 	}
 
 	private static SlotInventaire CopierSlotUnitaire(SlotInventaire src)
@@ -416,32 +505,32 @@ public partial class MenuAnatomie : Control
 		return Joueur.EstSacTier0Liane(_joueurRef.EquipementSacDos) ? 2 : 1;
 	}
 
-	private int ObtenirMultiplicateurPileSlotCeinture()
+	private int ObtenirMultiplicateurPileSlotCeinture(int indexSlotCeinture)
 	{
 		if (_joueurRef == null || !_joueurRef.ACeintureSacochesEquipe()) return 1;
-		return Joueur.EstVarianteLiane(_joueurRef.EquipementCeinture) ? 2 : 1;
+		return Joueur.ObtenirMultiplicateurPileCeintureSlot(_joueurRef.EquipementCeinture, indexSlotCeinture);
 	}
 
-	private int ObtenirPileMaxContexte(SlotInventaire slot, bool slotSacStockage, bool slotCeintureStockage)
+	private int ObtenirPileMaxContexte(SlotInventaire slot, bool slotSacStockage, bool slotCeintureStockage, int indexSlotCeinture = -1)
 	{
 		int max = Joueur.ObtenirPileMax(slot);
 		if (slotSacStockage) max *= ObtenirMultiplicateurPileSlotSac();
-		if (slotCeintureStockage) max *= ObtenirMultiplicateurPileSlotCeinture();
+		if (slotCeintureStockage) max *= ObtenirMultiplicateurPileSlotCeinture(indexSlotCeinture);
 		return max;
 	}
 
-	private void InteragirCurseurAvecSlot(ref SlotInventaire slot, bool clicGauche, bool clicDroit, bool slotSacStockage = false, bool slotCeintureStockage = false)
+	private void InteragirCurseurAvecSlot(ref SlotInventaire slot, bool clicGauche, bool clicDroit, bool slotSacStockage = false, bool slotCeintureStockage = false, int indexSlotCeinture = -1)
 	{
 		if (clicGauche)
 		{
-			InteractionClicGauche(ref slot, slotSacStockage, slotCeintureStockage);
+			InteractionClicGauche(ref slot, slotSacStockage, slotCeintureStockage, indexSlotCeinture);
 			return;
 		}
 		if (clicDroit)
-			InteractionClicDroit(ref slot, slotSacStockage, slotCeintureStockage);
+			InteractionClicDroit(ref slot, slotSacStockage, slotCeintureStockage, indexSlotCeinture);
 	}
 
-	private void InteractionClicGauche(ref SlotInventaire slot, bool slotSacStockage, bool slotCeintureStockage)
+	private void InteractionClicGauche(ref SlotInventaire slot, bool slotSacStockage, bool slotCeintureStockage, int indexSlotCeinture)
 	{
 		if (_curseurMenu.EstVide)
 		{
@@ -457,7 +546,7 @@ public partial class MenuAnatomie : Control
 			_curseurMenu = new SlotInventaire();
 			return;
 		}
-		int max = ObtenirPileMaxContexte(slot, slotSacStockage, slotCeintureStockage);
+		int max = ObtenirPileMaxContexte(slot, slotSacStockage, slotCeintureStockage, indexSlotCeinture);
 		if (PeutEmpiler(slot, _curseurMenu, max))
 		{
 			int qDst = Joueur.ObtenirQuantiteSlot(slot);
@@ -480,7 +569,7 @@ public partial class MenuAnatomie : Control
 		slot.Quantite = Joueur.ObtenirQuantiteSlot(slot);
 	}
 
-	private void InteractionClicDroit(ref SlotInventaire slot, bool slotSacStockage, bool slotCeintureStockage)
+	private void InteractionClicDroit(ref SlotInventaire slot, bool slotSacStockage, bool slotCeintureStockage, int indexSlotCeinture)
 	{
 		if (_curseurMenu.EstVide)
 		{
@@ -502,7 +591,7 @@ public partial class MenuAnatomie : Control
 			else _curseurMenu.Quantite = qSrc;
 			return;
 		}
-		int max = ObtenirPileMaxContexte(slot, slotSacStockage, slotCeintureStockage);
+		int max = ObtenirPileMaxContexte(slot, slotSacStockage, slotCeintureStockage, indexSlotCeinture);
 		if (!PeutEmpiler(slot, _curseurMenu, max)) return;
 		int qDst = Joueur.ObtenirQuantiteSlot(slot);
 		if (qDst >= max) return;
@@ -909,6 +998,20 @@ public partial class MenuAnatomie : Control
 		ResoudreSlotResultatCraft();
 		if (SlotResultatCraft != null)
 		{
+			bool modeRack = _joueurRef.StockageRackBatonsOuvert;
+			SlotResultatCraft.Visible = !modeRack;
+			if (modeRack)
+			{
+				if (_meshPreviewResultatCraft != null)
+				{
+					_meshPreviewResultatCraft.Mesh = null;
+					_meshPreviewResultatCraft.MaterialOverride = null;
+				}
+				if (_lblResultatCraft != null)
+					_lblResultatCraft.Visible = false;
+				return;
+			}
+
 			if (_vpResultatCraft == null && GodotObject.IsInstanceValid(SlotResultatCraft))
 			{
 				_meshPreviewResultatCraft = CreerViewportPreviewDansSlot(SlotResultatCraft, "VpResultatCraft", out _vpResultatCraft);
@@ -962,6 +1065,47 @@ public partial class MenuAnatomie : Control
 		// Stop par défaut : le label recouvre le Panel et bloquait GuiInput (craft + mains).
 		lbl.MouseFilter = Control.MouseFilterEnum.Ignore;
 		return lbl;
+	}
+
+	private void MettreAJourEnteteModeRack()
+	{
+		if (_joueurRef == null) return;
+		ResoudreGrilleAssemblage();
+		if (GrilleAssemblage?.GetParent() is not Panel cadre) return;
+
+		if (_lblModeRack == null || !GodotObject.IsInstanceValid(_lblModeRack))
+		{
+			_lblModeRack = cadre.GetNodeOrNull<Label>("LabelModeRack");
+			if (_lblModeRack == null)
+			{
+				_lblModeRack = new Label
+				{
+					Name = "LabelModeRack",
+					HorizontalAlignment = HorizontalAlignment.Center,
+					VerticalAlignment = VerticalAlignment.Center
+				};
+				_lblModeRack.SetAnchorsPreset(Control.LayoutPreset.TopWide);
+				_lblModeRack.OffsetLeft = 0;
+				_lblModeRack.OffsetRight = 0;
+				_lblModeRack.OffsetTop = -28;
+				_lblModeRack.OffsetBottom = -6;
+				_lblModeRack.AddThemeFontSizeOverride("font_size", 14);
+				_lblModeRack.AddThemeColorOverride("font_outline_color", Colors.Black);
+				_lblModeRack.AddThemeConstantOverride("outline_size", 3);
+				cadre.AddChild(_lblModeRack);
+			}
+		}
+
+		if (_joueurRef.StockageRackBatonsOuvert)
+		{
+			int total = _joueurRef.CompterQuantiteRackBatons();
+			_lblModeRack.Text = $"Stockage Rack a batons  [{total}/30]";
+			_lblModeRack.Visible = true;
+		}
+		else
+		{
+			_lblModeRack.Visible = false;
+		}
 	}
 
 	private Label TrouverOuCreerLabelQuantite(Panel parent)
@@ -1357,6 +1501,8 @@ public partial class MenuAnatomie : Control
 			{
 				_joueurRef.CraftGrille3x3AuTable = false;
 				_joueurRef.AtelierPlanTravailOuvert = null;
+				_joueurRef.StockageRackBatonsOuvert = false;
+				_joueurRef.RackBatonsOuvert = null;
 			}
 		}
 
@@ -1479,6 +1625,9 @@ public partial class MenuAnatomie : Control
 		}
 
 		AppliquerDispositionGrilleCraft();
+		MettreAJourEnteteModeRack();
+		if (_joueurRef.StockageRackBatonsOuvert && _joueurRef.RackBatonsOuvert != null && GodotObject.IsInstanceValid(_joueurRef.RackBatonsOuvert))
+			_joueurRef.SynchroniserVisuelRackBatons(_joueurRef.RackBatonsOuvert);
 
 		if (ObtenirGrilleSac() is GridContainer grilleSac)
 		{

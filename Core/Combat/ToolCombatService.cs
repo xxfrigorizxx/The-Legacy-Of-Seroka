@@ -8,6 +8,8 @@ public partial class Joueur
     private const float IntervalleParticulesMinageMainNue = 0.12f;
     private const float DureeRecuperationAtelierMainNue = 5.0f;
     private const float DureeRecuperationAtelierHachette = 2.85f;
+    private const float DureeRecuperationRackMainNue = 2.8f;
+    private const float DureeRecuperationRackHachette = 1.25f;
     private const float IntervalleParticulesRecuperationAtelier = 0.14f;
     private float _progressionMinageMainNue;
     private float _cooldownParticulesMinageMainNue;
@@ -297,7 +299,7 @@ public partial class Joueur
         var item = objetTouche as ItemPhysique
             ?? (objetTouche as Node)?.GetParent() as ItemPhysique
             ?? (objetTouche as Node)?.GetNodeOrNull<ItemPhysique>("ItemPhysique");
-        if (item == null || item.ID_Objet != 200) return false;
+        if (item == null || (item.ID_Objet != 200 && item.ID_Objet != IdObjetRackBatons)) return false;
         atelier = item;
         return true;
     }
@@ -306,14 +308,15 @@ public partial class Joueur
     {
         return new SlotInventaire
         {
-            ID = 200,
+            ID = atelier != null ? atelier.ID_Objet : 200,
             IndexBotanique = atelier != null ? atelier.IndexBotanique : LSystem_Botanique.IndexChene,
             IndexMorphologique = atelier != null ? atelier.IndexCacheMemoire : 0,
             IndexChimique = atelier != null ? atelier.IndexChimique : 0,
             IndexTaille = 0,
             ScaleEclat = Vector3.One,
             EstUnEclat = false,
-            Quantite = 1
+            Quantite = 1,
+            CleConteneur = (atelier != null && atelier.HasMeta("CleConteneur")) ? atelier.GetMeta("CleConteneur").AsString() : ""
         };
     }
 
@@ -488,7 +491,10 @@ public partial class Joueur
                 EmmettreParticulesRecuperationAtelier(pAtelier, nAtelier);
             }
 
-            float duree = mainVide ? DureeRecuperationAtelierMainNue : DureeRecuperationAtelierHachette;
+            bool estRack = atelier.ID_Objet == IdObjetRackBatons;
+            float duree = estRack
+                ? (mainVide ? DureeRecuperationRackMainNue : DureeRecuperationRackHachette)
+                : (mainVide ? DureeRecuperationAtelierMainNue : DureeRecuperationAtelierHachette);
             if (_progressionRecuperationAtelier < duree)
                 return;
 
@@ -497,9 +503,13 @@ public partial class Joueur
                 ReinitialiserMinageMainNueProgression();
                 return;
             }
+            if (AtelierPlanTravailOuvert == atelier) AtelierPlanTravailOuvert = null;
+            if (RackBatonsOuvert == atelier) RackBatonsOuvert = null;
+            if (StockageRackBatonsOuvert && RackBatonsOuvert == null)
+                StockageRackBatonsOuvert = false;
             atelier.QueueFree();
             RafraichirHUD();
-            GD.Print("ZERO-K : Atelier récupéré dans l'inventaire.");
+            GD.Print(estRack ? "ZERO-K : Rack à bâtons récupéré dans l'inventaire." : "ZERO-K : Atelier récupéré dans l'inventaire.");
             ReinitialiserMinageMainNueProgression();
             return;
         }
@@ -776,28 +786,35 @@ public partial class Joueur
         if (_objetEnMain == null) return;
         bool visuelEnMain = _objetEnMain.Mesh != null || _objetEnMain.FindChild("ModeleArme", true, false) != null;
         if (!visuelEnMain) return;
+        ImpulserPoseBrasFrappe(type);
         _tweenFrappe?.Kill();
         _tweenFrappe = CreateTween();
+        const float RalentissementFrappe = 1.10f; // +10%
+        float dureeCoup = 0.09f * RalentissementFrappe;
+        float dureeRetour = 0.11f * RalentissementFrappe;
 
         MettreAJourObjetEnMain();
 
-        Vector3 posCible = _objetEnMain.Position;
-        Vector3 rotCible = _objetEnMain.RotationDegrees;
+        Vector3 posBase = _objetEnMain.Position;
+        Vector3 rotBase = _objetEnMain.RotationDegrees;
+        Vector3 posCible = posBase;
+        Vector3 rotCible = rotBase;
 
-        if (type == TypeMouvementFrappe.Estoc) { posCible.Z -= 0.5f; rotCible.X -= 20f; }
-        else if (type == TypeMouvementFrappe.DeHautEnBas) { posCible.Y -= 0.4f; rotCible.X -= 70f; }
-        else if (type == TypeMouvementFrappe.DeBasEnHaut) { posCible.Y += 0.4f; rotCible.X += 70f; }
-        else if (type == TypeMouvementFrappe.GaucheADroite) { posCible.X += 0.4f; rotCible.Y -= 70f; rotCible.Z -= 45f; }
-        else if (type == TypeMouvementFrappe.DroiteAGauche) { posCible.X -= 0.4f; rotCible.Y += 70f; rotCible.Z += 45f; }
+        if (type == TypeMouvementFrappe.Estoc) { posCible.Z -= 0.26f; rotCible.X -= 12f; }
+        else if (type == TypeMouvementFrappe.DeHautEnBas) { posCible.Y -= 0.18f; rotCible.X -= 36f; }
+        else if (type == TypeMouvementFrappe.DeBasEnHaut) { posCible.Y += 0.16f; rotCible.X += 30f; }
+        else if (type == TypeMouvementFrappe.GaucheADroite) { posCible.X += 0.20f; rotCible.Y -= 34f; rotCible.Z -= 20f; }
+        else if (type == TypeMouvementFrappe.DroiteAGauche) { posCible.X -= 0.20f; rotCible.Y += 34f; rotCible.Z += 20f; }
 
-        _tweenFrappe.TweenProperty(_objetEnMain, "position", posCible, 0.08f).SetTrans(Tween.TransitionType.Sine).SetEase(Tween.EaseType.Out);
-        _tweenFrappe.Parallel().TweenProperty(_objetEnMain, "rotation_degrees", rotCible, 0.08f).SetTrans(Tween.TransitionType.Sine).SetEase(Tween.EaseType.Out);
-        _tweenFrappe.TweenCallback(Callable.From(ReposerObjetEnMainApresFrappe)).SetDelay(0.15f);
+        _tweenFrappe.TweenProperty(_objetEnMain, "position", posCible, dureeCoup).SetTrans(Tween.TransitionType.Cubic).SetEase(Tween.EaseType.Out);
+        _tweenFrappe.Parallel().TweenProperty(_objetEnMain, "rotation_degrees", rotCible, dureeCoup).SetTrans(Tween.TransitionType.Cubic).SetEase(Tween.EaseType.Out);
+        _tweenFrappe.TweenProperty(_objetEnMain, "position", posBase, dureeRetour).SetTrans(Tween.TransitionType.Sine).SetEase(Tween.EaseType.InOut);
+        _tweenFrappe.Parallel().TweenProperty(_objetEnMain, "rotation_degrees", rotBase, dureeRetour).SetTrans(Tween.TransitionType.Sine).SetEase(Tween.EaseType.InOut);
+        _tweenFrappe.TweenCallback(Callable.From(ReposerObjetEnMainApresFrappe));
     }
 
     private void ReposerObjetEnMainApresFrappe()
     {
-        _objetEnMain.Position = new Vector3(0.3f, -0.25f, -0.8f);
         MettreAJourObjetEnMain();
     }
 
@@ -877,7 +894,7 @@ public partial class Joueur
     {
         SlotInventaire mainActive = MainGaucheEstActive ? MainGauche : MainDroite;
 
-        if (efficaciteHache < 0.4f && masseOutil > 2f)
+        if (efficaciteHache < 0.4f && masseOutil > 2f && mainActive.ID != 106)
         {
             GD.Print("ZERO-K : REBOND MASSIF ! Vous frappez avec le plat de l'outil. Choc structurel violent !");
             return;
@@ -942,7 +959,8 @@ public partial class Joueur
             if (mainActive.ID == 106)
                 forceCoupe *= 1.08f;
 
-            int resultatCoupe = arbre.SubirDegats(pointImpact, directionFrappe, forceCoupe, epaisseurLame, mainActive.ID == 106);
+            bool hachetteBonneOrientation = mainActive.ID == 106 && EstFrappeHachette106AvecLaLame(pointImpact, directionFrappe);
+            int resultatCoupe = arbre.SubirDegats(pointImpact, directionFrappe, forceCoupe, epaisseurLame, hachetteBonneOrientation);
             if (resultatCoupe == 0) GD.Print("ZERO-K : Rebond. La force d'impact est insuffisante pour entamer ce bois.");
             else if (resultatCoupe == 1) JouerSonEtEffetCoupeArbre(pointImpact);
             else if (resultatCoupe == 2)
@@ -1099,11 +1117,12 @@ public partial class Joueur
                 rbCible.ApplyCentralImpulse(dirFrappeObj * impulsionFrappe);
                 return;
             }
-            if (!EstFrappeHachette106AvecLaLame(pointImpact, directionFrappe))
+            bool coupeNette = EstFrappeHachette106AvecLaLame(pointImpact, directionFrappe);
+            if (!coupeNette)
             {
-                GD.Print("ZERO-K : Orientez le tranchant vers la cible — ce coup porte le manche ou le plat.");
-                rbCible.ApplyCentralImpulse(dirFrappeObj * impulsionFrappe);
-                return;
+                // Tolérance gameplay: avec la hachette on peut continuer à travailler le bois, mais plus lentement.
+                GD.Print("ZERO-K : Coup moins propre (manche/plat). La coupe progresse quand même, plus lentement.");
+                impulsionFrappe *= 0.8f;
             }
 
             Vector3 axeBois = rbCible.GlobalTransform.Basis.Z.Normalized();

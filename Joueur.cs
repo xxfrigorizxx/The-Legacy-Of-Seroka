@@ -82,6 +82,8 @@ public partial class Joueur : CharacterBody3D
     public const int IdObjetPellePierreTier0 = 107;
     /// <summary>Pioche en pierre tier 0.</summary>
     public const int IdObjetPiochePierreTier0 = 108;
+    /// <summary>Rack à bâtons (stockage dédié).</summary>
+    public const int IdObjetRackBatons = 109;
     /// <summary>Petite baie récoltable sur buisson (palette couleur via IndexChimique).</summary>
     public const int IdObjetBaie = 35;
 
@@ -128,10 +130,14 @@ public partial class Joueur : CharacterBody3D
     public enum TypeMouvementFrappe { Estoc, DeHautEnBas, DeBasEnHaut, GaucheADroite, DroiteAGauche }
 
     public const float Speed = 5.0f;
-    public const float JumpVelocity = 4.5f;
+    public const float JumpVelocity = 5.15f;
 
     // Sensibilité chirurgicale de la souris
     public const float MouseSensitivity = 0.003f;
+    /// <summary>Offset pitch souris (rad) : limite haute réaliste (évite de regarder "derrière" en levant).</summary>
+    private const float PitchSourisMaxDeg = 82f;
+    /// <summary>Offset pitch souris (rad) : autorise à baisser la tête vers le sol en FPS.</summary>
+    private const float PitchSourisMinDeg = -72f;
 
     /// <summary>Rayon du pinceau de sculpture (minage ET pose). Symétrie absolue.</summary>
     private const float RAYON_SCULPTURE = 1.0f;
@@ -161,15 +167,99 @@ public partial class Joueur : CharacterBody3D
 
     /// <summary>Atelier (ItemPhysique 200) dont le plan 3×3 est affiché ; null en mode poche.</summary>
     public ItemPhysique AtelierPlanTravailOuvert;
+    /// <summary>Rack à bâtons (ItemPhysique 109) dont le stockage 3×3 est affiché ; null hors mode rack.</summary>
+    public ItemPhysique RackBatonsOuvert;
 
     /// <summary>True si le menu a été ouvert depuis l’atelier posé : recettes et UI en 3×3. False après Q ou fermeture du menu.</summary>
     public bool CraftGrille3x3AuTable { get; set; }
+    /// <summary>True si la grille 3×3 sert de stockage rack bâtons (pas de recettes).</summary>
+    public bool StockageRackBatonsOuvert { get; set; }
 
     /// <summary>Slot contenant le résultat d'une recette valide.</summary>
     public SlotInventaire SlotResultatCraft = new SlotInventaire();
 
     private Camera3D _camera;
     private RayCast3D _rayon;
+    private Camera3D _cameraFps;
+    private Camera3D _cameraTps;
+    private RayCast3D _rayonFps;
+    private RayCast3D _rayonTps;
+    private Node3D _pivotCameraTps;
+    private SpringArm3D _brasCameraTps;
+    private bool _vueTroisiemePersonne;
+    /// <summary>Pitch relatif (rad) autour de l’axe X local de la caméra, clampé ; ajouté à <see cref="_pitchCameraBaseRad"/>.</summary>
+    private float _pitchCamera;
+    /// <summary>Pitch absolu de référence (rad) sur X : 0 sous CharacterBody, −π/2 sur BoneAttachment tête/cou (vue −Z).</summary>
+    private float _pitchCameraBaseRad;
+    /// <summary>Sur l’os cou/tête Mixamo la caméra peut viser l’arrière du crâne : rotation Y locale π pour regarder devant.</summary>
+    private float _yawCorrectionCameraFpsRad;
+    private Node3D _rigHumain;
+    private AnimationPlayer _animationHumain;
+    private Skeleton3D _squeletteHumain;
+    private int _osBrasDroit = -1;
+    private int _osAvantBrasDroit = -1;
+    private int _osMainDroite = -1;
+    private int _osEpauleDroite = -1;
+    private SkeletonIK3D _ikBrasDroitFps;
+    private Marker3D _aimantIkMainDroite;
+    private float _ikBlendMainDroite;
+    private float _impulsionIkFrappePoids;
+    private Vector3 _impulsionIkFrappeLocal;
+    private BoneAttachment3D _attacheMainDroiteTps;
+    private BoneAttachment3D _attacheMainGaucheTps;
+    private BoneAttachment3D _attacheCameraFps;
+    /// <summary>Calque 1 : corps + décor (la caméra FPS ne rend que ce calque pour ne pas voir l’intérieur de la tête).</summary>
+    private const uint CalqueRenduCorpsEtMondeFps = 1u;
+    /// <summary>Calque 2 : uniquement tête / cou / cheveux — masqué pour la caméra FPS.</summary>
+    private const uint CalqueRenduTeteFpsCachee = 2u;
+    private float _solCapsuleLocalY = -0.95f;
+    private int _essaisLiaisonPlaybackAnimationTree;
+    private int _tentativesLecturePlaybackArbreLocomotion;
+    /// <summary>Après avoir quitté le sol : encore considéré « au sol » pour l’anim (évite Idle/Marche/Saut qui clignotent).</summary>
+    private float _bufferSolCoyoteAnim;
+    /// <summary>Coyote jump un peu plus long que l’anim : le sol « procédural » clignote souvent une frame.</summary>
+    private float _bufferCoyoteSaut;
+    /// <summary>Saut appuyé un peu avant d’atterrir : consommé dès que le sol redevient valide (jump buffer).</summary>
+    private float _tamponSautRestant;
+    private string _clipIdleHumain = "";
+    private string _clipWalkHumain = "";
+    private string _clipRunHumain = "";
+    private string _clipJumpHumain = "";
+    private bool _fallbackAnimProcedural;
+    /// <summary>Bibliothèque où sont fusionnées les clips FBX (Idle / Marche / Saut) — équivalent éditeur des .res externes.</summary>
+    private static readonly StringName BibliothequeLocomotionMixamo = "locomotion";
+    /// <summary>Lecteur unique pour les clips scriptés : même parent que le GLB, chemins de pistes cohérents avec l’inspecteur Godot.</summary>
+    private const string NomNoeudAnimationPlayerLocomotion = "AnimationPlayerLocomotion";
+    private AnimationTree _animationTreeHumain;
+    private AnimationNodeStateMachinePlayback _playbackLocomotion;
+    private string _dernierEtatLocomotionTree = "";
+    private bool _animationTreeContientSaut;
+    /// <summary>Locomotion sol : <see cref="AnimationNodeBlendSpace1D"/> Idle↔Marche via <c>blend_position</c> (évite le patinage Idle/Marche).</summary>
+    private bool _animationTreeUtiliseBlendDeplacement;
+    private const string NomEtatDeplacementBlend = "Deplacement";
+    private const string ParamBlendDeplacementLocomotion = "parameters/Deplacement/blend_position";
+    private const float DureeTamponSautSecondes = 0.28f;
+    /// <summary>Capsule de référence dans la scène (souvent désactivée) : bas local utilisé pour aligner les pieds du mesh.</summary>
+    private const string NomCollisionReferencePieds = "CollisionShape3D";
+    [Export] public Vector3 OffsetAimantMainDroiteFpsLocal { get; set; } = new Vector3(0.42f, -0.25f, -0.26f);
+    private static readonly Vector3 PositionObjetViewmodelFps = new Vector3(0.30f, -0.22f, -0.86f);
+    private static readonly Vector3 RotationObjetViewmodelFpsDeg = new Vector3(10f, 154f, -10f);
+    private static readonly Vector3 PositionObjetMainDefaut = new Vector3(0.035f, -0.01f, 0.065f);
+    private static readonly Vector3 RotationObjetMainDefautDeg = new Vector3(8f, 92f, -16f);
+    /// <summary>Orientation Mixamo -> Godot : correction latérale standard.</summary>
+    private const float YawRigMixamoVersGodotDeg = 180f;
+    /// <summary>Décalage Y supplémentaire du rig (pieds / sol), ajouté au bas de la capsule.</summary>
+    [Export] public float DecalageYRigHumain { get; set; }
+    /// <summary>Si non-NaN, remplace le bas collision utilisé uniquement pour <see cref="InitialiserModeleHumainJoueur"/> (pieds du mesh), en mètres espace local joueur.</summary>
+    [Export] public float ForcerBasCollisionLocalPourAlignementPieds { get; set; } = float.NaN;
+    /// <summary>Distance verticale du pivot racine du GLB (souvent hanches Mixamo) jusqu’aux pieds, en mètres **avant** <see cref="Node3D.Scale"/> du rig. 0 si le pivot est déjà au niveau du sol entre les pieds.</summary>
+    [Export] public float HauteurPiedsSousPivotRigMixamo { get; set; } = 0.96f;
+    /// <summary>Face supérieure approximative du voxel de surface : <see cref="Generateur_Voxel.ObtenirHauteurTerrainMonde"/> + cette marge (pieds posés au-dessus du bloc).</summary>
+    private const float MargeSurfaceVoxelAuDessusH = 1.02f;
+    /// <summary>Petit décalage pour éviter le clipping pieds / sol.</summary>
+    private const float MargeEpsilonPiedsSurSol = 0.07f;
+    /// <summary>Euler additionnel sur le nœud racine du GLB (ajustement fin après le yaw Mixamo).</summary>
+    [Export] public Vector3 CorrectionManuelleEulerRigHumainDeg { get; set; }
     private Gestionnaire_Monde _gestionnaireMonde;
     private Panel _slotGauche;
     private Panel _slotDroite;
@@ -187,6 +277,7 @@ public partial class Joueur : CharacterBody3D
     private const string MetaSignatureCeinture104 = "SigCeinture104";
     private const string MetaSignaturePochette103 = "SigPochette103";
     private const string MetaSignatureSac101 = "SigSac101";
+    private const string MetaSignatureRack109 = "SigRack109";
     private const string MetaSignatureBaie35 = "SigBaie35";
     private SubViewportContainer _viewportSlotGauche;
     private SubViewportContainer _viewportSlotDroite;
@@ -234,17 +325,35 @@ public partial class Joueur : CharacterBody3D
         _physMatMetalForge = new PhysicsMaterial { Friction = 0.48f, Bounce = 0.04f };
         _physMatDefautObjet = new PhysicsMaterial { Friction = 0.65f, Bounce = 0.1f };
 
-        _camera = GetNode<Camera3D>("Camera3D");
-        _rayon = GetNode<RayCast3D>("Camera3D/RayCast3D");
-        _rayon.TargetPosition = new Vector3(0f, 0f, -12f);
-        _rayon.CollisionMask = 0xFFFFFFFF; // Toutes les couches (sol AAA = layer 1, objets, eau…)
-        _rayon.AddException(this); // Ne pas toucher le joueur (sinon le "minage" ne vise pas le sol)
+        _cameraFps = GetNode<Camera3D>("Camera3D");
+        _rayonFps = GetNode<RayCast3D>("Camera3D/RayCast3D");
+        _camera = _cameraFps;
+        _rayon = _rayonFps;
+        _rayonFps.TargetPosition = new Vector3(0f, 0f, -12f);
+        _rayonFps.CollisionMask = 0xFFFFFFFF; // Toutes les couches (sol AAA = layer 1, objets, eau…)
+        _rayonFps.AddException(this); // Ne pas toucher le joueur (sinon le "minage" ne vise pas le sol)
+        // Même couche / masque que les corps statiques terrain (Monde_Client PhysicsServer3D layer 1).
+        CollisionLayer = 1u;
+        CollisionMask = 1u;
+        // Sol voxel irrégulier : snap modéré + marge réduite pour éviter le pompage vertical.
+        FloorSnapLength = 0.32f;
+        SafeMargin = 0.06f;
+        FloorMaxAngle = Mathf.DegToRad(52f);
+        ConstruireHitboxesCompositeJoueur();
+        ConstruireRigCameraTps();
+        InitialiserModeleHumainJoueur();
+        Callable.From(RetryLierPlaybackAnimationTreeHumain).CallDeferred();
+        _pitchCamera = 0f;
+        if (_cameraFps != null)
+            _cameraFps.Rotation = new Vector3(_pitchCameraBaseRad + _pitchCamera, _yawCorrectionCameraFpsRad, 0f);
+        if (_pivotCameraTps != null)
+            _pivotCameraTps.Rotation = new Vector3((_pitchCameraBaseRad + _pitchCamera) * 0.82f, 0f, 0f);
+        ConfigurerModeCamera(false);
         _gestionnaireMonde = GetParent().GetNode<Gestionnaire_Monde>("Gestionnaire_Monde");
         _slotGauche = GetParent().GetNode<Panel>("Gestionnaire_Monde/HUD_Inventaire/Conteneur_Ancrage/Boite_Slots/Slot_Main_Gauche");
         _slotDroite = GetParent().GetNode<Panel>("Gestionnaire_Monde/HUD_Inventaire/Conteneur_Ancrage/Boite_Slots/Slot_Main_Droite");
         InsererNomsAuDessusSlotsHud();
 
-        CreerObjetEnMain3D();
         CreerPreviewsInventaire3D();
 
         _modelisateur = new Modelisateur_UI();
@@ -275,6 +384,1007 @@ public partial class Joueur : CharacterBody3D
         }
     }
 
+    private void ConstruireRigCameraTps()
+    {
+        _pivotCameraTps = new Node3D
+        {
+            Name = "CameraPivotTPS",
+            Position = new Vector3(0f, 1.55f, 0f),
+            Rotation = new Vector3(_pitchCamera, 0f, 0f)
+        };
+        AddChild(_pivotCameraTps);
+
+        _brasCameraTps = new SpringArm3D
+        {
+            Name = "SpringArmTPS",
+            SpringLength = 3.35f,
+            Margin = 0.08f,
+            CollisionMask = 0xFFFFFFFF,
+            Shape = new SphereShape3D { Radius = 0.2f }
+        };
+        _pivotCameraTps.AddChild(_brasCameraTps);
+
+        _cameraTps = new Camera3D
+        {
+            Name = "CameraTPS",
+            Current = false,
+            Fov = 74f,
+            Near = 0.03f,
+            Far = 1600f
+        };
+        _brasCameraTps.AddChild(_cameraTps);
+
+        _rayonTps = new RayCast3D
+        {
+            Name = "RayCastTPS",
+            TargetPosition = new Vector3(0f, 0f, -14f),
+            CollisionMask = 0xFFFFFFFF,
+            Enabled = true
+        };
+        _cameraTps.AddChild(_rayonTps);
+        _rayonTps.AddException(this);
+    }
+
+    private int TrouverOsParMotifs(Skeleton3D sk, params string[][] motifs)
+    {
+        if (sk == null) return -1;
+        for (int m = 0; m < motifs.Length; m++)
+        {
+            string[] tokens = motifs[m];
+            for (int i = 0; i < sk.GetBoneCount(); i++)
+            {
+                string nom = sk.GetBoneName(i).ToString().ToLowerInvariant();
+                bool ok = true;
+                for (int t = 0; t < tokens.Length; t++)
+                {
+                    if (!nom.Contains(tokens[t])) { ok = false; break; }
+                }
+                if (ok) return i;
+            }
+        }
+        return -1;
+    }
+
+    private int TrouverOsParNomsAlternatifs(Skeleton3D sk, params string[] motifsOuNoms)
+    {
+        if (sk == null) return -1;
+        for (int i = 0; i < sk.GetBoneCount(); i++)
+        {
+            string nom = sk.GetBoneName(i).ToString().ToLowerInvariant();
+            for (int m = 0; m < motifsOuNoms.Length; m++)
+            {
+                string p = motifsOuNoms[m].ToLowerInvariant();
+                if (nom.Contains(p)) return i;
+            }
+        }
+        return -1;
+    }
+
+    private int TrouverRacineIkDepuisMainDroite(int osMainDroite)
+    {
+        if (_squeletteHumain == null || osMainDroite < 0) return -1;
+        int parent = _squeletteHumain.GetBoneParent(osMainDroite);
+        int fallback = -1;
+        while (parent >= 0)
+        {
+            if (parent < osMainDroite && fallback < 0)
+                fallback = parent;
+            if (parent < osMainDroite)
+            {
+                string nom = _squeletteHumain.GetBoneName(parent).ToString().ToLowerInvariant();
+                if (nom.Contains("forearm") || nom.Contains("lowerarm") || nom.Contains("upperarm") || nom.Contains("arm") || nom.Contains("shoulder") || nom.Contains("clavicle"))
+                    return parent;
+            }
+            parent = _squeletteHumain.GetBoneParent(parent);
+        }
+        return fallback;
+    }
+
+    private void InitialiserSqueletteHumain()
+    {
+        _squeletteHumain = TrouverPremierNoeudDeType<Skeleton3D>(_rigHumain);
+        if (_squeletteHumain == null) return;
+
+        _osBrasDroit = TrouverOsParMotifs(_squeletteHumain, new[] { "right", "arm" }, new[] { "r", "upperarm" });
+        _osAvantBrasDroit = TrouverOsParMotifs(_squeletteHumain, new[] { "right", "forearm" }, new[] { "right", "lowerarm" }, new[] { "r", "forearm" });
+        _osMainDroite = TrouverOsParMotifs(_squeletteHumain, new[] { "right", "hand" }, new[] { "r", "hand" });
+        _osEpauleDroite = TrouverOsParMotifs(_squeletteHumain, new[] { "right", "shoulder" }, new[] { "r", "shoulder" }, new[] { "clavicle", "right" });
+        int osMainD = TrouverOsParMotifs(_squeletteHumain, new[] { "right", "hand" }, new[] { "r", "hand" });
+        int osMainG = TrouverOsParMotifs(_squeletteHumain, new[] { "left", "hand" }, new[] { "l", "hand" });
+
+        if (osMainD >= 0)
+        {
+            _attacheMainDroiteTps = new BoneAttachment3D { Name = "AttacheMainDroiteTPS", BoneIdx = osMainD };
+            _squeletteHumain.AddChild(_attacheMainDroiteTps);
+        }
+        if (osMainG >= 0)
+        {
+            _attacheMainGaucheTps = new BoneAttachment3D { Name = "AttacheMainGaucheTPS", BoneIdx = osMainG };
+            _squeletteHumain.AddChild(_attacheMainGaucheTps);
+        }
+
+        Node3D attacheActive = _attacheMainDroiteTps ?? _attacheMainGaucheTps;
+        if (attacheActive != null)
+        {
+            _objetEnMain = new MeshInstance3D
+            {
+                Name = "ObjetEnMain",
+                Position = new Vector3(0.035f, -0.01f, 0.065f),
+                RotationDegrees = new Vector3(8f, 92f, -16f),
+                Scale = Vector3.One * 0.9f
+            };
+            attacheActive.AddChild(_objetEnMain);
+        }
+
+        if (_ikBrasDroitFps != null && GodotObject.IsInstanceValid(_ikBrasDroitFps))
+        {
+            _ikBrasDroitFps.Stop();
+            _ikBrasDroitFps.QueueFree();
+            _ikBrasDroitFps = null;
+        }
+        if (_aimantIkMainDroite != null && GodotObject.IsInstanceValid(_aimantIkMainDroite))
+        {
+            _aimantIkMainDroite.QueueFree();
+            _aimantIkMainDroite = null;
+        }
+
+        if (_cameraFps != null && _osMainDroite >= 0)
+        {
+            _aimantIkMainDroite = new Marker3D { Name = "AimantMainDroiteIK" };
+            _cameraFps.AddChild(_aimantIkMainDroite);
+            _aimantIkMainDroite.Position = OffsetAimantMainDroiteFpsLocal;
+
+            int osRacineIk = TrouverRacineIkDepuisMainDroite(_osMainDroite);
+            if (osRacineIk < 0 || osRacineIk >= _osMainDroite)
+            {
+                GD.PrintErr($"ZERO-K : IK bras droit ignoré — chaîne invalide (root={osRacineIk}, tip={_osMainDroite}).");
+                return;
+            }
+
+            _ikBrasDroitFps = new SkeletonIK3D { Name = "IK_BrasDroitFPS" };
+            _ikBrasDroitFps.RootBone = _squeletteHumain.GetBoneName(osRacineIk);
+            _ikBrasDroitFps.TipBone = _squeletteHumain.GetBoneName(_osMainDroite);
+            _squeletteHumain.AddChild(_ikBrasDroitFps);
+            _ikBrasDroitFps.TargetNode = _ikBrasDroitFps.GetPathTo(_aimantIkMainDroite);
+            _ikBrasDroitFps.Influence = 0f;
+            _ikBrasDroitFps.Start();
+        }
+    }
+
+    /// <summary>Cou puis tête (sans HeadTop) : caméra FPS sur le même squelette que la vue TPS.</summary>
+    private int TrouverOsSupportCameraFps()
+    {
+        if (_squeletteHumain == null) return -1;
+        int cou = TrouverOsParMotifs(_squeletteHumain, new[] { "neck" });
+        if (cou < 0) cou = TrouverOsParNomsAlternatifs(_squeletteHumain, "neck", "cou");
+        if (cou >= 0) return cou;
+        for (int i = 0; i < _squeletteHumain.GetBoneCount(); i++)
+        {
+            string nom = _squeletteHumain.GetBoneName(i).ToString().ToLowerInvariant();
+            if (nom.Contains("headtop")) continue;
+            if (nom.Contains("head") || nom.Contains("tete")) return i;
+        }
+        return -1;
+    }
+
+    private void BrancherCameraFpsSurSquelette()
+    {
+        if (_cameraFps == null || _squeletteHumain == null) return;
+        if (_attacheCameraFps != null && GodotObject.IsInstanceValid(_attacheCameraFps))
+        {
+            _attacheCameraFps.QueueFree();
+            _attacheCameraFps = null;
+        }
+
+        // Caméra FPS volontairement désolidarisée du squelette pour éviter les secousses d'animation.
+        // Référence visage : légèrement en avant et un peu sous la ligne des yeux (proche bouche).
+        if (_cameraFps.GetParent() != this)
+            _cameraFps.Reparent(this);
+        _cameraFps.Position = new Vector3(0f, 0.56f, -0.07f);
+        _pitchCameraBaseRad = 0f;
+        _yawCorrectionCameraFpsRad = 0f;
+        _cameraFps.Rotation = new Vector3(_pitchCameraBaseRad + _pitchCamera, _yawCorrectionCameraFpsRad, 0f);
+        _cameraFps.Near = 0.12f;
+    }
+
+    private static T TrouverPremierNoeudDeType<T>(Node racine) where T : Node
+    {
+        if (racine == null) return null;
+        if (racine is T t) return t;
+        foreach (Node enfant in racine.GetChildren())
+        {
+            T trouve = TrouverPremierNoeudDeType<T>(enfant);
+            if (trouve != null) return trouve;
+        }
+        return null;
+    }
+
+    /// <summary>Le GLB peut contenir un AnimationPlayer interne : on le coupe pour que seul <see cref="NomNoeudAnimationPlayerLocomotion"/> pilote le rig.</summary>
+    private static void DesactiverAutresAnimationPlayers(Node racine, AnimationPlayer garder)
+    {
+        if (racine == null) return;
+        foreach (Node enfant in racine.GetChildren())
+        {
+            if (enfant is AnimationPlayer ap && ap != garder)
+                ap.ProcessMode = ProcessModeEnum.Disabled;
+            DesactiverAutresAnimationPlayers(enfant, garder);
+        }
+    }
+
+    private void SecuriserMateriauxModeleHumain(Node n)
+    {
+        if (n is MeshInstance3D mi && mi.Mesh != null)
+        {
+            bool aMateriau = mi.MaterialOverride != null;
+            int surfaces = mi.Mesh.GetSurfaceCount();
+            for (int i = 0; i < surfaces && !aMateriau; i++)
+            {
+                if (mi.Mesh.SurfaceGetMaterial(i) != null || mi.GetActiveMaterial(i) != null)
+                    aMateriau = true;
+            }
+            string nom = mi.Name.ToString().ToLowerInvariant();
+            if (!aMateriau)
+            {
+                mi.MaterialOverride = new StandardMaterial3D
+                {
+                    AlbedoColor = new Color(0.72f, 0.66f, 0.6f, 1f),
+                    Roughness = 0.88f,
+                    Metallic = 0f
+                };
+            }
+            else if (mi.MaterialOverride is StandardMaterial3D sm && sm.AlbedoTexture == null)
+            {
+                // Ajustement de teinte si le GLB n'apporte pas de maps exploitables.
+                if (nom.Contains("eye"))
+                    sm.AlbedoColor = new Color(0.16f, 0.2f, 0.24f, 1f);
+                else if (nom.Contains("lip") || nom.Contains("mouth"))
+                    sm.AlbedoColor = new Color(0.57f, 0.33f, 0.33f, 1f);
+                else
+                    sm.AlbedoColor = new Color(0.79f, 0.66f, 0.56f, 1f);
+                sm.Roughness = 0.86f;
+            }
+
+            // Forçage teinte "humaine" si le mesh est du corps/tête et qu'aucune texture fiable n'est présente.
+            if (nom.Contains("body") || nom.Contains("skin") || nom.Contains("head") || nom.Contains("face"))
+            {
+                mi.MaterialOverride = new StandardMaterial3D
+                {
+                    AlbedoColor = new Color(0.84f, 0.69f, 0.58f, 1f),
+                    Roughness = 0.88f,
+                    Metallic = 0f
+                };
+            }
+            else if (nom.Contains("eye"))
+            {
+                mi.MaterialOverride = new StandardMaterial3D
+                {
+                    AlbedoColor = new Color(0.14f, 0.2f, 0.25f, 1f),
+                    Roughness = 0.6f,
+                    Metallic = 0f
+                };
+            }
+            else if (nom.Contains("lip") || nom.Contains("mouth"))
+            {
+                mi.MaterialOverride = new StandardMaterial3D
+                {
+                    AlbedoColor = new Color(0.6f, 0.34f, 0.34f, 1f),
+                    Roughness = 0.82f,
+                    Metallic = 0f
+                };
+            }
+            mi.CastShadow = GeometryInstance3D.ShadowCastingSetting.On;
+        }
+        foreach (Node c in n.GetChildren())
+            SecuriserMateriauxModeleHumain(c);
+    }
+
+    private static bool EstNomMailleTeteOuCouPourFps(string nomLower)
+    {
+        if (string.IsNullOrEmpty(nomLower) || nomLower.Contains("headtop")) return false;
+        if (nomLower.Contains("head") || nomLower.Contains("tete")) return true;
+        if (nomLower.Contains("hair") || nomLower.Contains("scalp") || nomLower.Contains("cheveu")) return true;
+        if (nomLower.Contains("face") || nomLower.Contains("visage")) return true;
+        if (nomLower.Contains("skull") || nomLower.Contains("crane")) return true;
+        if (nomLower.Contains("eye") || nomLower.Contains("oeil") || nomLower.Contains("lash") || nomLower.Contains("brow") || nomLower.Contains("tear"))
+            return true;
+        if (nomLower.Contains("teeth") || nomLower.Contains("tooth") || nomLower.Contains("dent") || nomLower.Contains("tongue") || nomLower.Contains("langue"))
+            return true;
+        if (nomLower.Contains("lip") || nomLower.Contains("mouth") || nomLower.Contains("bouche") || nomLower.Contains("gum")) return true;
+        if (nomLower.Contains("ear") || nomLower.Contains("oreille")) return true;
+        if (nomLower.Contains("nose") || nomLower.Contains("nez")) return true;
+        if (nomLower.Contains("neck") || nomLower.Contains("cou") && !nomLower.Contains("accou")) return true;
+        if (nomLower.Contains("beard") || nomLower.Contains("barbe") || nomLower.Contains("mustache") || nomLower.Contains("moustache"))
+            return true;
+        return false;
+    }
+
+    /// <summary>Place tête/cou sur le calque 2 : la caméra FPS (cull 1) ne les dessine pas — évite l’intérieur du crâne / cheveux.</summary>
+    private static void AssignerCalquesTetePourVueFps(Node n)
+    {
+        if (n is MeshInstance3D mi && mi.Mesh != null)
+        {
+            string l = n.Name.ToString().ToLowerInvariant();
+            if (EstNomMailleTeteOuCouPourFps(l))
+                mi.Layers = CalqueRenduTeteFpsCachee;
+        }
+        foreach (Node c in n.GetChildren())
+            AssignerCalquesTetePourVueFps(c);
+    }
+
+    private void AppliquerCullMasksCamerasJoueur()
+    {
+        if (_cameraFps != null)
+            _cameraFps.CullMask = CalqueRenduCorpsEtMondeFps;
+        if (_cameraTps != null)
+            _cameraTps.CullMask = uint.MaxValue;
+    }
+
+    private void DetecterClipsAnimationHumain()
+    {
+        _animationHumain = _rigHumain?.GetNodeOrNull<AnimationPlayer>(NomNoeudAnimationPlayerLocomotion)
+            ?? TrouverPremierNoeudDeType<AnimationPlayer>(_rigHumain);
+        _clipIdleHumain = _clipWalkHumain = _clipRunHumain = _clipJumpHumain = "";
+        _fallbackAnimProcedural = true;
+        if (_animationHumain == null) return;
+
+        var noms = _animationHumain.GetAnimationList();
+        if (noms == null || noms.Length == 0)
+            return;
+
+        if (_animationHumain.HasAnimationLibrary(BibliothequeLocomotionMixamo))
+        {
+            var libLoc = _animationHumain.GetAnimationLibrary(BibliothequeLocomotionMixamo);
+            string Pref(string clip) => $"{BibliothequeLocomotionMixamo}/{clip}";
+            if (libLoc.HasAnimation("Idle"))
+                _clipIdleHumain = Pref("Idle");
+            if (libLoc.HasAnimation("Marche"))
+                _clipWalkHumain = _clipRunHumain = Pref("Marche");
+            if (libLoc.HasAnimation("Saut"))
+                _clipJumpHumain = Pref("Saut");
+        }
+
+        for (int i = 0; i < noms.Length; i++)
+        {
+            string nom = noms[i];
+            string l = nom.ToLowerInvariant();
+            if (string.IsNullOrEmpty(_clipIdleHumain) && (l.Contains("idle") || l.Contains("attente") || l.Contains("stand") || l.Contains("breathing")))
+                _clipIdleHumain = nom;
+            if (string.IsNullOrEmpty(_clipWalkHumain) && (l.Contains("walk") || l.Contains("marche") || l.Contains("jog") || l.Contains("stride")))
+                _clipWalkHumain = nom;
+            if (string.IsNullOrEmpty(_clipRunHumain) && (l.Contains("run") || l.Contains("course") || l.Contains("sprint")))
+                _clipRunHumain = nom;
+            if (string.IsNullOrEmpty(_clipJumpHumain) && (l.Contains("jump") || l.Contains("saut") || l.Contains("fall") || l.Contains("air")))
+                _clipJumpHumain = nom;
+        }
+
+        if (string.IsNullOrEmpty(_clipIdleHumain))
+            _clipIdleHumain = noms[0];
+
+        if (string.IsNullOrEmpty(_clipWalkHumain))
+            _clipWalkHumain = !string.IsNullOrEmpty(_clipRunHumain) ? _clipRunHumain : _clipIdleHumain;
+        if (string.IsNullOrEmpty(_clipRunHumain))
+            _clipRunHumain = _clipWalkHumain;
+
+        _fallbackAnimProcedural = false;
+        if (_playbackLocomotion == null && !string.IsNullOrEmpty(_clipIdleHumain))
+            _animationHumain.Play(_clipIdleHumain);
+    }
+
+    private static Animation ExtrairePremiereAnimationDepuisJoueur(AnimationPlayer ap)
+    {
+        if (ap == null) return null;
+        foreach (StringName nomLib in ap.GetAnimationLibraryList())
+        {
+            AnimationLibrary lib = ap.GetAnimationLibrary(nomLib);
+            if (lib == null) continue;
+            foreach (StringName nomAnim in lib.GetAnimationList())
+            {
+                Animation source = lib.GetAnimation(nomAnim);
+                if (source != null)
+                    return (Animation)source.Duplicate();
+            }
+        }
+        return null;
+    }
+
+    private static void RemapperCheminsAnimationVersSqueletteHumain(Animation anim, string prefixeSqueletteFbx, string prefixeSqueletteHumain)
+    {
+        if (anim == null || string.IsNullOrEmpty(prefixeSqueletteFbx) || prefixeSqueletteHumain == null) return;
+        for (int i = 0; i < anim.GetTrackCount(); i++)
+        {
+            string s = anim.TrackGetPath(i).ToString();
+            if (s.StartsWith(prefixeSqueletteFbx, StringComparison.Ordinal))
+                anim.TrackSetPath(i, new NodePath(prefixeSqueletteHumain + s.Substring(prefixeSqueletteFbx.Length)));
+        }
+    }
+
+    /// <summary>Si le préfixe FBX ne matche pas (autre hiérarchie), recolle tout ce qui suit « Skeleton3D » au chemin du squelette sur le rig joueur.</summary>
+    private static void RemapperCheminsAnimationParMarqueurSquelette(Animation anim, string cheminNoeudSqueletteHumain)
+    {
+        if (anim == null || string.IsNullOrEmpty(cheminNoeudSqueletteHumain)) return;
+        const string marqueur = "Skeleton3D";
+        for (int i = 0; i < anim.GetTrackCount(); i++)
+        {
+            string s = anim.TrackGetPath(i).ToString();
+            int idx = s.IndexOf(marqueur, StringComparison.Ordinal);
+            if (idx < 0) continue;
+            string queue = s.Substring(idx + marqueur.Length);
+            anim.TrackSetPath(i, new NodePath(cheminNoeudSqueletteHumain + queue));
+        }
+    }
+
+    /// <summary>Charge imobile / Marcher / Jump depuis les FBX et les enregistre dans la bibliothèque « locomotion » du rig (sans passage par l’éditeur « Save to File »).</summary>
+    private void FusionnerAnimationsFbxVersRigHumain()
+    {
+        if (_rigHumain == null || _squeletteHumain == null) return;
+
+        _animationHumain = _rigHumain.GetNodeOrNull<AnimationPlayer>(NomNoeudAnimationPlayerLocomotion);
+        if (_animationHumain == null)
+        {
+            _animationHumain = new AnimationPlayer { Name = NomNoeudAnimationPlayerLocomotion };
+            _rigHumain.AddChild(_animationHumain);
+            _rigHumain.MoveChild(_animationHumain, 0);
+        }
+
+        // Les pistes sont remappées relativement au parent du lecteur (HumainRigRoot).
+        _animationHumain.RootNode = new NodePath("..");
+        _animationHumain.ProcessMode = ProcessModeEnum.Always;
+        _animationHumain.Active = true;
+        DesactiverAutresAnimationPlayers(_rigHumain, _animationHumain);
+
+        if (!_animationHumain.HasAnimationLibrary(BibliothequeLocomotionMixamo))
+            _animationHumain.AddAnimationLibrary(BibliothequeLocomotionMixamo, new AnimationLibrary());
+
+        AnimationLibrary libLoc = _animationHumain.GetAnimationLibrary(BibliothequeLocomotionMixamo);
+        if (libLoc == null) return;
+
+        Node racineCheminsJoueur = _animationHumain.GetParent() ?? _rigHumain;
+        string prefixHum = racineCheminsJoueur.GetPathTo(_squeletteHumain).ToString();
+        GD.Print($"ZERO-K : AnimationPlayer « {NomNoeudAnimationPlayerLocomotion} » — pistes ciblent le squelette via « {prefixHum} » (parent lecteur = {racineCheminsJoueur.Name}).");
+
+        void FusionnerUneSceneFbx(string cheminScene, StringName nomClip)
+        {
+            if (libLoc.HasAnimation(nomClip)) return;
+            var sc = GD.Load<PackedScene>(cheminScene);
+            if (sc == null)
+            {
+                GD.PrintErr($"ZERO-K : scène FBX introuvable : {cheminScene}");
+                return;
+            }
+            Node temp = sc.Instantiate();
+            var apFbx = TrouverPremierNoeudDeType<AnimationPlayer>(temp);
+            Skeleton3D skFbx = TrouverPremierNoeudDeType<Skeleton3D>(temp);
+            if (apFbx == null || skFbx == null)
+            {
+                GD.PrintErr($"ZERO-K : pas d’AnimationPlayer ou Skeleton3D dans {cheminScene}");
+                temp.QueueFree();
+                return;
+            }
+            Node racineCheminsFbx = apFbx.GetParent() ?? temp;
+            string prefixFbx = racineCheminsFbx.GetPathTo(skFbx).ToString();
+            Animation anim = ExtrairePremiereAnimationDepuisJoueur(apFbx);
+            temp.QueueFree();
+            if (anim == null)
+            {
+                GD.PrintErr($"ZERO-K : aucune animation dans {cheminScene}");
+                return;
+            }
+            // Les FBX Mixamo arrivent souvent sans boucle explicite : Idle/Marche doivent boucler en continu.
+            if (nomClip == "Idle" || nomClip == "Marche")
+                anim.LoopMode = Animation.LoopModeEnum.Linear;
+            RemapperCheminsAnimationVersSqueletteHumain(anim, prefixFbx, prefixHum);
+            RemapperCheminsAnimationParMarqueurSquelette(anim, prefixHum);
+            libLoc.AddAnimation(nomClip, anim);
+            GD.Print($"ZERO-K : clip « {nomClip} » fusionné ({cheminScene}) FBX:{prefixFbx} → joueur:{prefixHum} → {BibliothequeLocomotionMixamo}/{nomClip}.");
+        }
+
+        FusionnerUneSceneFbx("res://Modeles/Animations/imobile.fbx", "Idle");
+        FusionnerUneSceneFbx("res://Modeles/Animations/Marcher.fbx", "Marche");
+        FusionnerUneSceneFbx("res://Modeles/Animations/Jump.fbx", "Saut");
+    }
+
+    private void ConfigurerAnimationTreeLocomotionHumain()
+    {
+        if (_animationTreeHumain != null && GodotObject.IsInstanceValid(_animationTreeHumain))
+        {
+            _animationTreeHumain.Active = false;
+            _animationTreeHumain.QueueFree();
+            _animationTreeHumain = null;
+        }
+        _playbackLocomotion = null;
+        _dernierEtatLocomotionTree = "";
+        _animationTreeContientSaut = false;
+        _animationTreeUtiliseBlendDeplacement = false;
+        _tentativesLecturePlaybackArbreLocomotion = 0;
+
+        if (_animationHumain == null || _fallbackAnimProcedural) return;
+        if (!_animationHumain.HasAnimationLibrary(BibliothequeLocomotionMixamo)) return;
+
+        AnimationLibrary libLoc = _animationHumain.GetAnimationLibrary(BibliothequeLocomotionMixamo);
+        if (libLoc == null || !libLoc.HasAnimation("Idle") || !libLoc.HasAnimation("Marche"))
+            return;
+
+        // 📖 FIX CRITIQUE : Amputation volontaire de l'animation de saut défectueuse.
+        // La physique (Velocity.Y) fonctionnera toujours, mais le visuel restera sur Marche/Idle.
+        _animationTreeContientSaut = false;
+        var nomIdle = new StringName($"{BibliothequeLocomotionMixamo}/Idle");
+        var nomMarche = new StringName($"{BibliothequeLocomotionMixamo}/Marche");
+
+        var blendIdle = new AnimationNodeAnimation { Animation = nomIdle };
+        var blendMarche = new AnimationNodeAnimation { Animation = nomMarche };
+        var blendDeplacement = new AnimationNodeBlendSpace1D { MinSpace = 0f, MaxSpace = 1f };
+        blendDeplacement.AddBlendPoint(blendIdle, 0f);
+        blendDeplacement.AddBlendPoint(blendMarche, 1f);
+
+        var machine = new AnimationNodeStateMachine();
+        machine.AddNode(NomEtatDeplacementBlend, blendDeplacement, new Vector2(240f, 120f));
+
+        if (_animationTreeContientSaut)
+        {
+            var noeudSaut = new AnimationNodeAnimation { Animation = new StringName($"{BibliothequeLocomotionMixamo}/Saut") };
+            machine.AddNode("Saut", noeudSaut, new Vector2(240f, 280f));
+        }
+
+        const float XfadeLocomotion = 0.12f;
+        var depuisStart = new AnimationNodeStateMachineTransition
+        {
+            XfadeTime = XfadeLocomotion,
+            SwitchMode = AnimationNodeStateMachineTransition.SwitchModeEnum.Immediate
+        };
+        machine.AddTransition("Start", NomEtatDeplacementBlend, depuisStart);
+
+        if (_animationTreeContientSaut)
+        {
+            var versSaut = new AnimationNodeStateMachineTransition { XfadeTime = 0.08f };
+            machine.AddTransition(NomEtatDeplacementBlend, "Saut", versSaut);
+            var retourSol = new AnimationNodeStateMachineTransition { XfadeTime = 0.1f };
+            machine.AddTransition("Saut", NomEtatDeplacementBlend, retourSol);
+        }
+
+        _animationTreeUtiliseBlendDeplacement = true;
+        _animationTreeHumain = new AnimationTree { Name = "AnimationTreeLocomotion", ProcessMode = ProcessModeEnum.Always };
+        _rigHumain.AddChild(_animationTreeHumain);
+        _animationTreeHumain.TreeRoot = machine;
+        _animationTreeHumain.AnimPlayer = _animationTreeHumain.GetPathTo(_animationHumain);
+        _animationTreeHumain.Active = true;
+        _playbackLocomotion = null;
+        _dernierEtatLocomotionTree = "";
+        Callable.From(ApresAnimationTreePretLocomotion).CallDeferred();
+    }
+
+    private void ApresAnimationTreePretLocomotion()
+    {
+        if (_animationTreeHumain == null || !GodotObject.IsInstanceValid(_animationTreeHumain) || _animationHumain == null)
+            return;
+
+        _animationTreeHumain.Active = true;
+        _playbackLocomotion = ExtrairePlaybackMachineEtatAnimationTree();
+        if (_playbackLocomotion == null)
+        {
+            if (++_tentativesLecturePlaybackArbreLocomotion > 15)
+            {
+                GD.PrintErr("ZERO-K : AnimationTree — « parameters/playback » introuvable. Lecture directe Idle sur AnimationPlayer.");
+                _animationTreeHumain.QueueFree();
+                _animationTreeHumain = null;
+                _playbackLocomotion = null;
+                if (!string.IsNullOrEmpty(_clipIdleHumain))
+                    _animationHumain.Play(_clipIdleHumain, 0.08f);
+                return;
+            }
+
+            Callable.From(ApresAnimationTreePretLocomotion).CallDeferred();
+            return;
+        }
+
+        _tentativesLecturePlaybackArbreLocomotion = 0;
+        _playbackLocomotion.Start(new StringName(NomEtatDeplacementBlend));
+        _dernierEtatLocomotionTree = NomEtatDeplacementBlend;
+    }
+
+    private AnimationNodeStateMachinePlayback ExtrairePlaybackMachineEtatAnimationTree()
+    {
+        if (_animationTreeHumain == null) return null;
+        Variant v = _animationTreeHumain.Get("parameters/playback");
+        if (v.VariantType == Variant.Type.Nil) return null;
+        return v.AsGodotObject() as AnimationNodeStateMachinePlayback;
+    }
+
+    private void InitialiserModeleHumainJoueur()
+    {
+        var capsuleVisuelle = GetNodeOrNull<MeshInstance3D>("MeshInstance3D");
+        if (capsuleVisuelle != null)
+            capsuleVisuelle.Visible = false;
+
+        // Préférer le nœud lié dans la scène (Joueur.tscn / monde_zero.tscn) pour que l’éditeur montre le GLB.
+        _rigHumain = GetNodeOrNull<Node3D>("HumainRigRoot");
+        if (_rigHumain == null)
+        {
+            PackedScene sceneHumain = GD.Load<PackedScene>("res://Modeles/Entites/Humain/humain.glb");
+            if (sceneHumain == null)
+            {
+                GD.PrintErr("ZERO-K : Modèle joueur introuvable : res://Modeles/Entites/Humain/humain.glb (ajoute un enfant HumainRigRoot depuis humain.glb).");
+                return;
+            }
+
+            _rigHumain = sceneHumain.Instantiate<Node3D>();
+            _rigHumain.Name = "HumainRigRoot";
+            AddChild(_rigHumain);
+        }
+
+        _rigHumain.Scale = Vector3.One * 1.3f; // réglage final demandé
+
+        _solCapsuleLocalY = CalculerBasCollisionLocalJoueur();
+        float basPourPieds = CalculerBasPourAlignementPiedsDuMesh();
+        float yRig = basPourPieds + HauteurPiedsSousPivotRigMixamo * _rigHumain.Scale.Y + DecalageYRigHumain;
+        _rigHumain.Position = new Vector3(0f, yRig, 0f);
+
+        Vector3 man = CorrectionManuelleEulerRigHumainDeg;
+        _rigHumain.RotationDegrees = new Vector3(man.X, YawRigMixamoVersGodotDeg + man.Y, man.Z);
+
+        SecuriserMateriauxModeleHumain(_rigHumain);
+        AssignerCalquesTetePourVueFps(_rigHumain);
+        InitialiserSqueletteHumain();
+        BrancherCameraFpsSurSquelette();
+        FusionnerAnimationsFbxVersRigHumain();
+        DetecterClipsAnimationHumain();
+        ConfigurerAnimationTreeLocomotionHumain();
+        Callable.From(ForcerLectureAnimLocomotionSiArbreMort).CallDeferred();
+    }
+
+    /// <summary>Si l’AnimationTree n’a pas pris le relais, au moins jouer Idle sur le lecteur (évite T-pose figée).</summary>
+    private void ForcerLectureAnimLocomotionSiArbreMort()
+    {
+        if (_animationHumain == null || !GodotObject.IsInstanceValid(_animationHumain)) return;
+        bool arbreOk = _animationTreeHumain != null && GodotObject.IsInstanceValid(_animationTreeHumain) && _animationTreeHumain.Active && _playbackLocomotion != null;
+        if (arbreOk) return;
+        if (_animationTreeHumain != null && GodotObject.IsInstanceValid(_animationTreeHumain))
+            _animationTreeHumain.Active = false;
+        if (!string.IsNullOrEmpty(_clipIdleHumain))
+            _animationHumain.Play(_clipIdleHumain, 0.08f);
+    }
+
+    /// <summary>Y global du <see cref="CharacterBody3D"/> pour que le bas des hitboxes soit juste au-dessus du contact sol (raycast / mesh).</summary>
+    public float CalculerYOriginePourPiedsSurSurface(float yContactSolWorld, float epsilon = 0f)
+    {
+        if (epsilon <= 0f) epsilon = MargeEpsilonPiedsSurSol;
+        return yContactSolWorld - CalculerBasCollisionLocalJoueur() + epsilon;
+    }
+
+    private void ConfigurerModeCamera(bool activerTps)
+    {
+        _vueTroisiemePersonne = activerTps;
+        if (_cameraFps != null) _cameraFps.Current = !activerTps;
+        if (_cameraTps != null) _cameraTps.Current = activerTps;
+        if (_rayonFps != null) _rayonFps.Enabled = !activerTps;
+        if (_rayonTps != null) _rayonTps.Enabled = activerTps;
+
+        _camera = activerTps ? _cameraTps : _cameraFps;
+        _rayon = activerTps ? _rayonTps : _rayonFps;
+
+        if (_rigHumain != null && GodotObject.IsInstanceValid(_rigHumain))
+            _rigHumain.Visible = true;
+
+        AppliquerCullMasksCamerasJoueur();
+        MettreAJourObjetTenueTps();
+    }
+
+    private void BasculerModeCamera()
+    {
+        ConfigurerModeCamera(!_vueTroisiemePersonne);
+        GD.Print(_vueTroisiemePersonne ? "ZERO-K : Caméra extérieure activée." : "ZERO-K : Caméra première personne activée.");
+    }
+
+    private static bool EstToggleCameraF5(InputEvent e)
+    {
+        if (e == null) return false;
+        if (e.IsActionPressed("toggle_camera_mode")) return true;
+        if (e is InputEventKey k && k.Pressed && !k.Echo && (k.Keycode == Key.F5 || k.PhysicalKeycode == Key.F5))
+            return true;
+        return false;
+    }
+
+    private Node3D ObtenirAttacheMainActiveTps()
+    {
+        Node3D active = MainGaucheEstActive ? _attacheMainGaucheTps : _attacheMainDroiteTps;
+        if (active == null) active = _attacheMainDroiteTps ?? _attacheMainGaucheTps;
+        return active;
+    }
+
+    private void MettreAJourObjetTenueTps()
+    {
+        if (_objetEnMain == null || !GodotObject.IsInstanceValid(_objetEnMain)) return;
+        bool vueFpsViewmodel = !_vueTroisiemePersonne && _cameraFps != null;
+        Node3D parentCible = vueFpsViewmodel ? _cameraFps : ObtenirAttacheMainActiveTps();
+        if (parentCible != null && _objetEnMain.GetParent() != parentCible)
+        {
+            _objetEnMain.Reparent(parentCible);
+            _objetEnMain.Position = PositionObjetMainDefaut;
+            _objetEnMain.RotationDegrees = RotationObjetMainDefautDeg;
+            _objetEnMain.Scale = Vector3.One * 0.9f;
+        }
+
+        SlotInventaire mainActive = MainGaucheEstActive ? MainGauche : MainDroite;
+        bool visible = !mainActive.EstVide && EstObjetAvecVisuel(mainActive.ID);
+        bool frappeEnCours = _tweenFrappe != null && GodotObject.IsInstanceValid(_tweenFrappe) && _tweenFrappe.IsRunning();
+        // IMPORTANT : MettreAJourObjetEnMain() recalcule rotation/scale selon le type d'objet.
+        // Pendant le tween de frappe on évite de l'appeler pour ne pas écraser la pose du coup.
+        if (!frappeEnCours)
+            MettreAJourObjetEnMain();
+        _objetEnMain.Visible = visible;
+        if (frappeEnCours)
+            return;
+        if (vueFpsViewmodel && visible)
+        {
+            // Viewmodel FPS : on garde la rotation définie par MettreAJourObjetEnMain()
+            // (inclut orientation par type + rotation manuelle X/Y/Z), sinon elle est écrasée.
+            _objetEnMain.Position = PositionObjetViewmodelFps;
+        }
+    }
+
+    private void ImpulserPoseBrasFrappe(TypeMouvementFrappe type)
+    {
+        _impulsionIkFrappePoids = 1f;
+        _impulsionIkFrappeLocal = type switch
+        {
+            TypeMouvementFrappe.Estoc => new Vector3(0f, 0.02f, -0.24f),
+            TypeMouvementFrappe.DeHautEnBas => new Vector3(0f, -0.18f, -0.18f),
+            TypeMouvementFrappe.DeBasEnHaut => new Vector3(0f, 0.17f, -0.12f),
+            TypeMouvementFrappe.GaucheADroite => new Vector3(0.18f, 0.02f, -0.12f),
+            TypeMouvementFrappe.DroiteAGauche => new Vector3(-0.18f, 0.02f, -0.12f),
+            _ => Vector3.Zero
+        };
+    }
+
+    public override void _Process(double delta)
+    {
+        float dt = (float)delta;
+        if (_aimantIkMainDroite == null || !GodotObject.IsInstanceValid(_aimantIkMainDroite) || _ikBrasDroitFps == null || !GodotObject.IsInstanceValid(_ikBrasDroitFps))
+            return;
+
+        SlotInventaire mainActive = MainGaucheEstActive ? MainGauche : MainDroite;
+        bool activerIk = !_vueTroisiemePersonne && !MainGaucheEstActive && !mainActive.EstVide;
+        float cibleBlend = activerIk ? 1f : 0f;
+        _ikBlendMainDroite = Mathf.MoveToward(_ikBlendMainDroite, cibleBlend, dt * 9.5f);
+        _impulsionIkFrappePoids = Mathf.MoveToward(_impulsionIkFrappePoids, 0f, dt * 8.0f);
+
+        Vector3 offsetFrappe = _impulsionIkFrappeLocal * _impulsionIkFrappePoids;
+        _aimantIkMainDroite.Position = OffsetAimantMainDroiteFpsLocal + offsetFrappe;
+        _ikBrasDroitFps.Influence = _ikBlendMainDroite;
+    }
+
+    private void MettreAJourAnimationHumain(float dt, Vector3 vitesse, Vector2 entreeWasd, bool auSolPourAnim)
+    {
+        if (_rigHumain == null || !GodotObject.IsInstanceValid(_rigHumain)) return;
+        if (_animationHumain == null || _fallbackAnimProcedural)
+            return;
+
+        float vitesseHoriz = new Vector2(vitesse.X, vitesse.Z).Length();
+        bool veutMarcher = entreeWasd.LengthSquared() > 0.02f;
+        string cibleClip = _clipIdleHumain;
+        if (vitesseHoriz > Speed * 0.78f && !string.IsNullOrEmpty(_clipRunHumain))
+            cibleClip = _clipRunHumain;
+        else if ((veutMarcher || vitesseHoriz > 0.04f) && !string.IsNullOrEmpty(_clipWalkHumain))
+            cibleClip = _clipWalkHumain;
+
+        // AnimationTree actif pour Idle/Marche uniquement (aucun appel d'animation de saut).
+        if (_playbackLocomotion != null && _animationTreeHumain != null && GodotObject.IsInstanceValid(_animationTreeHumain))
+        {
+            if (!_animationTreeHumain.Active)
+                _animationTreeHumain.Active = true;
+
+            if (_animationTreeUtiliseBlendDeplacement)
+            {
+                float blend = Mathf.Clamp(vitesseHoriz / Mathf.Max(0.001f, Speed), 0f, 1f);
+                _animationTreeHumain.Set(ParamBlendDeplacementLocomotion, blend);
+            }
+
+            string etatMachine = NomEtatDeplacementBlend;
+            if (etatMachine != _dernierEtatLocomotionTree)
+            {
+                _playbackLocomotion.Travel(new StringName(etatMachine));
+                _dernierEtatLocomotionTree = etatMachine;
+            }
+        }
+        else
+        {
+            // Fallback sécurité : si playback indisponible, lecture directe Idle/Marche.
+            if (_animationTreeHumain != null && GodotObject.IsInstanceValid(_animationTreeHumain) && _animationTreeHumain.Active)
+                _animationTreeHumain.Active = false;
+            if (!string.IsNullOrEmpty(cibleClip) && (_animationHumain.CurrentAnimation != cibleClip || !_animationHumain.IsPlaying()))
+                _animationHumain.Play(cibleClip, 0.12f);
+        }
+
+        bool arbrePilote = _playbackLocomotion != null && _animationTreeHumain != null && _animationTreeHumain.Active;
+        _animationHumain.SpeedScale = arbrePilote
+            ? 1f
+            : Mathf.Lerp(0.92f, 1.35f, Mathf.Clamp(vitesseHoriz / Mathf.Max(0.001f, Speed), 0f, 1f));
+    }
+
+    /// <summary>Avance / strafe alignés sur la vue caméra (plan XZ) : évite W qui part « sur le côté » quand le mesh a un yaw Mixamo différent du corps.</summary>
+    private Vector3 CalculerDirectionMouvementAuSol(Vector2 inputDir)
+    {
+        if (inputDir.LengthSquared() < 1e-6f)
+            return Vector3.Zero;
+
+        Camera3D cam = _camera;
+        if (cam == null)
+            return (Transform.Basis * new Vector3(inputDir.X, 0f, inputDir.Y)).Normalized();
+
+        Vector3 forward = -cam.GlobalTransform.Basis.Z;
+        forward.Y = 0f;
+        if (forward.LengthSquared() < 1e-6f)
+            forward = -GlobalTransform.Basis.Z;
+        forward = forward.Normalized();
+
+        Vector3 right = cam.GlobalTransform.Basis.X;
+        right.Y = 0f;
+        if (right.LengthSquared() < 1e-6f)
+            right = GlobalTransform.Basis.X;
+        right = right.Normalized();
+
+        // GetVector : Y négatif = avant (W / move_forward).
+        Vector3 dir = forward * (-inputDir.Y) + right * inputDir.X;
+        return dir.LengthSquared() < 1e-6f ? Vector3.Zero : dir.Normalized();
+    }
+
+    /// <summary>Hitboxes séparées : si elles sont déjà dans la scène (<c>HitboxCorps</c>), on les garde (éditeur + jeu identiques).</summary>
+    private void ConstruireHitboxesCompositeJoueur()
+    {
+        if (GetNodeOrNull("HitboxCorps") is CollisionShape3D deja && deja.Shape != null)
+            return;
+
+        foreach (Node c in GetChildren())
+        {
+            if (c is CollisionShape3D ancien)
+            {
+                RemoveChild(ancien);
+                ancien.Free();
+            }
+        }
+
+        void Ajouter(string nom, Shape3D forme, Vector3 pos, Vector3 rotDeg)
+        {
+            var cs = new CollisionShape3D { Name = nom, Shape = forme, Position = pos, RotationDegrees = rotDeg };
+            AddChild(cs);
+        }
+
+        Ajouter("HitboxJambeG", new CapsuleShape3D { Radius = 0.075f, Height = 0.56f }, new Vector3(-0.11f, -0.44f, 0f), Vector3.Zero);
+        Ajouter("HitboxJambeD", new CapsuleShape3D { Radius = 0.075f, Height = 0.56f }, new Vector3(0.11f, -0.44f, 0f), Vector3.Zero);
+        Ajouter("HitboxCorps", new CapsuleShape3D { Radius = 0.19f, Height = 0.4f }, new Vector3(0f, 0.12f, 0f), Vector3.Zero);
+        Ajouter("HitboxTete", new SphereShape3D { Radius = 0.105f }, new Vector3(0f, 0.58f, 0f), Vector3.Zero);
+        Ajouter("HitboxBrasG", new CapsuleShape3D { Radius = 0.055f, Height = 0.34f }, new Vector3(-0.27f, 0.05f, 0f), new Vector3(0f, 0f, 72f));
+        Ajouter("HitboxBrasD", new CapsuleShape3D { Radius = 0.055f, Height = 0.34f }, new Vector3(0.27f, 0.05f, 0f), new Vector3(0f, 0f, -72f));
+    }
+
+    /// <summary>Point bas (Y local) d’une forme sous sa transform ; <see cref="float.MaxValue"/> si non gérée.</summary>
+    private static float CalculerBasYLocalPourCollisionShape(CollisionShape3D cs)
+    {
+        if (cs?.Shape == null) return float.MaxValue;
+        Transform3D t = cs.Transform;
+        switch (cs.Shape)
+        {
+            case CapsuleShape3D cap:
+            {
+                float half = cap.Height * 0.5f + cap.Radius;
+                return (t * new Vector3(0f, -half, 0f)).Y;
+            }
+            case SphereShape3D sph:
+                return (t * new Vector3(0f, -sph.Radius, 0f)).Y;
+            case BoxShape3D box:
+            {
+                float minY = float.MaxValue;
+                Vector3 e = box.Size * 0.5f;
+                for (int i = 0; i < 8; i++)
+                {
+                    float sx = (i & 1) != 0 ? e.X : -e.X;
+                    float sy = (i & 2) != 0 ? e.Y : -e.Y;
+                    float sz = (i & 4) != 0 ? e.Z : -e.Z;
+                    minY = Mathf.Min(minY, (t * new Vector3(sx, sy, sz)).Y);
+                }
+                return minY;
+            }
+            default:
+                return float.MaxValue;
+        }
+    }
+
+    /// <summary>Bas local pour poser les pieds du mesh : capsule <see cref="NomCollisionReferencePieds"/> si présente (même désactivée), sinon hitboxes actives.</summary>
+    private float CalculerBasPourAlignementPiedsDuMesh()
+    {
+        if (!float.IsNaN(ForcerBasCollisionLocalPourAlignementPieds))
+            return ForcerBasCollisionLocalPourAlignementPieds;
+        var csRef = GetNodeOrNull<CollisionShape3D>(NomCollisionReferencePieds);
+        if (csRef != null && csRef.Shape != null)
+        {
+            float y = CalculerBasYLocalPourCollisionShape(csRef);
+            if (y != float.MaxValue) return y;
+        }
+        return CalculerBasCollisionLocalJoueur();
+    }
+
+    /// <summary>Point le plus bas (Y local) des <see cref="CollisionShape3D"/> activées — physique / snap sol.</summary>
+    private float CalculerBasCollisionLocalJoueur()
+    {
+        float minY = float.MaxValue;
+        foreach (Node c in GetChildren())
+        {
+            if (c is not CollisionShape3D cs || cs.Disabled || cs.Shape == null) continue;
+            float y = CalculerBasYLocalPourCollisionShape(cs);
+            if (y != float.MaxValue) minY = Mathf.Min(minY, y);
+        }
+
+        return minY == float.MaxValue ? -0.9f : minY;
+    }
+
+    private void RetryLierPlaybackAnimationTreeHumain()
+    {
+        if (_essaisLiaisonPlaybackAnimationTree++ > 8) return;
+        if (_animationTreeHumain == null || !GodotObject.IsInstanceValid(_animationTreeHumain) || _animationHumain == null) return;
+        if (_playbackLocomotion != null) return;
+        ApresAnimationTreePretLocomotion();
+        if (_playbackLocomotion == null)
+            Callable.From(RetryLierPlaybackAnimationTreeHumain).CallDeferred();
+    }
+
+    /// <summary>Quand la collision terrain (RID) arrive après le mesh, ou si le sol est encore « dormant », colle la capsule au sol détecté par raycast.</summary>
+    private void EssayerCollerCapsuleAuSolTerrain(bool dansEau)
+    {
+        if (dansEau) return;
+        if (IsOnFloor()) return;
+        // Ne pas tirer vers le sol tant qu’on n’est pas en chute nette : sinon le saut est mangé dès que Vy redescend sous 2.
+        if (Velocity.Y > -0.55f) return;
+
+        World3D w = GetWorld3D();
+        if (w?.DirectSpaceState == null) return;
+
+        float basLocalY = CalculerBasCollisionLocalJoueur();
+        float origY = GlobalPosition.Y + basLocalY + 0.55f;
+        Vector3 orig = new Vector3(GlobalPosition.X, origY, GlobalPosition.Z);
+        var q = PhysicsRayQueryParameters3D.Create(orig, orig + new Vector3(0f, -520f, 0f));
+        q.CollisionMask = 1;
+        q.CollideWithAreas = false;
+        q.CollideWithBodies = true;
+        q.Exclude = new Godot.Collections.Array<Rid> { GetRid() };
+
+        var hit = w.DirectSpaceState.IntersectRay(q);
+        if (hit.Count == 0 || !hit.ContainsKey("position")) return;
+        float solY = ((Vector3)hit["position"]).Y;
+        float basCapsuleY = GlobalPosition.Y + basLocalY;
+        float gap = basCapsuleY - solY;
+        // Ignorer les micro-corrections : elles créent un tremblement visible en vue FPS.
+        if (gap <= 0.14f || gap >= 140f) return;
+
+        GlobalPosition += new Vector3(0f, -(gap - 0.08f), 0f);
+        if (Velocity.Y <= 0.2f)
+            Velocity = new Vector3(Velocity.X, 0f, Velocity.Z);
+    }
+
+    /// <summary>Quand le sol collision n’est pas encore actif, colle le corps au champ de hauteur procédural (évite de « voler » quelques mètres au-dessus du terrain).</summary>
+    private void AppliquerContrainteVerticaleHauteurTerrainMonde(bool estDansEau, bool ignorerSiMonteeSaut, float dt)
+    {
+        if (_gestionnaireMonde == null || estDansEau) return;
+        // En jeu normal : pas de rabattement sur le bruit procédural (casse saut, pentes, rebonds). Réservé au chargement / spawn.
+        if (ignorerSiMonteeSaut) return;
+        if (IsOnFloor()) return;
+
+        int h = Generateur_Voxel.ObtenirHauteurTerrainMonde(
+            Mathf.FloorToInt(GlobalPosition.X),
+            Mathf.FloorToInt(GlobalPosition.Z),
+            _gestionnaireMonde.SeedTerrain);
+        float ySurface = h + MargeSurfaceVoxelAuDessusH;
+        float yCible = CalculerYOriginePourPiedsSurSurface(ySurface, MargeEpsilonPiedsSurSol);
+
+        float y = GlobalPosition.Y;
+        if (y <= yCible + 0.42f) return;
+
+        float ny = y > yCible + 14f
+            ? yCible
+            : Mathf.MoveToward(y, yCible, Mathf.Max(28f, 55f * (y - yCible)) * dt);
+        GlobalPosition = new Vector3(GlobalPosition.X, ny, GlobalPosition.Z);
+        if (ny <= yCible + 0.06f)
+            Velocity = new Vector3(Velocity.X, Mathf.Min(Velocity.Y, 0f), Velocity.Z);
+    }
+
     private void BrancherModelisateurCAO()
     {
         if (_modelisateur == null) return;
@@ -300,16 +1410,6 @@ public partial class Joueur : CharacterBody3D
     private void OnViewportTailleMenuAnatomie()
     {
         AjusterRacineMenuAnatomieViewport();
-    }
-
-    /// <summary>MeshInstance3D attaché à la caméra pour afficher l'objet tenu en main (forme exacte).</summary>
-    private void CreerObjetEnMain3D()
-    {
-        _objetEnMain = new MeshInstance3D();
-        _objetEnMain.Position = new Vector3(0.3f, -0.25f, -0.8f);
-        _objetEnMain.RotationDegrees = new Vector3(-15, 10, 5);
-        _objetEnMain.Scale = Vector3.One * 0.5f;
-        _camera.AddChild(_objetEnMain);
     }
 
     /// <summary>Libellés au-dessus de chaque slot (nom de l’objet pour repérer les erreurs de données).</summary>
@@ -435,6 +1535,8 @@ public partial class Joueur : CharacterBody3D
             {
                 CraftGrille3x3AuTable = false;
                 AtelierPlanTravailOuvert = null;
+                StockageRackBatonsOuvert = false;
+                RackBatonsOuvert = null;
             }
             _menuAnatomie.BasculerVisibilite();
             RafraichirHUD();
@@ -444,11 +1546,11 @@ public partial class Joueur : CharacterBody3D
 
         if (_menuAnatomie != null && _menuAnatomie.EstOuvert)
         {
-            // Échap / ui_cancel : ouvrir le menu pause (bloque le jeu) — ne pas fermer l’inventaire.
+            // Échap / ui_cancel : fermer l’UI et revenir en jeu immédiatement.
             if (@event.IsActionPressed("ui_cancel") ||
                 (@event is InputEventKey ekEsc && ekEsc.Pressed && !ekEsc.Echo && ekEsc.Keycode == Key.Escape))
             {
-                GetParent()?.GetNodeOrNull<Gestionnaire_Monde>("Gestionnaire_Monde")?.ForcerOuvertureMenuPause();
+                FermerUIJoueurSiOuverte();
                 GetViewport().SetInputAsHandled();
                 return;
             }
@@ -534,12 +1636,14 @@ public partial class Joueur : CharacterBody3D
                 // IDENTIFICATION DE LA MATIÈRE : Est-ce du terrain (Voxel) ?
                 bool estTerrainVoxel = mainActive.ID >= 1 && mainActive.ID <= 9;
                 bool estAtelierEnMain = mainActive.ID == 200;
+                bool estRackBatonsEnMain = mainActive.ID == IdObjetRackBatons;
                 bool estBuissonEnMain = mainActive.ID == 10 || mainActive.ID == 11;
-                // Clic bref = poser. Maintien du clic = lancer (seuil 0,5 s). Atelier (meuble) : jamais de lancer.
-                if (estAtelierEnMain || estBuissonEnMain || estTerrainVoxel || _forceLancer < 0.5f)
+                // Clic bref = poser. Maintien du clic = lancer (seuil 0,5 s).
+                // Atelier + rack (structures fixes) : jamais de lancer.
+                if (estAtelierEnMain || estRackBatonsEnMain || estBuissonEnMain || estTerrainVoxel || _forceLancer < 0.5f)
                 {
                     // Clic droit court + lame / roche plate / éclat + sol : fauchage (même ressenti qu’un coup) — le gauche le fait aussi.
-                    if (!estAtelierEnMain && !estTerrainVoxel && _forceLancer < 0.5f && ExecuterFauchageSolPrioritaireClicDroit())
+                    if (!estAtelierEnMain && !estRackBatonsEnMain && !estTerrainVoxel && _forceLancer < 0.5f && ExecuterFauchageSolPrioritaireClicDroit())
                     {
                         _forceLancer = 0f;
                         GetViewport().SetInputAsHandled();
@@ -602,21 +1706,40 @@ public partial class Joueur : CharacterBody3D
 
     public override void _UnhandledInput(InputEvent @event)
     {
+        if (EstToggleCameraF5(@event))
+        {
+            BasculerModeCamera();
+            GetViewport()?.SetInputAsHandled();
+            return;
+        }
+
         if (_modelisateur != null && _modelisateur.EstOuvert)
             return;
 
         if (_menuAnatomie != null && _menuAnatomie.EstOuvert)
             return;
 
+        // Tampon saut : capté ici pour ne pas perdre la frame si un autre nœud consomme l’input avant _PhysicsProcess.
+        if ((@event.IsActionPressed("jump") || @event.IsActionPressed("ui_accept"))
+            && ((@event is InputEventKey k && k.Pressed && !k.Echo)
+                || (@event is InputEventJoypadButton jb && jb.Pressed)
+                || @event is InputEventAction))
+            _tamponSautRestant = Mathf.Max(_tamponSautRestant, DureeTamponSautSecondes);
+
         if (@event is InputEventMouseMotion mouseMotion)
         {
             if (_gaucheMaintenu) _mouvementSourisCumule += mouseMotion.Relative;
 
             RotateY(-mouseMotion.Relative.X * MouseSensitivity);
-            _camera.RotateX(-mouseMotion.Relative.Y * MouseSensitivity);
-            Vector3 cameraRot = _camera.Rotation;
-            cameraRot.X = Mathf.Clamp(cameraRot.X, Mathf.DegToRad(-80f), Mathf.DegToRad(80f));
-            _camera.Rotation = cameraRot;
+            _pitchCamera = Mathf.Clamp(
+                _pitchCamera - mouseMotion.Relative.Y * MouseSensitivity,
+                Mathf.DegToRad(PitchSourisMinDeg),
+                Mathf.DegToRad(PitchSourisMaxDeg));
+            float pitchAbsolu = _pitchCameraBaseRad + _pitchCamera;
+            if (_cameraFps != null)
+                _cameraFps.Rotation = new Vector3(pitchAbsolu, _yawCorrectionCameraFpsRad, 0f);
+            if (_pivotCameraTps != null)
+                _pivotCameraTps.Rotation = new Vector3(pitchAbsolu * 0.82f, 0f, 0f);
         }
 
         if (Input.IsActionJustPressed("ui_cancel"))
@@ -627,6 +1750,9 @@ public partial class Joueur : CharacterBody3D
 
     private void MettreAJourSlotUI(Panel slot, SlotInventaire slotData, bool selectionne)
     {
+        if (slot == null || !GodotObject.IsInstanceValid(slot))
+            return;
+
         int idMatiere = slotData.ID;
         var style = new StyleBoxFlat();
         if (idMatiere == 0)
@@ -695,6 +1821,29 @@ public partial class Joueur : CharacterBody3D
 
     /// <summary>True si le menu inventaire (Q) est ouvert — utilisé par le gestionnaire pour Échap → pause sans fermer l’UI.</summary>
     public bool MenuAnatomieOuvert() => _menuAnatomie != null && _menuAnatomie.EstOuvert;
+
+    /// <summary>Ferme les UI joueur (inventaire/craft ou CAO) via Échap et remet le contrôle jeu.</summary>
+    public bool FermerUIJoueurSiOuverte()
+    {
+        if (_menuAnatomie != null && _menuAnatomie.EstOuvert)
+        {
+            CraftGrille3x3AuTable = false;
+            AtelierPlanTravailOuvert = null;
+            StockageRackBatonsOuvert = false;
+            RackBatonsOuvert = null;
+            _menuAnatomie.BasculerVisibilite();
+            RafraichirHUD();
+            Input.MouseMode = Input.MouseModeEnum.Captured;
+            return true;
+        }
+        if (_modelisateur != null && _modelisateur.EstOuvert && !_modelisateur.SaisieTexteEnCours)
+        {
+            _modelisateur.BasculerVisibilite();
+            Input.MouseMode = Input.MouseModeEnum.Captured;
+            return true;
+        }
+        return false;
+    }
 
     public void RafraichirHUD()
     {
@@ -881,6 +2030,7 @@ public partial class Joueur : CharacterBody3D
         else if (id == IdObjetPochetteTier0) return null; // GLB res://Modeles/materials/Pochette_Tiere0.glb via InstancierModelePochetteTier0
         else if (id == IdObjetPellePierreTier0) return null; // GLB res://Modeles/Equipements/Pelle_Pierre_tier0.glb via InstancierModeleArme
         else if (id == IdObjetPiochePierreTier0) return null; // GLB res://Modeles/Equipements/Pioche_pierre_tier0.glb via InstancierModeleArme
+        else if (id == IdObjetRackBatons) return null; // GLB res://Modeles/Storage/Rack_Batons_Tier0.glb via InstancierModeleRackBatons
         else if (id == 30 || id == 32)
         {
             CalculerDimensionsBoisPose(id, indexMorpho, indexTaille, out float br, out float bl, out _, out _);
@@ -910,10 +2060,29 @@ public partial class Joueur : CharacterBody3D
         }
         if (idObjet == 20 || idObjet == 21 || idObjet == IdObjetCeinturePoches || idObjet == IdObjetCeintureSacoches || idObjet == IdObjetPochetteTier0 || idObjet == IdObjetSacTier0)
         {
+            bool varianteHerbeSolide = indexBotanique == TagVarianteHerbeSolide
+                || (indexChimique == 15 && indexMorphologique == 15 && indexBotanique >= 2);
+            bool varianteLiane = indexBotanique == TagVarianteLiane
+                || (indexChimique == 16 && indexMorphologique == 16 && indexBotanique < 2);
+
+            int matA = indexChimique;
+            int matB = indexMorphologique;
             int niveauAspect = niveauTressage;
-            if (idObjet == 20 && indexBotanique >= 2)
+
+            if (varianteHerbeSolide)
+            {
+                // Forçage visuel cohérent: toute variante herbe solide rend comme une ligature d'herbe solide tier 2.
+                matA = 15;
+                matB = 15;
                 niveauAspect = Mathf.Max(niveauAspect, 2);
-            visuel.MaterialOverride = Atlas_Matiere.ObtenirMaterielCorde(indexChimique, indexMorphologique, niveauAspect);
+            }
+            else if (varianteLiane)
+            {
+                matA = 16;
+                matB = 16;
+            }
+
+            visuel.MaterialOverride = Atlas_Matiere.ObtenirMaterielCorde(matA, matB, niveauAspect);
             return;
         }
         if (idObjet == 30 || idObjet == 32)
@@ -1367,6 +2536,59 @@ public partial class Joueur : CharacterBody3D
             });
             corps = item;
         }
+        else if (id == IdObjetRackBatons)
+        {
+            var item = new ItemPhysique
+            {
+                ID_Objet = id,
+                IndexBotanique = mainActive.IndexBotanique,
+                IndexChimique = mainActive.IndexChimique,
+                IndexCacheMemoire = mainActive.IndexMorphologique,
+                Name = "ItemPhysique",
+                ContinuousCd = true,
+                Freeze = true,
+                FreezeMode = RigidBody3D.FreezeModeEnum.Static
+            };
+            if (!string.IsNullOrEmpty(mainActive.GenomeAssemblage))
+            {
+                item.GenomeAssemblage = mainActive.GenomeAssemblage;
+                item.SetMeta(MetaGenomeAssemblage, mainActive.GenomeAssemblage);
+            }
+            var meshRoot = new Node3D { Name = "MeshInstance3D" };
+            InstancierModeleRackBatons(meshRoot, mainActive, 1.05f, true);
+            item.AddChild(meshRoot);
+            // Même logique que la table (200) : collisions exactes depuis les meshes pour éviter la lévitation.
+            var pileRack = new List<Node> { meshRoot };
+            for (int i = 0; i < pileRack.Count; i++)
+            {
+                foreach (Node c in pileRack[i].GetChildren())
+                {
+                    if (c is MeshInstance3D mi && mi.Mesh != null)
+                    {
+                        Shape3D shape = mi.Mesh.CreateTrimeshShape();
+                        if (shape != null)
+                        {
+                            Transform3D t = mi.Transform;
+                            Node parentNode = mi.GetParent();
+                            while (parentNode != null && parentNode != item && parentNode is Node3D n3d)
+                            {
+                                t = n3d.Transform * t;
+                                parentNode = parentNode.GetParent();
+                            }
+                            var colNode = new CollisionShape3D { Shape = shape, Transform = t };
+                            item.AddChild(colNode);
+                        }
+                    }
+                    pileRack.Add(c);
+                }
+            }
+            // Fallback sécurité si jamais le GLB ne retourne aucune surface exploitable.
+            if (item.GetChildCount() <= 1)
+                item.AddChild(new CollisionShape3D { Shape = new BoxShape3D { Size = new Vector3(0.9f, 0.68f, 0.52f) }, Position = new Vector3(0f, 0.34f, 0f) });
+            string cle = !string.IsNullOrEmpty(mainActive.CleConteneur) ? mainActive.CleConteneur : Guid.NewGuid().ToString("N");
+            item.SetMeta("CleConteneur", cle);
+            corps = item;
+        }
         else if (id == 200)
         {
             var item = new ItemPhysique
@@ -1506,11 +2728,17 @@ public partial class Joueur : CharacterBody3D
                 ID_Objet = id,
                 IndexChimique = mainActive.IndexChimique,
                 IndexCacheMemoire = mainActive.IndexMorphologique,
+                IndexBotanique = mainActive.IndexBotanique,
                 NiveauFracture = mainActive.NiveauFracture,
                 Name = "ItemPhysique"
             };
             if (!string.IsNullOrEmpty(mainActive.CleConteneur))
                 item.SetMeta("CleConteneur", mainActive.CleConteneur);
+            if (!string.IsNullOrEmpty(mainActive.GenomeAssemblage))
+            {
+                item.GenomeAssemblage = mainActive.GenomeAssemblage;
+                item.SetMeta(MetaGenomeAssemblage, mainActive.GenomeAssemblage);
+            }
             var meshRoot = new Node3D { Name = "MeshInstance3D" };
             if (id == IdObjetCeintureSacoches)
                 InstancierModeleCeintureSacoches(meshRoot, mainActive, 0.42f);
@@ -1527,6 +2755,7 @@ public partial class Joueur : CharacterBody3D
                 ID_Objet = id,
                 IndexChimique = mainActive.IndexChimique,
                 IndexCacheMemoire = mainActive.IndexMorphologique,
+                IndexBotanique = mainActive.IndexBotanique,
                 NiveauFracture = mainActive.NiveauFracture,
                 Name = "ItemPhysique"
             };
@@ -1543,9 +2772,12 @@ public partial class Joueur : CharacterBody3D
                 ID_Objet = id,
                 IndexChimique = mainActive.IndexChimique,
                 IndexCacheMemoire = mainActive.IndexMorphologique,
+                IndexBotanique = mainActive.IndexBotanique,
                 NiveauFracture = mainActive.NiveauFracture,
                 Name = "ItemPhysique"
             };
+            if (!string.IsNullOrEmpty(mainActive.CleConteneur))
+                item.SetMeta("CleConteneur", mainActive.CleConteneur);
             var meshRoot = new Node3D { Name = "MeshInstance3D" };
             InstancierModeleSacTier0(meshRoot, mainActive, 0.4f);
             item.AddChild(meshRoot);
@@ -1640,6 +2872,32 @@ public partial class Joueur : CharacterBody3D
         GetParent().AddChild(corps);
         // Placement pur : pas de translation Y supplémentaire (évite double offset / lévitation atelier).
         corps.GlobalPosition = pointDeChute;
+        if (id == IdObjetRackBatons)
+        {
+            // Snap sol robuste pour le rack: corrige les cas où le raycast vise une surface décalée.
+            var espace = GetWorld3D()?.DirectSpaceState;
+            if (espace != null)
+            {
+                Vector3 origine = corps.GlobalPosition + Vector3.Up * 4f;
+                Vector3 dest = corps.GlobalPosition + Vector3.Down * 8f;
+                var q = PhysicsRayQueryParameters3D.Create(origine, dest);
+                if (corps is CollisionObject3D coRack)
+                    q.Exclude = new Godot.Collections.Array<Rid> { coRack.GetRid() };
+                q.CollideWithAreas = false;
+                var hit = espace.IntersectRay(q);
+                if (hit.Count > 0 && hit.ContainsKey("position"))
+                {
+                    Aabb? box = null;
+                    AccumulerAabbMeshes(corps, Transform3D.Identity, ref box);
+                    if (box.HasValue)
+                    {
+                        float minY = box.Value.Position.Y;
+                        float hitY = ((Vector3)hit["position"]).Y;
+                        corps.GlobalPosition += Vector3.Up * (hitY - minY + 0.005f);
+                    }
+                }
+            }
+        }
         // Même calque que le terrain PhysicsServer3D / StaticBody (bit 1) : collision fiable au sol.
         if (corps is RigidBody3D rbPose)
         {
@@ -1677,7 +2935,7 @@ public partial class Joueur : CharacterBody3D
                     rbPose.AngularDamp = 0.88f;
                 }
             }
-            else if (id == 30 || id == 32 || id == 200)
+            else if (id == 30 || id == 32 || id == 200 || id == IdObjetRackBatons)
             {
                 rbPose.PhysicsMaterialOverride = _physMatBois;
                 rbPose.LinearDampMode = RigidBody3D.DampMode.Replace;
@@ -1688,6 +2946,12 @@ public partial class Joueur : CharacterBody3D
                 {
                     // Très lourd + pas de gravité : évite tout glissement / dérive si le moteur réveille le corps un instant.
                     rbPose.Mass = 2800f;
+                    rbPose.GravityScale = 0f;
+                    rbPose.Sleeping = true;
+                }
+                else if (id == IdObjetRackBatons)
+                {
+                    rbPose.Mass = 1200f;
                     rbPose.GravityScale = 0f;
                     rbPose.Sleeping = true;
                 }
@@ -1757,6 +3021,26 @@ public partial class Joueur : CharacterBody3D
     private float _tempsAttenteSpawn;
     private bool _verrouSpawnActif = true;
 
+    /// <summary>Recherche une couche d'eau dont la case au-dessus n'est pas de l'eau: donne la hauteur de surface (face haute voxel).</summary>
+    private bool EssayerTrouverSurfaceEauY(Vector3 centreRecherche, out float surfaceY)
+    {
+        surfaceY = 0f;
+        if (_gestionnaireMonde == null) return false;
+
+        // Recherche locale verticale autour du joueur: robuste si le niveau d'eau varie légèrement.
+        for (int dy = 6; dy >= -8; dy--)
+        {
+            Vector3 p = centreRecherche + Vector3.Up * dy;
+            int id = _gestionnaireMonde.ObtenirMatiereExacte(p);
+            if (id != 4) continue;
+            int idAuDessus = _gestionnaireMonde.ObtenirMatiereExacte(p + Vector3.Up);
+            if (idAuDessus == 4) continue;
+            surfaceY = Mathf.Floor(p.Y) + 1.0f;
+            return true;
+        }
+        return false;
+    }
+
     public override void _PhysicsProcess(double delta)
     {
         float dt = (float)delta;
@@ -1781,17 +3065,25 @@ public partial class Joueur : CharacterBody3D
 
         Vector3 velocity = Velocity;
         bool spawnPret = _gestionnaireMonde == null || _gestionnaireMonde.EstSpawnPret();
+        bool spawnAligneAuSol = _gestionnaireMonde == null || _gestionnaireMonde.EstAlignementSpawnTermine();
         if (_verrouSpawnActif)
         {
-            if (!spawnPret)
+            // Attendre aussi le raycast + pose au sol (Gestionnaire _Process), pas seulement la collision du chunk :
+            // sinon une frame de physique avec Y « ciel » + gravité = traversée du mesh.
+            if (!spawnPret || !spawnAligneAuSol)
             {
                 _tempsAttenteSpawn += dt;
                 // Anti soft-lock: si le sol/collision tarde trop, on rend le contrôle au joueur.
                 if (_tempsAttenteSpawn <= 8f)
                 {
-                    velocity = Vector3.Zero;
+                    int idCorps = _gestionnaireMonde?.ObtenirMatiereExacte(GlobalPosition + Vector3.Up * 0.8f) ?? 1;
+                    bool eauCorps = idCorps == 4;
+                    velocity.X = 0f;
+                    velocity.Y = 0f;
+                    velocity.Z = 0f;
                     Velocity = velocity;
                     MoveAndSlide();
+                    AppliquerContrainteVerticaleHauteurTerrainMonde(eauCorps, ignorerSiMonteeSaut: false, dt);
                     return;
                 }
                 GD.PrintErr("ZERO-K : Déverrouillage déplacement forcé (spawn non prêt trop longtemps).");
@@ -1806,14 +3098,42 @@ public partial class Joueur : CharacterBody3D
 
         int idMilieu = _gestionnaireMonde?.ObtenirMatiereExacte(GlobalPosition + Vector3.Up * 0.8f) ?? 1;
         bool estDansEau = (idMilieu == 4);
+        bool sautMaintenu = !caoOuvert && (Input.IsActionPressed("ui_accept") || Input.IsActionPressed("jump"));
+
+        if (IsOnFloor())
+        {
+            _bufferSolCoyoteAnim = 0.18f;
+            _bufferCoyoteSaut = 0.28f;
+        }
+        else
+        {
+            _bufferSolCoyoteAnim = Mathf.Max(0f, _bufferSolCoyoteAnim - dt);
+            _bufferCoyoteSaut = Mathf.Max(0f, _bufferCoyoteSaut - dt);
+        }
+
+        _tamponSautRestant = Mathf.Max(0f, _tamponSautRestant - dt);
+        if (!caoOuvert && (Input.IsActionJustPressed("jump") || Input.IsActionJustPressed("ui_accept")))
+            _tamponSautRestant = Mathf.Max(_tamponSautRestant, DureeTamponSautSecondes);
+
+        bool auSolPourAnim = IsOnFloor() || _bufferSolCoyoteAnim > 0f;
+        bool solAccepteSaut = IsOnFloor() || (_bufferCoyoteSaut > 0f && velocity.Y <= 0.05f);
 
         if (estDansEau)
         {
-            velocity.X *= 0.90f;
-            velocity.Z *= 0.90f;
-            velocity.Y *= 0.95f;
-            if (!caoOuvert && Input.IsActionPressed("ui_accept"))
-                velocity.Y += JumpVelocity * 0.8f * dt;
+            velocity.X *= 0.92f;
+            velocity.Z *= 0.92f;
+            velocity.Y *= 0.96f;
+
+            if (sautMaintenu && EssayerTrouverSurfaceEauY(GlobalPosition + Vector3.Up * 0.3f, out float surfaceEau))
+            {
+                // Maintien stable à la surface quand on garde saut: évite l'effet yo-yo vertical.
+                float cibleY = surfaceEau - 0.28f;
+                float erreur = cibleY - GlobalPosition.Y;
+                float vitesseVerticaleCible = Mathf.Clamp(erreur * 5.0f, -1.15f, 2.1f);
+                velocity.Y = Mathf.MoveToward(velocity.Y, vitesseVerticaleCible, 9.0f * dt);
+            }
+            else if (sautMaintenu)
+                velocity.Y += JumpVelocity * 0.7f * dt;
             else
                 velocity.Y -= 1.5f * dt;
         }
@@ -1822,12 +3142,19 @@ public partial class Joueur : CharacterBody3D
             velocity += GetGravity() * dt;
         }
 
-        if (!caoOuvert && !estDansEau && Input.IsActionJustPressed("ui_accept") && IsOnFloor())
+        bool sautDepuisSolStable = !estDansEau
+            && _tamponSautRestant > 0f
+            && solAccepteSaut;
+        if (!caoOuvert && sautDepuisSolStable)
+        {
             velocity.Y = JumpVelocity;
+            _tamponSautRestant = 0f;
+            _bufferCoyoteSaut = 0f;
+        }
 
         Vector2 inputDir = caoOuvert ? Vector2.Zero : Input.GetVector("move_left", "move_right", "move_forward", "move_backward");
-        Vector3 direction = (Transform.Basis * new Vector3(inputDir.X, 0, inputDir.Y)).Normalized();
-        float vitesseMouvement = estDansEau ? Speed * 0.4f : Speed;
+        Vector3 direction = CalculerDirectionMouvementAuSol(inputDir);
+        float vitesseMouvement = estDansEau ? Speed * (sautMaintenu ? 0.58f : 0.4f) : Speed;
 
         if (direction != Vector3.Zero)
         {
@@ -1840,7 +3167,14 @@ public partial class Joueur : CharacterBody3D
             velocity.Z = Mathf.MoveToward(velocity.Z, 0, vitesseMouvement);
         }
 
+        MettreAJourAnimationHumain(dt, velocity, inputDir, auSolPourAnim);
+        MettreAJourObjetTenueTps();
+
         Velocity = velocity;
         MoveAndSlide();
+        // Désactivé en jeu normal : peut provoquer un "TP au sol" en retombée.
+        if (_verrouSpawnActif)
+            EssayerCollerCapsuleAuSolTerrain(estDansEau);
+        AppliquerContrainteVerticaleHauteurTerrainMonde(estDansEau, ignorerSiMonteeSaut: true, dt);
     }
 }

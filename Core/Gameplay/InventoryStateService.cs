@@ -3,6 +3,8 @@ using System;
 
 public partial class Joueur
 {
+    private const string PrefixConfigPochettesCeinture = "PCH:";
+    private const int NiveauCordeSolideTier2 = 2;
     public static int ObtenirQuantiteSlot(SlotInventaire s)
     {
         if (s.ID == 0) return 0;
@@ -13,19 +15,81 @@ public partial class Joueur
     {
         if (s.EstVide) return 0;
         if (s.ID == Joueur.IdObjetBaie) return 20;
+        if (s.ID == 30 || s.ID == 32) return 30;
         if (s.ID is 15 or 16 or 17 or 20 or 21) return 15;
         if (ItemPhysique.EstIdRocheMatiere(s.ID) && s.IndexTaille <= 1) return 5;
         return 1;
     }
 
-    public static bool EstVarianteLiane(SlotInventaire s) => !s.EstVide && s.IndexBotanique == Joueur.TagVarianteLiane;
-    public static bool EstVarianteHerbeSolide(SlotInventaire s) => !s.EstVide && s.IndexBotanique == Joueur.TagVarianteHerbeSolide;
+    private static bool EstObjetFlexibleComposeAvecTag(SlotInventaire s) =>
+        !s.EstVide && (s.ID == 20 || s.ID == 21 || s.ID == Joueur.IdObjetCeinturePoches || s.ID == Joueur.IdObjetCeintureSacoches || s.ID == Joueur.IdObjetPochetteTier0 || s.ID == Joueur.IdObjetSacTier0 || s.ID == Joueur.IdObjetRackBatons);
+
+    private static bool EstEncodageLegacyLiane(SlotInventaire s) =>
+        EstObjetFlexibleComposeAvecTag(s) && s.IndexChimique == 16 && s.IndexMorphologique == 16 && s.IndexBotanique < NiveauCordeSolideTier2;
+
+    private static bool EstEncodageLegacyHerbeSolide(SlotInventaire s) =>
+        EstObjetFlexibleComposeAvecTag(s) && s.IndexChimique == 15 && s.IndexMorphologique == 15 && s.IndexBotanique >= NiveauCordeSolideTier2;
+
+    public static bool EstVarianteLiane(SlotInventaire s) =>
+        !s.EstVide && (s.IndexBotanique == Joueur.TagVarianteLiane || EstEncodageLegacyLiane(s));
+
+    public static bool EstVarianteHerbeSolide(SlotInventaire s) =>
+        !s.EstVide && (s.IndexBotanique == Joueur.TagVarianteHerbeSolide || EstEncodageLegacyHerbeSolide(s));
 
     public static bool EstSacTier0Liane(SlotInventaire s) => !s.EstVide && s.ID == Joueur.IdObjetSacTier0 && EstVarianteLiane(s);
     public static bool EstSacTier0HerbeSolide(SlotInventaire s) => !s.EstVide && s.ID == Joueur.IdObjetSacTier0 && EstVarianteHerbeSolide(s);
     public static bool EstCeintureSacochesHerbeSolide(SlotInventaire s) => !s.EstVide && s.ID == Joueur.IdObjetCeintureSacoches && EstVarianteHerbeSolide(s);
     public static int ObtenirCapaciteSacStockage(SlotInventaire sacEquipe) => EstSacTier0HerbeSolide(sacEquipe) ? 2 : 1;
-    public static int ObtenirCapaciteCeintureStockage(SlotInventaire ceintureEquipe) => EstCeintureSacochesHerbeSolide(ceintureEquipe) ? 8 : 4;
+    private static int ObtenirCapacitePochetteDepuisTag(byte tag) => tag == Joueur.TagVarianteHerbeSolide ? 2 : 1;
+    private static int ObtenirMultiplicateurPilePochetteDepuisTag(byte tag) => tag == Joueur.TagVarianteLiane ? 2 : 1;
+
+    private static byte[] ObtenirTagsPochettesCeinture(SlotInventaire ceinture)
+    {
+        // Compatibilité anciens objets: infère 4 pochettes homogènes depuis la variante globale.
+        byte tagCompat = EstVarianteHerbeSolide(ceinture) ? Joueur.TagVarianteHerbeSolide
+            : (EstVarianteLiane(ceinture) ? Joueur.TagVarianteLiane : (byte)0);
+        var tagsParDefaut = new byte[] { tagCompat, tagCompat, tagCompat, tagCompat };
+        if (string.IsNullOrEmpty(ceinture.GenomeAssemblage) || !ceinture.GenomeAssemblage.StartsWith(PrefixConfigPochettesCeinture))
+            return tagsParDefaut;
+
+        string raw = ceinture.GenomeAssemblage.Substring(PrefixConfigPochettesCeinture.Length);
+        string[] parts = raw.Split(',');
+        if (parts.Length != 4) return tagsParDefaut;
+        var tags = new byte[4];
+        for (int i = 0; i < 4; i++)
+        {
+            if (!byte.TryParse(parts[i], out tags[i]))
+                return tagsParDefaut;
+        }
+        return tags;
+    }
+
+    public static string EncoderConfigPochettesCeinture(byte p0, byte p1, byte p2, byte p3)
+        => $"{PrefixConfigPochettesCeinture}{p0},{p1},{p2},{p3}";
+
+    public static int ObtenirCapaciteCeintureStockage(SlotInventaire ceintureEquipe)
+    {
+        var tags = ObtenirTagsPochettesCeinture(ceintureEquipe);
+        int cap = 0;
+        for (int i = 0; i < tags.Length; i++)
+            cap += ObtenirCapacitePochetteDepuisTag(tags[i]);
+        return Mathf.Clamp(cap, 1, 16);
+    }
+
+    public static int ObtenirMultiplicateurPileCeintureSlot(SlotInventaire ceintureEquipe, int indexSlot)
+    {
+        if (indexSlot < 0) return 1;
+        var tags = ObtenirTagsPochettesCeinture(ceintureEquipe);
+        int baseSlot = 0;
+        for (int i = 0; i < tags.Length; i++)
+        {
+            int cap = ObtenirCapacitePochetteDepuisTag(tags[i]);
+            if (indexSlot >= baseSlot && indexSlot < baseSlot + cap)
+                return ObtenirMultiplicateurPilePochetteDepuisTag(tags[i]);
+            baseSlot += cap;
+        }
+        return 1;
+    }
 
     public static bool SontEmpilables(SlotInventaire a, SlotInventaire b)
     {
@@ -111,6 +175,8 @@ public partial class Joueur
     /// <summary>Grille affichée et utilisée pour les clics craft : plan de l’atelier (9) ou poche (4).</summary>
     public SlotInventaire[] ObtenirGrilleCraftAffichee()
     {
+        if (StockageRackBatonsOuvert && RackBatonsOuvert != null && GodotObject.IsInstanceValid(RackBatonsOuvert))
+            return RackBatonsOuvert.GrillePlanTravailAtelier;
         if (CraftGrille3x3AuTable && AtelierPlanTravailOuvert != null && GodotObject.IsInstanceValid(AtelierPlanTravailOuvert))
             return AtelierPlanTravailOuvert.GrillePlanTravailAtelier;
         return GrilleCraftPoche;
@@ -118,9 +184,28 @@ public partial class Joueur
 
     public ref SlotInventaire RefSlotCraft(int idx)
     {
+        if (StockageRackBatonsOuvert && RackBatonsOuvert != null && GodotObject.IsInstanceValid(RackBatonsOuvert))
+            return ref RackBatonsOuvert.GrillePlanTravailAtelier[idx];
         if (CraftGrille3x3AuTable && AtelierPlanTravailOuvert != null && GodotObject.IsInstanceValid(AtelierPlanTravailOuvert))
             return ref AtelierPlanTravailOuvert.GrillePlanTravailAtelier[idx];
         return ref GrilleCraftPoche[idx];
+    }
+
+    public static bool EstSlotStockableRackBatons(SlotInventaire s) => !s.EstVide && (s.ID == 30 || s.ID == 32);
+
+    public int CompterQuantiteRackBatons()
+    {
+        if (!(StockageRackBatonsOuvert && RackBatonsOuvert != null && GodotObject.IsInstanceValid(RackBatonsOuvert)))
+            return 0;
+        int total = 0;
+        var g = RackBatonsOuvert.GrillePlanTravailAtelier;
+        int n = Mathf.Min(9, g.Length);
+        for (int i = 0; i < n; i++)
+        {
+            if (!EstSlotStockableRackBatons(g[i])) continue;
+            total += ObtenirQuantiteSlot(g[i]);
+        }
+        return total;
     }
 
     /// <summary>True si la grille « sac » du menu anatomie doit s’afficher (phase actuelle : sac tier 0 équipé).</summary>

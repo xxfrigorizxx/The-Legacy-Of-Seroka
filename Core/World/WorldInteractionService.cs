@@ -6,7 +6,7 @@ public partial class Joueur
 {
     private const float RayonInteractionBaiesBuisson = 1.2f;
 
-    /// <summary>Ouvre le plan de travail 3x3 si la visée touche un atelier posé (ID 200).</summary>
+    /// <summary>Ouvre le conteneur sous visée (atelier 200 en craft, rack 109 en stockage).</summary>
     private bool EssayerOuvrirAtelierSousVisee()
     {
         _rayon.ForceRaycastUpdate();
@@ -15,17 +15,32 @@ public partial class Joueur
         var itemTouche = objetTouche as ItemPhysique
             ?? (objetTouche as Node)?.GetParent() as ItemPhysique
             ?? (objetTouche as Node)?.GetNodeOrNull<ItemPhysique>("ItemPhysique");
-        if (itemTouche == null || itemTouche.ID_Objet != 200 || _menuAnatomie == null)
+        if (itemTouche == null || (itemTouche.ID_Objet != 200 && itemTouche.ID_Objet != IdObjetRackBatons) || _menuAnatomie == null)
             return false;
 
-        AtelierPlanTravailOuvert = itemTouche;
-        CraftGrille3x3AuTable = true;
+        if (itemTouche.ID_Objet == 200)
+        {
+            AtelierPlanTravailOuvert = itemTouche;
+            CraftGrille3x3AuTable = true;
+            StockageRackBatonsOuvert = false;
+            RackBatonsOuvert = null;
+        }
+        else
+        {
+            RackBatonsOuvert = itemTouche;
+            StockageRackBatonsOuvert = true;
+            CraftGrille3x3AuTable = true;
+            AtelierPlanTravailOuvert = null;
+            SynchroniserVisuelRackBatons(itemTouche);
+        }
         if (!_menuAnatomie.EstOuvert)
             _menuAnatomie.BasculerVisibilite();
         else
             _menuAnatomie.RafraichirMenu();
         GetViewport().SetInputAsHandled();
-        GD.Print("ZERO-K : Plan de travail 3x3 de l'Atelier ouvert.");
+        GD.Print(itemTouche.ID_Objet == 200
+            ? "ZERO-K : Plan de travail 3x3 de l'Atelier ouvert."
+            : "ZERO-K : Rack à bâtons ouvert.");
         return true;
     }
 
@@ -152,7 +167,7 @@ public partial class Joueur
     {
         if (s.EstVide || s.ID == 0) return false;
         if (s.ID >= 1 && s.ID <= 9 && s.ID != 4) return true;
-        return s.ID == 999 || s.ID == 10 || s.ID == 11 || s.ID == BlocChutant.ID_BRANCHE || s.ID == IdObjetBaie || ItemPhysique.EstIdRocheMatiere(s.ID) || s.ID == 30 || s.ID == 32 || s.ID == 34 || s.ID == 21 || s.ID == IdObjetCeinturePoches || s.ID == IdObjetCeintureSacoches || s.ID == IdObjetPochetteTier0 || s.ID == IdObjetSacTier0 || s.ID == IdObjetPellePierreTier0 || s.ID == IdObjetPiochePierreTier0 || s.ID == 200;
+        return s.ID == 999 || s.ID == 10 || s.ID == 11 || s.ID == BlocChutant.ID_BRANCHE || s.ID == IdObjetBaie || ItemPhysique.EstIdRocheMatiere(s.ID) || s.ID == 30 || s.ID == 32 || s.ID == 34 || s.ID == 21 || s.ID == IdObjetCeinturePoches || s.ID == IdObjetCeintureSacoches || s.ID == IdObjetPochetteTier0 || s.ID == IdObjetSacTier0 || s.ID == IdObjetPellePierreTier0 || s.ID == IdObjetPiochePierreTier0 || s.ID == 200 || s.ID == IdObjetRackBatons;
     }
 
     /// <summary>Corde (20) : accrocher au point de visée si surface valide (sol, roche, arbre, bloc posé).</summary>
@@ -203,7 +218,6 @@ public partial class Joueur
     /// Copie IndexCacheMemoire dans le SlotInventaire pour conserver la forme exacte.</summary>
     private void ExecuterRamassageObjet()
     {
-        if (!MainGauche.EstVide && !MainDroite.EstVide) return;
         if (!_rayon.IsColliding()) return;
 
         Node objetTouche = NoeudDepuisColliderRaycast(_rayon.GetCollider());
@@ -214,9 +228,9 @@ public partial class Joueur
         if (objetTouche.IsInGroup("BlocsPoses"))
         {
             int id = objetTouche.HasMeta("ID_Matiere") ? (int)objetTouche.GetMeta("ID_Matiere").AsInt32() : 1;
-            if (id == 200)
+            if (id == 200 || id == IdObjetRackBatons)
             {
-                GD.Print("ZERO-K : Atelier fixé au monde. Récupération uniquement par minage.");
+                GD.Print("ZERO-K : Structure fixée au monde. Récupération uniquement par minage.");
                 return;
             }
             var item = objetTouche as ItemPhysique ?? (objetTouche as Node)?.GetParent() as ItemPhysique ?? (objetTouche as Node)?.GetNodeOrNull<ItemPhysique>("ItemPhysique");
@@ -240,7 +254,9 @@ public partial class Joueur
                 ScaleEclat = item != null && (item.ID_Objet == 30 || item.ID_Objet == 32)
                     ? ScaleEclatBoisAuRamassage(item)
                     : (item != null ? item.Scale : Vector3.One),
-                IndexBotanique = item != null && (item.ID_Objet == 30 || item.ID_Objet == 32 || item.ID_Objet == 106 || item.ID_Objet == IdObjetPellePierreTier0 || item.ID_Objet == IdObjetPiochePierreTier0) ? item.IndexBotanique : LSystem_Botanique.IndexChene,
+                IndexBotanique = item != null && (item.ID_Objet == 30 || item.ID_Objet == 32 || item.ID_Objet == 106 || item.ID_Objet == IdObjetPellePierreTier0 || item.ID_Objet == IdObjetPiochePierreTier0 || item.ID_Objet == IdObjetPochetteTier0 || item.ID_Objet == IdObjetSacTier0 || item.ID_Objet == IdObjetCeinturePoches || item.ID_Objet == IdObjetCeintureSacoches || item.ID_Objet == IdObjetRackBatons)
+                    ? item.IndexBotanique
+                    : LSystem_Botanique.IndexChene,
                 GenomeAssemblage = LireGenomeSurItemPhysique(item),
                 CleConteneur = (item != null && item.HasMeta("CleConteneur")) ? item.GetMeta("CleConteneur").AsString() : ""
             };
@@ -259,9 +275,9 @@ public partial class Joueur
             {
             var item = rb as ItemPhysique ?? (rb as Node)?.GetParent() as ItemPhysique ?? rb.GetNodeOrNull<ItemPhysique>("ItemPhysique");
             if (item == null) return;
-            if (item.ID_Objet == 200)
+            if (item.ID_Objet == 200 || item.ID_Objet == IdObjetRackBatons)
             {
-                GD.Print("ZERO-K : Atelier fixé au monde. Récupération uniquement par minage.");
+                GD.Print("ZERO-K : Structure fixée au monde. Récupération uniquement par minage.");
                 return;
             }
             if (ItemPhysique.EstIdRocheMatiere(item.ID_Objet) && item.IndexTailleRoche >= 3)
@@ -284,7 +300,9 @@ public partial class Joueur
                 MeshEclat = item.EstUnEclat ? item.ObtenirMeshVisuel() : null,
                 NiveauFracture = item.NiveauFracture,
                 ScaleEclat = (item.ID_Objet == 30 || item.ID_Objet == 32) ? ScaleEclatBoisAuRamassage(item) : item.Scale,
-                IndexBotanique = (item.ID_Objet == 30 || item.ID_Objet == 32 || item.ID_Objet == 106 || item.ID_Objet == IdObjetPellePierreTier0 || item.ID_Objet == IdObjetPiochePierreTier0 || item.ID_Objet == 200) ? item.IndexBotanique : LSystem_Botanique.IndexChene,
+                IndexBotanique = (item.ID_Objet == 30 || item.ID_Objet == 32 || item.ID_Objet == 106 || item.ID_Objet == IdObjetPellePierreTier0 || item.ID_Objet == IdObjetPiochePierreTier0 || item.ID_Objet == 200 || item.ID_Objet == IdObjetPochetteTier0 || item.ID_Objet == IdObjetSacTier0 || item.ID_Objet == IdObjetCeinturePoches || item.ID_Objet == IdObjetCeintureSacoches || item.ID_Objet == IdObjetRackBatons)
+                    ? item.IndexBotanique
+                    : LSystem_Botanique.IndexChene,
                 GenomeAssemblage = LireGenomeSurItemPhysique(item),
                 CleConteneur = item.HasMeta("CleConteneur") ? item.GetMeta("CleConteneur").AsString() : ""
             };
@@ -296,9 +314,9 @@ public partial class Joueur
         {
             var item = sb.GetNodeOrNull<ItemPhysique>("ItemPhysique");
             if (item == null) return;
-            if (item.ID_Objet == 200)
+            if (item.ID_Objet == 200 || item.ID_Objet == IdObjetRackBatons)
             {
-                GD.Print("ZERO-K : Atelier fixé au monde. Récupération uniquement par minage.");
+                GD.Print("ZERO-K : Structure fixée au monde. Récupération uniquement par minage.");
                 return;
             }
             if (ItemPhysique.EstIdRocheMatiere(item.ID_Objet) && item.IndexTailleRoche >= 3)
@@ -321,7 +339,9 @@ public partial class Joueur
                 MeshEclat = item.EstUnEclat ? item.ObtenirMeshVisuel() : null,
                 NiveauFracture = item.NiveauFracture,
                 ScaleEclat = (item.ID_Objet == 30 || item.ID_Objet == 32) ? ScaleEclatBoisAuRamassage(item) : item.Scale,
-                IndexBotanique = (item.ID_Objet == 30 || item.ID_Objet == 32 || item.ID_Objet == 106 || item.ID_Objet == IdObjetPellePierreTier0 || item.ID_Objet == IdObjetPiochePierreTier0) ? item.IndexBotanique : LSystem_Botanique.IndexChene,
+                IndexBotanique = (item.ID_Objet == 30 || item.ID_Objet == 32 || item.ID_Objet == 106 || item.ID_Objet == IdObjetPellePierreTier0 || item.ID_Objet == IdObjetPiochePierreTier0 || item.ID_Objet == IdObjetPochetteTier0 || item.ID_Objet == IdObjetSacTier0 || item.ID_Objet == IdObjetCeinturePoches || item.ID_Objet == IdObjetCeintureSacoches || item.ID_Objet == IdObjetRackBatons)
+                    ? item.IndexBotanique
+                    : LSystem_Botanique.IndexChene,
                 GenomeAssemblage = LireGenomeSurItemPhysique(item),
                 CleConteneur = item.HasMeta("CleConteneur") ? item.GetMeta("CleConteneur").AsString() : ""
             };
@@ -332,21 +352,10 @@ public partial class Joueur
             return;
 
         nouveauSlot.Quantite = ObtenirQuantiteSlot(nouveauSlot);
-        if (MainGaucheEstActive)
+        if (!EssayerAjouterDansInventaire(nouveauSlot))
         {
-            if (TenterEmpilementComplet(ref MainGauche, nouveauSlot)) { }
-            else if (TenterEmpilementComplet(ref MainDroite, nouveauSlot)) { }
-            else if (MainGauche.EstVide) MainGauche = nouveauSlot;
-            else if (MainDroite.EstVide) MainDroite = nouveauSlot;
-            else return;
-        }
-        else
-        {
-            if (TenterEmpilementComplet(ref MainDroite, nouveauSlot)) { }
-            else if (TenterEmpilementComplet(ref MainGauche, nouveauSlot)) { }
-            else if (MainDroite.EstVide) MainDroite = nouveauSlot;
-            else if (MainGauche.EstVide) MainGauche = nouveauSlot;
-            else return;
+            GD.Print("ZERO-K : Inventaire plein. Impossible de ramasser cet objet.");
+            return;
         }
         objetTouche.QueueFree();
         ReinitialiserRotationManuelle();
@@ -376,12 +385,12 @@ public partial class Joueur
         Vector3 normaleImpact = _rayon.GetCollisionNormal();
         Vector3 pointDeChute;
 
-        if (mainActive.ID == 200)
+        if (mainActive.ID == 200 || mainActive.ID == IdObjetRackBatons)
         {
             Node noeudCol = NoeudDepuisColliderRaycast(_rayon.GetCollider());
             if (!EstSolViseParRayon(_rayon, noeudCol))
             {
-                GD.Print("ZERO-K : Posez l’atelier sur le sol (terrain / herbe), pas sur un objet vertical.");
+                GD.Print("ZERO-K : Posez cette structure sur le sol (terrain / herbe), pas sur un objet vertical.");
                 return;
             }
 
@@ -401,7 +410,7 @@ public partial class Joueur
         // Flexible / corde avec E : on peut poser près du corps (manipulation fine) ; clic droit garde la marge anti-auto-collision
         bool flexOuCordeE = depuisInteragir && (EstMatiereFlexible(mainActive.ID) || mainActive.ID == 20 || mainActive.ID == 21);
         // Atelier : marge courte pour poser sous la visée (évite un rejet silencieux puis une pose « ailleurs »).
-        float distMin = flexOuCordeE ? 0.35f : (mainActive.ID == 200 ? 0.55f : 1.4f);
+        float distMin = flexOuCordeE ? 0.35f : ((mainActive.ID == 200 || mainActive.ID == IdObjetRackBatons) ? 0.55f : 1.4f);
         if (distance < distMin) return;
 
         int id = mainActive.ID;
@@ -428,13 +437,14 @@ public partial class Joueur
 			}
 			GD.Print("ZERO-K : Buisson replanté.");
 		}
-        else if (id == 999 || id == BlocChutant.ID_BRANCHE || id == IdObjetBaie || ItemPhysique.EstIdRocheMatiere(id) || id == 15 || id == 16 || id == 17 || id == 20 || id == 21 || id == IdObjetCeinturePoches || id == IdObjetCeintureSacoches || id == IdObjetPochetteTier0 || id == IdObjetSacTier0 || id == 30 || id == 32 || id == 34 || id == 105 || id == 106 || id == IdObjetPellePierreTier0 || id == IdObjetPiochePierreTier0 || id == 200)
+        else if (id == 999 || id == BlocChutant.ID_BRANCHE || id == IdObjetBaie || ItemPhysique.EstIdRocheMatiere(id) || id == 15 || id == 16 || id == 17 || id == 20 || id == 21 || id == IdObjetCeinturePoches || id == IdObjetCeintureSacoches || id == IdObjetPochetteTier0 || id == IdObjetSacTier0 || id == 30 || id == 32 || id == 34 || id == 105 || id == 106 || id == IdObjetPellePierreTier0 || id == IdObjetPiochePierreTier0 || id == 200 || id == IdObjetRackBatons)
         {
             Node3D nePose = CreerBlocPose(pointDeChute, mainActive);
             // Clic droit rapide : un objet lançable doit se déposer au sol sans mini-impulsion.
             // La poussée douce reste utile pour les poses via touche Interagir.
             bool estLancable = EstObjetLancableAuMaintien(mainActive);
-            bool appliquerImpulsionPose = id != 200 && (depuisInteragir || !estLancable);
+            bool structureFixe = id == 200 || id == IdObjetRackBatons;
+            bool appliquerImpulsionPose = !structureFixe && (depuisInteragir || !estLancable);
             if (appliquerImpulsionPose)
                 AppliquerImpulsionLacherDoux(nePose);
         }
@@ -456,8 +466,9 @@ public partial class Joueur
         if (slot.EstVide) return false;
         bool estTerrainVoxel = slot.ID >= 1 && slot.ID <= 9;
         bool estAtelier = slot.ID == 200;
+        bool estRackBatons = slot.ID == IdObjetRackBatons;
         bool estBuisson = slot.ID == 10 || slot.ID == 11;
-        return !estTerrainVoxel && !estAtelier && !estBuisson;
+        return !estTerrainVoxel && !estAtelier && !estRackBatons && !estBuisson;
     }
 
     /// <summary>Clic droit court : si la visée est le sol et l’outil peut faucher, exécute le même fauchage que le clic gauche (gazon 3D → fibres).</summary>

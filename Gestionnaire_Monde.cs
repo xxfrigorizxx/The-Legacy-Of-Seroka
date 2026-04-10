@@ -58,6 +58,7 @@ public partial class Gestionnaire_Monde : Node3D
 	private bool _etatPersistantRestaure;
 	private double _secondesDormanceObjets;
 	private const int RayonDormanceObjetsChunks = 5;
+	[Export] public int RayonSecuriteTerrainObjetsChunks = 1;
 	private const float NiveauEauOcean = 103f;
 	private Area3D _oceanPhysique;
 	private Node3D _conteneurEffetsEau;
@@ -109,6 +110,9 @@ public partial class Gestionnaire_Monde : Node3D
 		int sec = Mathf.FloorToInt(pos.Y / 16f);
 		return ch.SectionAPret(sec);
 	}
+
+	/// <summary>Nouvelle partie : le joueur ne doit bouger en physique qu’après <see cref="FinaliserSpawnInitialAuSol"/> (sinon il tombe depuis Y=h+10 avant le raycast et peut traverser le sol).</summary>
+	public bool EstAlignementSpawnTermine() => !_spawnDoitEtreAligneAuSol || _spawnAligneAuSol;
 
 	/// <summary>Utilisé par Generateur_Voxel (legacy) et Monde_Serveur.</summary>
 	public bool ChunkEstCharge(Vector2I coord)
@@ -203,16 +207,31 @@ public partial class Gestionnaire_Monde : Node3D
 		}
 
 		int hauteurTerrain = Generateur_Voxel.ObtenirHauteurTerrainMonde(meilleurX, meilleurZ, SeedTerrain);
-		float ySpawn = hauteurTerrain + 40f;
+		// Quelques mètres au-dessus du relief : le raycast final pose les pieds. +40 laissait le corps dans le ciel si le sol tardait ou si le raycast échouait.
+		float ySpawn = hauteurTerrain + 10f;
 		if (hauteurTerrain < 103) ySpawn = Mathf.Max(ySpawn, 142f);
 		return new Vector3(meilleurX + 0.5f, ySpawn, meilleurZ + 0.5f);
 	}
 
-	/// <summary>Garantit un spawn au-dessus du terrain local pour éviter un joueur sous la map.</summary>
+	/// <summary>Garantit un spawn au-dessus du terrain local pour éviter un joueur sous la map, et ramène au voisinage du sol si la position est restée « dans le ciel ».</summary>
 	private Vector3 AssurerSpawnAuDessusDuSol(Vector3 pos)
 	{
 		int hauteurTerrain = Generateur_Voxel.ObtenirHauteurTerrainMonde((int)pos.X, (int)pos.Z, SeedTerrain);
-		float yMinSecurise = hauteurTerrain + 2.2f;
+		float ySurfaceApprox = hauteurTerrain + 1.02f;
+		float yCibleAuSol = _joueur is Joueur jo
+			? jo.CalculerYOriginePourPiedsSurSurface(ySurfaceApprox)
+			: hauteurTerrain + 2.85f;
+
+		// Sauvegarde / fallback raycast : Y énorme → le personnage « vole » jusqu’à ce que la collision existe.
+		if (pos.Y > hauteurTerrain + 18f)
+		{
+			GD.Print($"ZERO-K : Spawn abaissé (trop haut par rapport au terrain ~{hauteurTerrain}) {pos.Y:0.0} -> {yCibleAuSol:0.0}");
+			pos.Y = yCibleAuSol;
+		}
+
+		float yMinSecurise = _joueur is Joueur jo2
+			? jo2.CalculerYOriginePourPiedsSurSurface(hauteurTerrain + 0.25f)
+			: hauteurTerrain + 2.2f;
 		if (pos.Y < yMinSecurise)
 		{
 			GD.Print($"ZERO-K : Spawn corrigé (anti sous-map) {pos.Y:0.00} -> {yMinSecurise:0.00}");
@@ -252,7 +271,11 @@ public partial class Gestionnaire_Monde : Node3D
 		Vector3 posFinale;
 		if (EssayerTrouverSolParRaycast(_spawnInitialEnAttente, out Vector3 pointSol))
 		{
-			posFinale = pointSol + Vector3.Up * 1.2f;
+			posFinale = _spawnInitialEnAttente;
+			if (_joueur is Joueur jo)
+				posFinale.Y = jo.CalculerYOriginePourPiedsSurSurface(pointSol.Y);
+			else
+				posFinale = pointSol + Vector3.Up * 1.2f;
 		}
 		else
 		{
@@ -261,6 +284,7 @@ public partial class Gestionnaire_Monde : Node3D
 		}
 
 		_joueur.GlobalPosition = posFinale;
+		_joueur.Velocity = Vector3.Zero;
 		_joueur.Visible = true;
 		_spawnAligneAuSol = true;
 		GD.Print($"ZERO-K : Spawn finalisé au sol -> {posFinale}");
@@ -464,11 +488,12 @@ public partial class Gestionnaire_Monde : Node3D
 	{
 		if (!@event.IsActionPressed("ui_cancel"))
 			return;
-		bool invOuvert = _joueur is Joueur jo && jo.MenuAnatomieOuvert();
-		if (invOuvert && !_pauseVisible)
-			ForcerOuvertureMenuPause();
-		else
-			ToggleMenuPause();
+		if (_joueur is Joueur jo && jo.FermerUIJoueurSiOuverte())
+		{
+			GetViewport().SetInputAsHandled();
+			return;
+		}
+		ToggleMenuPause();
 		GetViewport().SetInputAsHandled();
 	}
 
@@ -927,23 +952,31 @@ public partial class Gestionnaire_Monde : Node3D
 		if (_joueur == null) return;
 		Vector2I chunkJoueur = WorldToChunkCoord(_joueur.GlobalPosition, TailleChunk);
 		int rayon = RayonDormanceObjetsChunks;
+		bool useGardeTerrain = UseArchitectureReseau && _mondeClient != null;
+		int rayonSecuriteTerrain = Mathf.Clamp(RayonSecuriteTerrainObjetsChunks, 0, 2);
 		foreach (Node n in GetTree().GetNodesInGroup("BlocsPoses"))
 		{
 			if (n is not RigidBody3D rb || !rb.IsInsideTree()) continue;
-			if (rb is ItemPhysique ip && ip.ID_Objet == 200) continue;
+			if (rb is ItemPhysique ip && (ip.ID_Objet == 200 || ip.ID_Objet == Joueur.IdObjetRackBatons))
+				continue;
 			Vector2I c = WorldToChunkCoord(rb.GlobalPosition, TailleChunk);
 			bool proche = Mathf.Abs(c.X - chunkJoueur.X) <= rayon && Mathf.Abs(c.Y - chunkJoueur.Y) <= rayon;
+			if (proche && useGardeTerrain)
+				proche = _mondeClient.CollisionTerrainActiveAutourPoint(rb.GlobalPosition, rayonSecuriteTerrain);
 			if (proche)
 			{
-				rb.Freeze = false;
-				rb.Sleeping = false;
+				if (rb.Freeze) rb.Freeze = false;
+				if (rb.Sleeping) rb.Sleeping = false;
 			}
 			else
 			{
-				rb.LinearVelocity = Vector3.Zero;
-				rb.AngularVelocity = Vector3.Zero;
-				rb.Sleeping = true;
-				rb.Freeze = true;
+				if (!rb.Freeze || !rb.Sleeping)
+				{
+					rb.LinearVelocity = Vector3.Zero;
+					rb.AngularVelocity = Vector3.Zero;
+					rb.Sleeping = true;
+					rb.Freeze = true;
+				}
 			}
 		}
 		foreach (Node n in GetTree().GetNodesInGroup("ObjetsDormantsDynamiques"))
@@ -951,17 +984,22 @@ public partial class Gestionnaire_Monde : Node3D
 			if (n is not RigidBody3D rb || !rb.IsInsideTree()) continue;
 			Vector2I c = WorldToChunkCoord(rb.GlobalPosition, TailleChunk);
 			bool proche = Mathf.Abs(c.X - chunkJoueur.X) <= rayon && Mathf.Abs(c.Y - chunkJoueur.Y) <= rayon;
+			if (proche && useGardeTerrain)
+				proche = _mondeClient.CollisionTerrainActiveAutourPoint(rb.GlobalPosition, rayonSecuriteTerrain);
 			if (proche)
 			{
-				rb.Freeze = false;
-				rb.Sleeping = false;
+				if (rb.Freeze) rb.Freeze = false;
+				if (rb.Sleeping) rb.Sleeping = false;
 			}
 			else
 			{
-				rb.LinearVelocity = Vector3.Zero;
-				rb.AngularVelocity = Vector3.Zero;
-				rb.Sleeping = true;
-				rb.Freeze = true;
+				if (!rb.Freeze || !rb.Sleeping)
+				{
+					rb.LinearVelocity = Vector3.Zero;
+					rb.AngularVelocity = Vector3.Zero;
+					rb.Sleeping = true;
+					rb.Freeze = true;
+				}
 			}
 		}
 	}
