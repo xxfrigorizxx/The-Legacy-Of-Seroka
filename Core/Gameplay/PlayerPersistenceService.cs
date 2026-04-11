@@ -176,6 +176,7 @@ public partial class Joueur
             }
             AjouterFutureStateSiAbsent("Force", 0UL);
             AjouterFutureStateSiAbsent("Dextiriter", 0UL);
+            AjouterFutureStateSiAbsent("Metaboliste", 0UL);
             AjouterMetierSiAbsent("Bucheron", 0UL);
             AjouterMetierSiAbsent("Traisage", 0UL);
         }

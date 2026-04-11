@@ -17,20 +17,20 @@ public partial class Monde_Client : Node3D
 	[Export] public int RayonBuissonsVisibleChunks = 24;
 	[Export] public bool ProfilLodCinematiqueUltraSmooth = true;
 	[Export] public int LODTextureEtapes = 12;
-	[Export] public int MaxChunksParFrame = 12;
+	[Export] public int MaxChunksParFrame = 14;
 	/// <summary>Nombre d'entrées inspectées max pour choisir un job maths (évite un scan O(n) complet à chaque worker).</summary>
-	[Export] public int FenetreSelectionTravailMaths = 48;
-	[Export] public int RayonInitialRequetesChunks = 8;
-	[Export] public float IntervalleExpansionRequetesSec = 0.35f;
+	[Export] public int FenetreSelectionTravailMaths = 56;
+	[Export] public int RayonInitialRequetesChunks = 10;
+	[Export] public float IntervalleExpansionRequetesSec = 0.30f;
 	[Export] public int SeuilBacklogHaut = 36;
 	[Export] public int SeuilBacklogBas = 12;
 	[Export] public float IntervalleProgressionForceeRayonSec = 1.6f;
 	[Export] public bool ModeAutoDiagnosticAdaptatif = true;
-	[Export] public int FpsCibleAutoDiagnostic = 60;
+	[Export] public int FpsCibleAutoDiagnostic = 120;
 	[Export] public float RatioChargeMinimumAuto = 0.28f;
 	[Export] public bool ActiverAntiSpikeFrameTime = true;
-	[Export] public float SeuilSpikeFrameMs = 22f;
-	[Export] public float DureeFreinSpikeSec = 0.35f;
+	[Export] public float SeuilSpikeFrameMs = 18f;
+	[Export] public float DureeFreinSpikeSec = 0.45f;
 	[Export] public bool ActiverHorizonLod = false;
 	[Export] public int RayonHorizonChunks = 72;
 	[Export] public float PasHorizonMetres = 20f;
@@ -46,20 +46,26 @@ public partial class Monde_Client : Node3D
 	/// <summary>Demi-côté (chunks) pour lever l’overlay « Chargement du monde » : 2 = grille 5×5. Ne pas exiger tout le rayon de dormance (17×17) au démarrage sinon chargement quasi infini.</summary>
 	[Export] public int RayonGrilleMinSpawnPret = 2;
 	/// <summary>Chunks demandés en plus du rayon physique (file prioritaire). Le sol doit être chargé avant que tu n’entres dans la grille ChunkSousPiedsAPret.</summary>
-	[Export] public int MargePreloadChunks = 4;
+	[Export] public int MargePreloadChunks = 6;
 	/// <summary>Anticipation du déplacement (s) : une 2ᵉ zone de priorité autour de la position future pour marches longues dans une direction.</summary>
-	[Export] public float SecondesAnticipationChargement = 2.5f;
-	[Export] public float IntervalleRafraichissementRadarImmobile = 0.55f;
+	[Export] public float SecondesAnticipationChargement = 3.0f;
+	[Export] public float IntervalleRafraichissementRadarImmobile = 0.45f;
 	/// <summary>Intégrations mesh/collision par frame quand le spawn est déjà prêt (exploration). Augmente si le sol met du temps à « se réveiller ».</summary>
 	[Export] public int MaxIntegrationsParFrameExploration = 4;
 	/// <summary>Intégrations mesh/collision par frame pendant le chargement initial (anti-pic CPU/GPU).</summary>
-	[Export] public int MaxIntegrationsParFrameChargement = 8;
+	[Export] public int MaxIntegrationsParFrameChargement = 9;
 	/// <summary>Budget de vertices intégrés par frame (exploration). Lisse l'arrivée des triangles.</summary>
 	[Export] public int BudgetVerticesIntegrationParFrameExploration = 130000;
 	/// <summary>Budget de vertices intégrés par frame au chargement initial (plus généreux).</summary>
-	[Export] public int BudgetVerticesIntegrationParFrameChargement = 190000;
+	[Export] public int BudgetVerticesIntegrationParFrameChargement = 210000;
 	/// <summary>Solidifications BodySetSpace par frame en exploration (hors chargement initial).</summary>
 	[Export] public int MaxSolidificationsParFrameExploration = 10;
+	/// <summary>Budget minimal de solidifications quand le joueur se déplace vite (anti-traversée du sol).</summary>
+	[Export] public int MaxSolidificationsPrioriteJoueur = 12;
+	/// <summary>Rayon (chunks) à réveiller en urgence autour de la position courante / anticipée du joueur.</summary>
+	[Export] public int RayonPrioriteCollisionJoueur = 2;
+	/// <summary>Anticipation (secondes) pour pré-réveiller les collisions devant le joueur.</summary>
+	[Export] public float SecondesAnticipationCollision = 0.85f;
 	/// <summary>Nombre max de chunks de flore (gazon/buissons) construits par frame en exploration.</summary>
 	[Export] public int MaxFloreParFrameExploration = 1;
 	/// <summary>Nombre max de chunks de flore construits par frame pendant le chargement initial.</summary>
@@ -85,12 +91,14 @@ public partial class Monde_Client : Node3D
 	private readonly object _lockFileAttenteMaths = new object();
 	private List<(ChunkData data, DonneesChunk donnees)> _fileAttenteMathsData = new List<(ChunkData, DonneesChunk)>();
 	private int _chunksEnCoursDeCalcul = 0;
-	[Export] public int MaxTravailleursCalcul = 8;
+	[Export] public int MaxTravailleursCalcul = 9;
 
 	/// <summary>Chunks au format Data-Oriented (RID). Plus de Node pour le terrain.</summary>
 	private Dictionary<Vector2I, ChunkData> _chunksData = new Dictionary<Vector2I, ChunkData>();
 	/// <summary>File d'attente de solidification physique : un chunk par frame pour éviter les pics PhysicsServer3D (dilution physique).</summary>
 	private List<ChunkData> _fileAttenteSolidification = new List<ChunkData>();
+	/// <summary>File urgente de collision autour du joueur (priorité absolue sécurité gameplay).</summary>
+	private readonly List<ChunkData> _fileAttenteSolidificationUrgente = new List<ChunkData>();
 
 	private List<Vector2I> _chunksACharger = new List<Vector2I>();
 	private readonly HashSet<Vector2I> _prioritaireSetTemp = new HashSet<Vector2I>();
@@ -256,10 +264,11 @@ public partial class Monde_Client : Node3D
 			_fpsMoyenneAuto = Mathf.Lerp(_fpsMoyenneAuto, fps, alpha);
 		}
 
-		float cible = Mathf.Clamp(FpsCibleAutoDiagnostic, 35, 240);
+		float cible = Mathf.Clamp(FpsCibleAutoDiagnostic, 60, 240);
 		float ratio = Mathf.Clamp(_fpsMoyenneAuto / cible, RatioChargeMinimumAuto, 1.15f);
-		if (_fpsMoyenneAuto < 35f) ratio *= 0.82f;
-		else if (_fpsMoyenneAuto < 45f) ratio *= 0.90f;
+		if (_fpsMoyenneAuto < 55f) ratio *= 0.74f;
+		else if (_fpsMoyenneAuto < 72f) ratio *= 0.82f;
+		else if (_fpsMoyenneAuto < 96f) ratio *= 0.90f;
 		_ratioChargeAuto = Mathf.Clamp(ratio, RatioChargeMinimumAuto, 1.1f);
 
 		float vitesseXZ = 0f;
@@ -268,11 +277,11 @@ public partial class Monde_Client : Node3D
 			Vector3 vel = _joueur.Velocity;
 			vitesseXZ = new Vector2(vel.X, vel.Z).Length();
 		}
-		float tMouvement = Mathf.Clamp((vitesseXZ - 0.8f) / 5.5f, 0f, 1f);
-		_facteurMouvementAuto = Mathf.Lerp(1f, 0.62f, tMouvement);
+		float tMouvement = Mathf.Clamp((vitesseXZ - 0.6f) / 5.0f, 0f, 1f);
+		_facteurMouvementAuto = Mathf.Lerp(1f, 0.54f, tMouvement);
 		float ratioStable = Mathf.Clamp(_ratioChargeAuto * _facteurMouvementAuto, RatioChargeMinimumAuto, 1.05f);
 		if (_timerFreinSpike > 0f)
-			ratioStable = Mathf.Clamp(ratioStable * 0.68f, RatioChargeMinimumAuto, 1.05f);
+			ratioStable = Mathf.Clamp(ratioStable * 0.64f, RatioChargeMinimumAuto, 1.05f);
 
 		_maxAjoutsRadarParPasseDyn = Mathf.Clamp(Mathf.RoundToInt(MaxAjoutsRadarParPasse * ratioStable), 220, MaxAjoutsRadarParPasse);
 		_maxRequetesDyn = Mathf.Clamp(Mathf.RoundToInt(MaxChunksParFrame * Mathf.Lerp(0.55f, 1.45f, ratioStable)), 2, 56);
@@ -361,19 +370,29 @@ public partial class Monde_Client : Node3D
 		}
 		EnfilerFloreChunk(data, ObtenirPositionObservation());
 
-		// Physique lazy: créer la hitbox uniquement près du joueur, puis activer dans l'espace.
+		// Physique lazy stricte : collision montée en file pour amortir le coût.
+		// Seule la zone ultra proche joueur passe par la file urgente.
 		if (_joueur != null)
 		{
 			Vector2I cJoueur = Gestionnaire_Monde.WorldToChunkCoord(ObtenirPositionObservation(), TailleChunk);
 			int dx = Mathf.Abs(data.Coordonnees.X - cJoueur.X);
 			int dz = Mathf.Abs(data.Coordonnees.Y - cJoueur.Y);
-			if (dx <= RayonDormancePhysique && dz <= RayonDormancePhysique)
+			if (dx == 0 && dz == 0)
 			{
 				AssurerCorpsPhysiqueChunk(data);
 				if (data.PhysicsBodyRID.IsValid)
 				{
 					PhysicsServer3D.Singleton.BodySetSpace(data.PhysicsBodyRID, world.Space);
 					data.EstEnFileSolidification = false;
+				}
+			}
+			else if (dx <= 1 && dz <= 1)
+			{
+				if (!data.EstEnFileSolidification)
+				{
+					_fileAttenteSolidification.Remove(data);
+					_fileAttenteSolidificationUrgente.Add(data);
+					data.EstEnFileSolidification = true;
 				}
 			}
 			else if (!data.EstEnFileSolidification)
@@ -435,14 +454,57 @@ public partial class Monde_Client : Node3D
 
 	private const int MaxMeshesParFrameVisuelles = 4;
 	private const int MaxMeshesParFrameModification = 16;
+	private const float SeuilVitessePrioriteJoueur = 4.2f;
 	private float _tempsDepuisNettoyage;
 	private const float IntervalleNettoyageChunks = 1.5f;
+
+	private void EnfilerSolidificationUrgenteAutour(Vector3 pointMonde, int rayonChunks)
+	{
+		int rayon = Mathf.Clamp(rayonChunks, 0, 3);
+		Vector2I c = Gestionnaire_Monde.WorldToChunkCoord(pointMonde, TailleChunk);
+		for (int dx = -rayon; dx <= rayon; dx++)
+		{
+			for (int dz = -rayon; dz <= rayon; dz++)
+			{
+				Vector2I cc = new Vector2I(c.X + dx, c.Y + dz);
+				if (!_chunksData.TryGetValue(cc, out var data)) continue;
+				if (data.PhysicsBodyRID.IsValid && !data.Dormant && !data.EstEnFileSolidification) continue;
+				if (data.EstEnFileSolidification)
+					_fileAttenteSolidification.Remove(data);
+				else
+					data.EstEnFileSolidification = true;
+				if (!_fileAttenteSolidificationUrgente.Contains(data))
+					_fileAttenteSolidificationUrgente.Add(data);
+			}
+		}
+	}
 
 	public override void _PhysicsProcess(double delta)
 	{
 		if (!IsInsideTree()) return; // GARROT SPATIAL : pas de manipulation de chunks si l'arbre s'effondre.
 		float dt = (float)delta;
 		MettreAJourAutoDiagnostic(dt);
+		float vitesseJoueurXZ = 0f;
+		if (_joueur != null)
+		{
+			Vector3 vv = _joueur.Velocity;
+			vitesseJoueurXZ = new Vector2(vv.X, vv.Z).Length();
+		}
+		bool prioriteJoueur = vitesseJoueurXZ >= SeuilVitessePrioriteJoueur;
+		if (_joueur != null)
+		{
+			EnfilerSolidificationUrgenteAutour(_joueur.GlobalPosition, RayonPrioriteCollisionJoueur);
+			if (prioriteJoueur)
+			{
+				Vector3 vel = _joueur.Velocity;
+				Vector3 velXZ = new Vector3(vel.X, 0f, vel.Z);
+				if (velXZ.LengthSquared() > 0.25f)
+				{
+					Vector3 pointAnticipe = _joueur.GlobalPosition + velXZ * Mathf.Max(0.35f, SecondesAnticipationCollision);
+					EnfilerSolidificationUrgenteAutour(pointAnticipe, RayonPrioriteCollisionJoueur);
+				}
+			}
+		}
 		int backlogCharge = CompterBacklog();
 		float facteurAntiSpikeBacklog = 1f;
 		if (backlogCharge > SeuilBacklogHaut) facteurAntiSpikeBacklog *= 0.82f;
@@ -454,13 +516,19 @@ public partial class Monde_Client : Node3D
 		int baseIntegrations = enChargement
 			? Mathf.Max(1, MaxIntegrationsParFrameChargement)
 			: Mathf.Max(1, MaxIntegrationsParFrameExploration);
-		int maxIntegrations = Mathf.Clamp(Mathf.RoundToInt(baseIntegrations * Mathf.Lerp(0.62f, 1.2f, _ratioChargeAuto) * facteurAntiSpikeBacklog), 1, Mathf.Max(1, baseIntegrations + 2));
+		int maxIntegrations = Mathf.Clamp(Mathf.RoundToInt(baseIntegrations * Mathf.Lerp(0.60f, 1.15f, _ratioChargeAuto) * facteurAntiSpikeBacklog), 1, Mathf.Max(1, baseIntegrations + 2));
 		int budgetVerticesBase = enChargement
 			? Mathf.Max(25000, BudgetVerticesIntegrationParFrameChargement)
 			: Mathf.Max(18000, BudgetVerticesIntegrationParFrameExploration);
 		float ratioVertices = Mathf.Lerp(0.58f, 1.25f, _ratioChargeAuto) * facteurAntiSpikeBacklog;
 		if (_timerFreinSpike > 0f) ratioVertices *= 0.70f;
-		int budgetVerticesDyn = Mathf.Clamp(Mathf.RoundToInt(budgetVerticesBase * ratioVertices), 12000, Mathf.Max(12000, budgetVerticesBase + 70000));
+		int budgetVerticesDyn = Mathf.Clamp(Mathf.RoundToInt(budgetVerticesBase * ratioVertices), 12000, Mathf.Max(12000, budgetVerticesBase + 55000));
+		// Priorité input : limiter les gros bursts quand le joueur file vite.
+		if (prioriteJoueur)
+		{
+			maxIntegrations = Mathf.Max(2, Mathf.Min(maxIntegrations, 3));
+			budgetVerticesDyn = Mathf.Max(18000, Mathf.RoundToInt(budgetVerticesDyn * 0.78f));
+		}
 		int integrations = 0;
 		int verticesIntegres = 0;
 		while (integrations < maxIntegrations && _fileIntegrationMainThread.TryDequeue(out var integration))
@@ -478,14 +546,31 @@ public partial class Monde_Client : Node3D
 			integrations++;
 		}
 
-		// 3) Solidification physique lissée : crée/active les collisions proches en budget fixe.
-		if (_fileAttenteSolidification.Count > 0)
+		// 3) Solidification physique lissée : collisions urgentes (autour joueur) puis fond.
+		if (_fileAttenteSolidificationUrgente.Count > 0 || _fileAttenteSolidification.Count > 0)
 		{
 			Vector2I coordObsSolidif = ObtenirCoordonneesChunkJoueur();
 			int baseSolidifications = enChargement ? 10 : Mathf.Max(1, MaxSolidificationsParFrameExploration);
-			int maxSolidifications = Mathf.Clamp(Mathf.RoundToInt(baseSolidifications * Mathf.Lerp(0.65f, 1.2f, _ratioChargeAuto) * facteurAntiSpikeBacklog), 1, Mathf.Max(1, baseSolidifications + 2));
+			int maxSolidifications = Mathf.Clamp(Mathf.RoundToInt(baseSolidifications * Mathf.Lerp(0.60f, 1.12f, _ratioChargeAuto) * facteurAntiSpikeBacklog), 1, Mathf.Max(1, baseSolidifications + 2));
+			if (prioriteJoueur)
+				maxSolidifications = Mathf.Max(maxSolidifications, Mathf.Max(6, MaxSolidificationsPrioriteJoueur));
+			if (_fileAttenteSolidificationUrgente.Count > 0)
+				maxSolidifications = Mathf.Max(maxSolidifications, Mathf.Min(20, 6 + _fileAttenteSolidificationUrgente.Count / 3));
 			int efforts = 0;
 			World3D w = GetWorld3D();
+			while (_fileAttenteSolidificationUrgente.Count > 0 && efforts < maxSolidifications && w != null)
+			{
+				ChunkData urgent = _fileAttenteSolidificationUrgente[0];
+				_fileAttenteSolidificationUrgente.RemoveAt(0);
+				if (urgent == null) continue;
+				AssurerCorpsPhysiqueChunk(urgent);
+				if (urgent.PhysicsBodyRID.IsValid)
+				{
+					PhysicsServer3D.Singleton.BodySetSpace(urgent.PhysicsBodyRID, w.Space);
+					urgent.EstEnFileSolidification = false;
+				}
+				efforts++;
+			}
 			while (_fileAttenteSolidification.Count > 0 && efforts < maxSolidifications)
 			{
 				int idxProche = 0;
@@ -1445,7 +1530,8 @@ public partial class Monde_Client : Node3D
 					}
 					else if (!d.EstEnFileSolidification)
 					{
-						_fileAttenteSolidification.Add(d);
+						_fileAttenteSolidification.Remove(d);
+						_fileAttenteSolidificationUrgente.Add(d);
 						d.EstEnFileSolidification = true;
 					}
 				}
@@ -1512,7 +1598,8 @@ public partial class Monde_Client : Node3D
 				else if (!data.PhysicsBodyRID.IsValid && !data.EstEnFileSolidification)
 				{
 					// Garantit qu'un chunk proche sans body est solidifié rapidement.
-					_fileAttenteSolidification.Add(data);
+					_fileAttenteSolidification.Remove(data);
+					_fileAttenteSolidificationUrgente.Add(data);
 					data.EstEnFileSolidification = true;
 				}
 			}

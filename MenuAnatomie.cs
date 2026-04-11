@@ -94,13 +94,15 @@ public partial class MenuAnatomie : Control
 	private Label _lblInfobulleSlot;
 	private Panel _panneauSanteCorps;
 	private Label _lblSanteGlobaleCorps;
+	private Label _lblForceEtMultiplicateur;
+	private Label _lblPoidsMaxSousApercu;
 	private readonly Dictionary<string, ProgressBar> _barresSanteCorps = new(StringComparer.OrdinalIgnoreCase);
 	private readonly Dictionary<string, Label> _labelsSanteCorps = new(StringComparer.OrdinalIgnoreCase);
 	private readonly Dictionary<string, StyleBoxFlat> _stylesRemplissageSanteCorps = new(StringComparer.OrdinalIgnoreCase);
-	private const float DistanceCameraApercuJoueurCorps = 1.18f;
+	private const float DistanceCameraApercuJoueurCorps = 2.18f;
 	private const float DecalageLateralCameraApercuJoueurCorps = 0.00f;
-	private const float HauteurCameraApercuJoueurCorps = -0.02f;
-	private const float HauteurCibleCameraApercuJoueurCorps = 0.86f;
+	private const float HauteurCameraApercuJoueurCorps = -0.56f;
+	private const float HauteurCibleCameraApercuJoueurCorps = -0.06f;
 	private SubViewportContainer _vpApercuJoueurCorps;
 	private SubViewport _svApercuJoueurCorps;
 	private Camera3D _cameraApercuJoueurCorps;
@@ -271,15 +273,34 @@ public partial class MenuAnatomie : Control
 		_lblSanteGlobaleCorps.AddThemeColorOverride("font_color", new Color(0.82f, 0.95f, 0.86f));
 		colonne.AddChild(_lblSanteGlobaleCorps);
 
+		_lblForceEtMultiplicateur = new Label
+		{
+			HorizontalAlignment = HorizontalAlignment.Center,
+			MouseFilter = Control.MouseFilterEnum.Ignore
+		};
+		_lblForceEtMultiplicateur.AddThemeFontSizeOverride("font_size", 12);
+		_lblForceEtMultiplicateur.AddThemeColorOverride("font_color", new Color(0.86f, 0.90f, 0.98f));
+		colonne.AddChild(_lblForceEtMultiplicateur);
+
 		var cadreApercu = new Panel
 		{
 			Name = "CadreApercuJoueurCorps",
-			CustomMinimumSize = new Vector2(0, 200),
+			CustomMinimumSize = new Vector2(0, 380),
+			ClipContents = true,
 			MouseFilter = Control.MouseFilterEnum.Ignore
 		};
 		cadreApercu.SizeFlagsVertical = Control.SizeFlags.ShrinkCenter;
 		colonne.AddChild(cadreApercu);
 		AssurerApercuJoueurCorps(cadreApercu);
+
+		_lblPoidsMaxSousApercu = new Label
+		{
+			HorizontalAlignment = HorizontalAlignment.Center,
+			MouseFilter = Control.MouseFilterEnum.Ignore
+		};
+		_lblPoidsMaxSousApercu.AddThemeFontSizeOverride("font_size", 12);
+		_lblPoidsMaxSousApercu.AddThemeColorOverride("font_color", new Color(0.90f, 0.92f, 0.78f));
+		colonne.AddChild(_lblPoidsMaxSousApercu);
 
 		colonne.AddChild(new HSeparator());
 
@@ -305,19 +326,31 @@ public partial class MenuAnatomie : Control
 		if (parent == null || (_vpApercuJoueurCorps != null && GodotObject.IsInstanceValid(_vpApercuJoueurCorps)))
 			return;
 
+		var centreApercu = new CenterContainer
+		{
+			Name = "CentreApercuJoueurCorps",
+			ClipContents = true,
+			MouseFilter = Control.MouseFilterEnum.Ignore
+		};
+		centreApercu.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+		centreApercu.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
+		parent.AddChild(centreApercu);
+
 		_vpApercuJoueurCorps = new SubViewportContainer
 		{
 			Name = "ApercuJoueurCorpsViewport",
 			Stretch = true,
+			CustomMinimumSize = new Vector2(250f, 360f),
+			ClipContents = true,
 			MouseFilter = Control.MouseFilterEnum.Ignore
 		};
-		_vpApercuJoueurCorps.SetAnchorsPreset(Control.LayoutPreset.FullRect);
-		_vpApercuJoueurCorps.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
-		parent.AddChild(_vpApercuJoueurCorps);
+		_vpApercuJoueurCorps.SizeFlagsHorizontal = Control.SizeFlags.ShrinkCenter;
+		_vpApercuJoueurCorps.SizeFlagsVertical = Control.SizeFlags.ShrinkCenter;
+		centreApercu.AddChild(_vpApercuJoueurCorps);
 
 		_svApercuJoueurCorps = new SubViewport
 		{
-			Size = new Vector2I(400, 240),
+			Size = new Vector2I(300, 460),
 			RenderTargetUpdateMode = SubViewport.UpdateMode.WhenVisible,
 			World3D = _joueurRef?.GetWorld3D(),
 			TransparentBg = true
@@ -327,7 +360,7 @@ public partial class MenuAnatomie : Control
 		_cameraApercuJoueurCorps = new Camera3D
 		{
 			Name = "CameraApercuJoueurCorps",
-			Fov = 25f,
+			Fov = 33f,
 			Near = 0.02f,
 			Far = 180f,
 			Current = true
@@ -340,6 +373,9 @@ public partial class MenuAnatomie : Control
 			LightEnergy = 1.25f,
 			RotationDegrees = new Vector3(-35f, 40f, 0f)
 		};
+		// Cette lumière d'aperçu partage le World3D principal: l'empêcher de créer un disque/halo dans le ciel.
+		light.Set("sky_mode", 1); // LightOnly
+		light.Set("light_volumetric_fog_energy", 0.0f);
 		_svApercuJoueurCorps.AddChild(light);
 		var lightRemplissage = new OmniLight3D
 		{
@@ -433,6 +469,18 @@ public partial class MenuAnatomie : Control
 		float ratioGlobal = _joueurRef.ObtenirRatioSanteGlobaleCorps();
 		if (_lblSanteGlobaleCorps != null)
 			_lblSanteGlobaleCorps.Text = $"Sante globale: {(ratioGlobal * 100f):F0}%";
+		if (_lblForceEtMultiplicateur != null)
+		{
+			ulong niveauForce = _joueurRef.ObtenirNiveauFutureState("Force");
+			float multiplicateurForce = _joueurRef.ObtenirMultiplicateurCapaciteChargeForce();
+			_lblForceEtMultiplicateur.Text = $"Force: niv {niveauForce:N0} | Multiplicateur: x{multiplicateurForce:F4}";
+		}
+		if (_lblPoidsMaxSousApercu != null)
+		{
+			float poidsActuelKg = _joueurRef.ObtenirPoidsTotalPorteKg();
+			float poidsMaxKg = _joueurRef.ObtenirCapacitePoidsMaxKg();
+			_lblPoidsMaxSousApercu.Text = $"Poids: {poidsActuelKg:F2} / {poidsMaxKg:F2} kg";
+		}
 
 		IReadOnlyList<Joueur.SectionSanteCorps> sections = _joueurRef.ObtenirEtatSanteCorps();
 		for (int i = 0; i < sections.Count; i++)
@@ -1071,6 +1119,7 @@ public partial class MenuAnatomie : Control
 			return;
 		_ = delta;
 		Vector3 cible = _joueurRef.GlobalPosition + new Vector3(0f, HauteurCibleCameraApercuJoueurCorps, 0f);
+		// Place la caméra côté visage (et non derrière le dos).
 		Vector3 devant = (-_joueurRef.GlobalTransform.Basis.Z).Normalized();
 		Vector3 droite = _joueurRef.GlobalTransform.Basis.X.Normalized();
 		Vector3 posCam = cible

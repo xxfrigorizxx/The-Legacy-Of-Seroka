@@ -90,6 +90,18 @@ public partial class FutureState_UI : CanvasLayer
                     ligneForce.AddThemeColorOverride("font_color", new Color(0.78f, 0.9f, 0.8f));
                     _listeStats.AddChild(ligneForce);
                 }
+                else if (string.Equals(kv.Key, "Metaboliste", System.StringComparison.OrdinalIgnoreCase))
+                {
+                    float bonusVitessePct = kv.Value * 0.001f;
+                    var ligneMetaboliste = new Label
+                    {
+                        Text = $"  Bonus vitesse deplacement: +{bonusVitessePct:F3}%",
+                        HorizontalAlignment = HorizontalAlignment.Left
+                    };
+                    ligneMetaboliste.AddThemeFontSizeOverride("font_size", 16);
+                    ligneMetaboliste.AddThemeColorOverride("font_color", new Color(0.80f, 0.90f, 0.98f));
+                    _listeStats.AddChild(ligneMetaboliste);
+                }
             }
         }
         else

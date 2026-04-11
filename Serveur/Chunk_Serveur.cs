@@ -300,10 +300,11 @@ public partial class Chunk_Serveur : RefCounted
 				matSurface = _materials[x, hauteurSurface, z];
 			}
 
-			// Tempéré: herbe (1). Froid/enneigé: neige (5) et glace de surface (9) autorisées (pins).
+			// Tempéré: herbe (1). Froid/enneigé: neige (5) et glace (9). Aride: terre aride (6).
 			bool solTempere = matSurface == 1;
 			bool solFroid = matSurface == 5 || matSurface == 9;
-			if (!solTempere && !solFroid) continue;
+			bool solAride = matSurface == 6;
+			if (!solTempere && !solFroid && !solAride) continue;
 
 			float temperature = _noiseTemperature.GetNoise2D(xGlobal, zGlobal);
 			float humidite = CalculerHumiditeGlobale(xGlobal, zGlobal);
@@ -324,23 +325,34 @@ public partial class Chunk_Serveur : RefCounted
 			}
 			else
 			{
-				if (!solTempere) continue;
-				if (humiditeNorm < 0.2f) continue;
-				if (estJungle)
+				if (solAride)
 				{
-					// Jungle chaude/humide: densité haute.
-					float tJungle = Mathf.Clamp((humiditeNorm - 0.78f) / 0.22f, 0f, 1f);
-					chanceLocale = Mathf.Lerp(0.078f, 0.145f, tJungle);
+					// Zone aride sans herbe: uniquement arbres morts feuillus (chêne/bouleau) très clairsemés.
+					if (temperature < 0.12f) continue;
+					if (humiditeNorm > 0.48f) continue;
+					float tSec = Mathf.Clamp((0.48f - humiditeNorm) / 0.40f, 0f, 1f);
+					chanceLocale = Mathf.Lerp(0.006f, 0.022f, tSec);
 				}
 				else
 				{
-					int biomeForet = DeterminerBiomeForetTempere(xGlobal, zGlobal);
-					if (biomeForet == 0) continue; // biome "clairière/plaine" sans arbres
-					// Prairie tempérée: sec -> clairsemé, humide -> densité actuelle.
-					float tHumideTempere = Mathf.Clamp((humiditeNorm - 0.2f) / 0.45f, 0f, 1f);
-					chanceLocale = Mathf.Lerp(0.018f, chanceArbre, tHumideTempere);
-					if (biomeForet == 2) chanceLocale *= 0.92f; // mixte: un peu plus aéré
-					else chanceLocale *= 1.08f; // monospécifique: un peu plus dense
+					if (!solTempere) continue;
+					if (humiditeNorm < 0.2f) continue;
+					if (estJungle)
+					{
+						// Jungle chaude/humide: densité haute.
+						float tJungle = Mathf.Clamp((humiditeNorm - 0.78f) / 0.22f, 0f, 1f);
+						chanceLocale = Mathf.Lerp(0.078f, 0.145f, tJungle);
+					}
+					else
+					{
+						int biomeForet = DeterminerBiomeForetTempere(xGlobal, zGlobal);
+						if (biomeForet == 0) continue; // biome "clairière/plaine" sans arbres
+						// Prairie tempérée: sec -> clairsemé, humide -> densité actuelle.
+						float tHumideTempere = Mathf.Clamp((humiditeNorm - 0.2f) / 0.45f, 0f, 1f);
+						chanceLocale = Mathf.Lerp(0.018f, chanceArbre, tHumideTempere);
+						if (biomeForet == 2) chanceLocale *= 0.92f; // mixte: un peu plus aéré
+						else chanceLocale *= 1.08f; // monospécifique: un peu plus dense
+					}
 				}
 			}
 
@@ -358,7 +370,7 @@ public partial class Chunk_Serveur : RefCounted
 		if (chunkSansArbresTempere) return;
 
 		// Fallback machine/biome : si le tirage standard n'a rien donné, on force un arbre
-		// sur un point viable (herbe OU neige), en gardant une cohérence humide minimale.
+		// sur un point viable (herbe OU neige OU aride), en gardant une cohérence humide minimale.
 		for (int x = 2; x < TailleChunk - 2; x += 2)
 		for (int z = 2; z < TailleChunk - 2; z += 2)
 		{
@@ -378,7 +390,8 @@ public partial class Chunk_Serveur : RefCounted
 			}
 			bool solTempere = matSurface == 1;
 			bool solFroid = matSurface == 5 || matSurface == 9;
-			if (!solTempere && !solFroid) continue;
+			bool solAride = matSurface == 6;
+			if (!solTempere && !solFroid && !solAride) continue;
 
 			float temperature = _noiseTemperature.GetNoise2D(xGlobal, zGlobal);
 			float humiditeNorm = (CalculerHumiditeGlobale(xGlobal, zGlobal) + 1f) * 0.5f;
@@ -389,8 +402,15 @@ public partial class Chunk_Serveur : RefCounted
 			}
 			else
 			{
-				if (!solTempere || humiditeNorm < 0.2f) continue;
-				if (!estJungle && DeterminerBiomeForetTempere(xGlobal, zGlobal) == 0) continue;
+				if (solAride)
+				{
+					if (temperature < 0.12f || humiditeNorm > 0.48f) continue;
+				}
+				else
+				{
+					if (!solTempere || humiditeNorm < 0.2f) continue;
+					if (!estJungle && DeterminerBiomeForetTempere(xGlobal, zGlobal) == 0) continue;
+				}
 			}
 
 			var racine = new Vector3I(xGlobal, hauteurSurface + 1, zGlobal);
@@ -676,10 +696,18 @@ public partial class Chunk_Serveur : RefCounted
 		float bruitNeige = _noiseNeige.GetNoise2D(xGlobal, zGlobal);
 		float bruitRoche = _noiseNeige.GetNoise2D(xGlobal + 500f, zGlobal);
 		float bruitDesert = _noiseHumiditeDetail.GetNoise2D(xGlobal * 1.9f + 17000f, zGlobal * 1.9f + 17000f);
+		// Poches d'argile : uniquement en climat jungle, surtout en bord d'eau, très rare au fond.
+		float bruitArgileRive = _noiseHumiditeDetail.GetNoise2D(xGlobal * 2.15f + 3100f, zGlobal * 2.15f - 2700f);
+		float bruitArgileFond = _noiseHumiditeDetail.GetNoise2D(xGlobal * 3.6f - 9300f, zGlobal * 3.6f + 4800f);
 		int seuilNeigeLocal = SeuilNeigeBase + (int)(bruitNeige * 5f);   // 245-255
 		int seuilRocheLocal = SeuilMontagneRoche + (int)(bruitRoche * 8f); // 200-215
 		if (globalY >= seuilNeigeLocal) return 5;  // NEIGE
 		if (globalY >= seuilRocheLocal) return 2;   // Roche nue
+		bool climatJungleArgile = temperature > 0.22f && humidite > 0.34f;
+		bool bordEau = hauteurSurface >= NiveauEau - 1 && hauteurSurface <= NiveauEau + 2;
+		bool fondEau = hauteurSurface <= NiveauEau - 1;
+		if (climatJungleArgile && bordEau && bruitArgileRive > 0.83f) return 8;
+		if (climatJungleArgile && fondEau && bruitArgileFond > 0.965f) return 8;
 		if (globalY <= NiveauPlage) return (humidite > 0.2f) ? (byte)7 : (byte)3;  // Plage : seuil doux
 		// Sable UNIQUEMENT quand très sec ET très chaud (temp + humidité liés logiquement)
 		if (temperature > 0.5f && humidite < -0.5f) return 3;  // Désert : sable
@@ -692,18 +720,20 @@ public partial class Chunk_Serveur : RefCounted
 			// Jungle: chaud + très humide => herbe dominante (boue conservée par taches).
 			if (humidite > 0.62f)
 				return _noiseHumiditeDetail.GetNoise2D(xGlobal * 1.7f + 400f, zGlobal * 1.7f + 400f) > 0.42f ? (byte)7 : (byte)1;
-			if (humidite > 0.4f) return 8;   // Argile humide
+			if (humidite > 0.4f)
+				return _noiseHumiditeDetail.GetNoise2D(xGlobal * 1.9f + 760f, zGlobal * 1.9f + 760f) > 0.64f ? (byte)7 : (byte)1;
 			if (humidite < -0.18f && bruitDesert > -0.18f) return 3; // Désert chaud: sable dominant.
-			if (humidite > 0.1f) return 6;   // Terre aride
+			if (humidite > 0.1f) return 1;   // Chaud humide : herbe tropicale (ID 1)
 			return 1;   // Sec mais pas assez pour sable → herbe jaunâtre (shader)
 		}
 		if (temperature > 0.15f)  // Chaud
 		{
 			if (humidite > 0.60f)
 				return _noiseHumiditeDetail.GetNoise2D(xGlobal * 1.6f + 900f, zGlobal * 1.6f + 900f) > 0.46f ? (byte)7 : (byte)1;
-			if (humidite > 0.35f) return 8;
+			if (humidite > 0.35f)
+				return _noiseHumiditeDetail.GetNoise2D(xGlobal * 1.45f + 1280f, zGlobal * 1.45f + 1280f) > 0.70f ? (byte)7 : (byte)1;
 			if (humidite < -0.30f && bruitDesert > 0.08f) return 3; // Désert tempéré chaud (sable en nappes).
-			if (humidite > 0.0f) return 6;
+			if (humidite > 0.0f) return 1;
 			return 1;   // Sec → herbe (shader jaunâtre)
 		}
 		if (temperature < -0.4f) return 5;  // Très froid = toujours neige

@@ -356,12 +356,14 @@ public partial class Joueur : CharacterBody3D
     private readonly Dictionary<string, ulong> _futureStates = new(StringComparer.OrdinalIgnoreCase)
     {
         ["Force"] = 0UL,
-        ["Dextiriter"] = 0UL
+        ["Dextiriter"] = 0UL,
+        ["Metaboliste"] = 0UL
     };
     private readonly Dictionary<string, UInt128> _futureStateXp = new(StringComparer.OrdinalIgnoreCase)
     {
         ["Force"] = 0UL,
-        ["Dextiriter"] = 0UL
+        ["Dextiriter"] = 0UL,
+        ["Metaboliste"] = 0UL
     };
     private readonly Dictionary<string, ulong> _metiers = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -384,6 +386,11 @@ public partial class Joueur : CharacterBody3D
     private static PhysicsMaterial _physMatVegetalLache;
     private static PhysicsMaterial _physMatMetalForge;
     private static PhysicsMaterial _physMatDefautObjet;
+    private const float DistanceParXpMetabolisteMetres = 10f;
+    private const float BonusVitesseMetabolisteParNiveau = 0.00001f; // +0,001%
+    private bool _positionReferenceMetabolisteInitialisee;
+    private Vector3 _positionReferenceMetaboliste;
+    private float _distanceCumuleeMetabolisteMetres;
 
     public override void _Ready()
     {
@@ -2601,6 +2608,45 @@ public partial class Joueur : CharacterBody3D
         return Mathf.Clamp(1f / (1f + intensiteRalentissement * surplusRelatif), 0.1f, 1f);
     }
 
+    public float ObtenirMultiplicateurVitesseMetaboliste()
+    {
+        ulong niveauMetaboliste = ObtenirNiveauFutureState("Metaboliste");
+        double multiplicateur = 1d + (niveauMetaboliste * BonusVitesseMetabolisteParNiveau);
+        if (double.IsNaN(multiplicateur) || double.IsInfinity(multiplicateur))
+            return 1f;
+        return (float)Mathf.Clamp((float)multiplicateur, 1f, 100000f);
+    }
+
+    private void ReinitialiserReferencePositionMetaboliste()
+    {
+        _positionReferenceMetaboliste = GlobalPosition;
+        _positionReferenceMetabolisteInitialisee = true;
+    }
+
+    private void MettreAJourProgressionMetabolisteParDeplacement()
+    {
+        if (!_positionReferenceMetabolisteInitialisee)
+        {
+            ReinitialiserReferencePositionMetaboliste();
+            return;
+        }
+        Vector3 positionActuelle = GlobalPosition;
+        Vector3 delta = positionActuelle - _positionReferenceMetaboliste;
+        _positionReferenceMetaboliste = positionActuelle;
+        float distanceHorizontale = new Vector2(delta.X, delta.Z).Length();
+        if (distanceHorizontale <= 0.001f)
+            return;
+        // Ignore les téléportations/repositionnements ponctuels.
+        if (distanceHorizontale > 40f)
+            return;
+        _distanceCumuleeMetabolisteMetres += distanceHorizontale;
+        while (_distanceCumuleeMetabolisteMetres >= DistanceParXpMetabolisteMetres)
+        {
+            _distanceCumuleeMetabolisteMetres -= DistanceParXpMetabolisteMetres;
+            AjouterXpFutureState("Metaboliste", 1UL);
+        }
+    }
+
     public bool PeutPorterSlotSupplementaire(SlotInventaire slot)
     {
         _ = slot;
@@ -3796,6 +3842,34 @@ public partial class Joueur : CharacterBody3D
 
     private float _tempsAttenteSpawn;
     private bool _verrouSpawnActif = true;
+    private readonly Dictionary<Vector3I, int> _cacheMatiereFrame = new Dictionary<Vector3I, int>(32);
+    private ulong _frameCacheMatiere = ulong.MaxValue;
+
+    /// <summary>Cache local de matière par frame physique (évite des lectures voxel redondantes pendant le déplacement).</summary>
+    private int ObtenirMatiereExacteCachee(Vector3 positionGlobale)
+    {
+        if (_gestionnaireMonde == null)
+            return 1;
+
+        ulong frame = Engine.GetPhysicsFrames();
+        if (_frameCacheMatiere != frame)
+        {
+            _frameCacheMatiere = frame;
+            _cacheMatiereFrame.Clear();
+        }
+
+        Vector3I key = new Vector3I(
+            Mathf.FloorToInt(positionGlobale.X),
+            Mathf.FloorToInt(positionGlobale.Y),
+            Mathf.FloorToInt(positionGlobale.Z));
+
+        if (_cacheMatiereFrame.TryGetValue(key, out int idCache))
+            return idCache;
+
+        int id = _gestionnaireMonde.ObtenirMatiereExacte(positionGlobale);
+        _cacheMatiereFrame[key] = id;
+        return id;
+    }
 
     /// <summary>Recherche une couche d'eau dont la case au-dessus n'est pas de l'eau: donne la hauteur de surface (face haute voxel).</summary>
     private bool EssayerTrouverSurfaceEauY(Vector3 centreRecherche, out float surfaceY)
@@ -3807,9 +3881,9 @@ public partial class Joueur : CharacterBody3D
         for (int dy = 6; dy >= -8; dy--)
         {
             Vector3 p = centreRecherche + Vector3.Up * dy;
-            int id = _gestionnaireMonde.ObtenirMatiereExacte(p);
+            int id = ObtenirMatiereExacteCachee(p);
             if (id != 4) continue;
-            int idAuDessus = _gestionnaireMonde.ObtenirMatiereExacte(p + Vector3.Up);
+            int idAuDessus = ObtenirMatiereExacteCachee(p + Vector3.Up);
             if (idAuDessus == 4) continue;
             surfaceY = Mathf.Floor(p.Y) + 1.0f;
             return true;
@@ -3820,6 +3894,8 @@ public partial class Joueur : CharacterBody3D
     public override void _PhysicsProcess(double delta)
     {
         float dt = (float)delta;
+        if (!_positionReferenceMetabolisteInitialisee)
+            ReinitialiserReferencePositionMetaboliste();
         SlotInventaire mainActive = MainGaucheEstActive ? MainGauche : MainDroite;
         bool caoOuvert = _modelisateur != null && _modelisateur.EstOuvert;
 
@@ -3852,7 +3928,7 @@ public partial class Joueur : CharacterBody3D
                 // Anti soft-lock: si le sol/collision tarde trop, on rend le contrÃ´le au joueur.
                 if (_tempsAttenteSpawn <= 8f)
                 {
-                    int idCorps = _gestionnaireMonde?.ObtenirMatiereExacte(GlobalPosition + Vector3.Up * 0.8f) ?? 1;
+                    int idCorps = ObtenirMatiereExacteCachee(GlobalPosition + Vector3.Up * 0.8f);
                     bool eauCorps = idCorps == 4;
                     velocity.X = 0f;
                     velocity.Y = 0f;
@@ -3860,6 +3936,7 @@ public partial class Joueur : CharacterBody3D
                     Velocity = velocity;
                     MoveAndSlide();
                     AppliquerContrainteVerticaleHauteurTerrainMonde(eauCorps, ignorerSiMonteeSaut: false, dt);
+                    ReinitialiserReferencePositionMetaboliste();
                     return;
                 }
                 GD.PrintErr("ZERO-K : DÃ©verrouillage dÃ©placement forcÃ© (spawn non prÃªt trop longtemps).");
@@ -3872,7 +3949,7 @@ public partial class Joueur : CharacterBody3D
             _tempsAttenteSpawn = 0f;
         }
 
-        int idMilieu = _gestionnaireMonde?.ObtenirMatiereExacte(GlobalPosition + Vector3.Up * 0.8f) ?? 1;
+        int idMilieu = ObtenirMatiereExacteCachee(GlobalPosition + Vector3.Up * 0.8f);
         bool estDansEau = (idMilieu == 4);
         bool sautMaintenu = !caoOuvert && (Input.IsActionPressed("ui_accept") || Input.IsActionPressed("jump"));
 
@@ -3932,6 +4009,7 @@ public partial class Joueur : CharacterBody3D
         Vector3 direction = CalculerDirectionMouvementAuSol(inputDir);
         float vitesseMouvement = estDansEau ? Speed * (sautMaintenu ? 0.58f : 0.4f) : Speed;
         vitesseMouvement *= ObtenirFacteurVitesseSelonChargePortee();
+        vitesseMouvement *= ObtenirMultiplicateurVitesseMetaboliste();
 
         if (direction != Vector3.Zero)
         {
@@ -3953,6 +4031,7 @@ public partial class Joueur : CharacterBody3D
         if (_verrouSpawnActif)
             EssayerCollerCapsuleAuSolTerrain(estDansEau);
         AppliquerContrainteVerticaleHauteurTerrainMonde(estDansEau, ignorerSiMonteeSaut: true, dt);
+        MettreAJourProgressionMetabolisteParDeplacement();
     }
 }
 

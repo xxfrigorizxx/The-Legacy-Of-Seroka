@@ -108,6 +108,8 @@ public partial class Monde_Serveur : Node
 	private const int MagicArbresV4 = 0x5A4B3253;
 	private const int MagicArbresV5 = 0x5A4B3254;
 	private const int MagicArbresV6 = 0x5A4B3255;
+	private readonly List<Vector2I> _cycleAutosaveChunks = new List<Vector2I>();
+	private int _indexCycleAutosaveChunks;
 
 	private int CalculerBudgetSpawnAdaptatif(int budgetBase)
 	{
@@ -143,7 +145,7 @@ public partial class Monde_Serveur : Node
 	}
 	private const int PoolVariantesArbreParAge = 50;
 	private const int PoolAgesPregenArbre = 5;
-	private const int PoolEspecesArbre = 5; // chene, bouleau, pin, sapin, jungle
+	private const int PoolEspecesArbre = 7; // chene, bouleau, pin, sapin, jungle, chene mort, bouleau mort
 	private readonly uint[,,] _poolSeedsArbres = new uint[PoolEspecesArbre, PoolAgesPregenArbre, PoolVariantesArbreParAge];
 	private int _seedPoolArbres = int.MinValue;
 
@@ -221,6 +223,43 @@ public partial class Monde_Serveur : Node
 			chunksSauves++;
 		}
 		GD.Print($"ZERO-K : Râle d'Agonie terminé. {chunksSauves} Chunks gravés sur le disque.");
+	}
+
+	/// <summary>
+	/// Autosauvegarde progressive anti-crash : grave un sous-ensemble de chunks actifs à chaque appel.
+	/// Le cycle reprend au chunk suivant pour éviter un gros pic CPU/I/O.
+	/// </summary>
+	public int SauvegarderChunksActifsProgressif(int maxChunks)
+	{
+		if (maxChunks <= 0 || _chunks.Count == 0) return 0;
+		if (_cycleAutosaveChunks.Count != _chunks.Count)
+		{
+			_cycleAutosaveChunks.Clear();
+			foreach (var coord in _chunks.Keys)
+				_cycleAutosaveChunks.Add(coord);
+			_indexCycleAutosaveChunks = 0;
+		}
+		if (_cycleAutosaveChunks.Count == 0) return 0;
+
+		int sauvegardes = 0;
+		while (sauvegardes < maxChunks && _cycleAutosaveChunks.Count > 0)
+		{
+			if (_indexCycleAutosaveChunks >= _cycleAutosaveChunks.Count)
+				_indexCycleAutosaveChunks = 0;
+			Vector2I coord = _cycleAutosaveChunks[_indexCycleAutosaveChunks];
+			_indexCycleAutosaveChunks++;
+
+			if (!_chunks.TryGetValue(coord, out var chunk) || chunk == null)
+				continue;
+
+			ForcerInstanciationArbresEnAttente(coord);
+			chunk.SauvegarderChunkSurDisque();
+			SauvegarderFloreChunk(coord, chunk);
+			SauvegarderPierresChunk(coord);
+			SauvegarderArbresChunk(coord);
+			sauvegardes++;
+		}
+		return sauvegardes;
 	}
 
 	public override void _ExitTree()
@@ -1204,7 +1243,7 @@ public partial class Monde_Serveur : Node
 		return 3;
 	}
 
-	private byte DeterminerIndexBotaniqueArbre(uint seedArbre, int gx, int gz)
+	private byte DeterminerIndexBotaniqueArbre(uint seedArbre, int gx, int gz, byte matSurface)
 	{
 		// Choix déterministe: un arbre garde la même essence entre chargements.
 		uint h = (seedArbre * 1664525u) + 1013904223u;
@@ -1217,6 +1256,10 @@ public partial class Monde_Serveur : Node
 		float temp = _noiseTemperatureArbres?.GetNoise2D(gx, gz) ?? 0f;
 		AssurerNoiseHumiditeArbres();
 		float humidite = _noiseHumiditeArbres?.GetNoise2D(gx, gz) ?? 0f;
+		float humiditeNorm = (humidite + 1f) * 0.5f;
+		// Arbres morts uniquement sur terre aride (ID 6), jamais sur herbe (ID 1).
+		if (matSurface == 6 && temp > 0.12f && humiditeNorm < 0.48f)
+			return (byte)(r < 0.50f ? LSystem_Botanique.IndexCheneMort : LSystem_Botanique.IndexBouleauMort);
 		// Zone froide/neige: sapin majoritaire en froid modere, pin plus frequent en grand froid.
 		if (temp < -0.32f)
 			return (byte)(r < 0.72f ? LSystem_Botanique.IndexPin : LSystem_Botanique.IndexSapin);
@@ -1243,7 +1286,10 @@ public partial class Monde_Serveur : Node
 			// Base collée au sol (Y - 0.5 pour éviter troncs flottants)
 			Vector3 pos = new Vector3(kv.Key.X + 0.5f, kv.Key.Y - 0.5f, kv.Key.Z + 0.5f);
 			int age = Mathf.Max(1, kv.Value.Stage + 1);
-			byte indexBotanique = DeterminerIndexBotaniqueArbre(kv.Value.Seed, kv.Key.X, kv.Key.Z);
+			int lx = kv.Key.X - coord.X * chunk.TailleChunk;
+			int lz = kv.Key.Z - coord.Y * chunk.TailleChunk;
+			var (_, matSurface) = chunk.ObtenirSurfaceEtMateriau(lx, lz);
+			byte indexBotanique = DeterminerIndexBotaniqueArbre(kv.Value.Seed, kv.Key.X, kv.Key.Z, matSurface);
 			uint seedPregen = SelectionnerSeedArbreDepuisPool(indexBotanique, age, kv.Key.X, kv.Key.Z, kv.Value.Seed);
 			_fileSpawnArbres.Enqueue((coord, pos, age, seedPregen, indexBotanique, 0));
 		}
@@ -1330,7 +1376,10 @@ public partial class Monde_Serveur : Node
 					uint seedHashPos = (uint)((gx * 73856093) ^ (gz * 19349663));
 					uint seedArbre = seedSauvegarde != 0u ? seedSauvegarde : seedHashPos;
 					int ageCharge = Mathf.Max(1, ageSauvegarde);
-					byte indexBotanique = (formatV3 || formatV4 || formatV5 || formatV6) ? indexBotaniqueSauvegarde : DeterminerIndexBotaniqueArbre(seedArbre, gx, gz);
+					int lx = gx - coord.X * chunk.TailleChunk;
+					int lz = gz - coord.Y * chunk.TailleChunk;
+					var (_, matSurface) = chunk.ObtenirSurfaceEtMateriau(lx, lz);
+					byte indexBotanique = (formatV3 || formatV4 || formatV5 || formatV6) ? indexBotaniqueSauvegarde : DeterminerIndexBotaniqueArbre(seedArbre, gx, gz, matSurface);
 					_fileSpawnArbres.Enqueue((coord, pos, ageCharge, seedArbre, indexBotanique, joursEcoules));
 				}
 			}

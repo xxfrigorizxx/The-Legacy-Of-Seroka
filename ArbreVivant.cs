@@ -74,9 +74,12 @@ public partial class ArbreVivant : StaticBody3D
 	private static Texture2D _cacheTextureFeuilleJungle;
 	private static readonly Color CouleurLianeJungle = new Color(0.18f, 0.34f, 0.16f);
 	private uint SeedForme => _seedEffectif != 0 ? _seedEffectif : Seed;
+	private bool EssenceMorte => IndexBotanique == LSystem_Botanique.IndexCheneMort || IndexBotanique == LSystem_Botanique.IndexBouleauMort;
 
 	public static Material ObtenirMaterielBois(byte indexBotanique = 0)
 	{
+		if (indexBotanique == LSystem_Botanique.IndexCheneMort) indexBotanique = LSystem_Botanique.IndexChene;
+		else if (indexBotanique == LSystem_Botanique.IndexBouleauMort) indexBotanique = LSystem_Botanique.IndexBouleau;
 		if (indexBotanique == LSystem_Botanique.IndexPin)
 		{
 			if (_cacheMatBoisPin != null) return _cacheMatBoisPin;
@@ -164,6 +167,8 @@ public partial class ArbreVivant : StaticBody3D
 	/// <summary>Même texture que le tronc, triplanar monde (ignore les UV locaux dégénérés) + teinte aubier.</summary>
 	public static Material ObtenirMaterielBoisTriplanar(byte indexBotanique = 0)
 	{
+		if (indexBotanique == LSystem_Botanique.IndexCheneMort) indexBotanique = LSystem_Botanique.IndexChene;
+		else if (indexBotanique == LSystem_Botanique.IndexBouleauMort) indexBotanique = LSystem_Botanique.IndexBouleau;
 		if (indexBotanique == LSystem_Botanique.IndexPin)
 		{
 			if (_cacheMatBoisTriplanarPin != null) return _cacheMatBoisTriplanarPin;
@@ -410,6 +415,7 @@ public partial class ArbreVivant : StaticBody3D
 	/// <summary>Appelé à minuit par le serveur (arbres dans chunks actifs). 1 chance sur 20 de grandir.</summary>
 	public void VieillirUnJour()
 	{
+		if (EssenceMorte) return; // Arbre mort: pas de croissance.
 		bool aGrandi = GD.Randf() <= CHANCE_CROISSANCE;
 		bool lianesOntRepousse = false;
 		if (aGrandi)
@@ -438,6 +444,7 @@ public partial class ArbreVivant : StaticBody3D
 	/// <param name="posMonde">Position de l'arbre (pour seed déterministe si pas encore dans la scène).</param>
 	public void RattraperCroissance(int joursEcoules, Vector3? posMonde = null)
 	{
+		if (EssenceMorte) return; // Arbre mort: pas de rattrapage hors-ligne.
 		if (joursEcoules <= 0) return;
 		Vector3 pos = posMonde ?? GlobalPosition;
 		var rng = new RandomNumberGenerator();
@@ -1179,12 +1186,14 @@ public partial class ArbreVivant : StaticBody3D
 	/// <summary>Cluster de feuillage le long des branches — formes ovales, densité adaptée au rayon.</summary>
 	private void GenererFeuillagePetit(SurfaceTool st, Transform3D tortue, int age, float tailleMul = 1f, float lodMul = 1f)
 	{
+		if (EssenceMorte) return;
 		GenererFeuillesCaducTypePin(st, tortue, age, 0.40f * lodMul, tailleMul);
 	}
 
 	/// <summary>Aiguilles de conifère: pin (longues) ou sapin (plus courtes et plus fournies).</summary>
 	private void GenererAiguillesConifere(SurfaceTool st, Transform3D tortue, int age, float densiteMul = 1f, bool estSapin = false)
 	{
+		if (EssenceMorte) return;
 		Vector3 centre = tortue.Origin;
 		Vector3 axe = tortue.Basis.Y.Normalized();
 		Vector3 refPerp = tortue.Basis.X.Normalized();
@@ -1238,6 +1247,7 @@ public partial class ArbreVivant : StaticBody3D
 	/// <summary>Lianes pendantes de canopée pour les arbres de jungle (mesh 3D tubulaire).</summary>
 	private void GenererLianesJungle(SurfaceTool st, Transform3D tortue, int age, float densiteMul = 1f)
 	{
+		if (EssenceMorte) return;
 		if (IndexBotanique != LSystem_Botanique.IndexJungle) return;
 		float chance = ChanceLianesJungleSelonAge(age) * _progressionLianesJungle;
 		Color couleurFeuillage = CouleurFeuillesArbre();
@@ -1279,6 +1289,7 @@ public partial class ArbreVivant : StaticBody3D
 	/// <summary>Liane collée au tronc, plus courte, générée aléatoirement.</summary>
 	private void GenererLianesTroncJungle(SurfaceTool st, Transform3D tortue, int age)
 	{
+		if (EssenceMorte) return;
 		if (IndexBotanique != LSystem_Botanique.IndexJungle) return;
 		float chance = ChanceLianesJungleSelonAge(age) * 0.72f * _progressionLianesJungle;
 		if (Hash(SeedForme, 17400 + age) > chance) return;
@@ -1378,6 +1389,7 @@ public partial class ArbreVivant : StaticBody3D
 	/// <summary>Feuilles de chêne/bouleau distribuées comme le pin, mais en lamelles larges (pas d'épines).</summary>
 	private void GenererFeuillesCaducTypePin(SurfaceTool st, Transform3D tortue, int age, float densiteMul = 1f, float tailleMul = 1f)
 	{
+		if (EssenceMorte) return;
 		Vector3 centre = tortue.Origin;
 		Vector3 axe = tortue.Basis.Y.Normalized();
 		Vector3 refPerp = tortue.Basis.X.Normalized();
@@ -1582,6 +1594,7 @@ public partial class ArbreVivant : StaticBody3D
 	/// <summary>Sphère de feuillage AAA : densité proportionnelle au rayon (pas de vide), feuilles ovales.</summary>
 	private void GenererFeuillage(SurfaceTool st, Transform3D tortue, int age, float tailleMul = 1f, float lodMul = 1f)
 	{
+		if (EssenceMorte) return;
 		float densite = (0.45f + Mathf.Clamp(age - 2, 0, 4) * 0.08f) * lodMul * 0.5f;
 		GenererFeuillesCaducTypePin(st, tortue, age, densite, tailleMul * 2f);
 	}

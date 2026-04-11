@@ -802,24 +802,35 @@ public partial class Generateur_Voxel : Node3D
 	{
 		float bruitNeige = _noiseNeige.GetNoise2D(globalX, globalZ);
 		float bruitRoche = _noiseNeige.GetNoise2D(globalX + 500f, globalZ);
+		// Poches d'argile en jungle: bords d'eau fréquents, fond d'eau très rare.
+		float bruitArgileRive = _noiseHumidite.GetNoise2D(globalX * 2.15f + 3100f, globalZ * 2.15f - 2700f);
+		float bruitArgileFond = _noiseHumidite.GetNoise2D(globalX * 3.6f - 9300f, globalZ * 3.6f + 4800f);
 		int seuilNeigeLocal = SeuilNeigeBase + (int)(bruitNeige * 5f);   // 245-255
 		int seuilRocheLocal = SeuilMontagneRoche + (int)(bruitRoche * 8f); // 200-215
 		if (globalY >= seuilNeigeLocal) return 5;  // NEIGE
 		if (globalY >= seuilRocheLocal) return 2;  // Roche nue
+		bool climatJungleArgile = temperature > 0.22f && humidite > 0.34f;
+		bool bordEau = hauteurSurface >= NiveauEau - 1 && hauteurSurface <= NiveauEau + 2;
+		bool fondEau = hauteurSurface <= NiveauEau - 1;
+		if (climatJungleArgile && bordEau && bruitArgileRive > 0.83f) return 8;
+		if (climatJungleArgile && fondEau && bruitArgileFond > 0.965f) return 8;
 		if (globalY <= NiveauPlage) return (humidite > 0.2f) ? (byte)7 : (byte)3;  // Plage : seuil doux
 		// Sable UNIQUEMENT quand très sec ET très chaud (temp + humidité liés logiquement)
 		if (temperature > 0.5f && humidite < -0.5f) return 3;  // Désert : sable
 		// Plusieurs stades temp/hum avec seuils progressifs (transitions lentes)
 		if (temperature > 0.4f)  // Très chaud
 		{
-			if (humidite > 0.4f) return 8;   // Argile humide
-			if (humidite > 0.1f) return 6;   // Terre aride
+			// Jungle chaude/humide : herbe (ID 1) dominante avec rares taches de boue.
+			if (humidite > 0.4f)
+				return _noiseHumidite.GetNoise2D(globalX * 1.85f + 640f, globalZ * 1.85f + 640f) > 0.66f ? (byte)7 : (byte)1;
+			if (humidite > 0.1f) return 1;
 			return 1;   // Sec mais pas assez pour sable → herbe jaunâtre (shader)
 		}
 		if (temperature > 0.15f)  // Chaud
 		{
-			if (humidite > 0.35f) return 8;
-			if (humidite > 0.0f) return 6;
+			if (humidite > 0.35f)
+				return _noiseHumidite.GetNoise2D(globalX * 1.5f + 1040f, globalZ * 1.5f + 1040f) > 0.72f ? (byte)7 : (byte)1;
+			if (humidite > 0.0f) return 1;
 			return 1;   // Sec → herbe (shader jaunâtre)
 		}
 		if (temperature < -0.4f) return 5;  // Très froid = toujours neige
@@ -1070,29 +1081,39 @@ public partial class Generateur_Voxel : Node3D
 	private static byte DeterminerMateriauCroûteStatique(float globalX, float globalZ, int globalY, int hauteurSurface, float temperature, float humidite, FastNoiseLite noiseNeige, int seuilNeigeBase)
 	{
 		const int NiveauPlage = 102;  // Sable jusqu'à 102, herbe à 103-104
+		const int NiveauEau = 103;  // +1 m
 		const int SeuilMontagneRoche = 207; // Roche 200-215 (bruit ±8)
 		float bruitNeige = noiseNeige.GetNoise2D(globalX, globalZ);
 		float bruitRoche = noiseNeige.GetNoise2D(globalX + 500f, globalZ);
+		float bruitArgileRive = noiseNeige.GetNoise2D(globalX * 2.15f + 3100f, globalZ * 2.15f - 2700f);
+		float bruitArgileFond = noiseNeige.GetNoise2D(globalX * 3.6f - 9300f, globalZ * 3.6f + 4800f);
 		int seuilNeigeLocal = seuilNeigeBase + (int)(bruitNeige * 5f);   // 245-255
 		int seuilRocheLocal = SeuilMontagneRoche + (int)(bruitRoche * 8f); // 200-215
 		if (globalY >= seuilNeigeLocal) return 5;  // NEIGE
 		if (globalY >= seuilRocheLocal) return 2;  // Roche nue
+		bool climatJungleArgile = temperature > 0.22f && humidite > 0.34f;
+		bool bordEau = hauteurSurface >= NiveauEau - 1 && hauteurSurface <= NiveauEau + 2;
+		bool fondEau = hauteurSurface <= NiveauEau - 1;
+		if (climatJungleArgile && bordEau && bruitArgileRive > 0.83f) return 8;
+		if (climatJungleArgile && fondEau && bruitArgileFond > 0.965f) return 8;
 		if (globalY <= NiveauPlage) return (humidite > 0.2f) ? (byte)7 : (byte)3;
 		// Sable UNIQUEMENT quand très sec ET très chaud (temp + humidité liés)
 		if (temperature > 0.5f && humidite < -0.5f) return 3;  // Désert : sable
 		// Plusieurs stades temp/hum avec seuils progressifs (transitions lentes)
 		if (temperature > 0.4f)  // Très chaud
 		{
-			if (humidite > 0.4f) return 8;
-			if (humidite > 0.1f) return 6;
+			if (humidite > 0.4f)
+				return noiseNeige.GetNoise2D(globalX * 1.85f + 640f, globalZ * 1.85f + 640f) > 0.66f ? (byte)7 : (byte)1;
+			if (humidite > 0.1f) return 1;
 			return 1;   // Sec → herbe jaunâtre (shader)
 		}
 		if (temperature > 0.15f)  // Chaud
 		{
 			if (humidite < -0.4f) return 1;  // Sec → herbe (shader jaunâtre)
-			if (humidite > 0.35f) return 8;
-			if (humidite > 0.0f) return 6;
-			return 6;
+			if (humidite > 0.35f)
+				return noiseNeige.GetNoise2D(globalX * 1.5f + 1040f, globalZ * 1.5f + 1040f) > 0.72f ? (byte)7 : (byte)1;
+			if (humidite > 0.0f) return 1;
+			return 1;
 		}
 		if (temperature < -0.4f) return 5;  // Très froid = toujours neige
 		if (temperature < -0.15f) return (humidite > 0.2f) ? (byte)9 : (byte)5;  // Glace si humide, neige sinon

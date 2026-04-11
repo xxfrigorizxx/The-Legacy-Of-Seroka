@@ -49,6 +49,7 @@ public partial class Cycle_Solaire : Node
 			_lune.Visible = false;
 			_lune.LightEnergy = 0f;
 			_lune.Set("sky_mode", 1);
+			_lune.Set("light_volumetric_fog_energy", 0.0f);
 		}
 	}
 
@@ -69,6 +70,13 @@ public partial class Cycle_Solaire : Node
 		{
 			_environnement = GetParent()?.GetNodeOrNull<WorldEnvironment>("WorldEnvironment");
 			if (_environnement == null) GD.PrintErr("ZERO-K ALERTE : Nœud 'WorldEnvironment' introuvable !");
+		}
+		// Pas de disque lunaire dans le ciel (évite l'effet "deuxième soleil").
+		if (_lune != null)
+		{
+			_lune.Set("sky_mode", 1);
+			// Empêche tout halo/spot blanc lié au brouillard volumétrique pour la lune.
+			_lune.Set("light_volumetric_fog_energy", 0.0f);
 		}
 
 		AppliquerDistanceBrouillardProgressive();
@@ -144,18 +152,20 @@ public partial class Cycle_Solaire : Node
 			{
 				_lune.Visible = true;
 				_lune.LightEnergy = Mathf.Clamp(-hauteurSoleil * 0.15f, 0f, 0.15f);
-				_lune.Set("sky_mode", 0); // Disque lune visible la nuit (LightAndSky)
+				_lune.Set("sky_mode", 1); // LightOnly : pas de disque blanc parasite.
+				_lune.Set("light_volumetric_fog_energy", 0.0f);
 			}
 		}
 		else
 		{
 			_soleil.LightEnergy = Mathf.Clamp(hauteurSoleil * 1.5f, 0f, 1.5f);
-			_soleil.Set("sky_mode", 0); // Disque soleil le jour (LightAndSky)
+			_soleil.Set("sky_mode", 0); // LightAndSky (soleil visible via les nodes existants)
 			if (_lune != null)
 			{
 				_lune.Visible = false;
 				_lune.LightEnergy = 0f;
 				_lune.Set("sky_mode", 1); // CRITIQUE : LightOnly = pas de disque dans le ciel
+				_lune.Set("light_volumetric_fog_energy", 0.0f);
 			}
 		}
 
@@ -227,8 +237,9 @@ public partial class Cycle_Solaire : Node
 				skyMat.GroundBottomColor = solHorizonNuit.Lerp(new Color(0.2f, 0.17f, 0.13f), intensiteJour);
 				skyMat.SkyEnergyMultiplier = Mathf.Lerp(0.15f, 1f, intensiteJour);
 				skyMat.GroundEnergyMultiplier = Mathf.Lerp(0.1f, 1f, intensiteJour);
-				// Étoiles visibles la nuit, invisibles le jour
-				skyMat.SkyCoverModulate = new Color(1f, 1f, 1f, Mathf.Lerp(1f, 0.05f, intensiteJour));
+				// Étoiles visibles la nuit uniquement. En journée, alpha=0 pour supprimer tout spot blanc parasite du sky cover.
+				float alphaEtoiles = Mathf.Clamp((0.22f - intensiteJour) / 0.22f, 0f, 1f);
+				skyMat.SkyCoverModulate = new Color(1f, 1f, 1f, alphaEtoiles);
 			}
 		}
 	}

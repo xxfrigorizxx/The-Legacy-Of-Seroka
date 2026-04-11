@@ -22,13 +22,17 @@ public partial class Gestionnaire_Monde : Node3D
 	[Export] public float AngleCullingCameraDeg = 135f;
 	[Export] public int MargeChunksToujoursVisibles = 12;
 	/// <summary>Requêtes réseau / chargement par frame côté client. Monde gigantesque : 4 est trop lent pour que le sol et les collisions suivent la marche.</summary>
-	[Export] public int MaxChunksParFrame = 12;
+	[Export] public int MaxChunksParFrame = 14;
+	[Export] public bool ForcerAlignementSolAuChargement = true;
 	/// <summary>Fuseau horaire du Monde 1. Québec = -5, Paris = +1, UTC = 0.</summary>
 	[Export] public double FuseauHoraireHeures = -5;
 	[Export] public bool PreGenererAuDemarrage = false;
 	[Export] public int RayonPreGeneration = 2;
 	[Export] public bool ModeEssencesPartoutTemporaire = false;
 	[Export] public float RatioJungleModeTest = 0.30f;
+	[Export] public bool ActiverAutosauvegarde = true;
+	[Export] public float IntervalleAutosauvegardeSecondes = 45f;
+	[Export] public int MaxChunksAutosauvegardeParCycle = 4;
 	[Export] public Material MaterielTerrain;
 	/// <summary>Matériau eau (océan). Créé automatiquement dans _Ready à partir de EauTriplanar.gdshader. Non exposé à l'éditeur.</summary>
 	public Material MaterielEau;
@@ -65,6 +69,7 @@ public partial class Gestionnaire_Monde : Node3D
 	private readonly HashSet<ulong> _corpsDansOcean = new HashSet<ulong>();
 	private StandardMaterial3D _materielEclaboussureEau;
 	private bool _chargementCycleSolaire;
+	private double _secondesDepuisAutosauvegarde;
 
 	// Legacy
 	private List<Vector2I> _chunksACharger = new List<Vector2I>();
@@ -102,14 +107,39 @@ public partial class Gestionnaire_Monde : Node3D
 	public bool EstSpawnPret()
 	{
 		if (_joueur == null) return false;
-		if (UseArchitectureReseau) return _mondeClient?.ChunkSousPiedsAPret() ?? false;
-		Vector3 pos = _joueur.GlobalPosition;
+		Vector3 pos = ObtenirPointReferenceSpawn();
+		if (UseArchitectureReseau)
+		{
+			if (_mondeClient == null) return false;
+			Vector2I cReseau = WorldToChunkCoord(pos, TailleChunk);
+			return _mondeClient.ChunkCollisionActive(cReseau);
+		}
 		Vector2I c = WorldToChunkCoord(pos, TailleChunk);
 		if (!_chunks.TryGetValue(c, out var n)) return false;
 		var ch = n as Generateur_Voxel;
 		if (ch == null) return false;
 		int sec = Mathf.FloorToInt(pos.Y / 16f);
 		return ch.SectionAPret(sec);
+	}
+
+	private Vector3 ObtenirPointReferenceSpawn()
+	{
+		if (_spawnDoitEtreAligneAuSol && !_spawnAligneAuSol)
+			return _spawnInitialEnAttente;
+		return _joueur != null ? _joueur.GlobalPosition : _spawnInitialEnAttente;
+	}
+
+	private bool ChunkEtVoisinsCardinauxPretsAuPoint(Vector3 point)
+	{
+		if (!UseArchitectureReseau) return true;
+		if (_mondeClient == null) return false;
+		Vector2I c = WorldToChunkCoord(point, TailleChunk);
+		if (!_mondeClient.ChunkCollisionActive(c)) return false;
+		if (!_mondeClient.ChunkCollisionActive(new Vector2I(c.X - 1, c.Y))) return false;
+		if (!_mondeClient.ChunkCollisionActive(new Vector2I(c.X + 1, c.Y))) return false;
+		if (!_mondeClient.ChunkCollisionActive(new Vector2I(c.X, c.Y - 1))) return false;
+		if (!_mondeClient.ChunkCollisionActive(new Vector2I(c.X, c.Y + 1))) return false;
+		return true;
 	}
 
 	/// <summary>Nouvelle partie : le joueur ne doit bouger en physique qu’après <see cref="FinaliserSpawnInitialAuSol"/> (sinon il tombe depuis Y=h+10 avant le raycast et peut traverser le sol).</summary>
@@ -267,31 +297,41 @@ public partial class Gestionnaire_Monde : Node3D
 		return true;
 	}
 
-	/// <summary>Finalise le spawn du nouveau monde : place le joueur au sol et l'affiche.</summary>
-	private void FinaliserSpawnInitialAuSol()
+	/// <summary>
+	/// Finalise le spawn du nouveau monde : la map/collision doit être prête, puis raycast vertical au point de spawn.
+	/// Tant que le raycast n'a pas de hit valide, on ne finalise PAS (évite spawn sous la map).
+	/// </summary>
+	private bool FinaliserSpawnInitialAuSol(bool autoriserFallbackSansRaycast = false)
 	{
-		if (!_spawnDoitEtreAligneAuSol || _spawnAligneAuSol || _joueur == null) return;
+		if (!_spawnDoitEtreAligneAuSol || _spawnAligneAuSol || _joueur == null) return true;
 
-		Vector3 posFinale;
 		if (EssayerTrouverSolParRaycast(_spawnInitialEnAttente, out Vector3 pointSol))
 		{
-			posFinale = _spawnInitialEnAttente;
+			Vector3 posFinale = _spawnInitialEnAttente;
 			if (_joueur is Joueur jo)
 				posFinale.Y = jo.CalculerYOriginePourPiedsSurSurface(pointSol.Y);
 			else
 				posFinale = pointSol + Vector3.Up * 1.2f;
-		}
-		else
-		{
-			// Fallback robuste si le raycast ne touche pas encore.
-			posFinale = AssurerSpawnAuDessusDuSol(_spawnInitialEnAttente);
+
+			_joueur.GlobalPosition = posFinale;
+			_joueur.Velocity = Vector3.Zero;
+			_joueur.Visible = true;
+			_spawnAligneAuSol = true;
+			GD.Print($"ZERO-K : Spawn finalisé au sol (raycast) -> {posFinale}");
+			return true;
 		}
 
-		_joueur.GlobalPosition = posFinale;
+		if (!autoriserFallbackSansRaycast)
+			return false;
+
+		// Fallback ultime (timeout long uniquement).
+		Vector3 posFallback = AssurerSpawnAuDessusDuSol(_spawnInitialEnAttente);
+		_joueur.GlobalPosition = posFallback;
 		_joueur.Velocity = Vector3.Zero;
 		_joueur.Visible = true;
 		_spawnAligneAuSol = true;
-		GD.Print($"ZERO-K : Spawn finalisé au sol -> {posFinale}");
+		GD.PrintErr($"ZERO-K : Spawn finalisé en fallback sans raycast -> {posFallback}");
+		return true;
 	}
 
 	private void ActiverEauLegacy(Vector3I pos) { if (_eauActive.Add(pos)) _fileEau.Enqueue(pos); }
@@ -394,7 +434,7 @@ public partial class Gestionnaire_Monde : Node3D
 		// Position : chargée si monde existant, sinon spawn par défaut (terrain généré → joueur déposé)
 		Vector3 posSpawn = _joueur.GlobalPosition;
 		var posSauvegardee = GameState.Instance?.ObtenirPositionJoueurSauvegardee();
-		_spawnDoitEtreAligneAuSol = !posSauvegardee.HasValue;
+		_spawnDoitEtreAligneAuSol = !posSauvegardee.HasValue || ForcerAlignementSolAuChargement;
 		_spawnAligneAuSol = !_spawnDoitEtreAligneAuSol;
 		if (posSauvegardee.HasValue)
 		{
@@ -867,9 +907,28 @@ public partial class Gestionnaire_Monde : Node3D
 
 	public override void _Process(double delta)
 	{
+		if (ActiverAutosauvegarde && IntervalleAutosauvegardeSecondes > 0f)
+		{
+			_secondesDepuisAutosauvegarde += delta;
+			if (_secondesDepuisAutosauvegarde >= IntervalleAutosauvegardeSecondes)
+			{
+				_secondesDepuisAutosauvegarde = 0;
+				ExecuterAutosauvegardeProgressive();
+			}
+		}
+
+		// Verrou anti-chute : tant que le spawn n'est pas aligné au sol, on ancre le joueur au point de spawn.
+		if (_spawnDoitEtreAligneAuSol && !_spawnAligneAuSol && _joueur != null)
+		{
+			_joueur.GlobalPosition = _spawnInitialEnAttente;
+			_joueur.Velocity = Vector3.Zero;
+			_joueur.Visible = false;
+		}
+
 		bool spawnPretActuel = EstSpawnPret();
 		bool spawnPretEtAligneActuel = spawnPretActuel && (!_spawnDoitEtreAligneAuSol || _spawnAligneAuSol);
-		bool cardinauxPrets = !UseArchitectureReseau || (_mondeClient?.ChunkSousPiedsEtVoisinsCardinauxPrets() ?? false);
+		Vector3 pointRefSpawn = ObtenirPointReferenceSpawn();
+		bool cardinauxPrets = ChunkEtVoisinsCardinauxPretsAuPoint(pointRefSpawn);
 		bool chargementVisuelActif = !spawnPretEtAligneActuel || !cardinauxPrets;
 		MettreAJourEtatCycleSolaire(chargementVisuelActif);
 
@@ -878,15 +937,29 @@ public partial class Gestionnaire_Monde : Node3D
 		{
 			_secondesOverlayChargement += delta;
 			bool spawnPret = spawnPretActuel;
-			if (spawnPret && _spawnDoitEtreAligneAuSol && !_spawnAligneAuSol)
+			// Nouveau monde: on attend que la zone soit réellement prête avant raycast de pose au sol.
+			if (spawnPret && cardinauxPrets && _spawnDoitEtreAligneAuSol && !_spawnAligneAuSol)
 				FinaliserSpawnInitialAuSol();
 			bool spawnPretEtAligne = spawnPret && (!_spawnDoitEtreAligneAuSol || _spawnAligneAuSol);
+			// Fallback UX: si le critère strict reste bloqué mais que le chunk local est bien actif,
+			// on masque l'overlay pour ne pas laisser un "chargement infini" à l'écran.
+			if (!spawnPretEtAligne && _joueur != null && _secondesOverlayChargement >= 6.0 && (!_spawnDoitEtreAligneAuSol || _spawnAligneAuSol))
+			{
+				Vector2I chunkJoueur = WorldToChunkCoord(_joueur.GlobalPosition, TailleChunk);
+				bool chunkLocalPret = !UseArchitectureReseau || (_mondeClient?.ChunkCollisionActive(chunkJoueur) ?? false);
+				if (chunkLocalPret)
+				{
+					if (_spawnDoitEtreAligneAuSol && !_spawnAligneAuSol)
+						FinaliserSpawnInitialAuSol();
+					spawnPretEtAligne = true;
+				}
+			}
 			if (spawnPretEtAligne || _secondesOverlayChargement >= 90.0)
 			{
 				if (!spawnPretEtAligne && _secondesOverlayChargement >= 90.0)
 					GD.PrintErr("ZERO-K : Timeout chargement monde (>90 s) — overlay masqué. Vérifiez réseau / Monde_Client si le sol manque.");
 				if (_spawnDoitEtreAligneAuSol && !_spawnAligneAuSol)
-					FinaliserSpawnInitialAuSol();
+					FinaliserSpawnInitialAuSol(autoriserFallbackSansRaycast: _secondesOverlayChargement >= 90.0);
 				_overlayChargement.Visible = false;
 			}
 		}
@@ -988,6 +1061,26 @@ public partial class Gestionnaire_Monde : Node3D
 		}
 	}
 
+	/// <summary>
+	/// Filet de sécurité anti-crash : sauvegarde régulière du joueur et d'un lot de chunks actifs.
+	/// La sauvegarde complète reste assurée par le bouton manuel, _Notification et _ExitTree.
+	/// </summary>
+	private void ExecuterAutosauvegardeProgressive()
+	{
+		if (_joueur != null)
+			GameState.Instance?.SauvegarderPositionJoueur(_joueur.GlobalPosition);
+		if (_joueur is Joueur j)
+			j.SauvegarderEtatPersistantMonde();
+
+		if (UseArchitectureReseau)
+		{
+			int budget = Mathf.Max(1, MaxChunksAutosauvegardeParCycle);
+			int n = _mondeServeur?.SauvegarderChunksActifsProgressif(budget) ?? 0;
+			if (n > 0)
+				GD.Print($"ZERO-K : Autosauvegarde progressive ({n} chunk(s)).");
+		}
+	}
+
 	private void MettreAJourDormanceObjetsPoses()
 	{
 		if (_joueur == null) return;
@@ -1001,13 +1094,23 @@ public partial class Gestionnaire_Monde : Node3D
 			if (rb is ItemPhysique ip && (ip.ID_Objet == 200 || ip.ID_Objet == Joueur.IdObjetRackBatons || ip.ID_Objet == Joueur.IdObjetRackBuches))
 				continue;
 			Vector2I c = WorldToChunkCoord(rb.GlobalPosition, TailleChunk);
-			bool proche = Mathf.Abs(c.X - chunkJoueur.X) <= rayon && Mathf.Abs(c.Y - chunkJoueur.Y) <= rayon;
-			if (proche && useGardeTerrain)
-				proche = _mondeClient.CollisionTerrainActiveAutourPoint(rb.GlobalPosition, rayonSecuriteTerrain);
-			if (proche)
+			bool dansRayon = Mathf.Abs(c.X - chunkJoueur.X) <= rayon && Mathf.Abs(c.Y - chunkJoueur.Y) <= rayon;
+			bool terrainPret = !useGardeTerrain || _mondeClient.CollisionTerrainActiveAutourPoint(rb.GlobalPosition, rayonSecuriteTerrain);
+			// Priorité gameplay: un objet proche du joueur ne doit jamais rester figé en l'air.
+			if (dansRayon)
 			{
 				if (rb.Freeze) rb.Freeze = false;
 				if (rb.Sleeping) rb.Sleeping = false;
+			}
+			else if (!terrainPret)
+			{
+				if (!rb.Freeze || !rb.Sleeping)
+				{
+					rb.LinearVelocity = Vector3.Zero;
+					rb.AngularVelocity = Vector3.Zero;
+					rb.Sleeping = true;
+					rb.Freeze = true;
+				}
 			}
 			else
 			{
@@ -1024,13 +1127,22 @@ public partial class Gestionnaire_Monde : Node3D
 		{
 			if (n is not RigidBody3D rb || !rb.IsInsideTree()) continue;
 			Vector2I c = WorldToChunkCoord(rb.GlobalPosition, TailleChunk);
-			bool proche = Mathf.Abs(c.X - chunkJoueur.X) <= rayon && Mathf.Abs(c.Y - chunkJoueur.Y) <= rayon;
-			if (proche && useGardeTerrain)
-				proche = _mondeClient.CollisionTerrainActiveAutourPoint(rb.GlobalPosition, rayonSecuriteTerrain);
-			if (proche)
+			bool dansRayon = Mathf.Abs(c.X - chunkJoueur.X) <= rayon && Mathf.Abs(c.Y - chunkJoueur.Y) <= rayon;
+			bool terrainPret = !useGardeTerrain || _mondeClient.CollisionTerrainActiveAutourPoint(rb.GlobalPosition, rayonSecuriteTerrain);
+			if (dansRayon)
 			{
 				if (rb.Freeze) rb.Freeze = false;
 				if (rb.Sleeping) rb.Sleeping = false;
+			}
+			else if (!terrainPret)
+			{
+				if (!rb.Freeze || !rb.Sleeping)
+				{
+					rb.LinearVelocity = Vector3.Zero;
+					rb.AngularVelocity = Vector3.Zero;
+					rb.Sleeping = true;
+					rb.Freeze = true;
+				}
 			}
 			else
 			{

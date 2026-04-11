@@ -126,19 +126,35 @@ void fragment() {
 		float humidite_micro = noise(world_pos.xz * 0.012 + vec2(73.1, -21.7));
 		float facteur_humidite = clamp(facteur_humidite_macro * 0.82 + humidite_micro * 0.18 * detail_t, 0.0, 1.0);
 
-		// Herbe (ID 1) : sec = jaunâtre, normal = vert, humide = vert foncé
+		// Herbe (ID 1) : palette pilotée par climat (texture base N/B ou colorée).
 		if (material_id == 1.0) {
-			// Pas de "filtre plaqué": on modifie la teinte/saturation/lumière en HSV
-			// pour conserver le relief et les détails de texture.
-			vec3 hsv = rgb2hsv(final_color);
+			vec3 base = final_color;
 			float h = facteur_humidite;
+			float t = clamp((v_temperature + 1.0) * 0.5, 0.0, 1.0);
+			float jungle = smoothstep(0.58, 0.92, t) * smoothstep(0.55, 0.95, h);
 			float micro = noise(world_pos.xz * 0.08 + vec2(11.3, -6.9)) - 0.5;
+			vec3 hsvBase = rgb2hsv(base);
+			// Si la texture est N/B (saturation faible), on applique la palette plus fortement.
+			float forceNB = 1.0 - smoothstep(0.10, 0.30, hsvBase.y);
+			float forcePalette = mix(0.30, 0.82, forceNB);
+			// Teintes cibles: sec -> jaune, normal -> vert, jungle -> vert vif.
+			float hueBiome = mix(0.16, mix(0.30, 0.36, jungle), h);
+			float satBiome = mix(0.36, 0.80, h);
+			satBiome = mix(satBiome, satBiome * 1.08, jungle);
 
-			// Sec -> teinte plus jaune, humide -> vert plus froid/foncé.
-			hsv.x = fract(hsv.x + mix(-0.055, 0.025, h) + micro * 0.010 * detail_t);
-			hsv.y = clamp(hsv.y * mix(0.78, 1.22, h), 0.0, 1.0);
-			hsv.z = clamp(hsv.z * mix(1.06, 0.80, h), 0.0, 1.0);
-			final_color = hsv2rgb(hsv);
+			vec3 hsvOut = hsvBase;
+			hsvOut.x = mix(hsvBase.x, hueBiome, forcePalette);
+			hsvOut.y = clamp(mix(hsvBase.y, satBiome, forcePalette), 0.0, 1.0);
+			float vMul = mix(1.05, 0.90, h);
+			vMul = mix(vMul, vMul * 0.95, jungle);
+			hsvOut.z = clamp(hsvBase.z * vMul + micro * 0.045 * detail_t, 0.0, 1.0);
+			vec3 couleurBiome = hsv2rgb(hsvOut);
+
+			// Conserve le relief: la texture pilote encore les hautes/basses fréquences.
+			float lum = dot(base, vec3(0.299, 0.587, 0.114));
+			float detailLum = clamp((lum - 0.5) * 1.22 + 0.5, 0.0, 1.0);
+			vec3 coloreRelief = couleurBiome * (0.72 + detailLum * 0.54);
+			final_color = mix(base, coloreRelief, forcePalette);
 		}
 		// Boue (ID 7) : sec = grisâtre, humide = de plus en plus brun
 		if (material_id == 7.0) {

@@ -91,15 +91,41 @@ public static class LSystem_Botanique
 		Flexibilite = 0.10f
 	};
 
+	public static readonly ProfilBotanique CheneMort = new ProfilBotanique
+	{
+		Nom = "Chêne mort",
+		ID_Tronc = 30,
+		ID_Feuille = 31,
+		MasseDensite = 0.62f,
+		ResistanceHache = 95f,
+		Combustibilite = 220f,
+		ChaleurDegagee = 620f,
+		Flexibilite = 0.08f
+	};
+
+	public static readonly ProfilBotanique BouleauMort = new ProfilBotanique
+	{
+		Nom = "Bouleau mort",
+		ID_Tronc = 30,
+		ID_Feuille = 31,
+		MasseDensite = 0.55f,
+		ResistanceHache = 78f,
+		Combustibilite = 240f,
+		ChaleurDegagee = 580f,
+		Flexibilite = 0.07f
+	};
+
 	/// <summary>Index du chêne dans TableBotanique.</summary>
 	public const byte IndexChene = 0;
 	public const byte IndexBouleau = 1; // Nouvelle espece
 	public const byte IndexPin = 2; // Nouvelle espece
 	public const byte IndexSapin = 3; // Conifere de climat froid modere
 	public const byte IndexJungle = 4; // Arbre tropical a couronne haute
+	public const byte IndexCheneMort = 5; // Variante aride, sans feuilles
+	public const byte IndexBouleauMort = 6; // Variante aride, sans feuilles
 
-	/// <summary>Table des essences. 0=Chêne, 1=Bouleau, 2=Pin, 3=Sapin, 4=Jungle.</summary>
-	public static readonly ProfilBotanique[] TableBotanique = { Chene, Bouleau, Pin, Sapin, Jungle };
+	/// <summary>Table des essences. 0=Chêne, 1=Bouleau, 2=Pin, 3=Sapin, 4=Jungle, 5=Chêne mort, 6=Bouleau mort.</summary>
+	public static readonly ProfilBotanique[] TableBotanique = { Chene, Bouleau, Pin, Sapin, Jungle, CheneMort, BouleauMort };
 
 	/// <summary>Retourne le profil botanique pour l'index d'espèce (0 = chêne). Clamp si hors bornes.</summary>
 	public static ProfilBotanique ObtenirProfil(byte indexEspece)

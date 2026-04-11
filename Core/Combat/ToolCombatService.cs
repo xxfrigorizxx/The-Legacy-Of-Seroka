@@ -995,6 +995,7 @@ public partial class Joueur
             else if (resultatCoupe == 3)
             {
                 JouerSonEtEffetCoupeArbre(pointImpact);
+                bool brancheMorte = arbre.IndexBotanique == LSystem_Botanique.IndexCheneMort || arbre.IndexBotanique == LSystem_Botanique.IndexBouleauMort;
                 var slotBatonStandard = new SlotInventaire
                 {
                     ID = 32,
@@ -1007,7 +1008,9 @@ public partial class Joueur
                 Node3D baton = CreerBlocPose(posBaton, slotBatonStandard);
                 if (baton is RigidBody3D rbBaton)
                     rbBaton.ApplyCentralImpulse(directionFrappe.Normalized() * 1.8f + Vector3.Up * 0.8f);
-                GD.Print("ZERO-K : Branche amputée -> bâton standard au sol.");
+                GD.Print(brancheMorte
+                    ? "ZERO-K : Branche morte amputée -> bâton mort au sol."
+                    : "ZERO-K : Branche amputée -> bâton standard au sol.");
             }
 
             if (mainActive.ID == 106 && resultatCoupe > 0)
@@ -1066,7 +1069,10 @@ public partial class Joueur
                 JouerSonEtEffetCoupeArbre(pointImpact);
                 branchesRestantes--;
                 rbCible.SetMeta("BranchesRestantes", branchesRestantes);
-                GD.Print($"ZERO-K : Branche amputée. Reste : {branchesRestantes}");
+                bool brancheMorte = essenceBois == LSystem_Botanique.IndexCheneMort || essenceBois == LSystem_Botanique.IndexBouleauMort;
+                GD.Print(brancheMorte
+                    ? $"ZERO-K : Branche morte amputée. Restes morts : {branchesRestantes}"
+                    : $"ZERO-K : Branche amputée. Reste : {branchesRestantes}");
                 var slotBaton = new SlotInventaire
                 {
                     ID = 32,

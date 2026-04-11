@@ -483,7 +483,7 @@ public partial class Chunk_Client : Node3D
 			if (kv.Value == 0)
 			{
 				Color couleurSol = ObtenirCouleurTerrainApproxThreadSafe(kv.Key.X, kv.Key.Y, kv.Key.Z);
-				Color couleurHerbe = new Color(couleurSol.R * 0.8f, couleurSol.G * 0.8f, couleurSol.B * 0.8f, 1f).Lerp(new Color(0.7f, 0.8f, 1f), 0.1f);
+				Color couleurHerbe = couleurSol.Lerp(new Color(0.22f, 0.32f, 0.20f, 1f), 0.08f);
 				uint hashBase = (uint)(kv.Key.X * 73856093) ^ (uint)(kv.Key.Z * 19349663);
 				float humidite = CalculerHumiditeGlobale(kv.Key.X, kv.Key.Z);
 				float facteurHum = Mathf.Clamp((humidite + 1f) * 0.5f, 0f, 1f);
@@ -527,13 +527,8 @@ public partial class Chunk_Client : Node3D
 		float temp = _noiseTemperature.GetNoise2D(xGlobal, zGlobal);
 		float hum = CalculerHumiditeGlobale(xGlobal, zGlobal);
 		float facteurHum = Mathf.Clamp((hum + 1f) * 0.5f, 0f, 1f);
-		Color sec = new Color(0.93f, 0.82f, 0.36f);
-		Color normal = new Color(0.38f, 0.63f, 0.28f);
-		Color humide = new Color(0.16f, 0.42f, 0.22f);
-		Color couleurBase = facteurHum < 0.35f
-			? sec.Lerp(normal, facteurHum / 0.35f)
-			: normal.Lerp(humide, (facteurHum - 0.35f) / 0.65f);
-		return couleurBase;
+		if (idMat != 1) return new Color(0.5f, 0.6f, 0.5f);
+		return CalculerCouleurHerbeBiome(temp, facteurHum);
 	}
 
 	/// <summary>Densité du gazon pilotée par l'humidité locale : max inchangé en zone humide, réduit en zone sèche.</summary>
@@ -731,7 +726,7 @@ public partial class Chunk_Client : Node3D
 			if (kv.Value == 0 && posMonde.DistanceSquaredTo(posObs) <= rayonCarre)
 			{
 				Color couleurSol = ObtenirCouleurTerrainApprox(kv.Key.X, kv.Key.Y, kv.Key.Z);
-				Color couleurHerbe = new Color(couleurSol.R * 0.8f, couleurSol.G * 0.8f, couleurSol.B * 0.8f, 1f).Lerp(new Color(0.7f, 0.8f, 1f), 0.1f);
+				Color couleurHerbe = couleurSol.Lerp(new Color(0.22f, 0.32f, 0.20f, 1f), 0.08f);
 				uint hashBase = (uint)(kv.Key.X * 73856093) ^ (uint)(kv.Key.Z * 19349663);
 				float humidite = CalculerHumiditeGlobale(kv.Key.X, kv.Key.Z);
 				float facteurHum = Mathf.Clamp((humidite + 1f) * 0.5f, 0f, 1f);
@@ -808,14 +803,20 @@ private static Texture2D _cacheTextureFeuilleBuisson;
 		float temp = _noiseTemperature.GetNoise2D(xGlobal, zGlobal);
 		float hum = CalculerHumiditeGlobale(xGlobal, zGlobal);
 		float facteurHum = Mathf.Clamp((hum + 1f) * 0.5f, 0f, 1f);
-		// Gazon 3D : sec = jaunâtre, normal = vert, humide = vert foncé (comme shader terrain)
-		Color sec = new Color(0.93f, 0.82f, 0.36f);
-		Color normal = new Color(0.38f, 0.63f, 0.28f);
-		Color humide = new Color(0.16f, 0.42f, 0.22f);
-		Color couleurBase = facteurHum < 0.35f
-			? sec.Lerp(normal, facteurHum / 0.35f)
-			: normal.Lerp(humide, (facteurHum - 0.35f) / 0.65f);
-		return couleurBase;
+		if (idMat != 1) return new Color(0.5f, 0.6f, 0.5f);
+		return CalculerCouleurHerbeBiome(temp, facteurHum);
+	}
+
+	private static Color CalculerCouleurHerbeBiome(float temperature, float facteurHum)
+	{
+		float h = Mathf.Clamp(facteurHum, 0f, 1f);
+		float t = Mathf.Clamp((temperature + 1f) * 0.5f, 0f, 1f);
+		float jungle = Mathf.SmoothStep(0.58f, 0.92f, t) * Mathf.SmoothStep(0.55f, 0.95f, h);
+		Color sec = new Color(0.74f, 0.69f, 0.36f);
+		Color prairie = new Color(0.34f, 0.59f, 0.28f);
+		Color jungleVif = new Color(0.22f, 0.67f, 0.30f);
+		Color humide = prairie.Lerp(jungleVif, jungle);
+		return sec.Lerp(humide, h);
 	}
 
 	private float CalculerHumiditeGlobale(float xGlobal, float zGlobal)
@@ -2128,7 +2129,7 @@ private static bool EstCorpsAuSol(PhysicsBody3D body)
 			if (distCarree > rayonGazonCarre) continue;
 			Vector3 positionLocale = new Vector3(kv.Key.X, kv.Key.Y + 0.5f, kv.Key.Z) - chunkOrigin + new Vector3(0.5f, 0f, 0.5f);
 			Color couleurSol = ObtenirCouleurTerrainDepuisChunkData(data, kv.Key.X, kv.Key.Y, kv.Key.Z);
-			Color couleurHerbe = new Color(couleurSol.R * 0.8f, couleurSol.G * 0.8f, couleurSol.B * 0.8f, 1f).Lerp(new Color(0.7f, 0.8f, 1f), 0.1f);
+			Color couleurHerbe = couleurSol.Lerp(new Color(0.22f, 0.32f, 0.20f, 1f), 0.08f);
 			uint hashBase = (uint)(kv.Key.X * 73856093) ^ (uint)(kv.Key.Z * 19349663);
 			int densiteBase = distCarree <= rayonQualiteCarre ? 19 : (distCarree <= rayonQualiteCarre * 2.6f ? 11 : 5);
 			float humidite = CalculerHumiditeGlobaleDepuisChunkData(data, kv.Key.X, kv.Key.Z);
@@ -2156,13 +2157,12 @@ private static bool EstCorpsAuSol(PhysicsBody3D body)
 		int lz = zGlobal - data.Coordonnees.Y * data.TailleChunk;
 		if (lx < 0 || lx > data.TailleChunk || yGlobal < 0 || yGlobal > data.HauteurMax || lz < 0 || lz > data.TailleChunk)
 			return new Color(0.5f, 0.6f, 0.5f);
+		byte idMat = data.MaterialsFlat[data.Idx(lx, yGlobal, lz)];
 		float temp = data.NoiseTemperature.GetNoise2D(xGlobal, zGlobal);
 		float hum = CalculerHumiditeGlobaleDepuisChunkData(data, xGlobal, zGlobal);
 		float facteurHum = Mathf.Clamp((hum + 1f) * 0.5f, 0f, 1f);
-		Color sec = new Color(0.93f, 0.82f, 0.36f);
-		Color normal = new Color(0.38f, 0.63f, 0.28f);
-		Color humide = new Color(0.16f, 0.42f, 0.22f);
-		return facteurHum < 0.35f ? sec.Lerp(normal, facteurHum / 0.35f) : normal.Lerp(humide, (facteurHum - 0.35f) / 0.65f);
+		if (idMat != 1) return new Color(0.5f, 0.6f, 0.5f);
+		return CalculerCouleurHerbeBiome(temp, facteurHum);
 	}
 
 	private static float CalculerHumiditeGlobaleDepuisChunkData(ChunkData data, float xGlobal, float zGlobal)

@@ -127,6 +127,8 @@ public static class Atlas_Matiere
             2 => 8.0f,  // Pin : résineux tendre
             3 => 7.0f,  // 📖 Sapin : Très tendre, similaire au Pin
             4 => 3.5f,  // 📖 Kapokier : Catastrophique pour forger un manche d'outil
+            5 => 9.0f,  // Chêne mort : moitié de la résistance du chêne vivant
+            6 => 6.5f,  // Bouleau mort : moitié de la résistance du bouleau vivant
             _ => 10.0f
         };
     }
