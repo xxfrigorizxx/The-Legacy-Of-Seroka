@@ -64,6 +64,7 @@ public partial class Gestionnaire_Monde : Node3D
 	private Node3D _conteneurEffetsEau;
 	private readonly HashSet<ulong> _corpsDansOcean = new HashSet<ulong>();
 	private StandardMaterial3D _materielEclaboussureEau;
+	private bool _chargementCycleSolaire;
 
 	// Legacy
 	private List<Vector2I> _chunksACharger = new List<Vector2I>();
@@ -130,9 +131,12 @@ public partial class Gestionnaire_Monde : Node3D
 
 	private Queue<Vector3I> _fileEau = new Queue<Vector3I>();
 	private HashSet<Vector3I> _eauActive = new HashSet<Vector3I>();
+	private readonly Dictionary<Vector3I, (Vector3I retourInterdit, int tickExpiration)> _antiRetourEauLegacy = new Dictionary<Vector3I, (Vector3I, int)>();
+	private int _tickEauLegacy;
 	private float _tempsEcoulement;
 	private const float TICK_EAU = 0.05f;
 	private const int MaxEauParTick = 32;
+	private const int DureeBlocageRetourEauLegacyTicks = 5;
 	private static readonly Vector3I[] DirReveilEau = { new Vector3I(0, 1, 0), new Vector3I(0, -1, 0), new Vector3I(1, 0, 0), new Vector3I(-1, 0, 0), new Vector3I(0, 0, 1), new Vector3I(0, 0, -1) };
 	private static readonly Vector3I[] DirEauHorizLegacy = { new Vector3I(1, 0, 0), new Vector3I(-1, 0, 0), new Vector3I(0, 0, -1), new Vector3I(0, 0, 1) };
 
@@ -291,6 +295,25 @@ public partial class Gestionnaire_Monde : Node3D
 	}
 
 	private void ActiverEauLegacy(Vector3I pos) { if (_eauActive.Add(pos)) _fileEau.Enqueue(pos); }
+
+	private bool PeutCoulerVersLegacy(Vector3I source, Vector3I destination)
+	{
+		if (!_antiRetourEauLegacy.TryGetValue(source, out var blocage)) return true;
+		if (blocage.tickExpiration <= _tickEauLegacy)
+		{
+			_antiRetourEauLegacy.Remove(source);
+			return true;
+		}
+		return blocage.retourInterdit != destination;
+	}
+
+	private void MemoriserFluxEauLegacy(Vector3I source, Vector3I destination)
+	{
+		// Évite le va-et-vient immédiat destination -> source.
+		_antiRetourEauLegacy[destination] = (source, _tickEauLegacy + DureeBlocageRetourEauLegacyTicks);
+		if (_antiRetourEauLegacy.Count > 20000)
+			_antiRetourEauLegacy.Clear();
+	}
 
 	private void ReveillerEauAdjacenteLegacy(Vector3 pointGlobal)
 	{
@@ -828,6 +851,14 @@ public partial class Gestionnaire_Monde : Node3D
 		soleil.RpcId(peerId, nameof(Cycle_Solaire.DefinirDecalageHoraire), offset);
 	}
 
+	private void MettreAJourEtatCycleSolaire(bool chargementActif)
+	{
+		if (_chargementCycleSolaire == chargementActif) return;
+		_chargementCycleSolaire = chargementActif;
+		var cycle = GetParent()?.GetNodeOrNull<Cycle_Solaire>("CycleSolaire");
+		cycle?.DefinirChargementMondeActif(chargementActif);
+	}
+
 	private void DemarrerLegacy()
 	{
 		_sceneChunk = GD.Load<PackedScene>("res://Generateur_Voxel.tscn");
@@ -836,11 +867,17 @@ public partial class Gestionnaire_Monde : Node3D
 
 	public override void _Process(double delta)
 	{
+		bool spawnPretActuel = EstSpawnPret();
+		bool spawnPretEtAligneActuel = spawnPretActuel && (!_spawnDoitEtreAligneAuSol || _spawnAligneAuSol);
+		bool cardinauxPrets = !UseArchitectureReseau || (_mondeClient?.ChunkSousPiedsEtVoisinsCardinauxPrets() ?? false);
+		bool chargementVisuelActif = !spawnPretEtAligneActuel || !cardinauxPrets;
+		MettreAJourEtatCycleSolaire(chargementVisuelActif);
+
 		// Masquer l'overlay quand le sol minimal sous les pieds est prêt, ou après timeout (évite chargement infini si file / grille trop large).
 		if (_overlayChargement != null && _overlayChargement.Visible)
 		{
 			_secondesOverlayChargement += delta;
-			bool spawnPret = EstSpawnPret();
+			bool spawnPret = spawnPretActuel;
 			if (spawnPret && _spawnDoitEtreAligneAuSol && !_spawnAligneAuSol)
 				FinaliserSpawnInitialAuSol();
 			bool spawnPretEtAligne = spawnPret && (!_spawnDoitEtreAligneAuSol || _spawnAligneAuSol);
@@ -909,6 +946,7 @@ public partial class Gestionnaire_Monde : Node3D
 		if (_tempsEcoulement >= TICK_EAU)
 		{
 			_tempsEcoulement = 0;
+			_tickEauLegacy++;
 			int eauCount = Math.Min(_fileEau.Count, MaxEauParTick);
 			for (int i = 0; i < eauCount; i++)
 			{
@@ -921,6 +959,7 @@ public partial class Gestionnaire_Monde : Node3D
 				{
 					DefinirVoxelLegacy(posBas, 4);
 					DefinirVoxelLegacy(pos, 0);
+					MemoriserFluxEauLegacy(pos, posBas);
 					ActiverEauLegacy(posBas);
 					DemanderMiseAJourMeshLegacy(pos);
 					DemanderMiseAJourMeshLegacy(posBas);
@@ -932,10 +971,12 @@ public partial class Gestionnaire_Monde : Node3D
 				{
 					Vector3I pc = pos + d, pcb = pc + new Vector3I(0, -1, 0);
 					if (!EstVoxelAirLegacy(pc)) continue;
+					if (!PeutCoulerVersLegacy(pos, pc)) continue;
 					if (aPression || EstVoxelAirLegacy(pcb))
 					{
 						DefinirVoxelLegacy(pc, 4);
 						DefinirVoxelLegacy(pos, 0);
+						MemoriserFluxEauLegacy(pos, pc);
 						ActiverEauLegacy(pc);
 						DemanderMiseAJourMeshLegacy(pos);
 						DemanderMiseAJourMeshLegacy(pc);
@@ -957,7 +998,7 @@ public partial class Gestionnaire_Monde : Node3D
 		foreach (Node n in GetTree().GetNodesInGroup("BlocsPoses"))
 		{
 			if (n is not RigidBody3D rb || !rb.IsInsideTree()) continue;
-			if (rb is ItemPhysique ip && (ip.ID_Objet == 200 || ip.ID_Objet == Joueur.IdObjetRackBatons))
+			if (rb is ItemPhysique ip && (ip.ID_Objet == 200 || ip.ID_Objet == Joueur.IdObjetRackBatons || ip.ID_Objet == Joueur.IdObjetRackBuches))
 				continue;
 			Vector2I c = WorldToChunkCoord(rb.GlobalPosition, TailleChunk);
 			bool proche = Mathf.Abs(c.X - chunkJoueur.X) <= rayon && Mathf.Abs(c.Y - chunkJoueur.Y) <= rayon;

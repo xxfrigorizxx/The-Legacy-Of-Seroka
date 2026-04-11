@@ -272,7 +272,7 @@ public partial class ItemPhysique : RigidBody3D
 			FreezeMode = FreezeModeEnum.Static;
 			return;
 		}
-		if (ID_Objet == Joueur.IdObjetRackBatons)
+		if (ID_Objet == Joueur.IdObjetRackBatons || ID_Objet == Joueur.IdObjetRackBuches)
 		{
 			Mass = 1200f;
 			GravityScale = 0f;

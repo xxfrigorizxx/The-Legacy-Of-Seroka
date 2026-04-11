@@ -459,6 +459,8 @@ public static class Atlas_Matiere
         }
         if (id == Joueur.IdObjetRackBatons)
             return "Rack à bâtons";
+        if (id == Joueur.IdObjetRackBuches)
+            return "Rack à bûches";
         return id switch
         {
             1 => "Terre",
@@ -621,6 +623,26 @@ public static class Atlas_Matiere
         }
         static bool EstSlotTissuCraft(SlotInventaire s) => !s.EstVide && s.ID == 21;
         static bool EstSlotBatonCraft(SlotInventaire s) => !s.EstVide && s.ID == 32;
+        // B1 = bûche standard (taille 1) fendue en 4 (morph 2). La longueur « standard » est surtout dans IndexTaille, pas ScaleEclat.
+        static bool EstSlotBucheQuartB1RackCraft(SlotInventaire s)
+        {
+            if (s.EstVide || s.ID != 30) return false;
+            if (s.IndexMorphologique != 2) return false;
+            if (s.IndexTaille != 1) return false;
+            float z = s.ScaleEclat.Z;
+            if (z <= 1e-4f) return true;
+            return z >= 0.72f;
+        }
+        // B2 = demi-bûche courte (taille 2) fendue en 4, ou bûche standard avec longueur réellement réduite via ScaleEclat.
+        static bool EstSlotBucheQuartB2RackCraft(SlotInventaire s)
+        {
+            if (s.EstVide || s.ID != 30) return false;
+            if (s.IndexMorphologique != 2) return false;
+            if (s.IndexTaille == 2) return true;
+            if (s.IndexTaille != 1) return false;
+            float z = s.ScaleEclat.Z;
+            return z > 0.18f && z < 0.72f;
+        }
         static bool EstSlotPochetteTier0Craft(SlotInventaire s) => !s.EstVide && s.ID == Joueur.IdObjetPochetteTier0;
 
         SlotInventaire c0, c1, c2, c3;
@@ -642,6 +664,44 @@ public static class Atlas_Matiere
         // RECETTE ATELIER : 6 cordes (20) → ceinture à poches (102). Formes : 2×3 (colonnes gauche/droite) ou 3×2 (lignes haut/bas).
         if (grilleCraft3x3Table && grille.Length >= 9)
         {
+            // RECETTE ATELIER : Rack à bûches (110), patron strict.
+            // (B1) ( ) (B1)
+            // (B1) ( ) (B1)
+            // ( C) (B2) ( C)
+            bool rackBuchesPatron =
+                EstSlotBucheQuartB1RackCraft(grille[0]) && grille[1].EstVide && EstSlotBucheQuartB1RackCraft(grille[2]) &&
+                EstSlotBucheQuartB1RackCraft(grille[3]) && grille[4].EstVide && EstSlotBucheQuartB1RackCraft(grille[5]) &&
+                EstSlotCordeOuLianeCraft(grille[6]) && EstSlotBucheQuartB2RackCraft(grille[7]) && EstSlotCordeOuLianeCraft(grille[8]);
+            if (rackBuchesPatron)
+            {
+                SlotInventaire bRef = grille[0];
+                bool memesB1 = Joueur.SontEmpilables(grille[0], grille[2])
+                    && Joueur.SontEmpilables(grille[0], grille[3])
+                    && Joueur.SontEmpilables(grille[0], grille[5]);
+                bool b2Compatible = grille[7].ID == bRef.ID
+                    && grille[7].IndexMorphologique == bRef.IndexMorphologique
+                    && grille[7].IndexChimique == bRef.IndexChimique
+                    && grille[7].IndexBotanique == bRef.IndexBotanique;
+                bool ligaturesUniformes = MemeVarianteLigature(grille[6], grille[8]);
+                if (memesB1 && b2Compatible && ligaturesUniformes)
+                {
+                    int nf = Mathf.Max(
+                        Mathf.Max(Mathf.Max(grille[0].NiveauFracture, grille[2].NiveauFracture), Mathf.Max(grille[3].NiveauFracture, grille[5].NiveauFracture)),
+                        Mathf.Max(Mathf.Max(grille[6].NiveauFracture, grille[8].NiveauFracture), grille[7].NiveauFracture));
+                    byte tagVariante = VarianteLigatureCraft(grille[6]);
+                    return new SlotInventaire
+                    {
+                        ID = Joueur.IdObjetRackBuches,
+                        IndexChimique = grille[6].IndexChimique,
+                        IndexMorphologique = grille[6].IndexMorphologique,
+                        IndexBotanique = bRef.IndexBotanique,
+                        NiveauFracture = nf,
+                        GenomeAssemblage = $"RACKBL:{tagVariante}",
+                        EstUnEclat = false
+                    };
+                }
+            }
+
             // RECETTE ATELIER : Rack à bâtons (109), sans position imposée.
             // Règle : exactement 3 bâtons (32) + 2 ligatures (corde 20 ou liane 16), tout le reste vide.
             int nbOccupes = 0;
@@ -912,19 +972,26 @@ public static class Atlas_Matiere
             bool autresVides = grille[3].EstVide && grille[5].EstVide && grille[6].EstVide && grille[8].EstVide;
             if (autresVides)
             {
-                SlotInventaire roche = grille[0];
+                SlotInventaire rocheA = grille[0];
+                SlotInventaire rocheB = grille[2];
                 SlotInventaire corde = NormaliserLigatureOutil(grille[1]);
                 SlotInventaire baton = grille[4];
-                float dMax = CalculerDurabiliteMaxNouvellePioche(roche, corde, baton);
+                float dMax = CalculerDurabiliteMaxNouvellePioche(rocheA, corde, baton);
+                int idxRocheA = rocheA.ID - ItemPhysique.IdRocheMatiereMin;
+                int idxRocheB = rocheB.ID - ItemPhysique.IdRocheMatiereMin;
                 return new SlotInventaire
                 {
                     ID = Joueur.IdObjetPiochePierreTier0,
-                    IndexChimique = roche.ID - ItemPhysique.IdRocheMatiereMin,
+                    // Tête principale.
+                    IndexChimique = idxRocheA,
+                    // Ligature (conserve le schéma outils existant).
                     IndexMorphologique = corde.IndexChimique,
                     IndexTaille = corde.IndexMorphologique,
                     IndexBotanique = baton.IndexBotanique,
                     EstUnEclat = false,
                     NiveauFracture = corde.IndexBotanique,
+                    // Tête secondaire: persistée explicitement pour afficher deux roches différentes.
+                    GenomeAssemblage = $"PICKR:{idxRocheB}",
                     DurabiliteOutilMax = dMax,
                     DurabiliteOutilActuelle = dMax
                 };

@@ -7,6 +7,7 @@ public partial class Joueur
 {
     private const int VersionPersistenceJoueur = 2;
     private const int VersionPersistenceObjetsPoses = 3;
+    private const int VersionPersistenceProgression = 1;
     private bool _etatPersistantCharge;
 
     private static string ObtenirCheminDossierSauvegardeMonde()
@@ -74,6 +75,7 @@ public partial class Joueur
 
     public void SauvegarderEtatPersistantMonde()
     {
+        SauvegarderProgressionJoueurMonde();
         SauvegarderInventaireMonde();
         SauvegarderObjetsPosesMonde();
         SauvegarderBlocsChutantsMonde();
@@ -83,10 +85,89 @@ public partial class Joueur
     {
         if (_etatPersistantCharge) return;
         _etatPersistantCharge = true;
+        ChargerProgressionJoueurMonde();
         ChargerInventaireMonde();
         ChargerObjetsPosesMonde();
         ChargerBlocsChutantsMonde();
         RafraichirHUD();
+    }
+
+    private void SauvegarderProgressionJoueurMonde()
+    {
+        try
+        {
+            string dossier = ObtenirCheminDossierSauvegardeMonde();
+            Directory.CreateDirectory(dossier);
+            string chemin = Path.Combine(dossier, "player_progression.dat");
+            using var w = new BinaryWriter(File.Open(chemin, FileMode.Create));
+            w.Write(VersionPersistenceProgression);
+            w.Write(_futureStates.Count);
+            foreach (var kv in _futureStates)
+            {
+                w.Write(kv.Key ?? "");
+                w.Write(kv.Value);
+                w.Write(ObtenirXpFutureState(kv.Key));
+            }
+            w.Write(_metiers.Count);
+            foreach (var kv in _metiers)
+            {
+                w.Write(kv.Key ?? "");
+                w.Write(kv.Value);
+                w.Write(ObtenirXpMetier(kv.Key));
+            }
+        }
+        catch (Exception ex)
+        {
+            GD.PrintErr($"ZERO-K : Erreur sauvegarde progression joueur : {ex.Message}");
+        }
+    }
+
+    private void ChargerProgressionJoueurMonde()
+    {
+        try
+        {
+            string chemin = Path.Combine(ObtenirCheminDossierSauvegardeMonde(), "player_progression.dat");
+            if (!File.Exists(chemin))
+                return;
+            using var r = new BinaryReader(File.Open(chemin, FileMode.Open, System.IO.FileAccess.Read, FileShare.Read));
+            int version = r.ReadInt32();
+            if (version < 1 || version > VersionPersistenceProgression)
+                return;
+            _futureStates.Clear();
+            _futureStateXp.Clear();
+            int nStats = Mathf.Max(0, r.ReadInt32());
+            for (int i = 0; i < nStats; i++)
+            {
+                string nom = r.ReadString();
+                ulong niveau = r.ReadUInt64();
+                ulong xp = r.ReadUInt64();
+                if (string.IsNullOrWhiteSpace(nom))
+                    continue;
+                _futureStates[nom] = Math.Min(niveau, NiveauMaxFutureState);
+                _futureStateXp[nom] = xp;
+            }
+            _metiers.Clear();
+            _metierXp.Clear();
+            int nMetiers = Mathf.Max(0, r.ReadInt32());
+            for (int i = 0; i < nMetiers; i++)
+            {
+                string nom = r.ReadString();
+                ulong niveau = r.ReadUInt64();
+                ulong xp = r.ReadUInt64();
+                if (string.IsNullOrWhiteSpace(nom))
+                    continue;
+                _metiers[nom] = Math.Min(niveau, NiveauMaxFutureState);
+                _metierXp[nom] = xp;
+            }
+            AjouterFutureStateSiAbsent("Force", 0UL);
+            AjouterFutureStateSiAbsent("Dextiriter", 0UL);
+            AjouterMetierSiAbsent("Bucheron", 0UL);
+            AjouterMetierSiAbsent("Traisage", 0UL);
+        }
+        catch (Exception ex)
+        {
+            GD.PrintErr($"ZERO-K : Erreur chargement progression joueur : {ex.Message}");
+        }
     }
 
     private void SauvegarderInventaireMonde()
@@ -245,7 +326,7 @@ public partial class Joueur
                 if (EssayerConstruireSlotObjetPose(n, out var s, out var p, out var r))
                 {
                     SlotInventaire[] atelier = null;
-                    if (s.ID == 200 && n is Node3D n3)
+                    if ((s.ID == 200 || s.ID == IdObjetRackBatons || s.ID == IdObjetRackBuches) && n is Node3D n3)
                     {
                         var item = TrouverItemPhysiqueDansNoeud(n3);
                         atelier = CopierGrilleAtelierOuVide(item);
@@ -262,7 +343,7 @@ public partial class Joueur
                 EcrireSlot(w, e.slot);
                 w.Write(e.pos.X); w.Write(e.pos.Y); w.Write(e.pos.Z);
                 w.Write(e.rot.X); w.Write(e.rot.Y); w.Write(e.rot.Z);
-                bool aAtelier = e.slot.ID == 200 && e.atelier != null;
+                bool aAtelier = (e.slot.ID == 200 || e.slot.ID == IdObjetRackBatons || e.slot.ID == IdObjetRackBuches) && e.atelier != null;
                 w.Write(aAtelier);
                 if (aAtelier)
                 {
@@ -313,7 +394,7 @@ public partial class Joueur
                 if (n != null)
                 {
                     n.GlobalRotationDegrees = rot;
-                    if (s.ID == 200 && grilleAtelier != null)
+                    if ((s.ID == 200 || s.ID == IdObjetRackBatons || s.ID == IdObjetRackBuches) && grilleAtelier != null)
                     {
                         var item = TrouverItemPhysiqueDansNoeud(n);
                         if (item != null && item.GrillePlanTravailAtelier != null)
@@ -321,6 +402,10 @@ public partial class Joueur
                             int len = Mathf.Min(9, item.GrillePlanTravailAtelier.Length);
                             for (int g = 0; g < len; g++)
                                 item.GrillePlanTravailAtelier[g] = grilleAtelier[g];
+                            if (item.ID_Objet == IdObjetRackBatons)
+                                SynchroniserVisuelRackBatons(item);
+                            else if (item.ID_Objet == IdObjetRackBuches)
+                                SynchroniserVisuelRackBuches(item);
                         }
                     }
                 }

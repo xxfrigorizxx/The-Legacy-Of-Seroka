@@ -18,12 +18,38 @@ public partial class Cycle_Solaire : Node
 	private double _decalageMondeHeures = 0.0;
 	/// <summary>Pour détecter le passage minuit (nouveau jour).</summary>
 	private double _pourcentageJourneePrecedent = -1.0;
+	/// <summary>Vrai pendant le chargement initial du terrain autour du joueur (cache soleil/lune pour éviter le "flash" avant stabilité).</summary>
+	private bool _chargementMondeActif;
 
 	/// <summary>RPC appelé par le Serveur une seule fois quand le joueur spawn ou traverse un portail.</summary>
 	[Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = true)]
 	public void DefinirDecalageHoraire(double heuresDeDecalage)
 	{
 		_decalageMondeHeures = heuresDeDecalage;
+	}
+
+	/// <summary>Permet au gestionnaire de masquer les luminaires célestes pendant le bootstrap des chunks de spawn.</summary>
+	public void DefinirChargementMondeActif(bool actif)
+	{
+		_chargementMondeActif = actif;
+		if (_chargementMondeActif)
+			AppliquerEtatSansSoleilNiLune();
+	}
+
+	private void AppliquerEtatSansSoleilNiLune()
+	{
+		if (_soleil != null)
+		{
+			_soleil.Visible = false;
+			_soleil.LightEnergy = 0f;
+			_soleil.Set("sky_mode", 1);
+		}
+		if (_lune != null)
+		{
+			_lune.Visible = false;
+			_lune.LightEnergy = 0f;
+			_lune.Set("sky_mode", 1);
+		}
 	}
 
 	public override void _Ready()
@@ -77,6 +103,11 @@ public partial class Cycle_Solaire : Node
 	{
 		if (!IsInsideTree()) return; // GARROT SPATIAL : le Soleil ne tourne pas si l'univers s'effondre.
 		if (_soleil == null) return;
+		if (_chargementMondeActif)
+		{
+			AppliquerEtatSansSoleilNiLune();
+			return;
+		}
 
 		DateTime heureDansCeMonde = DateTime.UtcNow.AddHours(_decalageMondeHeures);
 		TimeSpan heureActuelle = heureDansCeMonde.TimeOfDay;
@@ -90,6 +121,7 @@ public partial class Cycle_Solaire : Node
 		// Calcul de l'angle X (Midi = -90°)
 		float angleX = 90f - (float)(pourcentageJournee * 360.0);
 		// GD.Print("Heure Universelle Relative : " + heureDansCeMonde.ToString("HH:mm:ss") + " | Angle : " + angleX);
+		_soleil.Visible = true;
 		_soleil.RotationDegrees = new Vector3(angleX, -30f, 0f);
 
 		// L'angle de la lune (toujours à l'opposé du soleil)

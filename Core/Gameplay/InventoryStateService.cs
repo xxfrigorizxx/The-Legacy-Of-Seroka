@@ -22,7 +22,7 @@ public partial class Joueur
     }
 
     private static bool EstObjetFlexibleComposeAvecTag(SlotInventaire s) =>
-        !s.EstVide && (s.ID == 20 || s.ID == 21 || s.ID == Joueur.IdObjetCeinturePoches || s.ID == Joueur.IdObjetCeintureSacoches || s.ID == Joueur.IdObjetPochetteTier0 || s.ID == Joueur.IdObjetSacTier0 || s.ID == Joueur.IdObjetRackBatons);
+        !s.EstVide && (s.ID == 20 || s.ID == 21 || s.ID == Joueur.IdObjetCeinturePoches || s.ID == Joueur.IdObjetCeintureSacoches || s.ID == Joueur.IdObjetPochetteTier0 || s.ID == Joueur.IdObjetSacTier0 || s.ID == Joueur.IdObjetRackBatons || s.ID == Joueur.IdObjetRackBuches);
 
     private static bool EstEncodageLegacyLiane(SlotInventaire s) =>
         EstObjetFlexibleComposeAvecTag(s) && s.IndexChimique == 16 && s.IndexMorphologique == 16 && s.IndexBotanique < NiveauCordeSolideTier2;
@@ -91,6 +91,14 @@ public partial class Joueur
         return 1;
     }
 
+    private static bool MemeScaleInventaire(Vector3 a, Vector3 b)
+    {
+        const float eps = 0.0005f;
+        return Mathf.Abs(a.X - b.X) <= eps
+            && Mathf.Abs(a.Y - b.Y) <= eps
+            && Mathf.Abs(a.Z - b.Z) <= eps;
+    }
+
     public static bool SontEmpilables(SlotInventaire a, SlotInventaire b)
     {
         if (a.EstVide || b.EstVide) return false;
@@ -103,7 +111,9 @@ public partial class Joueur
             && a.IndexTailleLameRoche == b.IndexTailleLameRoche
             && a.EstUnEclat == b.EstUnEclat
             && a.GenomeAssemblage == b.GenomeAssemblage
-            && a.CleConteneur == b.CleConteneur;
+            && a.CleConteneur == b.CleConteneur
+            // Important pour le bois coupé (demi/quart): empilement uniquement si même longueur réelle.
+            && MemeScaleInventaire(a.ScaleEclat, b.ScaleEclat);
     }
 
     private static SlotInventaire[] CopierSlots(SlotInventaire[] src, int longueur)
@@ -193,20 +203,40 @@ public partial class Joueur
 
     public static bool EstSlotStockableRackBatons(SlotInventaire s) => !s.EstVide && (s.ID == 30 || s.ID == 32);
 
-    public int CompterQuantiteRackBatons()
+    public static bool EstSlotStockableRackBuches(SlotInventaire s) => !s.EstVide && s.ID == 30;
+
+    public bool RackOuvertEstBuches()
+    {
+        return StockageRackBatonsOuvert
+            && RackBatonsOuvert != null
+            && GodotObject.IsInstanceValid(RackBatonsOuvert)
+            && RackBatonsOuvert.ID_Objet == IdObjetRackBuches;
+    }
+
+    public int ObtenirCapaciteRackOuvert() => RackOuvertEstBuches() ? 10 : 30;
+
+    public bool EstSlotStockableDansRackOuvert(SlotInventaire s)
+    {
+        return RackOuvertEstBuches() ? EstSlotStockableRackBuches(s) : EstSlotStockableRackBatons(s);
+    }
+
+    public int CompterQuantiteRackOuvert()
     {
         if (!(StockageRackBatonsOuvert && RackBatonsOuvert != null && GodotObject.IsInstanceValid(RackBatonsOuvert)))
             return 0;
+        int capacite = ObtenirCapaciteRackOuvert();
         int total = 0;
         var g = RackBatonsOuvert.GrillePlanTravailAtelier;
         int n = Mathf.Min(9, g.Length);
         for (int i = 0; i < n; i++)
         {
-            if (!EstSlotStockableRackBatons(g[i])) continue;
+            if (!EstSlotStockableDansRackOuvert(g[i])) continue;
             total += ObtenirQuantiteSlot(g[i]);
         }
-        return total;
+        return Mathf.Clamp(total, 0, capacite);
     }
+
+    public int CompterQuantiteRackBatons() => CompterQuantiteRackOuvert();
 
     /// <summary>True si la grille « sac » du menu anatomie doit s’afficher (phase actuelle : sac tier 0 équipé).</summary>
     public bool AStockageSacOuCeintureEquipe() => ASacEquipe();
@@ -246,6 +276,7 @@ public partial class Joueur
 
     private void NotifierChangementEquipementCorps()
     {
+        RafraichirVisuelsEquipementsCorps();
         if (_menuAnatomie != null && _menuAnatomie.EstOuvert)
             _menuAnatomie.RafraichirMenu();
     }

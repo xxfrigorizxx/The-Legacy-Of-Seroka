@@ -1259,6 +1259,21 @@ public bool RecolterBaiesBuisson(Vector3 pointImpactGlobal, float rayon, out int
 		lock (_verrouVoxel) return _densities[x, y, z] > Isolevel;
 	}
 
+	/// <summary>Lecture brute d'un voxel local pour synchroniser les frontières inter-chunks (0=air, 4=eau, sinon matière solide).</summary>
+	public byte LireVoxelLocalBrut(int lx, int ly, int lz)
+	{
+		if (!EstDansLimitesChunk(lx, ly, lz)) return 0;
+		lock (_verrouVoxel)
+		{
+			bool eau = _densitiesEau != null && _densitiesEau[lx, ly, lz] > Isolevel;
+			if (eau) return 4;
+			bool solide = _densities[lx, ly, lz] > Isolevel;
+			if (!solide) return 0;
+			byte mat = _materials[lx, ly, lz];
+			return mat == 0 ? (byte)1 : mat;
+		}
+	}
+
 	public void DefinirVoxelEau(int x, int y, int z)
 	{
 		if (!EstDansLimitesChunk(x, y, z) || y <= 2) return;
@@ -1284,7 +1299,7 @@ public bool RecolterBaiesBuisson(Vector3 pointImpactGlobal, float rayon, out int
 	}
 
 	/// <summary>Met à jour un voxel aux coords locales (réplication du padding des voisins).</summary>
-	public void SetVoxelLocal(int lx, int ly, int lz, byte id)
+	public void SetVoxelLocal(int lx, int ly, int lz, byte id, bool marquerChunkModifie = true)
 	{
 		if (!EstDansLimitesChunk(lx, ly, lz)) return;
 		lock (_verrouVoxel)
@@ -1309,8 +1324,11 @@ public bool RecolterBaiesBuisson(Vector3 pointImpactGlobal, float rayon, out int
 			}
 		}
 		// Padding voisin répliqué = vraie mutation persistante (sinon trou bordure perdu au reload).
-		_estModifie = true;
-		AuditerGraviteFlore();
+		if (marquerChunkModifie)
+		{
+			_estModifie = true;
+			AuditerGraviteFlore();
+		}
 	}
 
 	/// <summary>Met à jour un voxel local ET notifie le client (croissance arbres).</summary>

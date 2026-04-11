@@ -8,7 +8,7 @@ public partial class Joueur
     private static bool EstObjetAvecVisuel(int id)
     {
         if (id >= 1 && id <= 9) return true;
-        return ItemPhysique.EstIdRocheMatiere(id) || id == 10 || id == 11 || id == BlocChutant.ID_BRANCHE || id == 15 || id == 16 || id == 17 || id == 20 || id == 21 || id == Joueur.IdObjetCeinturePoches || id == Joueur.IdObjetCeintureSacoches || id == Joueur.IdObjetPochetteTier0 || id == Joueur.IdObjetSacTier0 || id == 30 || id == 32 || id == 34 || id == Joueur.IdObjetBaie || id == 100 || id == 105 || id == 106 || id == Joueur.IdObjetPellePierreTier0 || id == Joueur.IdObjetPiochePierreTier0 || id == 200 || id == Joueur.IdObjetRackBatons;
+        return ItemPhysique.EstIdRocheMatiere(id) || id == 10 || id == 11 || id == BlocChutant.ID_BRANCHE || id == 15 || id == 16 || id == 17 || id == 20 || id == 21 || id == Joueur.IdObjetCeinturePoches || id == Joueur.IdObjetCeintureSacoches || id == Joueur.IdObjetPochetteTier0 || id == Joueur.IdObjetSacTier0 || id == 30 || id == 32 || id == 34 || id == Joueur.IdObjetBaie || id == 100 || id == 105 || id == 106 || id == Joueur.IdObjetPellePierreTier0 || id == Joueur.IdObjetPiochePierreTier0 || id == 200 || id == Joueur.IdObjetRackBatons || id == Joueur.IdObjetRackBuches;
     }
 
     public static void NettoyerModelesEnfants(Node3D parent)
@@ -152,7 +152,7 @@ public partial class Joueur
     private static int SignatureSlotPioche108(SlotInventaire s)
     {
         if (s.ID != Joueur.IdObjetPiochePierreTier0) return -1;
-        return HashCode.Combine(s.IndexChimique, s.IndexMorphologique, s.IndexTaille, s.IndexBotanique, s.NiveauFracture);
+        return HashCode.Combine(s.IndexChimique, s.IndexMorphologique, s.IndexTaille, s.IndexBotanique, s.NiveauFracture, s.GenomeAssemblage ?? "");
     }
 
     private static int SignatureSlotAtelier200(SlotInventaire s)
@@ -163,8 +163,8 @@ public partial class Joueur
 
     private static int SignatureSlotRack109(SlotInventaire s)
     {
-        if (s.ID != Joueur.IdObjetRackBatons) return -1;
-        return HashCode.Combine(s.IndexBotanique, s.IndexChimique, s.IndexMorphologique, s.CleConteneur ?? "", s.GenomeAssemblage ?? "");
+        if (s.ID != Joueur.IdObjetRackBatons && s.ID != Joueur.IdObjetRackBuches) return -1;
+        return HashCode.Combine(s.ID, s.IndexBotanique, s.IndexChimique, s.IndexMorphologique, s.CleConteneur ?? "", s.GenomeAssemblage ?? "");
     }
 
     private static int SignatureSlotCorde20(SlotInventaire s)
@@ -434,7 +434,7 @@ public partial class Joueur
         if (essenceBois == Joueur.TagVarianteLiane || essenceBois == Joueur.TagVarianteHerbeSolide)
             essenceBois = LSystem_Botanique.IndexChene;
 
-        // Le rack garde son bois du modèle ; seules les ligatures prennent le matériau corde/liane du craft.
+        // Bois : triplanar selon l’essence du craft ; ligatures : corde/liane du craft.
         int nbMeshesRack = 0;
         void ParcourirMeshesRack(Node n)
         {
@@ -456,16 +456,8 @@ public partial class Joueur
                 }
                 else
                 {
-                    // Sécurité: si le GLB n'apporte pas de matériau sur ce mesh bois, on force un bois visible.
-                    bool aMateriau = mi.MaterialOverride != null;
-                    if (!aMateriau && mi.Mesh != null)
-                    {
-                        int surfaces = mi.Mesh.GetSurfaceCount();
-                        for (int i = 0; i < surfaces && !aMateriau; i++)
-                            aMateriau = mi.Mesh.SurfaceGetMaterial(i) != null || mi.GetActiveMaterial(i) != null;
-                    }
-                    if (!aMateriau)
-                        mi.MaterialOverride = ArbreVivant.ObtenirMaterielBoisTriplanar(essenceBois);
+                    // Toujours appliquer l’essence du craft : le GLB peut avoir un StandardMaterial blanc par défaut.
+                    mi.MaterialOverride = ArbreVivant.ObtenirMaterielBoisTriplanar(essenceBois);
                 }
             }
             foreach (Node c in n.GetChildren())
@@ -476,7 +468,7 @@ public partial class Joueur
         if (nbMeshesRack == 0)
         {
             // Fallback dur: un rack primitif visible, pour éviter tout cas "invisible".
-            var bois = ArbreVivant.ObtenirMaterielBoisTriplanar(slot.IndexBotanique);
+            var bois = ArbreVivant.ObtenirMaterielBoisTriplanar(essenceBois);
             var lig = Atlas_Matiere.ObtenirMaterielCorde(slot.IndexChimique, slot.IndexMorphologique, slot.NiveauFracture);
 
             MeshInstance3D Montant(Vector3 p, float h)
@@ -499,6 +491,72 @@ public partial class Joueur
             modele.AddChild(Ligature(new Vector3(x, h * 0.95f, z1)));
             modele.AddChild(Ligature(new Vector3(x, h * 0.95f, z2)));
         }
+        if (ancrerBaseAuSol)
+            NormaliserEchelleTableAtelierAuSol(modele, tailleMaxMetres);
+        else
+            NormaliserEchelleEtCentrerModeleArme(modele, tailleMaxMetres);
+        parent.AddChild(modele);
+    }
+
+    /// <summary>Rack à bûches : GLB dédié, même logique ligatures que rack à bâtons.</summary>
+    public static void InstancierModeleRackBuches(Node3D parent, SlotInventaire slot, float tailleMaxMetres = 0.95f, bool ancrerBaseAuSol = false)
+    {
+        PackedScene scene = GD.Load<PackedScene>("res://Modeles/Storage/Rack_Buche_Tiere0.glb");
+        if (scene == null)
+        {
+            InstancierModeleRackBatons(parent, slot, tailleMaxMetres, ancrerBaseAuSol);
+            return;
+        }
+
+        Node3D modele = scene.Instantiate<Node3D>();
+        modele.Name = "ModeleArme";
+
+        byte essenceBois = slot.IndexBotanique;
+        byte varianteLigature = LSystem_Botanique.IndexChene;
+        string genome = slot.GenomeAssemblage ?? "";
+        if (genome.StartsWith("RACKBL:"))
+        {
+            string raw = genome.Substring("RACKBL:".Length);
+            if (byte.TryParse(raw, out byte tag))
+                varianteLigature = tag;
+        }
+        else if (genome.StartsWith("RACKL:"))
+        {
+            string raw = genome.Substring("RACKL:".Length);
+            if (byte.TryParse(raw, out byte tag))
+                varianteLigature = tag;
+        }
+        else if (slot.IndexBotanique == Joueur.TagVarianteLiane || slot.IndexBotanique == Joueur.TagVarianteHerbeSolide)
+        {
+            varianteLigature = slot.IndexBotanique;
+            essenceBois = LSystem_Botanique.IndexChene;
+        }
+
+        void ParcourirMeshes(Node n)
+        {
+            if (n is MeshInstance3D mi)
+            {
+                string nom = mi.Name.ToString().ToLowerInvariant();
+                bool estLigature = nom.Contains("cord")
+                    || nom.Contains("rope")
+                    || nom.Contains("ligature")
+                    || nom.Contains("corde")
+                    || nom.Contains("liane")
+                    || nom.Contains("ficelle");
+                if (estLigature)
+                {
+                    RemplacerMeshParNormalesFacettes(mi);
+                    int idLigature = varianteLigature == Joueur.TagVarianteLiane ? 16 : 20;
+                    AppliquerMaterielObjet(mi, idLigature, slot.IndexChimique, slot.IndexMorphologique, slot.NiveauFracture, varianteLigature);
+                }
+                else
+                    mi.MaterialOverride = ArbreVivant.ObtenirMaterielBoisTriplanar(essenceBois);
+            }
+            foreach (Node c in n.GetChildren())
+                ParcourirMeshes(c);
+        }
+
+        ParcourirMeshes(modele);
         if (ancrerBaseAuSol)
             NormaliserEchelleTableAtelierAuSol(modele, tailleMaxMetres);
         else
@@ -589,6 +647,63 @@ public partial class Joueur
             };
             mi.Scale = Vector3.One * scale;
             AppliquerMaterielObjet(mi, s.ID, s.IndexChimique, s.IndexMorphologique, s.NiveauFracture, s.IndexBotanique);
+            conteneur.AddChild(mi);
+        }
+    }
+
+    public void SynchroniserVisuelRackBuches(ItemPhysique rack)
+    {
+        if (rack == null || !GodotObject.IsInstanceValid(rack) || rack.ID_Objet != Joueur.IdObjetRackBuches)
+            return;
+        Node3D meshRoot = rack.GetNodeOrNull<Node3D>("MeshInstance3D");
+        if (meshRoot == null || !GodotObject.IsInstanceValid(meshRoot))
+            return;
+
+        int sig = CalculerSignatureVisuelleRack(rack);
+        int sigPrec = rack.HasMeta("RackVisSig") ? rack.GetMeta("RackVisSig").AsInt32() : int.MinValue;
+        if (sig == sigPrec)
+            return;
+        rack.SetMeta("RackVisSig", sig);
+
+        Node3D conteneur = ObtenirOuCreerConteneurVisuelRack(meshRoot);
+        if (conteneur == null) return;
+        foreach (Node c in conteneur.GetChildren())
+            c.QueueFree();
+
+        var unites = new List<SlotInventaire>(10);
+        int n = Mathf.Min(9, rack.GrillePlanTravailAtelier.Length);
+        for (int i = 0; i < n && unites.Count < 10; i++)
+        {
+            var s = rack.GrillePlanTravailAtelier[i];
+            if (s.EstVide || s.ID != 30) continue;
+            int q = Mathf.Clamp(ObtenirQuantiteSlot(s), 1, 10);
+            for (int k = 0; k < q && unites.Count < 10; k++)
+                unites.Add(s);
+        }
+
+        for (int i = 0; i < unites.Count; i++)
+        {
+            SlotInventaire s = unites[i];
+            int col = i % 5;
+            int row = i / 5;
+            float x = -0.22f + col * 0.11f;
+            float z = row == 0 ? -0.07f : 0.08f;
+            float y = 0.18f + row * 0.09f;
+
+            var rng = new RandomNumberGenerator();
+            rng.Seed = unchecked((ulong)(uint)HashCode.Combine(sig, i, s.IndexBotanique, s.IndexMorphologique));
+
+            Mesh meshBuche = s.EstUnEclat ? s.MeshEclat : ObtenirMeshDepuisCache(30, s.IndexMorphologique, s.IndexTaille);
+            if (meshBuche == null) continue;
+            var mi = new MeshInstance3D
+            {
+                Name = $"Log_{i:D2}",
+                Mesh = meshBuche,
+                Position = new Vector3(x, y, z),
+                RotationDegrees = new Vector3(90f + rng.RandfRange(-4f, 4f), rng.RandfRange(-12f, 12f), rng.RandfRange(-6f, 6f))
+            };
+            mi.Scale = Vector3.One * 0.58f;
+            AppliquerMaterielObjet(mi, 30, s.IndexChimique, s.IndexMorphologique, s.NiveauFracture, s.IndexBotanique);
             conteneur.AddChild(mi);
         }
     }
@@ -902,7 +1017,39 @@ public partial class Joueur
             }
 
             int idRoche106 = ItemPhysique.IdRocheMatiereMin + Mathf.Clamp(slot.IndexChimique, 0, ItemPhysique.TableGeologique.Length - 1);
-            if (miLame106 != null)
+            int idxRocheSecondaire = Mathf.Clamp(slot.IndexChimique, 0, ItemPhysique.TableGeologique.Length - 1);
+            if (estPioche && !string.IsNullOrEmpty(slot.GenomeAssemblage) && slot.GenomeAssemblage.StartsWith("PICKR:"))
+            {
+                string raw = slot.GenomeAssemblage.Substring("PICKR:".Length);
+                if (int.TryParse(raw, out int parsed))
+                    idxRocheSecondaire = Mathf.Clamp(parsed, 0, ItemPhysique.TableGeologique.Length - 1);
+            }
+            int idRocheSecondaire = ItemPhysique.IdRocheMatiereMin + idxRocheSecondaire;
+
+            if (estPioche)
+            {
+                var tetesRoche = new List<MeshInstance3D>();
+                if (miLame106 != null) tetesRoche.Add(miLame106);
+                foreach (var mi in tousMeshes)
+                {
+                    if (mi == null || mi == miCorde106 || mi == miManche106) continue;
+                    if (tetesRoche.Contains(mi)) continue;
+                    string n = mi.Name.ToString().ToLowerInvariant();
+                    bool sembleRoche = n.Contains("pierre") || n.Contains("stone") || n.Contains("rock")
+                        || n.Contains("head") || n.Contains("blade") || n.Contains("pick") || n.Contains("pioche") || n.Contains("lame");
+                    if (sembleRoche || tetesRoche.Count == 0)
+                        tetesRoche.Add(mi);
+                }
+                for (int i = 0; i < tetesRoche.Count; i++)
+                {
+                    MeshInstance3D tete = tetesRoche[i];
+                    int idRoche = i == 1 ? idRocheSecondaire : idRoche106;
+                    int idxRoche = i == 1 ? idxRocheSecondaire : slot.IndexChimique;
+                    RemplacerMeshParNormalesFacettes(tete);
+                    AppliquerMaterielObjet(tete, idRoche, idxRoche, 0, 0, slot.IndexBotanique);
+                }
+            }
+            else if (miLame106 != null)
             {
                 RemplacerMeshParNormalesFacettes(miLame106);
                 AppliquerMaterielObjet(miLame106, idRoche106, slot.IndexChimique, 0, 0, slot.IndexBotanique);

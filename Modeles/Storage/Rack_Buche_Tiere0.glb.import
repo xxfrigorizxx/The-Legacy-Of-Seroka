@@ -3,13 +3,13 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://dlquxl81cgs3s"
-path="res://.godot/imported/humain.glb-b2c063accedadbadae7a8a63d5717033.scn"
+uid="uid://bi8nnkdyip0e8"
+path="res://.godot/imported/Rack_Buche_Tiere0.glb-151ebc8002ffaacdd0ff7a4ab6c15fc2.scn"
 
 [deps]
 
-source_file="res://Modeles/Entites/Humain/humain.glb"
-dest_files=["res://.godot/imported/humain.glb-b2c063accedadbadae7a8a63d5717033.scn"]
+source_file="res://Modeles/Storage/Rack_Buche_Tiere0.glb"
+dest_files=["res://.godot/imported/Rack_Buche_Tiere0.glb-151ebc8002ffaacdd0ff7a4ab6c15fc2.scn"]
 
 [params]
 

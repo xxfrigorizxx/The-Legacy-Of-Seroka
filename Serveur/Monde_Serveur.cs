@@ -24,9 +24,12 @@ public partial class Monde_Serveur : Node
 	private Dictionary<Vector2I, Chunk_Serveur> _chunks = new Dictionary<Vector2I, Chunk_Serveur>();
 	private Queue<Vector3I> _fileEau = new Queue<Vector3I>();
 	private HashSet<Vector3I> _eauActive = new HashSet<Vector3I>();
+	private readonly Dictionary<Vector3I, (Vector3I retourInterdit, int tickExpiration)> _antiRetourEau = new Dictionary<Vector3I, (Vector3I, int)>();
+	private int _tickEauCourant;
 	private float _tempsEcoulement;
 	private const float TICK_EAU = 0.05f;
 	private const int MaxEauParTick = 32;
+	private const int DureeBlocageRetourEauTicks = 5;
 	private static readonly Vector3I[] DirEauHoriz = { new Vector3I(1, 0, 0), new Vector3I(-1, 0, 0), new Vector3I(0, 0, -1), new Vector3I(0, 0, 1) };
 	private static readonly Vector3I[] DirVoisins = { new Vector3I(0, 1, 0), new Vector3I(1, 0, 0), new Vector3I(-1, 0, 0), new Vector3I(0, 0, -1), new Vector3I(0, 0, 1) };
 	private static readonly Vector3I[] DirReveil = { new Vector3I(0, 1, 0), new Vector3I(0, -1, 0), new Vector3I(1, 0, 0), new Vector3I(-1, 0, 0), new Vector3I(0, 0, 1), new Vector3I(0, 0, -1) };
@@ -103,6 +106,8 @@ public partial class Monde_Serveur : Node
 	private const int MagicArbresV2 = 0x5A4B3251;
 	private const int MagicArbresV3 = 0x5A4B3252;
 	private const int MagicArbresV4 = 0x5A4B3253;
+	private const int MagicArbresV5 = 0x5A4B3254;
+	private const int MagicArbresV6 = 0x5A4B3255;
 
 	private int CalculerBudgetSpawnAdaptatif(int budgetBase)
 	{
@@ -256,6 +261,7 @@ public partial class Monde_Serveur : Node
 				continue; // Chunk déjà ressuscité du disque — ignorer le résultat procédural.
 			if (!_chunks.ContainsKey(result.coord))
 				_chunks[result.coord] = result.chunk;
+			SynchroniserFrontieresAvecVoisinsCharges(result.coord, _chunks[result.coord]);
 			SpawnerArbresChunkAvecPrioriteSauvegarde(result.coord, result.chunk);
 			// Envoi client uniquement APRÈS stase remplie, sinon LibererRochesChunk trouve une liste vide
 			DeclencherEnsemencement(result.coord, result.chunk, TailleChunk, (coord, ch) =>
@@ -332,6 +338,7 @@ public partial class Monde_Serveur : Node
 
 				// BRANCHE COMMUNE : Chunk ressuscité. Pierres + Arbres. Spawn quand chunk demandé (visible écran).
 				_chunks[chunkCible] = chunkActuel;
+				SynchroniserFrontieresAvecVoisinsCharges(chunkCible, chunkActuel);
 				SpawnerArbresChunkAvecPrioriteSauvegarde(chunkCible, chunkActuel);
 				if (!ChargerEtSpawnerPierresChunk(chunkCible))
 				{
@@ -399,6 +406,7 @@ public partial class Monde_Serveur : Node
 		_tempsEcoulement += (float)delta;
 		if (_tempsEcoulement < TICK_EAU) return;
 		_tempsEcoulement = 0;
+		_tickEauCourant++;
 
 		_tempsDepuisVerifDecharge += (float)delta;
 		if (_tempsDepuisVerifDecharge >= IntervalleEvaluationTectonique)
@@ -424,6 +432,7 @@ public partial class Monde_Serveur : Node
 			{
 				DefinirVoxel(posBas, 4);
 				DefinirVoxel(pos, 0);
+				MemoriserFluxEau(pos, posBas);
 				ActiverEau(posBas);
 				ReveillerVoisins(pos);
 				continue;
@@ -434,11 +443,13 @@ public partial class Monde_Serveur : Node
 			{
 				Vector3I pc = pos + d, pcb = pc + new Vector3I(0, -1, 0);
 				if (!EstVoxelAir(pc)) continue;
+				if (!PeutCoulerVers(pos, pc)) continue;
 				bool auBord = EstVoxelAir(pcb);
 				if (aPression || auBord)
 				{
 					DefinirVoxel(pc, 4);
 					DefinirVoxel(pos, 0);
+					MemoriserFluxEau(pos, pc);
 					ActiverEau(pc);
 					ReveillerVoisins(pos);
 					break;
@@ -450,6 +461,25 @@ public partial class Monde_Serveur : Node
 	private void ActiverEau(Vector3I pos)
 	{
 		if (_eauActive.Add(pos)) _fileEau.Enqueue(pos);
+	}
+
+	private bool PeutCoulerVers(Vector3I source, Vector3I destination)
+	{
+		if (!_antiRetourEau.TryGetValue(source, out var blocage)) return true;
+		if (blocage.tickExpiration <= _tickEauCourant)
+		{
+			_antiRetourEau.Remove(source);
+			return true;
+		}
+		return blocage.retourInterdit != destination;
+	}
+
+	private void MemoriserFluxEau(Vector3I source, Vector3I destination)
+	{
+		// Évite l'oscillation immédiate destination -> source.
+		_antiRetourEau[destination] = (source, _tickEauCourant + DureeBlocageRetourEauTicks);
+		if (_antiRetourEau.Count > 20000)
+			_antiRetourEau.Clear();
 	}
 
 	private void ReveillerVoisins(Vector3I pos)
@@ -483,7 +513,58 @@ public partial class Monde_Serveur : Node
 			chunkActuel.GenererDonneesVoxel(); // GenererTerrainDeBase, Surface, Eau — UNIQUEMENT pour chunks ex nihilo.
 		}
 		_chunks[coord] = chunkActuel;
+		SynchroniserFrontieresAvecVoisinsCharges(coord, chunkActuel);
 		return chunkActuel;
+	}
+
+	/// <summary>Quand un chunk arrive après ses voisins, aligne ses bordures sur les chunks déjà chargés pour éviter les coutures visuelles.</summary>
+	private void SynchroniserFrontieresAvecVoisinsCharges(Vector2I coord, Chunk_Serveur chunk)
+	{
+		if (chunk == null) return;
+
+		void SynchroniserBordureDepuisVoisin(Vector2I coordVoisin, int voisinX, int chunkX, int voisinZ, int chunkZ, bool axeX)
+		{
+			if (!_chunks.TryGetValue(coordVoisin, out var voisin) || voisin == null) return;
+			for (int y = 0; y <= HauteurMax; y++)
+			{
+				if (axeX)
+				{
+					for (int z = 0; z <= TailleChunk; z++)
+					{
+						byte id = voisin.LireVoxelLocalBrut(voisinX, y, z);
+						chunk.SetVoxelLocal(chunkX, y, z, id, false);
+					}
+				}
+				else
+				{
+					for (int x = 0; x <= TailleChunk; x++)
+					{
+						byte id = voisin.LireVoxelLocalBrut(x, y, voisinZ);
+						chunk.SetVoxelLocal(x, y, chunkZ, id, false);
+					}
+				}
+			}
+		}
+
+		// 4 côtés cardinaux.
+		SynchroniserBordureDepuisVoisin(new Vector2I(coord.X - 1, coord.Y), TailleChunk, 0, 0, 0, true);          // Ouest
+		SynchroniserBordureDepuisVoisin(new Vector2I(coord.X + 1, coord.Y), 0, TailleChunk, 0, 0, true);          // Est
+		SynchroniserBordureDepuisVoisin(new Vector2I(coord.X, coord.Y - 1), 0, 0, TailleChunk, 0, false);         // Nord
+		SynchroniserBordureDepuisVoisin(new Vector2I(coord.X, coord.Y + 1), 0, 0, 0, TailleChunk, false);         // Sud
+
+		// 4 coins (Marching Cubes lit aussi les coins partagés).
+		if (_chunks.TryGetValue(new Vector2I(coord.X - 1, coord.Y - 1), out var nordOuest))
+			for (int y = 0; y <= HauteurMax; y++)
+				chunk.SetVoxelLocal(0, y, 0, nordOuest.LireVoxelLocalBrut(TailleChunk, y, TailleChunk), false);
+		if (_chunks.TryGetValue(new Vector2I(coord.X + 1, coord.Y - 1), out var nordEst))
+			for (int y = 0; y <= HauteurMax; y++)
+				chunk.SetVoxelLocal(TailleChunk, y, 0, nordEst.LireVoxelLocalBrut(0, y, TailleChunk), false);
+		if (_chunks.TryGetValue(new Vector2I(coord.X - 1, coord.Y + 1), out var sudOuest))
+			for (int y = 0; y <= HauteurMax; y++)
+				chunk.SetVoxelLocal(0, y, TailleChunk, sudOuest.LireVoxelLocalBrut(TailleChunk, y, 0), false);
+		if (_chunks.TryGetValue(new Vector2I(coord.X + 1, coord.Y + 1), out var sudEst))
+			for (int y = 0; y <= HauteurMax; y++)
+				chunk.SetVoxelLocal(TailleChunk, y, TailleChunk, sudEst.LireVoxelLocalBrut(0, y, 0), false);
 	}
 
 	private static bool FichierChunkExiste(Vector2I coord)
@@ -894,15 +975,16 @@ public partial class Monde_Serveur : Node
 				id = rb.GetMeta("ID_Matiere").AsInt32();
 			if (!TryGetPositionMonde(rb, out Vector3 posRb)) continue;
 			float distCarre = posRb.DistanceSquaredTo(posJoueur);
+			bool structureFixe = id == 200 || id == Joueur.IdObjetRackBatons || id == Joueur.IdObjetRackBuches;
 			if (distCarre <= rayonCarre)
 			{
 				bool terrainPret = TerrainChargeAutourPosition(posRb);
-				if (id != 200 && terrainPret)
+				if (!structureFixe && terrainPret)
 				{
 					rb.Freeze = false; // Réveiller : gravité + collisions
 					rb.Sleeping = false;
 				}
-				else if (id != 200)
+				else if (!structureFixe)
 				{
 					rb.LinearVelocity = Vector3.Zero;
 					rb.AngularVelocity = Vector3.Zero;
@@ -915,7 +997,7 @@ public partial class Monde_Serveur : Node
 				rb.LinearVelocity = Vector3.Zero;
 				rb.AngularVelocity = Vector3.Zero;
 				rb.Sleeping = true;
-				if (id != 200)
+				if (!structureFixe)
 					rb.Freeze = true;
 			}
 		}
@@ -1038,13 +1120,13 @@ public partial class Monde_Serveur : Node
 		float xMax = (coord.X + 1) * TailleChunk;
 		float zMin = coord.Y * TailleChunk;
 		float zMax = (coord.Y + 1) * TailleChunk;
-		var arbres = new List<(Vector3 pos, int age, byte indexBotanique)>();
+		var arbres = new List<(Vector3 pos, int age, byte indexBotanique, uint seed)>();
 		foreach (Node n in _parentPourArbres.GetChildren())
 		{
 			if (n is not ArbreVivant arbre) continue;
 			if (!TryGetPositionMonde(arbre, out Vector3 p)) continue;
 			if (p.X >= xMin && p.X < xMax && p.Z >= zMin && p.Z < zMax)
-				arbres.Add((p, arbre.AgeEnJours, arbre.IndexBotanique));
+				arbres.Add((p, arbre.AgeEnJours, arbre.IndexBotanique, arbre.Seed));
 		}
 		string nom = GameState.Instance?.NomMondeActuel ?? "MonMonde";
 		string dossier = ProjectSettings.GlobalizePath($"user://saves/{nom}/chunks/");
@@ -1054,17 +1136,22 @@ public partial class Monde_Serveur : Node
 		{
 			using (var w = new BinaryWriter(File.Open(chemin, FileMode.Create)))
 			{
-				w.Write(MagicArbresV4); // MAGIC V4 = jour + horodatage réel + index botanique
+				w.Write(MagicArbresV6); // MAGIC V6 = V5 + correction Y racine (plus de tronc enterré au reload)
 				int jourActuel = GameState.Instance != null ? GameState.Instance.JourAbsolu : 0;
 				long unixNow = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
 				w.Write(jourActuel);
 				w.Write(unixNow);
 				w.Write(arbres.Count);
-				foreach (var (pos, age, indexBotanique) in arbres)
+				foreach (var (pos, age, indexBotanique, seed) in arbres)
 				{
-					w.Write((int)pos.X); w.Write((int)pos.Y); w.Write((int)pos.Z);
+					int gx = Mathf.FloorToInt(pos.X);
+					int gz = Mathf.FloorToInt(pos.Z);
+					// ArbreVivant est instancié à (racineY - 0.5). On sauvegarde la racine entière pour éviter la dérive.
+					int gyRacine = Mathf.RoundToInt(pos.Y + 0.5f);
+					w.Write(gx); w.Write(gyRacine); w.Write(gz);
 					w.Write(age); // Âge brut (int, croissance infinie)
 					w.Write(indexBotanique);
+					w.Write(seed); // Seed exacte de forme pour réinstanciation identique.
 				}
 			}
 		}
@@ -1201,9 +1288,11 @@ public partial class Monde_Serveur : Node
 				long unixSauvegarde = 0L;
 				bool formatV3 = magic == MagicArbresV3;
 				bool formatV4 = magic == MagicArbresV4;
-				if (magic == MagicArbresV2 || formatV3 || formatV4) // V2+ avec jour de sauvegarde
+				bool formatV5 = magic == MagicArbresV5;
+				bool formatV6 = magic == MagicArbresV6;
+				if (magic == MagicArbresV2 || formatV3 || formatV4 || formatV5 || formatV6) // V2+ avec jour de sauvegarde
 					jourDeSauvegarde = r.ReadInt32();
-				if (formatV4)
+				if (formatV4 || formatV5 || formatV6)
 					unixSauvegarde = r.ReadInt64();
 				else if (magic != 0x5A4B3250 && !formatV3 && magic != MagicArbresV2)
 					return false; // Format inconnu
@@ -1216,23 +1305,32 @@ public partial class Monde_Serveur : Node
 					int gx = r.ReadInt32(), gy = r.ReadInt32(), gz = r.ReadInt32();
 					int ageSauvegarde;
 					byte indexBotaniqueSauvegarde;
-					if (magic == MagicArbresV2 || formatV3 || formatV4)
+					uint seedSauvegarde = 0u;
+					if (magic == MagicArbresV2 || formatV3 || formatV4 || formatV5 || formatV6)
 					{
 						ageSauvegarde = r.ReadInt32();
-						indexBotaniqueSauvegarde = (formatV3 || formatV4) ? r.ReadByte() : LSystem_Botanique.IndexChene;
+						indexBotaniqueSauvegarde = (formatV3 || formatV4 || formatV5 || formatV6) ? r.ReadByte() : LSystem_Botanique.IndexChene;
+						if (formatV5 || formatV6)
+							seedSauvegarde = r.ReadUInt32();
 					}
 					else
 					{
 						byte stage = r.ReadByte();
-						r.ReadUInt32(); // seed (legacy)
+						seedSauvegarde = r.ReadUInt32(); // seed legacy (v1)
 						ageSauvegarde = stage + 1; // Ancien format Stage 0-4 → age 1-5
 						indexBotaniqueSauvegarde = LSystem_Botanique.IndexChene;
 					}
 
+					// Migration rétrocompatible:
+					// formats <= V5 sauvegardaient Y avec un cast int sur (racineY - 0.5),
+					// ce qui perdait 1 bloc. On corrige ici pour remonter les arbres.
+					if (!formatV6)
+						gy += 1;
 					Vector3 pos = new Vector3(gx + 0.5f, gy - 0.5f, gz + 0.5f);
-					uint seedArbre = (uint)((gx * 73856093) ^ (gz * 19349663));
+					uint seedHashPos = (uint)((gx * 73856093) ^ (gz * 19349663));
+					uint seedArbre = seedSauvegarde != 0u ? seedSauvegarde : seedHashPos;
 					int ageCharge = Mathf.Max(1, ageSauvegarde);
-					byte indexBotanique = (formatV3 || formatV4) ? indexBotaniqueSauvegarde : DeterminerIndexBotaniqueArbre(seedArbre, gx, gz);
+					byte indexBotanique = (formatV3 || formatV4 || formatV5 || formatV6) ? indexBotaniqueSauvegarde : DeterminerIndexBotaniqueArbre(seedArbre, gx, gz);
 					_fileSpawnArbres.Enqueue((coord, pos, ageCharge, seedArbre, indexBotanique, joursEcoules));
 				}
 			}

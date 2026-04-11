@@ -299,7 +299,7 @@ public partial class Joueur
         var item = objetTouche as ItemPhysique
             ?? (objetTouche as Node)?.GetParent() as ItemPhysique
             ?? (objetTouche as Node)?.GetNodeOrNull<ItemPhysique>("ItemPhysique");
-        if (item == null || (item.ID_Objet != 200 && item.ID_Objet != IdObjetRackBatons)) return false;
+        if (item == null || (item.ID_Objet != 200 && item.ID_Objet != IdObjetRackBatons && item.ID_Objet != IdObjetRackBuches)) return false;
         atelier = item;
         return true;
     }
@@ -491,7 +491,7 @@ public partial class Joueur
                 EmmettreParticulesRecuperationAtelier(pAtelier, nAtelier);
             }
 
-            bool estRack = atelier.ID_Objet == IdObjetRackBatons;
+            bool estRack = atelier.ID_Objet == IdObjetRackBatons || atelier.ID_Objet == IdObjetRackBuches;
             float duree = estRack
                 ? (mainVide ? DureeRecuperationRackMainNue : DureeRecuperationRackHachette)
                 : (mainVide ? DureeRecuperationAtelierMainNue : DureeRecuperationAtelierHachette);
@@ -509,7 +509,9 @@ public partial class Joueur
                 StockageRackBatonsOuvert = false;
             atelier.QueueFree();
             RafraichirHUD();
-            GD.Print(estRack ? "ZERO-K : Rack à bâtons récupéré dans l'inventaire." : "ZERO-K : Atelier récupéré dans l'inventaire.");
+            GD.Print(estRack
+                ? (atelier.ID_Objet == IdObjetRackBatons ? "ZERO-K : Rack à bâtons récupéré dans l'inventaire." : "ZERO-K : Rack à bûches récupéré dans l'inventaire.")
+                : "ZERO-K : Atelier récupéré dans l'inventaire.");
             ReinitialiserMinageMainNueProgression();
             return;
         }
@@ -821,6 +823,7 @@ public partial class Joueur
     private void ExecuterCreusage(float force, float efficacitePelle, float masseOutil, Vector3 pointImpact)
     {
         SlotInventaire mainActive = MainGaucheEstActive ? MainGauche : MainDroite;
+        float multiplicateurForce = ObtenirMultiplicateurDegatsForce();
 
         // Dague sur buisson: interdit en coup instantané, uniquement minage maintenu 3s.
         if (mainActive.ID == 105 && (_gestionnaireMonde?.EssayerDetecterBuissonSousPoint(pointImpact, RayonDetectionBuisson, out Vector3 posBuisson, out _)) == true
@@ -844,8 +847,9 @@ public partial class Joueur
         if (efficacitePelle < 0.6f)
         {
             // Fauchage : dague (105), roche plate (1) ou en pointe (3), ou éclat — pas la hachette (106), inadaptée au gazon fin.
+            bool estRocheFaucheuse = ItemPhysique.EstIdRocheMatiere(mainActive.ID) && (mainActive.IndexMorphologique == 1 || mainActive.IndexMorphologique == 3);
             bool estOutilFaucheur = mainActive.ID == 105
-                || (ItemPhysique.EstIdRocheMatiere(mainActive.ID) && (mainActive.IndexMorphologique == 1 || mainActive.IndexMorphologique == 3))
+                || estRocheFaucheuse
                 || mainActive.EstUnEclat;
 
             if (estOutilFaucheur)
@@ -853,6 +857,10 @@ public partial class Joueur
                 _gestionnaireMonde?.AppliquerFauchageGlobal(pointImpact, 3.1f);
                 if (mainActive.ID == 105)
                     AppliquerUsureOutilMainActive(0.75f);
+                if (mainActive.ID == 105)
+                    AjouterXpFutureState("Dextiriter", 1UL);
+                else if (estRocheFaucheuse && ObtenirNiveauFutureState("Dextiriter") < 15UL)
+                    AjouterXpFutureState("Dextiriter", 1UL);
                 GD.Print("ZERO-K : Fauchage de la flore. Récolte de fibres en cours.");
                 return;
             }
@@ -860,7 +868,7 @@ public partial class Joueur
             return;
         }
 
-        float forceCreusage = masseOutil * force * efficacitePelle;
+        float forceCreusage = masseOutil * force * efficacitePelle * multiplicateurForce;
         if (mainActive.ID == IdObjetPellePierreTier0)
         {
             int idMatiereImpact = _gestionnaireMonde?.ObtenirMatiereExacte(pointImpact - (_rayon.GetCollisionNormal() * 0.45f)) ?? 0;
@@ -893,6 +901,7 @@ public partial class Joueur
     private void ExecuterFrappePhysique(float force, float efficaciteHache, float masseOutil, Node objetTouche, Vector3 pointImpact, Vector3 directionFrappe)
     {
         SlotInventaire mainActive = MainGaucheEstActive ? MainGauche : MainDroite;
+        float multiplicateurForce = ObtenirMultiplicateurDegatsForce();
 
         if (efficaciteHache < 0.4f && masseOutil > 2f && mainActive.ID != 106)
         {
@@ -910,7 +919,7 @@ public partial class Joueur
         else if (mainActive.EstUnEclat && mainActive.MeshEclat != null && mainActive.ID != 100)
             multiplicateurLame = Mathf.Min(multiplicateurLame, 40.0f);
 
-        float forceImpact = (masseOutil * force * 15f) * multiplicateurLame;
+        float forceImpact = (masseOutil * force * 15f) * multiplicateurLame * multiplicateurForce;
         float epaisseurLame = CalculerEpaisseurLamePourImpact(mainActive, directionFrappe);
 
         if (objetTouche == null)
@@ -958,6 +967,7 @@ public partial class Joueur
             }
             if (mainActive.ID == 106)
                 forceCoupe *= 1.08f;
+            forceCoupe += ObtenirBonusDegatsArbreBucheron();
 
             bool hachetteBonneOrientation = mainActive.ID == 106 && EstFrappeHachette106AvecLaLame(pointImpact, directionFrappe);
             int resultatCoupe = arbre.SubirDegats(pointImpact, directionFrappe, forceCoupe, epaisseurLame, hachetteBonneOrientation);
@@ -980,8 +990,34 @@ public partial class Joueur
                     }
                 }
                 GD.Print("ZERO-K : Arbre abattu.");
+                AjouterXpMetier("Bucheron", 1UL);
             }
-            else if (resultatCoupe == 3) { JouerSonEtEffetCoupeArbre(pointImpact); GD.Print("ZERO-K : Branche amputée."); }
+            else if (resultatCoupe == 3)
+            {
+                JouerSonEtEffetCoupeArbre(pointImpact);
+                var slotBatonStandard = new SlotInventaire
+                {
+                    ID = 32,
+                    IndexBotanique = (byte)Mathf.Clamp(arbre.IndexBotanique, 0, 255),
+                    IndexMorphologique = 0,
+                    IndexTaille = 1,
+                    ScaleEclat = Vector3.One
+                };
+                Vector3 posBaton = CalculerPointAuDessusSol(pointImpact + directionFrappe * 0.2f + Vector3.Up * 0.8f, 0.2f);
+                Node3D baton = CreerBlocPose(posBaton, slotBatonStandard);
+                if (baton is RigidBody3D rbBaton)
+                    rbBaton.ApplyCentralImpulse(directionFrappe.Normalized() * 1.8f + Vector3.Up * 0.8f);
+                GD.Print("ZERO-K : Branche amputée -> bâton standard au sol.");
+            }
+
+            if (mainActive.ID == 106 && resultatCoupe > 0)
+            {
+                int idCasse = AppliquerUsureOutilMainActive(2.0f);
+                bool hachetteCassee = idCasse == 106;
+                AjouterXpFutureState("Force", hachetteCassee ? 2UL : 1UL);
+            }
+            if (rochePlate && resultatCoupe > 0 && ObtenirNiveauFutureState("Force") < 15UL)
+                AjouterXpFutureState("Force", 1UL);
             return;
         }
 
@@ -1036,7 +1072,7 @@ public partial class Joueur
                     ID = 32,
                     IndexBotanique = essenceBois,
                     IndexMorphologique = 0,
-                    IndexTaille = 0,
+                    IndexTaille = 1,
                     ScaleEclat = Vector3.One
                 };
                 // Surélève le spawn du bâton pour éviter le clip sous le sol
@@ -1091,9 +1127,24 @@ public partial class Joueur
                 || mainB.EstUnEclat
                 || (ItemPhysique.EstIdRocheMatiere(mainB.ID) && (mainB.IndexMorphologique == 1 || mainB.IndexMorphologique == 3));
             if (!outilTranchantPourArbre) return;
-            rbCible.ApplyCentralImpulse(directionFrappe * (10f * force));
             JouerSonEtEffetCoupeArbre(pointImpact);
-            GD.Print("ZERO-K : Coup sur la branche tombée.");
+            byte essenceBranche = rbCible.HasMeta("IndexBotanique")
+                ? (byte)Mathf.Clamp(rbCible.GetMeta("IndexBotanique").AsInt32(), 0, 255)
+                : LSystem_Botanique.IndexChene;
+            var slotBatonStandard = new SlotInventaire
+            {
+                ID = 32,
+                IndexBotanique = essenceBranche,
+                IndexMorphologique = 0,
+                IndexTaille = 1,
+                ScaleEclat = Vector3.One
+            };
+            Vector3 posBaton = CalculerPointAuDessusSol(pointImpact + directionFrappe * 0.12f + Vector3.Up * 0.65f, 0.18f);
+            Node3D baton = CreerBlocPose(posBaton, slotBatonStandard);
+            if (baton is RigidBody3D rbBaton)
+                rbBaton.ApplyCentralImpulse(directionFrappe.Normalized() * 1.35f + Vector3.Up * 0.65f);
+            rbCible.QueueFree();
+            GD.Print("ZERO-K : Branche tombée transformée en bâton standard.");
             return;
         }
 
@@ -1110,15 +1161,19 @@ public partial class Joueur
 
         if (item.ID_Objet == 30 || item.ID_Objet == 32)
         {
-            // Post-abattage (bois au sol) : standardisation/fente réservée à la hachette.
-            if (mainActive.ID != 106)
+            bool rochePlatePourFendage = ItemPhysique.EstIdRocheMatiere(mainActive.ID) && mainActive.IndexMorphologique == 1;
+            bool outilFendageBois = mainActive.ID == 106 || rochePlatePourFendage;
+            // Post-abattage (bois au sol) : hachette ou roche plate.
+            if (!outilFendageBois)
             {
-                GD.Print("ZERO-K : Il vous faut une Hachette (ID 106) pour standardiser/fendre le bois au sol.");
+                GD.Print("ZERO-K : Il vous faut une Hachette (ID 106) ou une roche plate pour standardiser/fendre le bois au sol.");
                 rbCible.ApplyCentralImpulse(dirFrappeObj * impulsionFrappe);
                 return;
             }
-            bool coupeNette = EstFrappeHachette106AvecLaLame(pointImpact, directionFrappe);
-            if (!coupeNette)
+            bool coupeNette = mainActive.ID == 106
+                ? EstFrappeHachette106AvecLaLame(pointImpact, directionFrappe)
+                : true;
+            if (!coupeNette && mainActive.ID == 106)
             {
                 // Tolérance gameplay: avec la hachette on peut continuer à travailler le bois, mais plus lentement.
                 GD.Print("ZERO-K : Coup moins propre (manche/plat). La coupe progresse quand même, plus lentement.");
@@ -1127,7 +1182,8 @@ public partial class Joueur
 
             Vector3 axeBois = rbCible.GlobalTransform.Basis.Z.Normalized();
             float alignement = Mathf.Abs(directionFrappe.Normalized().Dot(axeBois));
-            AppliquerUsureOutilMainActive(2.5f);
+            if (mainActive.ID == 106)
+                AppliquerUsureOutilMainActive(2.5f);
 
             if (alignement < 0.5f)
             {
@@ -1170,6 +1226,8 @@ public partial class Joueur
                         ? "ZERO-K : Vous partagez le bâton en quarts (longueur)."
                         : "ZERO-K : Vous coupez le bâton en deux (demi-longueur).";
                     GD.Print(msg);
+                    if (rochePlatePourFendage)
+                        AjouterXpFutureState("Force", 1UL);
                     rbCible.QueueFree();
                     return;
                 }
@@ -1313,6 +1371,8 @@ public partial class Joueur
                 if (b1 != null) b1.GlobalRotation = rbCible.GlobalRotation;
                 if (b2 != null) b2.GlobalRotation = rbCible.GlobalRotation;
             }
+            if (rochePlatePourFendage)
+                AjouterXpFutureState("Force", 1UL);
             rbCible.QueueFree();
             return;
         }

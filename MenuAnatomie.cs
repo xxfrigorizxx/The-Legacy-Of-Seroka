@@ -1,5 +1,6 @@
 using Godot;
 using System;
+using System.Collections.Generic;
 
 // [Tool] : layout aussi dans l’éditeur (sans ça la racine fait 0×0 → tout au coin).
 [Tool]
@@ -67,6 +68,7 @@ public partial class MenuAnatomie : Control
 	private const string CheminBarreOnglets = "MarginPrincipal/VBoxPrincipal/BarreOnglets";
 	private const string CheminVBoxPrincipal = "MarginPrincipal/VBoxPrincipal";
 	private const string CheminCorpsHBox = "MarginPrincipal/VBoxPrincipal/CorpsHBox";
+	private const string CheminVueJoueurPanel = "MarginPrincipal/VBoxPrincipal/CorpsHBox/VueJoueurPanel";
 
 	private enum ModeEcranBarreMenu
 	{
@@ -76,6 +78,8 @@ public partial class MenuAnatomie : Control
 
 	private ModeEcranBarreMenu _ecranBarreCourant = ModeEcranBarreMenu.Inventaire;
 	private Panel _ongletInventaireBarre;
+	private Panel _ongletFutureStateBarre;
+	private Panel _ongletMetierBarre;
 	private Panel _ongletQuitterBarre;
 	private HBoxContainer _corpsHBoxRef;
 	private Panel _panneauSauvegarderQuitter;
@@ -88,6 +92,18 @@ public partial class MenuAnatomie : Control
 	/// <summary>Infobulle près du curseur : nom exact du slot survolé (débogage des noms / ADN).</summary>
 	private Panel _panneauInfobulleSlot;
 	private Label _lblInfobulleSlot;
+	private Panel _panneauSanteCorps;
+	private Label _lblSanteGlobaleCorps;
+	private readonly Dictionary<string, ProgressBar> _barresSanteCorps = new(StringComparer.OrdinalIgnoreCase);
+	private readonly Dictionary<string, Label> _labelsSanteCorps = new(StringComparer.OrdinalIgnoreCase);
+	private readonly Dictionary<string, StyleBoxFlat> _stylesRemplissageSanteCorps = new(StringComparer.OrdinalIgnoreCase);
+	private const float DistanceCameraApercuJoueurCorps = 1.18f;
+	private const float DecalageLateralCameraApercuJoueurCorps = 0.00f;
+	private const float HauteurCameraApercuJoueurCorps = -0.02f;
+	private const float HauteurCibleCameraApercuJoueurCorps = 0.86f;
+	private SubViewportContainer _vpApercuJoueurCorps;
+	private SubViewport _svApercuJoueurCorps;
+	private Camera3D _cameraApercuJoueurCorps;
 
 	private void ResoudreReferencesSlotsMains()
 	{
@@ -184,6 +200,7 @@ public partial class MenuAnatomie : Control
 	{
 		_joueurRef = joueur;
 		ResoudreReferencesSlotsMains();
+		AssurerPanneauSanteCorps();
 		_lblMainGauche = TrouverOuCreerLabel(MainGaucheSlot, "Main G\n[Vide]");
 		_lblMainDroite = TrouverOuCreerLabel(MainDroiteSlot, "Main D\n[Vide]");
 		AssurerPreviews3DMains();
@@ -194,6 +211,245 @@ public partial class MenuAnatomie : Control
 			CallDeferred(nameof(ConnecterClicsInventaire));
 			CallDeferred(nameof(ConfigurerBarreOngletsJeu));
 			CallDeferred(nameof(RafraichirMenu));
+			CallDeferred(nameof(AssurerPanneauSanteCorps));
+		}
+	}
+
+	private void AssurerPanneauSanteCorps()
+	{
+		if (VueJoueurPanel == null || !GodotObject.IsInstanceValid(VueJoueurPanel))
+			VueJoueurPanel = GetNodeOrNull<Panel>(CheminVueJoueurPanel) ?? FindChild("VueJoueurPanel", true, false) as Panel;
+		if (VueJoueurPanel == null)
+			return;
+
+		if (_panneauSanteCorps != null && GodotObject.IsInstanceValid(_panneauSanteCorps))
+			return;
+
+		if (VueJoueurPanel.GetNodeOrNull<Label>("Label") is Label labelScene)
+			labelScene.Visible = false;
+
+		_panneauSanteCorps = new Panel
+		{
+			Name = "PanneauSanteCorps",
+			MouseFilter = Control.MouseFilterEnum.Ignore
+		};
+		_panneauSanteCorps.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+		_panneauSanteCorps.OffsetLeft = 8f;
+		_panneauSanteCorps.OffsetTop = 8f;
+		_panneauSanteCorps.OffsetRight = -8f;
+		_panneauSanteCorps.OffsetBottom = -8f;
+		VueJoueurPanel.AddChild(_panneauSanteCorps);
+
+		var marge = new MarginContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
+		marge.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+		marge.AddThemeConstantOverride("margin_left", 10);
+		marge.AddThemeConstantOverride("margin_top", 10);
+		marge.AddThemeConstantOverride("margin_right", 10);
+		marge.AddThemeConstantOverride("margin_bottom", 10);
+		_panneauSanteCorps.AddChild(marge);
+
+		var colonne = new VBoxContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
+		colonne.AddThemeConstantOverride("separation", 8);
+		marge.AddChild(colonne);
+
+		var titre = new Label
+		{
+			Text = "Anatomie / Points de vie",
+			HorizontalAlignment = HorizontalAlignment.Center,
+			MouseFilter = Control.MouseFilterEnum.Ignore
+		};
+		titre.AddThemeFontSizeOverride("font_size", 16);
+		titre.AddThemeColorOverride("font_color", new Color(0.95f, 0.95f, 0.98f));
+		colonne.AddChild(titre);
+
+		_lblSanteGlobaleCorps = new Label
+		{
+			HorizontalAlignment = HorizontalAlignment.Center,
+			MouseFilter = Control.MouseFilterEnum.Ignore
+		};
+		_lblSanteGlobaleCorps.AddThemeFontSizeOverride("font_size", 13);
+		_lblSanteGlobaleCorps.AddThemeColorOverride("font_color", new Color(0.82f, 0.95f, 0.86f));
+		colonne.AddChild(_lblSanteGlobaleCorps);
+
+		var cadreApercu = new Panel
+		{
+			Name = "CadreApercuJoueurCorps",
+			CustomMinimumSize = new Vector2(0, 200),
+			MouseFilter = Control.MouseFilterEnum.Ignore
+		};
+		cadreApercu.SizeFlagsVertical = Control.SizeFlags.ShrinkCenter;
+		colonne.AddChild(cadreApercu);
+		AssurerApercuJoueurCorps(cadreApercu);
+
+		colonne.AddChild(new HSeparator());
+
+		var scroll = new ScrollContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
+		scroll.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
+		colonne.AddChild(scroll);
+
+		var colonneSections = new VBoxContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
+		colonneSections.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+		colonneSections.AddThemeConstantOverride("separation", 6);
+		scroll.AddChild(colonneSections);
+
+		CreerLigneSanteCorps(colonneSections, "tete", "Tete");
+		CreerLigneSanteCorps(colonneSections, "torse", "Torse");
+		CreerLigneSanteCorps(colonneSections, "bras_gauche", "Bras gauche");
+		CreerLigneSanteCorps(colonneSections, "bras_droit", "Bras droit");
+		CreerLigneSanteCorps(colonneSections, "jambe_gauche", "Jambe gauche");
+		CreerLigneSanteCorps(colonneSections, "jambe_droite", "Jambe droite");
+	}
+
+	private void AssurerApercuJoueurCorps(Panel parent)
+	{
+		if (parent == null || (_vpApercuJoueurCorps != null && GodotObject.IsInstanceValid(_vpApercuJoueurCorps)))
+			return;
+
+		_vpApercuJoueurCorps = new SubViewportContainer
+		{
+			Name = "ApercuJoueurCorpsViewport",
+			Stretch = true,
+			MouseFilter = Control.MouseFilterEnum.Ignore
+		};
+		_vpApercuJoueurCorps.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+		_vpApercuJoueurCorps.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
+		parent.AddChild(_vpApercuJoueurCorps);
+
+		_svApercuJoueurCorps = new SubViewport
+		{
+			Size = new Vector2I(400, 240),
+			RenderTargetUpdateMode = SubViewport.UpdateMode.WhenVisible,
+			World3D = _joueurRef?.GetWorld3D(),
+			TransparentBg = true
+		};
+		_vpApercuJoueurCorps.AddChild(_svApercuJoueurCorps);
+
+		_cameraApercuJoueurCorps = new Camera3D
+		{
+			Name = "CameraApercuJoueurCorps",
+			Fov = 25f,
+			Near = 0.02f,
+			Far = 180f,
+			Current = true
+		};
+		_svApercuJoueurCorps.AddChild(_cameraApercuJoueurCorps);
+
+		var light = new DirectionalLight3D
+		{
+			Name = "LightApercuJoueurCorps",
+			LightEnergy = 1.25f,
+			RotationDegrees = new Vector3(-35f, 40f, 0f)
+		};
+		_svApercuJoueurCorps.AddChild(light);
+		var lightRemplissage = new OmniLight3D
+		{
+			Name = "FillApercuJoueurCorps",
+			Position = new Vector3(-0.5f, 1.15f, 1.2f),
+			LightEnergy = 0.35f,
+			OmniRange = 5.0f
+		};
+		_svApercuJoueurCorps.AddChild(lightRemplissage);
+
+		MettreAJourCameraApercuJoueurCorps(0f);
+	}
+
+	private void CreerLigneSanteCorps(VBoxContainer parent, string cleSection, string nomSection)
+	{
+		var ligne = new VBoxContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
+		ligne.AddThemeConstantOverride("separation", 2);
+		parent.AddChild(ligne);
+
+		var entete = new Label
+		{
+			Text = nomSection,
+			HorizontalAlignment = HorizontalAlignment.Left,
+			MouseFilter = Control.MouseFilterEnum.Ignore
+		};
+		entete.AddThemeFontSizeOverride("font_size", 12);
+		entete.AddThemeColorOverride("font_color", new Color(0.90f, 0.92f, 0.95f));
+		ligne.AddChild(entete);
+
+		var barre = new ProgressBar
+		{
+			MinValue = 0,
+			MaxValue = 100,
+			Value = 100,
+			ShowPercentage = false,
+			CustomMinimumSize = new Vector2(0, 16),
+			MouseFilter = Control.MouseFilterEnum.Ignore
+		};
+		barre.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+		var fondBarre = new StyleBoxFlat
+		{
+			BgColor = new Color(0.22f, 0.22f, 0.22f, 1f),
+			CornerRadiusTopLeft = 6,
+			CornerRadiusTopRight = 6,
+			CornerRadiusBottomLeft = 6,
+			CornerRadiusBottomRight = 6
+		};
+		var remplissage = new StyleBoxFlat
+		{
+			BgColor = new Color(0.25f, 0.82f, 0.35f, 1f),
+			CornerRadiusTopLeft = 6,
+			CornerRadiusTopRight = 6,
+			CornerRadiusBottomLeft = 6,
+			CornerRadiusBottomRight = 6
+		};
+		barre.AddThemeStyleboxOverride("background", fondBarre);
+		barre.AddThemeStyleboxOverride("fill", remplissage);
+		ligne.AddChild(barre);
+
+		var lblInfos = new Label
+		{
+			HorizontalAlignment = HorizontalAlignment.Left,
+			MouseFilter = Control.MouseFilterEnum.Ignore
+		};
+		lblInfos.AddThemeFontSizeOverride("font_size", 11);
+		lblInfos.AddThemeColorOverride("font_color", new Color(0.77f, 0.82f, 0.88f));
+		ligne.AddChild(lblInfos);
+
+		_barresSanteCorps[cleSection] = barre;
+		_labelsSanteCorps[cleSection] = lblInfos;
+		_stylesRemplissageSanteCorps[cleSection] = remplissage;
+	}
+
+	private static Color CouleurSanteDepuisRatio(float ratio)
+	{
+		if (ratio >= 0.66f) return new Color(0.25f, 0.82f, 0.35f, 1f);
+		if (ratio >= 0.33f) return new Color(0.95f, 0.67f, 0.20f, 1f);
+		return new Color(0.88f, 0.22f, 0.22f, 1f);
+	}
+
+	private void RafraichirPanneauSanteCorps()
+	{
+		if (_joueurRef == null)
+			return;
+		AssurerPanneauSanteCorps();
+		if (_svApercuJoueurCorps != null && GodotObject.IsInstanceValid(_svApercuJoueurCorps))
+			_svApercuJoueurCorps.World3D = _joueurRef.GetWorld3D();
+		if (_barresSanteCorps.Count == 0)
+			return;
+
+		float ratioGlobal = _joueurRef.ObtenirRatioSanteGlobaleCorps();
+		if (_lblSanteGlobaleCorps != null)
+			_lblSanteGlobaleCorps.Text = $"Sante globale: {(ratioGlobal * 100f):F0}%";
+
+		IReadOnlyList<Joueur.SectionSanteCorps> sections = _joueurRef.ObtenirEtatSanteCorps();
+		for (int i = 0; i < sections.Count; i++)
+		{
+			Joueur.SectionSanteCorps section = sections[i];
+			if (_barresSanteCorps.TryGetValue(section.Cle, out ProgressBar barre))
+			{
+				barre.MaxValue = Mathf.Max(1, section.PointsVieMax);
+				barre.Value = Mathf.Clamp(section.PointsVie, 0, section.PointsVieMax);
+				if (_stylesRemplissageSanteCorps.TryGetValue(section.Cle, out StyleBoxFlat styleRemplissage))
+				{
+					float ratioSection = section.PointsVieMax > 0 ? section.PointsVie / (float)section.PointsVieMax : 0f;
+					styleRemplissage.BgColor = CouleurSanteDepuisRatio(ratioSection);
+				}
+			}
+			if (_labelsSanteCorps.TryGetValue(section.Cle, out Label lbl))
+				lbl.Text = $"{section.PointsVie}/{section.PointsVieMax} PV  |  Matiere: {section.Matiere}";
 		}
 	}
 
@@ -362,7 +618,12 @@ public partial class MenuAnatomie : Control
             {
                 TraiterClicRackBatons(ref _joueurRef.RefSlotCraft(craftIdx), clicGauche, clicDroit);
                 if (_joueurRef.RackBatonsOuvert != null && GodotObject.IsInstanceValid(_joueurRef.RackBatonsOuvert))
-                    _joueurRef.SynchroniserVisuelRackBatons(_joueurRef.RackBatonsOuvert);
+                {
+                    if (_joueurRef.RackBatonsOuvert.ID_Objet == Joueur.IdObjetRackBatons)
+                        _joueurRef.SynchroniserVisuelRackBatons(_joueurRef.RackBatonsOuvert);
+                    else if (_joueurRef.RackBatonsOuvert.ID_Objet == Joueur.IdObjetRackBuches)
+                        _joueurRef.SynchroniserVisuelRackBuches(_joueurRef.RackBatonsOuvert);
+                }
                 _joueurRef.VerifierRecettes();
                 GetViewport()?.SetInputAsHandled();
                 _joueurRef.RafraichirHUD();
@@ -376,7 +637,7 @@ public partial class MenuAnatomie : Control
 		{
 			if (clicGauche && _curseurMenu.EstVide && !_joueurRef.SlotResultatCraft.EstVide)
 			{
-				_curseurMenu = _joueurRef.SlotResultatCraft;
+				_curseurMenu = _joueurRef.AppliquerBonusMetierTraisageAuResultatCraft(_joueurRef.SlotResultatCraft);
 				_curseurMenu.Quantite = Joueur.ObtenirQuantiteSlot(_curseurMenu);
 				_joueurRef.ConsommerIngredientsCraft();
 				_joueurRef.VerifierRecettes();
@@ -416,22 +677,21 @@ public partial class MenuAnatomie : Control
 	private int CompterQuantiteTotaleRack()
 	{
 		if (_joueurRef == null || !_joueurRef.StockageRackBatonsOuvert) return 0;
-		return _joueurRef.CompterQuantiteRackBatons();
+		return _joueurRef.CompterQuantiteRackOuvert();
 	}
-
-	private static bool EstItemRackBatons(SlotInventaire s) => Joueur.EstSlotStockableRackBatons(s);
 
 	private void DeposerDepuisCurseurVersRack(ref SlotInventaire destination, int quantiteSouhaitee)
 	{
-		if (_joueurRef == null || _curseurMenu.EstVide || !EstItemRackBatons(_curseurMenu)) return;
+		if (_joueurRef == null || _curseurMenu.EstVide || !_joueurRef.EstSlotStockableDansRackOuvert(_curseurMenu)) return;
 		int qCur = Joueur.ObtenirQuantiteSlot(_curseurMenu);
 		if (qCur <= 0) return;
-		int espaceGlobal = Mathf.Max(0, 30 - CompterQuantiteTotaleRack());
+		int capacite = _joueurRef.ObtenirCapaciteRackOuvert();
+		int espaceGlobal = Mathf.Max(0, capacite - CompterQuantiteTotaleRack());
 		if (espaceGlobal <= 0) return;
 
 		if (destination.EstVide)
 		{
-			int move = Mathf.Min(Mathf.Min(qCur, quantiteSouhaitee), Mathf.Min(espaceGlobal, 30));
+			int move = Mathf.Min(Mathf.Min(qCur, quantiteSouhaitee), Mathf.Min(espaceGlobal, capacite));
 			if (move <= 0) return;
 			destination = _curseurMenu;
 			destination.Quantite = move;
@@ -442,7 +702,7 @@ public partial class MenuAnatomie : Control
 
 		if (!Joueur.SontEmpilables(destination, _curseurMenu)) return;
 		int qDst = Joueur.ObtenirQuantiteSlot(destination);
-		int moveStack = Mathf.Min(Mathf.Min(qCur, quantiteSouhaitee), Mathf.Min(espaceGlobal, 30 - qDst));
+		int moveStack = Mathf.Min(Mathf.Min(qCur, quantiteSouhaitee), Mathf.Min(espaceGlobal, capacite - qDst));
 		if (moveStack <= 0) return;
 		destination.Quantite = qDst + moveStack;
 		if (qCur - moveStack <= 0) _curseurMenu = new SlotInventaire();
@@ -451,7 +711,7 @@ public partial class MenuAnatomie : Control
 
 	private void TraiterClicRackBatons(ref SlotInventaire slotRack, bool clicGauche, bool clicDroit)
 	{
-		// Rack dédié: uniquement bâtons/branches (ID 30/32), capacité globale 30 unités, dépôt partiel intelligent.
+		// Rack dédié: capacité globale pilotée par le type de rack ouvert (bâtons/bûches).
 		if (clicGauche)
 		{
 			if (_curseurMenu.EstVide)
@@ -797,11 +1057,28 @@ public partial class MenuAnatomie : Control
 		if (Engine.IsEditorHint() || !EstOuvert || _ecranBarreCourant != ModeEcranBarreMenu.Inventaire)
 			return;
 		MettreAJourInfobulleSourisInventaire();
+		MettreAJourCameraApercuJoueurCorps((float)delta);
 		if (_conteneurFlottantCurseur != null && _conteneurFlottantCurseur.Visible)
 		{
 			Vector2 demi = _conteneurFlottantCurseur.Size * 0.5f;
 			_conteneurFlottantCurseur.GlobalPosition = GetGlobalMousePosition() - demi;
 		}
+	}
+
+	private void MettreAJourCameraApercuJoueurCorps(float delta)
+	{
+		if (_joueurRef == null || _cameraApercuJoueurCorps == null || !GodotObject.IsInstanceValid(_cameraApercuJoueurCorps))
+			return;
+		_ = delta;
+		Vector3 cible = _joueurRef.GlobalPosition + new Vector3(0f, HauteurCibleCameraApercuJoueurCorps, 0f);
+		Vector3 devant = (-_joueurRef.GlobalTransform.Basis.Z).Normalized();
+		Vector3 droite = _joueurRef.GlobalTransform.Basis.X.Normalized();
+		Vector3 posCam = cible
+			+ devant * DistanceCameraApercuJoueurCorps
+			+ droite * DecalageLateralCameraApercuJoueurCorps
+			+ new Vector3(0f, HauteurCameraApercuJoueurCorps, 0f);
+		_cameraApercuJoueurCorps.GlobalPosition = posCam;
+		_cameraApercuJoueurCorps.LookAt(cible, Vector3.Up);
 	}
 
 	private void AssurerInfobulleInventaire()
@@ -1098,8 +1375,14 @@ public partial class MenuAnatomie : Control
 
 		if (_joueurRef.StockageRackBatonsOuvert)
 		{
-			int total = _joueurRef.CompterQuantiteRackBatons();
-			_lblModeRack.Text = $"Stockage Rack a batons  [{total}/30]";
+			int total = _joueurRef.CompterQuantiteRackOuvert();
+			int cap = _joueurRef.ObtenirCapaciteRackOuvert();
+			bool rackBuches = _joueurRef.RackBatonsOuvert != null
+				&& GodotObject.IsInstanceValid(_joueurRef.RackBatonsOuvert)
+				&& _joueurRef.RackBatonsOuvert.ID_Objet == Joueur.IdObjetRackBuches;
+			_lblModeRack.Text = rackBuches
+				? $"Stockage Rack a buches  [{total}/{cap}]"
+				: $"Stockage Rack a batons  [{total}/{cap}]";
 			_lblModeRack.Visible = true;
 		}
 		else
@@ -1185,6 +1468,30 @@ public partial class MenuAnatomie : Control
 					lInv.MouseFilter = Control.MouseFilterEnum.Ignore;
 				}
 				pan.GuiInput += _OnOngletInventaireBarre;
+			}
+			else if (nom == "Onglet1")
+			{
+				_ongletFutureStateBarre = pan;
+				pan.Visible = true;
+				pan.MouseFilter = Control.MouseFilterEnum.Stop;
+				if (pan.GetNodeOrNull<Label>("Label") is Label lFuture)
+				{
+					lFuture.Text = "Future States";
+					lFuture.MouseFilter = Control.MouseFilterEnum.Ignore;
+				}
+				pan.GuiInput += _OnOngletFutureStateBarre;
+			}
+			else if (nom == "Onglet2")
+			{
+				_ongletMetierBarre = pan;
+				pan.Visible = true;
+				pan.MouseFilter = Control.MouseFilterEnum.Stop;
+				if (pan.GetNodeOrNull<Label>("Label") is Label lMetier)
+				{
+					lMetier.Text = "Metiers";
+					lMetier.MouseFilter = Control.MouseFilterEnum.Ignore;
+				}
+				pan.GuiInput += _OnOngletMetierBarre;
 			}
 			else if (nom == "Onglet11")
 			{
@@ -1280,6 +1587,10 @@ public partial class MenuAnatomie : Control
 		Color inactif = new(0.62f, 0.62f, 0.62f);
 		if (_ongletInventaireBarre != null)
 			_ongletInventaireBarre.Modulate = _ecranBarreCourant == ModeEcranBarreMenu.Inventaire ? actif : inactif;
+		if (_ongletFutureStateBarre != null)
+			_ongletFutureStateBarre.Modulate = inactif;
+		if (_ongletMetierBarre != null)
+			_ongletMetierBarre.Modulate = inactif;
 		if (_ongletQuitterBarre != null)
 			_ongletQuitterBarre.Modulate = _ecranBarreCourant == ModeEcranBarreMenu.SauvegarderQuitter ? actif : inactif;
 	}
@@ -1298,6 +1609,27 @@ public partial class MenuAnatomie : Control
 			return;
 		GetViewport()?.SetInputAsHandled();
 		AppliquerEcranBarre(ModeEcranBarreMenu.SauvegarderQuitter);
+	}
+
+	private void _OnOngletFutureStateBarre(InputEvent e)
+	{
+		if (e is not InputEventMouseButton mb || !mb.Pressed || mb.ButtonIndex != MouseButton.Left)
+			return;
+		GetViewport()?.SetInputAsHandled();
+		_joueurRef?.OuvrirFutureStateDepuisMenu();
+	}
+
+	private void _OnOngletMetierBarre(InputEvent e)
+	{
+		if (e is not InputEventMouseButton mb || !mb.Pressed || mb.ButtonIndex != MouseButton.Left)
+			return;
+		GetViewport()?.SetInputAsHandled();
+		_joueurRef?.OuvrirMetiersDepuisMenu();
+	}
+
+	public void ForcerOngletInventaire()
+	{
+		AppliquerEcranBarre(ModeEcranBarreMenu.Inventaire);
 	}
 
 	public override void _Ready()
@@ -1529,6 +1861,7 @@ public partial class MenuAnatomie : Control
 	public void RafraichirMenu()
 	{
 		if (_joueurRef == null) return;
+		RafraichirPanneauSanteCorps();
 		ResoudreReferencesSlotsMains();
 		if (_lblMainGauche == null) _lblMainGauche = TrouverOuCreerLabel(MainGaucheSlot, "Main G\n[Vide]");
 		if (_lblMainDroite == null) _lblMainDroite = TrouverOuCreerLabel(MainDroiteSlot, "Main D\n[Vide]");
@@ -1627,7 +1960,12 @@ public partial class MenuAnatomie : Control
 		AppliquerDispositionGrilleCraft();
 		MettreAJourEnteteModeRack();
 		if (_joueurRef.StockageRackBatonsOuvert && _joueurRef.RackBatonsOuvert != null && GodotObject.IsInstanceValid(_joueurRef.RackBatonsOuvert))
-			_joueurRef.SynchroniserVisuelRackBatons(_joueurRef.RackBatonsOuvert);
+		{
+			if (_joueurRef.RackBatonsOuvert.ID_Objet == Joueur.IdObjetRackBatons)
+				_joueurRef.SynchroniserVisuelRackBatons(_joueurRef.RackBatonsOuvert);
+			else if (_joueurRef.RackBatonsOuvert.ID_Objet == Joueur.IdObjetRackBuches)
+				_joueurRef.SynchroniserVisuelRackBuches(_joueurRef.RackBatonsOuvert);
+		}
 
 		if (ObtenirGrilleSac() is GridContainer grilleSac)
 		{

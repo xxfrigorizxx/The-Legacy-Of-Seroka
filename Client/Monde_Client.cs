@@ -1575,6 +1575,19 @@ public partial class Monde_Client : Node3D
 		return data.PhysicsBodyRID.IsValid && !data.Dormant && !data.EstEnFileSolidification;
 	}
 
+	/// <summary>Vrai si le chunk sous les pieds et ses 4 voisins cardinaux ont une collision active (évite fissures de bord au démarrage).</summary>
+	public bool ChunkSousPiedsEtVoisinsCardinauxPrets()
+	{
+		if (_joueur == null) return false;
+		Vector2I c = Gestionnaire_Monde.WorldToChunkCoord(_joueur.GlobalPosition, TailleChunk);
+		if (!ChunkCollisionActive(c)) return false;
+		if (!ChunkCollisionActive(new Vector2I(c.X - 1, c.Y))) return false;
+		if (!ChunkCollisionActive(new Vector2I(c.X + 1, c.Y))) return false;
+		if (!ChunkCollisionActive(new Vector2I(c.X, c.Y - 1))) return false;
+		if (!ChunkCollisionActive(new Vector2I(c.X, c.Y + 1))) return false;
+		return true;
+	}
+
 	/// <summary>Vrai si la collision terrain est active autour d'un point monde (rayon en chunks).</summary>
 	public bool CollisionTerrainActiveAutourPoint(Vector3 pointMonde, int rayonChunks = 0)
 	{

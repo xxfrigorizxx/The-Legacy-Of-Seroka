@@ -308,7 +308,7 @@ public partial class Joueur
             _objetEnMain.RotationDegrees = new Vector3(-6f + _rotationManuelleX, 25f + _rotationManuelleY, 0f + _rotationManuelleZ);
             return;
         }
-        if (main.ID == 200 || main.ID == IdObjetRackBatons)
+        if (main.ID == 200 || main.ID == IdObjetRackBatons || main.ID == IdObjetRackBuches)
         {
             _objetEnMain.Mesh = null;
             _objetEnMain.MaterialOverride = null;
@@ -334,7 +334,8 @@ public partial class Joueur
             {
                 NettoyerModelesEnfants(_objetEnMain);
                 if (main.ID == 200) InstancierModeleAtelierPrimitif(_objetEnMain, main);
-                else InstancierModeleRackBatons(_objetEnMain, main);
+                else if (main.ID == IdObjetRackBatons) InstancierModeleRackBatons(_objetEnMain, main);
+                else InstancierModeleRackBuches(_objetEnMain, main);
                 _objetEnMain.SetMeta(cleSig, sig);
             }
             _objetEnMain.Scale = Vector3.One * (main.ID == 200 ? 0.35f : 0.42f);
@@ -699,7 +700,7 @@ public partial class Joueur
             meshNode.RotationDegrees = new Vector3(0f, 28f, 0f);
             return;
         }
-        if (slot.ID == 200 || slot.ID == IdObjetRackBatons)
+        if (slot.ID == 200 || slot.ID == IdObjetRackBatons || slot.ID == IdObjetRackBuches)
         {
             meshNode.Mesh = null;
             meshNode.MaterialOverride = null;
@@ -725,7 +726,8 @@ public partial class Joueur
             {
                 NettoyerModelesEnfants(meshNode);
                 if (slot.ID == 200) InstancierModeleAtelierPrimitif(meshNode, slot);
-                else InstancierModeleRackBatons(meshNode, slot);
+                else if (slot.ID == IdObjetRackBatons) InstancierModeleRackBatons(meshNode, slot);
+                else InstancierModeleRackBuches(meshNode, slot);
                 meshNode.SetMeta(cleSig, sig);
             }
             meshNode.Scale = Vector3.One * (slot.ID == 200 ? 0.8f : 0.92f);
