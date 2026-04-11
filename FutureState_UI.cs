@@ -1,4 +1,5 @@
 using Godot;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -63,8 +64,8 @@ public partial class FutureState_UI : CanvasLayer
             IReadOnlyDictionary<string, ulong> stats = _joueur.ObtenirFutureStates();
             foreach (KeyValuePair<string, ulong> kv in stats.OrderBy(s => s.Key))
             {
-                ulong xpCourante = _joueur.ObtenirXpFutureState(kv.Key);
-                ulong xpProchain = _joueur.ObtenirXpNecessaireProchainNiveauFutureState(kv.Key);
+                UInt128 xpCourante = _joueur.ObtenirXpFutureState(kv.Key);
+                UInt128 xpProchain = _joueur.ObtenirXpNecessaireProchainNiveauFutureState(kv.Key);
                 Label ligne = new Label
                 {
                     Text = $"{kv.Key} | Niveau: {FormaterNiveau(kv.Value)} | XP: {FormaterNiveau(xpCourante)} / {FormaterNiveau(xpProchain)}",
@@ -96,8 +97,8 @@ public partial class FutureState_UI : CanvasLayer
             IReadOnlyDictionary<string, ulong> metiers = _joueur.ObtenirMetiers();
             foreach (KeyValuePair<string, ulong> kv in metiers.OrderBy(s => s.Key))
             {
-                ulong xpCourante = _joueur.ObtenirXpMetier(kv.Key);
-                ulong xpProchain = _joueur.ObtenirXpNecessaireProchainNiveauMetier(kv.Key);
+                UInt128 xpCourante = _joueur.ObtenirXpMetier(kv.Key);
+                UInt128 xpProchain = _joueur.ObtenirXpNecessaireProchainNiveauMetier(kv.Key);
                 Label ligne = new Label
                 {
                     Text = $"{kv.Key} | Niveau: {FormaterNiveau(kv.Value)} | XP: {FormaterNiveau(xpCourante)} / {FormaterNiveau(xpProchain)}",
@@ -267,6 +268,11 @@ public partial class FutureState_UI : CanvasLayer
     }
 
     private static string FormaterNiveau(ulong valeur)
+    {
+        return valeur.ToString("N0", CultureInfo.InvariantCulture).Replace(",", " ");
+    }
+
+    private static string FormaterNiveau(UInt128 valeur)
     {
         return valeur.ToString("N0", CultureInfo.InvariantCulture).Replace(",", " ");
     }

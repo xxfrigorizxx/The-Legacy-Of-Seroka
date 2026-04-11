@@ -76,10 +76,10 @@ public partial class Joueur : CharacterBody3D
         }
     }
 
-    public const ulong NiveauMaxFutureState = 9_000_000_000_000_000UL;
+    public const ulong NiveauMaxFutureState = 10_000_000_000_000_000_000UL;
     public const float CapacitePoidsBaseHumainKg = 20.0f;
-    private const ulong BaseXpParNiveauForce = 10UL;
-    private const double MultiplicateurXpParNiveau = 1.5d;
+    private static readonly UInt128 XpHybrideCoefLineaire = (UInt128)10;
+    private static readonly UInt128 XpHybrideDivQuadratique = (UInt128)1000;
     /// <summary>MÃ©ta et slots : mÃªme clÃ© pour lâ€™Ã©tabli CAO et les corps posÃ©s.</summary>
     public const string MetaGenomeAssemblage = "GenomeAssemblage";
     /// <summary>ItemPhysique dague (105) : durabilitÃ© synchronisÃ©e inventaire / sol.</summary>
@@ -358,7 +358,7 @@ public partial class Joueur : CharacterBody3D
         ["Force"] = 0UL,
         ["Dextiriter"] = 0UL
     };
-    private readonly Dictionary<string, ulong> _futureStateXp = new(StringComparer.OrdinalIgnoreCase)
+    private readonly Dictionary<string, UInt128> _futureStateXp = new(StringComparer.OrdinalIgnoreCase)
     {
         ["Force"] = 0UL,
         ["Dextiriter"] = 0UL
@@ -368,7 +368,7 @@ public partial class Joueur : CharacterBody3D
         ["Bucheron"] = 0UL,
         ["Traisage"] = 0UL
     };
-    private readonly Dictionary<string, ulong> _metierXp = new(StringComparer.OrdinalIgnoreCase)
+    private readonly Dictionary<string, UInt128> _metierXp = new(StringComparer.OrdinalIgnoreCase)
     {
         ["Bucheron"] = 0UL,
         ["Traisage"] = 0UL
@@ -2318,7 +2318,7 @@ public partial class Joueur : CharacterBody3D
 
     public IReadOnlyDictionary<string, ulong> ObtenirFutureStates() => _futureStates;
 
-    public IReadOnlyDictionary<string, ulong> ObtenirFutureStatesXp() => _futureStateXp;
+    public IReadOnlyDictionary<string, UInt128> ObtenirFutureStatesXp() => _futureStateXp;
 
     public ulong ObtenirNiveauFutureState(string nomStat)
     {
@@ -2327,28 +2327,22 @@ public partial class Joueur : CharacterBody3D
         return _futureStates.TryGetValue(nomStat, out ulong niveau) ? niveau : 0UL;
     }
 
-    public ulong ObtenirXpFutureState(string nomStat)
+    public UInt128 ObtenirXpFutureState(string nomStat)
     {
         if (string.IsNullOrWhiteSpace(nomStat))
-            return 0UL;
-        return _futureStateXp.TryGetValue(nomStat, out ulong xp) ? xp : 0UL;
+            return UInt128.Zero;
+        return _futureStateXp.TryGetValue(nomStat, out UInt128 xp) ? xp : UInt128.Zero;
     }
 
-    private static ulong CalculerXpNiveauSuivant(ulong niveau)
+    private static UInt128 CalculerXpNiveauSuivant(ulong niveau)
     {
-        if (niveau == 0UL)
-            return BaseXpParNiveauForce;
-        double cout = BaseXpParNiveauForce;
-        for (ulong i = 0UL; i < niveau; i++)
-        {
-            cout = Math.Round(cout * MultiplicateurXpParNiveau, MidpointRounding.AwayFromZero);
-            if (double.IsNaN(cout) || double.IsInfinity(cout) || cout >= ulong.MaxValue)
-                return ulong.MaxValue;
-        }
-        return Math.Max(1UL, (ulong)cout);
+        UInt128 prochainNiveau = (UInt128)niveau + 1u;
+        UInt128 termeLineaire = XpHybrideCoefLineaire * prochainNiveau;
+        UInt128 termeQuadratique = (prochainNiveau * prochainNiveau) / XpHybrideDivQuadratique;
+        return termeLineaire + termeQuadratique;
     }
 
-    public ulong ObtenirXpNecessaireProchainNiveauFutureState(string nomStat)
+    public UInt128 ObtenirXpNecessaireProchainNiveauFutureState(string nomStat)
     {
         ulong niveau = ObtenirNiveauFutureState(nomStat);
         return CalculerXpNiveauSuivant(niveau);
@@ -2359,13 +2353,14 @@ public partial class Joueur : CharacterBody3D
         if (string.IsNullOrWhiteSpace(nomStat) || xpGagne == 0UL)
             return;
         AjouterFutureStateSiAbsent(nomStat, 0UL);
-        ulong xpActuel = ObtenirXpFutureState(nomStat);
-        ulong xpTotal = xpActuel > ulong.MaxValue - xpGagne ? ulong.MaxValue : xpActuel + xpGagne;
+        UInt128 xpActuel = ObtenirXpFutureState(nomStat);
+        UInt128 gain = xpGagne;
+        UInt128 xpTotal = xpActuel > UInt128.MaxValue - gain ? UInt128.MaxValue : xpActuel + gain;
         ulong niveau = ObtenirNiveauFutureState(nomStat);
         while (niveau < NiveauMaxFutureState)
         {
-            ulong cout = ObtenirXpNecessaireProchainNiveauFutureState(nomStat);
-            if (xpTotal < cout || cout == 0UL || cout == ulong.MaxValue)
+            UInt128 cout = ObtenirXpNecessaireProchainNiveauFutureState(nomStat);
+            if (xpTotal < cout || cout == UInt128.Zero || cout == UInt128.MaxValue)
                 break;
             xpTotal -= cout;
             niveau++;
@@ -2388,7 +2383,7 @@ public partial class Joueur : CharacterBody3D
         if (string.IsNullOrWhiteSpace(nomStat) || _futureStates.ContainsKey(nomStat))
             return;
         _futureStates[nomStat] = Math.Min(niveauInitial, NiveauMaxFutureState);
-        _futureStateXp[nomStat] = 0UL;
+        _futureStateXp[nomStat] = UInt128.Zero;
         _menuFutureState?.Rafraichir();
     }
 
@@ -2436,14 +2431,14 @@ public partial class Joueur : CharacterBody3D
         return _metiers.TryGetValue(nomMetier, out ulong niveau) ? niveau : 0UL;
     }
 
-    public ulong ObtenirXpMetier(string nomMetier)
+    public UInt128 ObtenirXpMetier(string nomMetier)
     {
         if (string.IsNullOrWhiteSpace(nomMetier))
-            return 0UL;
-        return _metierXp.TryGetValue(nomMetier, out ulong xp) ? xp : 0UL;
+            return UInt128.Zero;
+        return _metierXp.TryGetValue(nomMetier, out UInt128 xp) ? xp : UInt128.Zero;
     }
 
-    public ulong ObtenirXpNecessaireProchainNiveauMetier(string nomMetier)
+    public UInt128 ObtenirXpNecessaireProchainNiveauMetier(string nomMetier)
     {
         ulong niveau = ObtenirNiveauMetier(nomMetier);
         return CalculerXpNiveauSuivant(niveau);
@@ -2454,7 +2449,7 @@ public partial class Joueur : CharacterBody3D
         if (string.IsNullOrWhiteSpace(nomMetier) || _metiers.ContainsKey(nomMetier))
             return;
         _metiers[nomMetier] = Math.Min(niveauInitial, NiveauMaxFutureState);
-        _metierXp[nomMetier] = 0UL;
+        _metierXp[nomMetier] = UInt128.Zero;
         _menuFutureState?.Rafraichir();
     }
 
@@ -2463,13 +2458,14 @@ public partial class Joueur : CharacterBody3D
         if (string.IsNullOrWhiteSpace(nomMetier) || xpGagne == 0UL)
             return;
         AjouterMetierSiAbsent(nomMetier, 0UL);
-        ulong xpActuel = ObtenirXpMetier(nomMetier);
-        ulong xpTotal = xpActuel > ulong.MaxValue - xpGagne ? ulong.MaxValue : xpActuel + xpGagne;
+        UInt128 xpActuel = ObtenirXpMetier(nomMetier);
+        UInt128 gain = xpGagne;
+        UInt128 xpTotal = xpActuel > UInt128.MaxValue - gain ? UInt128.MaxValue : xpActuel + gain;
         ulong niveau = ObtenirNiveauMetier(nomMetier);
         while (niveau < NiveauMaxFutureState)
         {
-            ulong cout = ObtenirXpNecessaireProchainNiveauMetier(nomMetier);
-            if (xpTotal < cout || cout == 0UL || cout == ulong.MaxValue)
+            UInt128 cout = ObtenirXpNecessaireProchainNiveauMetier(nomMetier);
+            if (xpTotal < cout || cout == UInt128.Zero || cout == UInt128.MaxValue)
                 break;
             xpTotal -= cout;
             niveau++;

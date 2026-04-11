@@ -7,7 +7,7 @@ public partial class Joueur
 {
     private const int VersionPersistenceJoueur = 2;
     private const int VersionPersistenceObjetsPoses = 3;
-    private const int VersionPersistenceProgression = 1;
+    private const int VersionPersistenceProgression = 2;
     private bool _etatPersistantCharge;
 
     private static string ObtenirCheminDossierSauvegardeMonde()
@@ -36,6 +36,21 @@ public partial class Joueur
         w.Write(s.IndexTailleLameRoche);
         w.Write(s.Quantite > 0 ? s.Quantite : 1);
         w.Write(s.CleConteneur ?? "");
+    }
+
+    private static void EcrireUInt128(BinaryWriter w, UInt128 valeur)
+    {
+        ulong low = (ulong)(valeur & ulong.MaxValue);
+        ulong high = (ulong)(valeur >> 64);
+        w.Write(low);
+        w.Write(high);
+    }
+
+    private static UInt128 LireUInt128(BinaryReader r)
+    {
+        ulong low = r.ReadUInt64();
+        ulong high = r.ReadUInt64();
+        return ((UInt128)high << 64) | low;
     }
 
     private static SlotInventaire LireSlot(BinaryReader r, bool lireExtras)
@@ -106,14 +121,14 @@ public partial class Joueur
             {
                 w.Write(kv.Key ?? "");
                 w.Write(kv.Value);
-                w.Write(ObtenirXpFutureState(kv.Key));
+                EcrireUInt128(w, ObtenirXpFutureState(kv.Key));
             }
             w.Write(_metiers.Count);
             foreach (var kv in _metiers)
             {
                 w.Write(kv.Key ?? "");
                 w.Write(kv.Value);
-                w.Write(ObtenirXpMetier(kv.Key));
+                EcrireUInt128(w, ObtenirXpMetier(kv.Key));
             }
         }
         catch (Exception ex)
@@ -140,7 +155,7 @@ public partial class Joueur
             {
                 string nom = r.ReadString();
                 ulong niveau = r.ReadUInt64();
-                ulong xp = r.ReadUInt64();
+                UInt128 xp = version >= 2 ? LireUInt128(r) : r.ReadUInt64();
                 if (string.IsNullOrWhiteSpace(nom))
                     continue;
                 _futureStates[nom] = Math.Min(niveau, NiveauMaxFutureState);
@@ -153,7 +168,7 @@ public partial class Joueur
             {
                 string nom = r.ReadString();
                 ulong niveau = r.ReadUInt64();
-                ulong xp = r.ReadUInt64();
+                UInt128 xp = version >= 2 ? LireUInt128(r) : r.ReadUInt64();
                 if (string.IsNullOrWhiteSpace(nom))
                     continue;
                 _metiers[nom] = Math.Min(niveau, NiveauMaxFutureState);
