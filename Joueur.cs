@@ -104,6 +104,8 @@ public partial class Joueur : CharacterBody3D
     public const int IdObjetPellePierreTier0 = 107;
     /// <summary>Pioche en pierre tier 0.</summary>
     public const int IdObjetPiochePierreTier0 = 108;
+    /// <summary>Lance en pierre tier 0 (arme d'attaque/lancer uniquement).</summary>
+    public const int IdObjetLancePierreTier0 = 111;
     /// <summary>Rack Ã  bÃ¢tons (stockage dÃ©diÃ©).</summary>
     public const int IdObjetRackBatons = 109;
     /// <summary>Rack Ã  bÃ»ches (stockage dÃ©diÃ©).</summary>
@@ -153,7 +155,7 @@ public partial class Joueur : CharacterBody3D
 
     public enum TypeMouvementFrappe { Estoc, DeHautEnBas, DeBasEnHaut, GaucheADroite, DroiteAGauche }
 
-    public const float Speed = 5.0f;
+    public const float Speed = 2.5f;
     public const float JumpVelocity = 5.15f;
 
     // SensibilitÃ© chirurgicale de la souris
@@ -264,10 +266,17 @@ public partial class Joueur : CharacterBody3D
     private AnimationNodeStateMachinePlayback _playbackLocomotion;
     private string _dernierEtatLocomotionTree = "";
     private bool _animationTreeContientSaut;
+    /// <summary>Â« Au sol Â» frame prÃ©cÃ©dente pour dÃ©tecter le dÃ©collage (dÃ©clenche lâ€™Ã©tat Saut dans lâ€™AnimationTree).</summary>
+    private bool _etaitAuSolAnimPrecedent = true;
     /// <summary>Locomotion sol : <see cref="AnimationNodeBlendSpace1D"/> Idleâ†”Marche via <c>blend_position</c> (Ã©vite le patinage Idle/Marche).</summary>
     private bool _animationTreeUtiliseBlendDeplacement;
+    /// <summary>Blend 1D avec 3 points (Idle / Marche / Run) si le clip Run est fusionnÃ©.</summary>
+    private bool _locomotionBlendTroisPoints;
     private const string NomEtatDeplacementBlend = "Deplacement";
+    private const string NomEtatSautLocomotion = "Saut";
     private const string ParamBlendDeplacementLocomotion = "parameters/Deplacement/blend_position";
+    /// <summary>Point blend max pour la marche quand un clip Run existe (0 = Idle, Run = 1).</summary>
+    private const float BlendLocomotionMarcheMaxAvecCourse = 0.42f;
     private const float DureeTamponSautSecondes = 0.28f;
     /// <summary>Capsule de rÃ©fÃ©rence dans la scÃ¨ne (souvent dÃ©sactivÃ©e) : bas local utilisÃ© pour aligner les pieds du mesh.</summary>
     private const string NomCollisionReferencePieds = "CollisionShape3D";
@@ -306,11 +315,17 @@ public partial class Joueur : CharacterBody3D
     private Panel _slotDroite;
     private Label _lblHudNomMainG;
     private Label _lblHudNomMainD;
+    private MarginContainer _hudStatsSurvie;
+    private ProgressBar _barreFaim;
+    private ProgressBar _barreEndurance;
+    private Label _labelFaim;
+    private Label _labelEndurance;
     private MeshInstance3D _objetEnMain;
     private const string MetaSignatureDague105 = "SigDague105";
     private const string MetaSignatureHachette106 = "SigHachette106";
     private const string MetaSignaturePelle107 = "SigPelle107";
     private const string MetaSignaturePioche108 = "SigPioche108";
+    private const string MetaSignatureLance111 = "SigLance111";
     private const string MetaSignatureAtelier200 = "SigAtelier200";
     private const string MetaSignatureCorde20 = "SigCorde20";
     private const string MetaSignatureTissu21 = "SigTissu21";
@@ -391,6 +406,21 @@ public partial class Joueur : CharacterBody3D
     private bool _positionReferenceMetabolisteInitialisee;
     private Vector3 _positionReferenceMetaboliste;
     private float _distanceCumuleeMetabolisteMetres;
+    private const float FaimMaxJoueur = 100f;
+    private const float EnduranceMaxJoueur = 100f;
+    private const float DrainFaimPassifParSeconde = 0.18f;
+    private const float DrainFaimEffortParSeconde = 0.75f;
+    private const float DrainFaimSprintParSeconde = 0.55f;
+    private const float DrainEnduranceActionParSeconde = 10f;
+    private const float DrainEnduranceSprintParSeconde = 22f;
+    private const float RegenEnduranceParSeconde = 10f;
+    private const float CoutFaimParPointEndurance = 0.045f;
+    private const float MultiplicateurVitesseSprint = 1.65f;
+    private const float GainFaimClicDroitMainVide = 12f;
+    private const float CooldownGainFaimClicDroitSec = 0.22f;
+    private float _faimJoueur = FaimMaxJoueur;
+    private float _enduranceJoueur = EnduranceMaxJoueur;
+    private float _cooldownGainFaimClicDroit;
 
     public override void _Ready()
     {
@@ -464,9 +494,14 @@ public partial class Joueur : CharacterBody3D
             AjusterRacineMenuAnatomieViewport();
             racineViewport.AddChild(_menuAnatomie);
             _menuAnatomie.Initialiser(this);
+            CreerHudStatsSurvie();
             CallDeferred(nameof(AjusterRacineMenuAnatomieViewport));
             if (GetViewport() != null)
                 GetViewport().SizeChanged += OnViewportTailleMenuAnatomie;
+        }
+        else
+        {
+            CreerHudStatsSurvie();
         }
     }
 
@@ -1156,7 +1191,9 @@ public partial class Joueur : CharacterBody3D
             if (libLoc.HasAnimation("Idle"))
                 _clipIdleHumain = Pref("Idle");
             if (libLoc.HasAnimation("Marche"))
-                _clipWalkHumain = _clipRunHumain = Pref("Marche");
+                _clipWalkHumain = Pref("Marche");
+            if (libLoc.HasAnimation("Run"))
+                _clipRunHumain = Pref("Run");
             if (libLoc.HasAnimation("Saut"))
                 _clipJumpHumain = Pref("Saut");
         }
@@ -1169,7 +1206,7 @@ public partial class Joueur : CharacterBody3D
                 _clipIdleHumain = nom;
             if (string.IsNullOrEmpty(_clipWalkHumain) && (l.Contains("walk") || l.Contains("marche") || l.Contains("jog") || l.Contains("stride")))
                 _clipWalkHumain = nom;
-            if (string.IsNullOrEmpty(_clipRunHumain) && (l.Contains("run") || l.Contains("course") || l.Contains("sprint")))
+            if (string.IsNullOrEmpty(_clipRunHumain) && (l.Contains("run") || l.Contains("course") || l.Contains("sprint") || l.Contains("courir")))
                 _clipRunHumain = nom;
             if (string.IsNullOrEmpty(_clipJumpHumain) && (l.Contains("jump") || l.Contains("saut") || l.Contains("fall") || l.Contains("air")))
                 _clipJumpHumain = nom;
@@ -1231,6 +1268,20 @@ public partial class Joueur : CharacterBody3D
         }
     }
 
+    /// <summary>Retire les translations sur la racine du lecteur dâ€™anim : Ã©vite que le saut dÃ©place le corps (la hauteur reste 100% physique).</summary>
+    private static void SupprimerPistesDeplacementRacinePourAnimSaut(Animation anim)
+    {
+        if (anim == null) return;
+        for (int i = anim.GetTrackCount() - 1; i >= 0; i--)
+        {
+            string chemin = anim.TrackGetPath(i).ToString();
+            if (chemin != ".." && !chemin.StartsWith("../", StringComparison.Ordinal))
+                continue;
+            if (anim.TrackGetType(i) == Animation.TrackType.Position3D)
+                anim.RemoveTrack(i);
+        }
+    }
+
     /// <summary>Charge imobile / Marcher / Jump depuis les FBX et les enregistre dans la bibliothÃ¨que Â« locomotion Â» du rig (sans passage par lâ€™Ã©diteur Â« Save to File Â»).</summary>
     private void FusionnerAnimationsFbxVersRigHumain()
     {
@@ -1288,16 +1339,25 @@ public partial class Joueur : CharacterBody3D
                 return;
             }
             // Les FBX Mixamo arrivent souvent sans boucle explicite : Idle/Marche doivent boucler en continu.
-            if (nomClip == "Idle" || nomClip == "Marche")
+            if (nomClip == "Idle" || nomClip == "Marche" || nomClip == "Run")
                 anim.LoopMode = Animation.LoopModeEnum.Linear;
             RemapperCheminsAnimationVersSqueletteHumain(anim, prefixFbx, prefixHum);
             RemapperCheminsAnimationParMarqueurSquelette(anim, prefixHum);
+            if (nomClip == "Saut")
+            {
+                anim.LoopMode = Animation.LoopModeEnum.None;
+                SupprimerPistesDeplacementRacinePourAnimSaut(anim);
+            }
             libLoc.AddAnimation(nomClip, anim);
             GD.Print($"ZERO-K : clip Â« {nomClip} Â» fusionnÃ© ({cheminScene}) FBX:{prefixFbx} â†’ joueur:{prefixHum} â†’ {BibliothequeLocomotionMixamo}/{nomClip}.");
         }
 
         FusionnerUneSceneFbx("res://Modeles/Animations/imobile.fbx", "Idle");
         FusionnerUneSceneFbx("res://Modeles/Animations/Marcher.fbx", "Marche");
+        if (ResourceLoader.Exists("res://Modeles/Animations/Courir.fbx"))
+            FusionnerUneSceneFbx("res://Modeles/Animations/Courir.fbx", "Run");
+        else if (ResourceLoader.Exists("res://Modeles/Animations/Run.fbx"))
+            FusionnerUneSceneFbx("res://Modeles/Animations/Run.fbx", "Run");
         FusionnerUneSceneFbx("res://Modeles/Animations/Jump.fbx", "Saut");
     }
 
@@ -1322,9 +1382,8 @@ public partial class Joueur : CharacterBody3D
         if (libLoc == null || !libLoc.HasAnimation("Idle") || !libLoc.HasAnimation("Marche"))
             return;
 
-        // ðŸ“– FIX CRITIQUE : Amputation volontaire de l'animation de saut dÃ©fectueuse.
-        // La physique (Velocity.Y) fonctionnera toujours, mais le visuel restera sur Marche/Idle.
-        _animationTreeContientSaut = false;
+        _animationTreeContientSaut = libLoc.HasAnimation("Saut");
+        _locomotionBlendTroisPoints = libLoc.HasAnimation("Run");
         var nomIdle = new StringName($"{BibliothequeLocomotionMixamo}/Idle");
         var nomMarche = new StringName($"{BibliothequeLocomotionMixamo}/Marche");
 
@@ -1332,7 +1391,14 @@ public partial class Joueur : CharacterBody3D
         var blendMarche = new AnimationNodeAnimation { Animation = nomMarche };
         var blendDeplacement = new AnimationNodeBlendSpace1D { MinSpace = 0f, MaxSpace = 1f };
         blendDeplacement.AddBlendPoint(blendIdle, 0f);
-        blendDeplacement.AddBlendPoint(blendMarche, 1f);
+        if (_locomotionBlendTroisPoints && libLoc.HasAnimation("Run"))
+        {
+            blendDeplacement.AddBlendPoint(blendMarche, BlendLocomotionMarcheMaxAvecCourse);
+            var blendRun = new AnimationNodeAnimation { Animation = new StringName($"{BibliothequeLocomotionMixamo}/Run") };
+            blendDeplacement.AddBlendPoint(blendRun, 1f);
+        }
+        else
+            blendDeplacement.AddBlendPoint(blendMarche, 1f);
 
         var machine = new AnimationNodeStateMachine();
         machine.AddNode(NomEtatDeplacementBlend, blendDeplacement, new Vector2(240f, 120f));
@@ -1340,7 +1406,7 @@ public partial class Joueur : CharacterBody3D
         if (_animationTreeContientSaut)
         {
             var noeudSaut = new AnimationNodeAnimation { Animation = new StringName($"{BibliothequeLocomotionMixamo}/Saut") };
-            machine.AddNode("Saut", noeudSaut, new Vector2(240f, 280f));
+            machine.AddNode(NomEtatSautLocomotion, noeudSaut, new Vector2(240f, 280f));
         }
 
         const float XfadeLocomotion = 0.12f;
@@ -1353,10 +1419,9 @@ public partial class Joueur : CharacterBody3D
 
         if (_animationTreeContientSaut)
         {
-            var versSaut = new AnimationNodeStateMachineTransition { XfadeTime = 0.08f };
-            machine.AddTransition(NomEtatDeplacementBlend, "Saut", versSaut);
-            var retourSol = new AnimationNodeStateMachineTransition { XfadeTime = 0.1f };
-            machine.AddTransition("Saut", NomEtatDeplacementBlend, retourSol);
+            machine.AddTransition(NomEtatDeplacementBlend, NomEtatSautLocomotion, new AnimationNodeStateMachineTransition { XfadeTime = 0.07f });
+            // Retour avant la fin du clip (Ã©vite la pose Â« boule Â» en queue dâ€™anim) : dÃ¨s lâ€™apex ou le sol.
+            machine.AddTransition(NomEtatSautLocomotion, NomEtatDeplacementBlend, new AnimationNodeStateMachineTransition { XfadeTime = 0.14f });
         }
 
         _animationTreeUtiliseBlendDeplacement = true;
@@ -1570,7 +1635,7 @@ public partial class Joueur : CharacterBody3D
         _ikBrasDroitFps.Influence = _ikBlendMainDroite;
     }
 
-    private void MettreAJourAnimationHumain(float dt, Vector3 vitesse, Vector2 entreeWasd, bool auSolPourAnim)
+    private void MettreAJourAnimationHumain(float dt, Vector3 vitesse, Vector2 entreeWasd, bool auSolPourAnim, bool sprintActif)
     {
         if (_rigHumain == null || !GodotObject.IsInstanceValid(_rigHumain)) return;
         if (_animationHumain == null || _fallbackAnimProcedural)
@@ -1578,39 +1643,71 @@ public partial class Joueur : CharacterBody3D
 
         float vitesseHoriz = new Vector2(vitesse.X, vitesse.Z).Length();
         bool veutMarcher = entreeWasd.LengthSquared() > 0.02f;
+        bool etaitAuSol = _etaitAuSolAnimPrecedent;
+
         string cibleClip = _clipIdleHumain;
-        if (vitesseHoriz > Speed * 0.78f && !string.IsNullOrEmpty(_clipRunHumain))
-            cibleClip = _clipRunHumain;
-        else if ((veutMarcher || vitesseHoriz > 0.04f) && !string.IsNullOrEmpty(_clipWalkHumain))
+        if ((veutMarcher || vitesseHoriz > 0.04f) && !string.IsNullOrEmpty(_clipWalkHumain))
             cibleClip = _clipWalkHumain;
 
-        // AnimationTree actif pour Idle/Marche uniquement (aucun appel d'animation de saut).
         if (_playbackLocomotion != null && _animationTreeHumain != null && GodotObject.IsInstanceValid(_animationTreeHumain))
         {
             if (!_animationTreeHumain.Active)
                 _animationTreeHumain.Active = true;
 
-            if (_animationTreeUtiliseBlendDeplacement)
+            if (_animationTreeContientSaut)
             {
-                float blend = Mathf.Clamp(vitesseHoriz / Mathf.Max(0.001f, Speed), 0f, 1f);
-                _animationTreeHumain.Set(ParamBlendDeplacementLocomotion, blend);
+                string noeud = _playbackLocomotion.GetCurrentNode().ToString();
+                if (noeud == NomEtatSautLocomotion)
+                {
+                    if (auSolPourAnim || vitesse.Y <= 0.04f)
+                    {
+                        _playbackLocomotion.Travel(new StringName(NomEtatDeplacementBlend));
+                        _dernierEtatLocomotionTree = NomEtatDeplacementBlend;
+                    }
+                }
+                else if (noeud == NomEtatDeplacementBlend || string.IsNullOrEmpty(noeud))
+                {
+                    if (!auSolPourAnim && etaitAuSol && vitesse.Y > 0.08f)
+                    {
+                        _playbackLocomotion.Travel(new StringName(NomEtatSautLocomotion));
+                        _dernierEtatLocomotionTree = NomEtatSautLocomotion;
+                    }
+                }
             }
 
-            string etatMachine = NomEtatDeplacementBlend;
-            if (etatMachine != _dernierEtatLocomotionTree)
+            if (_animationTreeUtiliseBlendDeplacement)
             {
-                _playbackLocomotion.Travel(new StringName(etatMachine));
-                _dernierEtatLocomotionTree = etatMachine;
+                string noeudCourant = _playbackLocomotion.GetCurrentNode().ToString();
+                if (noeudCourant == NomEtatDeplacementBlend || string.IsNullOrEmpty(noeudCourant))
+                {
+                    float blendPos;
+                    if (_locomotionBlendTroisPoints)
+                    {
+                        if (sprintActif)
+                            blendPos = 1f;
+                        else if (veutMarcher || vitesseHoriz > 0.04f)
+                        {
+                            float t = Mathf.Clamp(vitesseHoriz / Mathf.Max(0.001f, Speed * 1.12f), 0f, 1f);
+                            blendPos = t * BlendLocomotionMarcheMaxAvecCourse;
+                        }
+                        else
+                            blendPos = 0f;
+                    }
+                    else
+                        blendPos = Mathf.Clamp(vitesseHoriz / Mathf.Max(0.001f, Speed), 0f, 1f);
+                    _animationTreeHumain.Set(ParamBlendDeplacementLocomotion, blendPos);
+                }
             }
         }
         else
         {
-            // Fallback sÃ©curitÃ© : si playback indisponible, lecture directe Idle/Marche.
             if (_animationTreeHumain != null && GodotObject.IsInstanceValid(_animationTreeHumain) && _animationTreeHumain.Active)
                 _animationTreeHumain.Active = false;
             if (!string.IsNullOrEmpty(cibleClip) && (_animationHumain.CurrentAnimation != cibleClip || !_animationHumain.IsPlaying()))
                 _animationHumain.Play(cibleClip, 0.12f);
         }
+
+        _etaitAuSolAnimPrecedent = auSolPourAnim;
 
         bool arbrePilote = _playbackLocomotion != null && _animationTreeHumain != null && _animationTreeHumain.Active;
         _animationHumain.SpeedScale = arbrePilote
@@ -1890,6 +1987,155 @@ public partial class Joueur : CharacterBody3D
         return lbl;
     }
 
+    private void CreerHudStatsSurvie()
+    {
+        if (GetParent() == null)
+            return;
+        CanvasLayer hudInventaire = GetParent().GetNodeOrNull<CanvasLayer>("Gestionnaire_Monde/HUD_Inventaire");
+        if (_menuAnatomie == null && (hudInventaire == null || !GodotObject.IsInstanceValid(hudInventaire)))
+            return;
+        if (_hudStatsSurvie != null && GodotObject.IsInstanceValid(_hudStatsSurvie))
+            return;
+
+        _hudStatsSurvie = new MarginContainer
+        {
+            Name = "HUD_StatsSurvie",
+            MouseFilter = Control.MouseFilterEnum.Ignore
+        };
+        _hudStatsSurvie.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+
+        var boite = new VBoxContainer
+        {
+            Name = "Boite_StatsSurvie",
+            MouseFilter = Control.MouseFilterEnum.Ignore
+        };
+        boite.AddThemeConstantOverride("separation", 6);
+        boite.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+
+        _labelFaim = new Label
+        {
+            Name = "LabelFaim",
+            Text = "Faim 100%",
+            MouseFilter = Control.MouseFilterEnum.Ignore
+        };
+        _barreFaim = new ProgressBar
+        {
+            Name = "BarreFaim",
+            MinValue = 0,
+            MaxValue = FaimMaxJoueur,
+            Value = _faimJoueur,
+            ShowPercentage = false,
+            CustomMinimumSize = new Vector2(0f, 18f),
+            MouseFilter = Control.MouseFilterEnum.Ignore
+        };
+        _barreFaim.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+        _barreFaim.AddThemeStyleboxOverride("fill", new StyleBoxFlat { BgColor = new Color(0.86f, 0.66f, 0.22f) });
+
+        _labelEndurance = new Label
+        {
+            Name = "LabelEndurance",
+            Text = "Énergie 100%",
+            MouseFilter = Control.MouseFilterEnum.Ignore
+        };
+        _barreEndurance = new ProgressBar
+        {
+            Name = "BarreEndurance",
+            MinValue = 0,
+            MaxValue = EnduranceMaxJoueur,
+            Value = _enduranceJoueur,
+            ShowPercentage = false,
+            CustomMinimumSize = new Vector2(0f, 18f),
+            MouseFilter = Control.MouseFilterEnum.Ignore
+        };
+        _barreEndurance.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+        _barreEndurance.AddThemeStyleboxOverride("fill", new StyleBoxFlat { BgColor = new Color(0.2f, 0.72f, 0.94f) });
+
+        boite.AddChild(_labelFaim);
+        boite.AddChild(_barreFaim);
+        boite.AddChild(_labelEndurance);
+        boite.AddChild(_barreEndurance);
+        _hudStatsSurvie.AddChild(boite);
+
+        if (_menuAnatomie != null)
+        {
+            _menuAnatomie.AttacherHudFaimEnergieJoueur(_hudStatsSurvie);
+        }
+        else if (hudInventaire != null && GodotObject.IsInstanceValid(hudInventaire))
+        {
+            _hudStatsSurvie.SetAnchorsPreset(Control.LayoutPreset.TopLeft);
+            _hudStatsSurvie.OffsetLeft = 16f;
+            _hudStatsSurvie.OffsetTop = 16f;
+            _hudStatsSurvie.OffsetRight = 280f;
+            _hudStatsSurvie.OffsetBottom = 90f;
+            hudInventaire.AddChild(_hudStatsSurvie);
+        }
+
+        MettreAJourHudStatsSurvie();
+    }
+
+    private void MettreAJourHudStatsSurvie()
+    {
+        if (_barreFaim != null)
+            _barreFaim.Value = _faimJoueur;
+        if (_barreEndurance != null)
+            _barreEndurance.Value = _enduranceJoueur;
+        if (_labelFaim != null)
+            _labelFaim.Text = $"Faim {Mathf.RoundToInt(Mathf.Clamp((_faimJoueur / FaimMaxJoueur) * 100f, 0f, 100f))}%";
+        if (_labelEndurance != null)
+            _labelEndurance.Text = $"Énergie {Mathf.RoundToInt(Mathf.Clamp((_enduranceJoueur / EnduranceMaxJoueur) * 100f, 0f, 100f))}%";
+    }
+
+    private void AppliquerMetabolismeJoueur(float dt, bool effortIntense, bool sprintActif)
+    {
+        float drainFaim = DrainFaimPassifParSeconde;
+        if (effortIntense)
+            drainFaim += DrainFaimEffortParSeconde;
+        if (sprintActif)
+            drainFaim += DrainFaimSprintParSeconde;
+        _faimJoueur = Mathf.Max(0f, _faimJoueur - drainFaim * dt);
+
+        float drainEndurance = 0f;
+        if (effortIntense)
+            drainEndurance += DrainEnduranceActionParSeconde;
+        if (sprintActif)
+            drainEndurance += DrainEnduranceSprintParSeconde;
+        if (drainEndurance > 0f)
+        {
+            _enduranceJoueur = Mathf.Max(0f, _enduranceJoueur - drainEndurance * dt);
+        }
+        else if (_enduranceJoueur < EnduranceMaxJoueur - 0.001f && _faimJoueur > 0.001f)
+        {
+            float manque = EnduranceMaxJoueur - _enduranceJoueur;
+            float regenSouhaitee = Mathf.Min(RegenEnduranceParSeconde * dt, manque);
+            float regenLimiteeParFaim = _faimJoueur / Mathf.Max(0.0001f, CoutFaimParPointEndurance);
+            float regen = Mathf.Min(regenSouhaitee, regenLimiteeParFaim);
+            if (regen > 0f)
+            {
+                _enduranceJoueur = Mathf.Min(EnduranceMaxJoueur, _enduranceJoueur + regen);
+                _faimJoueur = Mathf.Max(0f, _faimJoueur - regen * CoutFaimParPointEndurance);
+            }
+        }
+
+        MettreAJourHudStatsSurvie();
+    }
+
+    private float RatioEnduranceJoueur()
+    {
+        if (EnduranceMaxJoueur <= 0.0001f)
+            return 0f;
+        return Mathf.Clamp(_enduranceJoueur / EnduranceMaxJoueur, 0f, 1f);
+    }
+
+    private bool PeutSprinter()
+    {
+        return _enduranceJoueur > 0.01f;
+    }
+
+    private float MultiplicateurForceFrappeEndurance()
+    {
+        return _enduranceJoueur <= 0.01f ? 0.5f : 1f;
+    }
+
     private void MettreAJourLibellesNomsHud()
     {
         if (_lblHudNomMainG != null)
@@ -1904,6 +2150,7 @@ public partial class Joueur : CharacterBody3D
             _lblHudNomMainD.Text = MainDroite.EstVide ? "" : n;
             _lblHudNomMainD.Visible = !MainDroite.EstVide && !string.IsNullOrEmpty(n);
         }
+        MettreAJourHudStatsSurvie();
     }
 
     /// <summary>SubViewport + MeshInstance3D dans chaque slot pour afficher la pierre exacte en 2D.</summary>
@@ -2087,7 +2334,16 @@ public partial class Joueur : CharacterBody3D
         else if (@event.IsActionPressed("clic_droit"))
         {
             SlotInventaire mainActive = MainGaucheEstActive ? MainGauche : MainDroite;
-            if (!mainActive.EstVide) _forceLancer = 0f; // MAIN PLEINE = DÃ‰BUT CHARGE LANCER/POSER
+            if (!mainActive.EstVide)
+            {
+                _forceLancer = 0f; // MAIN PLEINE = DÃ‰BUT CHARGE LANCER/POSER
+            }
+            else if (_cooldownGainFaimClicDroit <= 0f)
+            {
+                _faimJoueur = Mathf.Min(FaimMaxJoueur, _faimJoueur + GainFaimClicDroitMainVide);
+                _cooldownGainFaimClicDroit = CooldownGainFaimClicDroitSec;
+                MettreAJourHudStatsSurvie();
+            }
         }
         else if (@event.IsActionReleased("clic_droit"))
         {
@@ -2271,6 +2527,11 @@ public partial class Joueur : CharacterBody3D
         {
             int ir = Mathf.Clamp(slotData.IndexChimique, 0, ItemPhysique.TableGeologique.Length - 1);
             style.BgColor = ItemPhysique.TableGeologique[ir].CouleurBase.Lerp(new Color(0.42f, 0.32f, 0.18f), 0.28f);
+        }
+        else if (idMatiere == IdObjetLancePierreTier0)
+        {
+            int ir = Mathf.Clamp(slotData.IndexChimique, 0, ItemPhysique.TableGeologique.Length - 1);
+            style.BgColor = ItemPhysique.TableGeologique[ir].CouleurBase.Lerp(new Color(0.46f, 0.34f, 0.2f), 0.24f);
         }
         else
             style.BgColor = new Color(0.4f, 0.4f, 0.6f); // Violet (Autre)
@@ -2531,6 +2792,7 @@ public partial class Joueur : CharacterBody3D
         106 => 0.58f,
         IdObjetPellePierreTier0 => 0.62f,
         IdObjetPiochePierreTier0 => 0.66f,
+        IdObjetLancePierreTier0 => 0.60f,
         IdObjetBaie => 0.03f,
         34 => 0.04f,
         999 => 1.2f,
@@ -2659,6 +2921,7 @@ public partial class Joueur : CharacterBody3D
         MettreAJourSlotUI(_slotGauche, MainGauche, MainGaucheEstActive);
         MettreAJourSlotUI(_slotDroite, MainDroite, !MainGaucheEstActive);
         MettreAJourLibellesNomsHud();
+        MettreAJourHudStatsSurvie();
         MettreAJourObjetEnMain();
         RafraichirVisuelsEquipementsCorps();
         MettreAJourPreviewsSlots();
@@ -2674,19 +2937,19 @@ public partial class Joueur : CharacterBody3D
     {
         if (s.EstVide) return false;
         if (EstObjetProcedural(s.ID)) return true;
-        if (s.ID == 105 || s.ID == 106 || s.ID == IdObjetPellePierreTier0 || s.ID == IdObjetPiochePierreTier0) return true;
+        if (s.ID == 105 || s.ID == 106 || s.ID == IdObjetPellePierreTier0 || s.ID == IdObjetPiochePierreTier0 || s.ID == IdObjetLancePierreTier0) return true;
         return s.ID == 100 && s.EstUnEclat && s.MeshEclat != null;
     }
 
     private void AssurerDurabiliteOutilsSurLesMains()
     {
-        if (MainGauche.ID == 105 || MainGauche.ID == 106 || MainGauche.ID == IdObjetPellePierreTier0 || MainGauche.ID == IdObjetPiochePierreTier0)
+        if (MainGauche.ID == 105 || MainGauche.ID == 106 || MainGauche.ID == IdObjetPellePierreTier0 || MainGauche.ID == IdObjetPiochePierreTier0 || MainGauche.ID == IdObjetLancePierreTier0)
         {
             var m = MainGauche;
             Atlas_Matiere.InitialiserDurabiliteOutilSiBesoin(ref m);
             MainGauche = m;
         }
-        if (MainDroite.ID == 105 || MainDroite.ID == 106 || MainDroite.ID == IdObjetPellePierreTier0 || MainDroite.ID == IdObjetPiochePierreTier0)
+        if (MainDroite.ID == 105 || MainDroite.ID == 106 || MainDroite.ID == IdObjetPellePierreTier0 || MainDroite.ID == IdObjetPiochePierreTier0 || MainDroite.ID == IdObjetLancePierreTier0)
         {
             var m = MainDroite;
             Atlas_Matiere.InitialiserDurabiliteOutilSiBesoin(ref m);
@@ -2702,7 +2965,7 @@ public partial class Joueur : CharacterBody3D
         int idOutilCasse = 0;
         if (MainGaucheEstActive)
         {
-            if (MainGauche.ID != 105 && MainGauche.ID != 106 && MainGauche.ID != IdObjetPellePierreTier0 && MainGauche.ID != IdObjetPiochePierreTier0) return 0;
+            if (MainGauche.ID != 105 && MainGauche.ID != 106 && MainGauche.ID != IdObjetPellePierreTier0 && MainGauche.ID != IdObjetPiochePierreTier0 && MainGauche.ID != IdObjetLancePierreTier0) return 0;
             var m = MainGauche;
             int idOutil = m.ID;
             Atlas_Matiere.InitialiserDurabiliteOutilSiBesoin(ref m);
@@ -2718,7 +2981,7 @@ public partial class Joueur : CharacterBody3D
         }
         else
         {
-            if (MainDroite.ID != 105 && MainDroite.ID != 106 && MainDroite.ID != IdObjetPellePierreTier0 && MainDroite.ID != IdObjetPiochePierreTier0) return 0;
+            if (MainDroite.ID != 105 && MainDroite.ID != 106 && MainDroite.ID != IdObjetPellePierreTier0 && MainDroite.ID != IdObjetPiochePierreTier0 && MainDroite.ID != IdObjetLancePierreTier0) return 0;
             var m = MainDroite;
             int idOutil = m.ID;
             Atlas_Matiere.InitialiserDurabiliteOutilSiBesoin(ref m);
@@ -2740,6 +3003,8 @@ public partial class Joueur : CharacterBody3D
                 GD.Print("ZERO-K : La hachette primitive se brise â€” lame ou manche a cÃ©dÃ©. Il vous faudra refaire lâ€™outil.");
             else if (idOutilCasse == IdObjetPellePierreTier0)
                 GD.Print("ZERO-K : La pelle en pierre se brise â€” il faut reforger lâ€™outil.");
+            else if (idOutilCasse == IdObjetLancePierreTier0)
+                GD.Print("ZERO-K : La lance en pierre se brise â€” il faut la reforger.");
             else
                 GD.Print("ZERO-K : La pioche en pierre se brise â€” il faut reforger lâ€™outil.");
         }
@@ -2749,7 +3014,7 @@ public partial class Joueur : CharacterBody3D
 
     private static void RemplirDurabiliteOutilDepuisItemPhysique(ref SlotInventaire slot, ItemPhysique item)
     {
-        if ((slot.ID != 105 && slot.ID != 106 && slot.ID != IdObjetPellePierreTier0 && slot.ID != IdObjetPiochePierreTier0) || item == null) return;
+        if ((slot.ID != 105 && slot.ID != 106 && slot.ID != IdObjetPellePierreTier0 && slot.ID != IdObjetPiochePierreTier0 && slot.ID != IdObjetLancePierreTier0) || item == null) return;
         if (item.HasMeta(MetaDurabiliteOutilMax))
         {
             slot.DurabiliteOutilMax = (float)item.GetMeta(MetaDurabiliteOutilMax).AsDouble();
@@ -2840,6 +3105,7 @@ public partial class Joueur : CharacterBody3D
         else if (id == IdObjetPochetteTier0) return null; // GLB res://Modeles/materials/Pochette_Tiere0.glb via InstancierModelePochetteTier0
         else if (id == IdObjetPellePierreTier0) return null; // GLB res://Modeles/Equipements/Pelle_Pierre_tier0.glb via InstancierModeleArme
         else if (id == IdObjetPiochePierreTier0) return null; // GLB res://Modeles/Equipements/Pioche_pierre_tier0.glb via InstancierModeleArme
+        else if (id == IdObjetLancePierreTier0) return null; // GLB res://Modeles/Equipements/Lance_en_pierre_tier0.glb via InstancierModeleArme
         else if (id == IdObjetRackBatons || id == IdObjetRackBuches) return null; // GLB rack (bÃ¢tons / bÃ»ches) via instanciation dÃ©diÃ©e
         else if (id == 30 || id == 32)
         {
@@ -3357,6 +3623,33 @@ public partial class Joueur : CharacterBody3D
             });
             corps = item;
         }
+        else if (id == IdObjetLancePierreTier0)
+        {
+            SlotInventaire slotLance = mainActive;
+            Atlas_Matiere.InitialiserDurabiliteOutilSiBesoin(ref slotLance);
+            var item = new ItemPhysique
+            {
+                ID_Objet = id,
+                IndexChimique = mainActive.IndexChimique,
+                IndexCacheMemoire = mainActive.IndexMorphologique,
+                IndexTailleRoche = mainActive.IndexTaille,
+                IndexBotanique = mainActive.IndexBotanique,
+                NiveauFracture = mainActive.NiveauFracture,
+                Name = "ItemPhysique",
+                ContinuousCd = true
+            };
+            item.SetMeta(MetaDurabiliteOutilMax, slotLance.DurabiliteOutilMax);
+            item.SetMeta(MetaDurabiliteOutilActuelle, slotLance.DurabiliteOutilActuelle);
+            var meshRoot = new MeshInstance3D { Name = "MeshInstance3D" };
+            InstancierModeleArme(meshRoot, slotLance, 0.66f, 1f);
+            item.AddChild(meshRoot);
+            item.AddChild(new CollisionShape3D
+            {
+                Name = "CollisionShape3D",
+                Shape = new CapsuleShape3D { Radius = 0.055f, Height = 0.92f }
+            });
+            corps = item;
+        }
         else if (id == IdObjetRackBatons || id == IdObjetRackBuches)
         {
             var item = new ItemPhysique
@@ -3830,6 +4123,8 @@ public partial class Joueur : CharacterBody3D
                 ItemPhysique.AppliquerPhysiquePelle107(ipPelle);
             else if (id == IdObjetPiochePierreTier0 && rbPose is ItemPhysique ipPioche)
                 ItemPhysique.AppliquerPhysiquePioche108(ipPioche);
+            else if (id == IdObjetLancePierreTier0 && rbPose is ItemPhysique ipLance)
+                ItemPhysique.AppliquerPhysiqueLance111(ipLance);
         }
         // Fibres / corde non Ã©lastiques : ne pas appliquer dâ€™Ã©chelle Â« Ã©tirÃ©e Â» (herbe, liane, corde boyau+herbe, etc.)
         bool estFlexOuCorde = id == 15 || id == 16 || id == 17 || id == 20 || id == 21 || id == IdObjetCeinturePoches || id == IdObjetCeintureSacoches || id == IdObjetPochetteTier0 || id == IdObjetSacTier0;
@@ -3894,6 +4189,7 @@ public partial class Joueur : CharacterBody3D
     public override void _PhysicsProcess(double delta)
     {
         float dt = (float)delta;
+        _cooldownGainFaimClicDroit = Mathf.Max(0f, _cooldownGainFaimClicDroit - dt);
         if (!_positionReferenceMetabolisteInitialisee)
             ReinitialiserReferencePositionMetaboliste();
         SlotInventaire mainActive = MainGaucheEstActive ? MainGauche : MainDroite;
@@ -3903,7 +4199,7 @@ public partial class Joueur : CharacterBody3D
         {
             if (!mainActive.EstVide && Input.IsActionPressed("clic_droit"))
                 _forceLancer = Mathf.Min(5.0f, _forceLancer + (VitesseChargeBras * 2.5f) * dt);
-            if (_gaucheMaintenu && (mainActive.EstVide || mainActive.ID == 105 || mainActive.ID == 106 || mainActive.ID == IdObjetPellePierreTier0 || mainActive.ID == IdObjetPiochePierreTier0))
+            if (_gaucheMaintenu && (mainActive.EstVide || mainActive.ID == 105 || mainActive.ID == 106 || mainActive.ID == IdObjetPellePierreTier0 || mainActive.ID == IdObjetPiochePierreTier0 || mainActive.ID == IdObjetLancePierreTier0))
                 MettreAJourMinageMainNueOuAtelier(dt, mainActive);
             else
                 ReinitialiserMinageMainNueProgression();
@@ -4007,9 +4303,17 @@ public partial class Joueur : CharacterBody3D
 
         Vector2 inputDir = caoOuvert ? Vector2.Zero : Input.GetVector("move_left", "move_right", "move_forward", "move_backward");
         Vector3 direction = CalculerDirectionMouvementAuSol(inputDir);
+        bool ctrlCourse = Input.IsPhysicalKeyPressed(Key.Ctrl);
+        bool sprintDemande = !caoOuvert && !estDansEau && ctrlCourse && direction != Vector3.Zero;
+        bool sprintActif = sprintDemande && PeutSprinter();
+        bool effortIntense = !caoOuvert && (sprintActif || sautMaintenu || _gaucheMaintenu || _forceLancer > 0.15f || (direction != Vector3.Zero && estDansEau));
+        AppliquerMetabolismeJoueur(dt, effortIntense, sprintActif);
         float vitesseMouvement = estDansEau ? Speed * (sautMaintenu ? 0.58f : 0.4f) : Speed;
+        if (sprintActif)
+            vitesseMouvement *= MultiplicateurVitesseSprint;
         vitesseMouvement *= ObtenirFacteurVitesseSelonChargePortee();
         vitesseMouvement *= ObtenirMultiplicateurVitesseMetaboliste();
+        vitesseMouvement *= Mathf.Lerp(0.62f, 1f, RatioEnduranceJoueur());
 
         if (direction != Vector3.Zero)
         {
@@ -4022,7 +4326,7 @@ public partial class Joueur : CharacterBody3D
             velocity.Z = Mathf.MoveToward(velocity.Z, 0, vitesseMouvement);
         }
 
-        MettreAJourAnimationHumain(dt, velocity, inputDir, auSolPourAnim);
+        MettreAJourAnimationHumain(dt, velocity, inputDir, auSolPourAnim, sprintActif);
         MettreAJourObjetTenueTps();
 
         Velocity = velocity;

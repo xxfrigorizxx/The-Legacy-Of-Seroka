@@ -93,6 +93,8 @@ public partial class MenuAnatomie : Control
 	private Panel _panneauInfobulleSlot;
 	private Label _lblInfobulleSlot;
 	private Panel _panneauSanteCorps;
+	/// <summary>Zone sous les barres de PV (menu Q) pour le bloc faim / énergie du joueur.</summary>
+	private VBoxContainer _boiteFaimEnergieExterne;
 	private Label _lblSanteGlobaleCorps;
 	private Label _lblForceEtMultiplicateur;
 	private Label _lblPoidsMaxSousApercu;
@@ -250,7 +252,11 @@ public partial class MenuAnatomie : Control
 		marge.AddThemeConstantOverride("margin_bottom", 10);
 		_panneauSanteCorps.AddChild(marge);
 
-		var colonne = new VBoxContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
+		var colonne = new VBoxContainer
+		{
+			Name = "ColonneSanteCorps",
+			MouseFilter = Control.MouseFilterEnum.Ignore
+		};
 		colonne.AddThemeConstantOverride("separation", 8);
 		marge.AddChild(colonne);
 
@@ -319,6 +325,16 @@ public partial class MenuAnatomie : Control
 		CreerLigneSanteCorps(colonneSections, "bras_droit", "Bras droit");
 		CreerLigneSanteCorps(colonneSections, "jambe_gauche", "Jambe gauche");
 		CreerLigneSanteCorps(colonneSections, "jambe_droite", "Jambe droite");
+
+		colonne.AddChild(new HSeparator { MouseFilter = Control.MouseFilterEnum.Ignore });
+		_boiteFaimEnergieExterne = new VBoxContainer
+		{
+			Name = "BoiteFaimEnergieExterne",
+			MouseFilter = Control.MouseFilterEnum.Ignore
+		};
+		_boiteFaimEnergieExterne.AddThemeConstantOverride("separation", 6);
+		_boiteFaimEnergieExterne.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+		colonne.AddChild(_boiteFaimEnergieExterne);
 	}
 
 	private void AssurerApercuJoueurCorps(Panel parent)
@@ -1679,6 +1695,20 @@ public partial class MenuAnatomie : Control
 	public void ForcerOngletInventaire()
 	{
 		AppliquerEcranBarre(ModeEcranBarreMenu.Inventaire);
+	}
+
+	/// <summary>Accroche le bloc faim / énergie du joueur sous les barres de PV (colonne gauche du menu inventaire Q).</summary>
+	public void AttacherHudFaimEnergieJoueur(Control widget)
+	{
+		if (widget == null)
+			return;
+		AssurerPanneauSanteCorps();
+		if (_boiteFaimEnergieExterne == null || !GodotObject.IsInstanceValid(_boiteFaimEnergieExterne))
+			return;
+		Node parent = widget.GetParent();
+		if (parent != null)
+			parent.RemoveChild(widget);
+		_boiteFaimEnergieExterne.AddChild(widget);
 	}
 
 	public override void _Ready()

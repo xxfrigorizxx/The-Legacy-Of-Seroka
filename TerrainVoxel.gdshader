@@ -5,9 +5,12 @@ uniform float triplanar_scale = 0.2;
 uniform float lod_texture_start = 140.0;
 uniform float lod_texture_end = 520.0;
 uniform float lod_far_mip = 4.0;
-uniform float lod_steps = 12.0;
+uniform float lod_steps = 8.0;
 uniform float lod_step_blend = 0.75;
 uniform float lod_start_jitter = 32.0;
+uniform float lumiere_ambiante = 0.08;
+uniform float douceur_ombre = 0.50;
+uniform float neutralisation_sable = 0.48;
 
 varying vec3 uv1_power_normal;
 varying vec3 uv1_triplanar_pos;
@@ -113,6 +116,19 @@ void fragment() {
 	if (is_feuilles) albedo_tex.rgb = vec3(0.25, 0.55, 0.22);
 	vec3 final_color = albedo_tex.rgb;
 
+	bool est_herbe = (material_id == 1.0);
+	bool est_boue = (material_id == 7.0);
+	bool est_aride = (material_id == 6.0);
+	bool est_sable = (material_id == 3.0);
+
+	// Sable: neutralise la dominante orange vers une teinte plus beige naturelle.
+	if (est_sable) {
+		vec3 hsv_sable = rgb2hsv(final_color);
+		hsv_sable.y = clamp(hsv_sable.y * (1.0 - neutralisation_sable), 0.0, 1.0);
+		hsv_sable.x = mix(hsv_sable.x, 0.135, neutralisation_sable * 0.42);
+		final_color = hsv2rgb(hsv_sable);
+	}
+
 	// Loin: on coupe presque tous les coûts de détail shader.
 	if (detail_t > 0.01) {
 		// 2. MACRO-VARIATION ANTI-DAMIER (Bruit à basse fréquence)
@@ -120,14 +136,17 @@ void fragment() {
 		float macro_noise = noise(world_pos.xz * 0.05);
 		final_color *= (0.65 + macro_noise * 0.5 * detail_t); // Modulation atténuée au loin
 
-		// --- MUTATION SÉMANTIQUE (FERTILITÉ & CLIMAT) —---
-		float facteur_humidite_macro = clamp((v_humidite + 1.0) * 0.5, 0.0, 1.0);
-		// Micro-variation mondiale (pas liée aux chunks) pour casser l'uniformité visuelle.
-		float humidite_micro = noise(world_pos.xz * 0.012 + vec2(73.1, -21.7));
-		float facteur_humidite = clamp(facteur_humidite_macro * 0.82 + humidite_micro * 0.18 * detail_t, 0.0, 1.0);
+		float facteur_humidite = 0.0;
+		if (est_herbe || est_boue || est_aride) {
+			// --- MUTATION SÉMANTIQUE (FERTILITÉ & CLIMAT) —---
+			float facteur_humidite_macro = clamp((v_humidite + 1.0) * 0.5, 0.0, 1.0);
+			// Micro-variation mondiale (pas liée aux chunks) pour casser l'uniformité visuelle.
+			float humidite_micro = noise(world_pos.xz * 0.012 + vec2(73.1, -21.7));
+			facteur_humidite = clamp(facteur_humidite_macro * 0.82 + humidite_micro * 0.18 * detail_t, 0.0, 1.0);
+		}
 
 		// Herbe (ID 1) : palette pilotée par climat (texture base N/B ou colorée).
-		if (material_id == 1.0) {
+		if (est_herbe) {
 			vec3 base = final_color;
 			float h = facteur_humidite;
 			float t = clamp((v_temperature + 1.0) * 0.5, 0.0, 1.0);
@@ -157,7 +176,7 @@ void fragment() {
 			final_color = mix(base, coloreRelief, forcePalette);
 		}
 		// Boue (ID 7) : sec = grisâtre, humide = de plus en plus brun
-		if (material_id == 7.0) {
+		if (est_boue) {
 			// Logique demandée: humide => plus gris (pas brun foncé).
 			vec3 hsv = rgb2hsv(final_color);
 			float h = facteur_humidite;
@@ -170,7 +189,7 @@ void fragment() {
 			final_color = mix(teinte_boue, gris_humide, h * 0.55);
 		}
 		// Terre aride (ID 6) : sec = grisâtre, humide = assombri
-		if (material_id == 6.0) {
+		if (est_aride) {
 			// Même logique: humide => plus gris, sans virer brun.
 			vec3 hsv = rgb2hsv(final_color);
 			float h = facteur_humidite;
@@ -186,4 +205,18 @@ void fragment() {
 
 	ALBEDO = final_color;
 	ROUGHNESS = 0.85;
+}
+
+void light() {
+	float ndotl = max(dot(NORMAL, LIGHT), 0.0);
+	float half_lambert = ndotl * 0.5 + 0.5;
+	float diffus_lisse = smoothstep(0.18 - douceur_ombre * 0.15, 0.92, half_lambert);
+	float diffus = max(lumiere_ambiante, diffus_lisse);
+
+	// Garde une lumière majoritairement neutre pour éviter la dérive orange du sable.
+	float lum_light = dot(LIGHT_COLOR, vec3(0.2126, 0.7152, 0.0722));
+	vec3 lumiere_rgb = mix(vec3(lum_light), LIGHT_COLOR, 0.22);
+	DIFFUSE_LIGHT += ALBEDO * lumiere_rgb * diffus * ATTENUATION;
+
+	// Sol/roche/sable volontairement mats : aucun reflet speculaire.
 }

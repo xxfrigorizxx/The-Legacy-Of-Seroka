@@ -1,0 +1,26 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://Faune/BoeufSauvage.cs" id="1_boeuf_script"]
+[ext_resource type="PackedScene" path="res://Modeles/Entites/Boeufs/Quaternius/Cow.gltf" id="2_veau_glb"]
+
+[sub_resource type="CapsuleShape3D" id="1_shape"]
+radius = 0.13
+height = 0.26
+
+[node name="VeauMaleSauvage" type="CharacterBody3D"]
+script = ExtResource("1_boeuf_script")
+naissance_sous_forme_veau = true
+facteur_taille_veau = 0.62
+duree_veau_avant_maturite_secondes = 3600.0
+vitesse_marche = 1.4
+vitesse_fuite = 2.85
+
+[node name="AnimationTreeFaune" type="AnimationTree" parent="."]
+callback_mode_process = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.2, 0)
+shape = SubResource("1_shape")
+
+[node name="Modele" parent="." instance=ExtResource("2_veau_glb")]
+transform = Transform3D(-0.205, 0, 0, 0, 0.205, 0, 0, 0, -0.205, 0, 0.03, 0)

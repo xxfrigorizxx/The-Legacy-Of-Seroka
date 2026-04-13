@@ -233,9 +233,35 @@ public static class Atlas_Matiere
         return Mathf.Clamp(maxDur, 24f, 190f);
     }
 
+    public static float CalculerDurabiliteMaxNouvelleLance(SlotInventaire roche, SlotInventaire corde, SlotInventaire baton)
+    {
+        int idxLame = Mathf.Clamp(roche.ID - ItemPhysique.IdRocheMatiereMin, 0, ItemPhysique.TableGeologique.Length - 1);
+        float mineral = ItemPhysique.TableGeologique[idxLame].ResistanceFuture;
+        ObtenirStatsCorde(corde.IndexChimique, corde.IndexMorphologique, corde.IndexBotanique, out float durCord, out _);
+        float durBois = ObtenirDurabiliteBois(baton.IndexBotanique);
+        float capPierre = mineral * 0.86f;
+        float capCorde = durCord * 7.1f;
+        float capBois = durBois * 5.4f;
+        float maxDur = Mathf.Min(capPierre, Mathf.Min(capCorde, capBois));
+        return Mathf.Clamp(maxDur, 26f, 200f);
+    }
+
+    public static float CalculerDurabiliteMaxLanceDepuisSlot(SlotInventaire lance)
+    {
+        int idxLame = Mathf.Clamp(lance.IndexChimique, 0, ItemPhysique.TableGeologique.Length - 1);
+        float mineral = ItemPhysique.TableGeologique[idxLame].ResistanceFuture;
+        ObtenirStatsCorde(lance.IndexMorphologique, lance.IndexTaille, lance.NiveauFracture, out float durCord, out _);
+        float durBois = ObtenirDurabiliteBois(lance.IndexBotanique);
+        float capPierre = mineral * 0.86f;
+        float capCorde = durCord * 7.1f;
+        float capBois = durBois * 5.4f;
+        float maxDur = Mathf.Min(capPierre, Mathf.Min(capCorde, capBois));
+        return Mathf.Clamp(maxDur, 26f, 200f);
+    }
+
     public static void InitialiserDurabiliteOutilSiBesoin(ref SlotInventaire s)
     {
-        if (s.ID != 105 && s.ID != 106 && s.ID != Joueur.IdObjetPellePierreTier0 && s.ID != Joueur.IdObjetPiochePierreTier0) return;
+        if (s.ID != 105 && s.ID != 106 && s.ID != Joueur.IdObjetPellePierreTier0 && s.ID != Joueur.IdObjetPiochePierreTier0 && s.ID != Joueur.IdObjetLancePierreTier0) return;
         if (s.DurabiliteOutilMax > 0.5f)
         {
             if (s.DurabiliteOutilActuelle <= 0f)
@@ -263,6 +289,12 @@ public static class Atlas_Matiere
         else if (s.ID == Joueur.IdObjetPiochePierreTier0)
         {
             float max = CalculerDurabiliteMaxPiocheDepuisSlot(s);
+            s.DurabiliteOutilMax = max;
+            s.DurabiliteOutilActuelle = max;
+        }
+        else if (s.ID == Joueur.IdObjetLancePierreTier0)
+        {
+            float max = CalculerDurabiliteMaxLanceDepuisSlot(s);
             s.DurabiliteOutilMax = max;
             s.DurabiliteOutilActuelle = max;
         }
@@ -328,6 +360,18 @@ public static class Atlas_Matiere
         {
             int i = Mathf.Clamp(slot.IndexChimique, 0, ItemPhysique.TableGeologique.Length - 1);
             string nom = $"Pioche en {ItemPhysique.TableGeologique[i].Nom}";
+            if (slot.DurabiliteOutilMax > 0.5f)
+            {
+                int a = Mathf.Max(0, Mathf.RoundToInt(slot.DurabiliteOutilActuelle));
+                int m = Mathf.Max(1, Mathf.RoundToInt(slot.DurabiliteOutilMax));
+                return $"{nom} ({a}/{m})";
+            }
+            return nom;
+        }
+        if (id == Joueur.IdObjetLancePierreTier0)
+        {
+            int i = Mathf.Clamp(slot.IndexChimique, 0, ItemPhysique.TableGeologique.Length - 1);
+            string nom = $"Lance en {ItemPhysique.TableGeologique[i].Nom}";
             if (slot.DurabiliteOutilMax > 0.5f)
             {
                 int a = Mathf.Max(0, Mathf.RoundToInt(slot.DurabiliteOutilActuelle));
@@ -994,6 +1038,52 @@ public static class Atlas_Matiere
                     NiveauFracture = corde.IndexBotanique,
                     // Tête secondaire: persistée explicitement pour afficher deux roches différentes.
                     GenomeAssemblage = $"PICKR:{idxRocheB}",
+                    DurabiliteOutilMax = dMax,
+                    DurabiliteOutilActuelle = dMax
+                };
+            }
+        }
+
+        // Lance pierre tier0 (111) 3x3 (patron + miroir horizontal):
+        // Patron: [1]=ligature [2]=petite roche en pointe [4]=bâton façonné [5]=ligature [6]=bâton façonné.
+        // Miroir: [0]=petite roche en pointe [1]=ligature [3]=ligature [4]=bâton façonné [8]=bâton façonné.
+        if (grilleCraft3x3Table && grille.Length >= 9)
+        {
+            bool patronA = grille[0].EstVide
+                && EstSlotLigatureOutilCraft(grille[1])
+                && EstSlotPetiteRochePointeCraft(grille[2])
+                && grille[3].EstVide
+                && EstSlotBatonFaconneCraft(grille[4])
+                && EstSlotLigatureOutilCraft(grille[5])
+                && EstSlotBatonFaconneCraft(grille[6])
+                && grille[7].EstVide
+                && grille[8].EstVide;
+
+            bool patronB = EstSlotPetiteRochePointeCraft(grille[0])
+                && EstSlotLigatureOutilCraft(grille[1])
+                && grille[2].EstVide
+                && EstSlotLigatureOutilCraft(grille[3])
+                && EstSlotBatonFaconneCraft(grille[4])
+                && grille[5].EstVide
+                && grille[6].EstVide
+                && grille[7].EstVide
+                && EstSlotBatonFaconneCraft(grille[8]);
+
+            if (patronA || patronB)
+            {
+                SlotInventaire roche = patronA ? grille[2] : grille[0];
+                SlotInventaire corde = NormaliserLigatureOutil(grille[1]);
+                SlotInventaire baton = grille[4];
+                float dMax = CalculerDurabiliteMaxNouvelleLance(roche, corde, baton);
+                return new SlotInventaire
+                {
+                    ID = Joueur.IdObjetLancePierreTier0,
+                    IndexChimique = roche.ID - ItemPhysique.IdRocheMatiereMin,
+                    IndexMorphologique = corde.IndexChimique,
+                    IndexTaille = corde.IndexMorphologique,
+                    IndexBotanique = baton.IndexBotanique,
+                    EstUnEclat = false,
+                    NiveauFracture = corde.IndexBotanique,
                     DurabiliteOutilMax = dMax,
                     DurabiliteOutilActuelle = dMax
                 };

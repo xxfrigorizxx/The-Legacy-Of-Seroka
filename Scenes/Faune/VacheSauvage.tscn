@@ -1,0 +1,24 @@
+[gd_scene format=3 uid="uid://esraits5520a"]
+
+[ext_resource type="Script" uid="uid://dwohoif5u64b0" path="res://Faune/VacheSauvage.cs" id="1_vache_script"]
+[ext_resource type="PackedScene" uid="uid://u2fwftms7k47" path="res://Modeles/Entites/Boeufs/Quaternius/Cow.gltf" id="2_vache_glb"]
+
+[sub_resource type="CapsuleShape3D" id="1_shape"]
+radius = 0.2
+height = 0.45
+
+[node name="VacheSauvage" type="CharacterBody3D" unique_id=1282644088]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, 0, 0)
+script = ExtResource("1_vache_script")
+correction_orientation_modele_degres = 0.0
+correction_yaw_regard_degres = 0.0
+
+[node name="AnimationTreeFaune" type="AnimationTree" parent="." unique_id=1491877398]
+callback_mode_process = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1893408626]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.26, 0)
+shape = SubResource("1_shape")
+
+[node name="Modele" parent="." unique_id=338935589 instance=ExtResource("2_vache_glb")]
+transform = Transform3D(-0.32, 0, 0, 0, 0.32, 0, 0, 0, -0.32, 0, 0.03, 0)

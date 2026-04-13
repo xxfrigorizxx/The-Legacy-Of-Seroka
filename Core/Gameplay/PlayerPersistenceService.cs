@@ -94,6 +94,7 @@ public partial class Joueur
         SauvegarderInventaireMonde();
         SauvegarderObjetsPosesMonde();
         SauvegarderBlocsChutantsMonde();
+        ObtenirGestionnaireFauneCourant()?.SauvegarderFauneMonde();
     }
 
     public void ChargerEtatPersistantMonde()
@@ -104,7 +105,15 @@ public partial class Joueur
         ChargerInventaireMonde();
         ChargerObjetsPosesMonde();
         ChargerBlocsChutantsMonde();
+        ObtenirGestionnaireFauneCourant()?.ChargerFauneMonde();
         RafraichirHUD();
+    }
+
+    private GestionnaireFauneBoeufs ObtenirGestionnaireFauneCourant()
+    {
+        Node scene = GetTree()?.CurrentScene;
+        if (scene == null) return null;
+        return scene.GetNodeOrNull<GestionnaireFauneBoeufs>("GestionnaireFauneBoeufs");
     }
 
     private void SauvegarderProgressionJoueurMonde()

@@ -929,7 +929,11 @@ public partial class Gestionnaire_Monde : Node3D
 		bool spawnPretEtAligneActuel = spawnPretActuel && (!_spawnDoitEtreAligneAuSol || _spawnAligneAuSol);
 		Vector3 pointRefSpawn = ObtenirPointReferenceSpawn();
 		bool cardinauxPrets = ChunkEtVoisinsCardinauxPretsAuPoint(pointRefSpawn);
-		bool chargementVisuelActif = !spawnPretEtAligneActuel || !cardinauxPrets;
+		// Le cycle solaire ne doit être neutralisé que pendant le bootstrap initial (overlay visible),
+		// sinon un chunk cardinal temporairement absent peut laisser le ciel bloqué en mode nuit.
+		bool chargementVisuelActif = _overlayChargement != null
+			&& _overlayChargement.Visible
+			&& (!spawnPretEtAligneActuel || !cardinauxPrets);
 		MettreAJourEtatCycleSolaire(chargementVisuelActif);
 
 		// Masquer l'overlay quand le sol minimal sous les pieds est prêt, ou après timeout (évite chargement infini si file / grille trop large).
@@ -1199,6 +1203,22 @@ public partial class Gestionnaire_Monde : Node3D
 			_mondeServeur?.AppliquerFauchageGlobal(pointImpact, rayon);
 		else
 			GD.Print("ZERO-K : Le fauchage (gazon, fibres) n'existe qu'en mode chunks serveur. Réactivez UseArchitectureReseau sur le Gestionnaire_Monde.");
+	}
+
+	/// <summary>Fauchage faune: retire le gazon dans le rayon sans creer de loot au sol. Retourne vrai si au moins un mesh de flore a ete supprime.</summary>
+	public bool AppliquerFauchageFauneGlobal(Vector3 pointImpact, float rayon)
+	{
+		if (UseArchitectureReseau)
+			return _mondeServeur?.AppliquerFauchageFauneGlobal(pointImpact, rayon) ?? false;
+		return false;
+	}
+
+	/// <summary>Retourne vrai si un mesh de gazon 3D existe dans le rayon autour du point.</summary>
+	public bool ExisteGazonFauneGlobal(Vector3 pointImpact, float rayon)
+	{
+		if (UseArchitectureReseau)
+			return _mondeServeur?.ExisteGazonFauneGlobal(pointImpact, rayon) ?? false;
+		return false;
 	}
 
 	/// <summary>Récolte ciblée d’un buisson : 0=hachette (branche), 1=dague (coupe), 2=pelle (déracinage replantable).</summary>

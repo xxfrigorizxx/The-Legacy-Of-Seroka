@@ -1530,6 +1530,40 @@ public partial class Monde_Serveur : Node
 			}
 	}
 
+	public bool AppliquerFauchageFauneGlobal(Vector3 pointImpact, float rayon)
+	{
+		int cxMin = Gestionnaire_Monde.WorldToChunkCoord(pointImpact.X - rayon, pointImpact.Z, TailleChunk).X;
+		int cxMax = Gestionnaire_Monde.WorldToChunkCoord(pointImpact.X + rayon, pointImpact.Z, TailleChunk).X;
+		int czMin = Gestionnaire_Monde.WorldToChunkCoord(pointImpact.X, pointImpact.Z - rayon, TailleChunk).Y;
+		int czMax = Gestionnaire_Monde.WorldToChunkCoord(pointImpact.X, pointImpact.Z + rayon, TailleChunk).Y;
+		bool aFauche = false;
+
+		for (int cx = cxMin; cx <= cxMax; cx++)
+			for (int cz = czMin; cz <= czMax; cz++)
+			{
+				var chunk = ObtenirOuCreerChunk(new Vector2I(cx, cz));
+				if (chunk.FaucherFloreSansLoot(pointImpact, rayon))
+					aFauche = true;
+			}
+		return aFauche;
+	}
+
+	public bool ExisteGazonFauneGlobal(Vector3 pointImpact, float rayon)
+	{
+		int cxMin = Gestionnaire_Monde.WorldToChunkCoord(pointImpact.X - rayon, pointImpact.Z, TailleChunk).X;
+		int cxMax = Gestionnaire_Monde.WorldToChunkCoord(pointImpact.X + rayon, pointImpact.Z, TailleChunk).X;
+		int czMin = Gestionnaire_Monde.WorldToChunkCoord(pointImpact.X, pointImpact.Z - rayon, TailleChunk).Y;
+		int czMax = Gestionnaire_Monde.WorldToChunkCoord(pointImpact.X, pointImpact.Z + rayon, TailleChunk).Y;
+		for (int cx = cxMin; cx <= cxMax; cx++)
+			for (int cz = czMin; cz <= czMax; cz++)
+			{
+				var chunk = ObtenirOuCreerChunk(new Vector2I(cx, cz));
+				if (chunk.ExisteGazonDansRayon(pointImpact, rayon))
+					return true;
+			}
+		return false;
+	}
+
 	/// <summary>Récolte ciblée de buisson : 0=hachette (branche), 1=dague, 2=pelle (replantable).</summary>
 	public bool RecolterBuissonGlobal(Vector3 pointImpact, float rayon, byte modeRecolte)
 	{

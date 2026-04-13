@@ -623,6 +623,8 @@ public partial class Joueur
             return (0.92f, 0.08f, 2.25f);
         if (mainActive.ID == IdObjetPellePierreTier0)
             return (0.26f, 0.95f, 2.15f);
+        if (mainActive.ID == IdObjetLancePierreTier0)
+            return (0.91f, 0.05f, 1.9f);
         if (ItemPhysique.EstIdRocheMatiere(mainActive.ID))
         {
             float m = mainActive.IndexTaille switch { 0 => 1f, 1 => 2f, 2 => 8f, 3 => 14f, 4 => 20f, _ => 8f };
@@ -667,6 +669,8 @@ public partial class Joueur
             epaisseurLame = 0.06f;
         else if (mainActive.ID == IdObjetPellePierreTier0)
             epaisseurLame = 0.09f;
+        else if (mainActive.ID == IdObjetLancePierreTier0)
+            epaisseurLame = 0.045f;
 
         return epaisseurLame;
     }
@@ -743,12 +747,79 @@ public partial class Joueur
         return Mathf.Max(alignVisée, alignMouvement) > seuil;
     }
 
+    /// <summary>Lance 111 : pointe <c>tripo_part_2</c>, manche <c>tripo_part_0</c> (fallback par mots-clés).</summary>
+    private bool EstFrappeLance111AvecLaPointe(Vector3 pointImpact, Vector3 directionFrappe)
+    {
+        if (_objetEnMain == null || _camera == null) return false;
+        var modele = _objetEnMain.FindChild("ModeleArme", true, false) as Node3D;
+        if (modele == null) return false;
+        MeshInstance3D pointeMi = modele.GetNodeOrNull<MeshInstance3D>("tripo_part_2")
+            ?? TrouverMeshInstanceDontLeNomContient(modele, "tripo_part_2")
+            ?? TrouverMeshParMots(modele, "tip", "pointe", "spear", "lance", "head", "blade", "lame", "stone", "rock", "pierre");
+        MeshInstance3D mancheMi = modele.GetNodeOrNull<MeshInstance3D>("tripo_part_0")
+            ?? TrouverMeshInstanceDontLeNomContient(modele, "tripo_part_0")
+            ?? TrouverMeshParMots(modele, "handle", "shaft", "manche", "baton", "stick", "bois", "wood");
+        if (pointeMi?.Mesh == null || mancheMi?.Mesh == null) return false;
+        Vector3 cL = pointeMi.GlobalTransform * pointeMi.Mesh.GetAabb().GetCenter();
+        Vector3 cM = mancheMi.GlobalTransform * mancheMi.Mesh.GetAabb().GetCenter();
+        Vector3 pointeDepuisManche = cL - cM;
+        if (pointeDepuisManche.LengthSquared() < 1e-10f) return false;
+        pointeDepuisManche = pointeDepuisManche.Normalized();
+        Vector3 versCible = pointImpact - _camera.GlobalPosition;
+        if (versCible.LengthSquared() < 1e-10f) return false;
+        versCible = versCible.Normalized();
+
+        float alignVisée = versCible.Dot(pointeDepuisManche);
+        float alignMouvement = 0f;
+        if (directionFrappe.LengthSquared() > 1e-8f)
+            alignMouvement = directionFrappe.Normalized().Dot(pointeDepuisManche);
+        return Mathf.Max(alignVisée, alignMouvement) > 0.22f;
+    }
+
+    private static BoeufSauvage ObtenirBoeufDepuisCollider(Node col)
+    {
+        for (Node n = col; n != null; n = n.GetParent())
+            if (n is BoeufSauvage b) return b;
+        return null;
+    }
+
+    private static string NomZoneDepuisColliderRaycast(GodotObject collider)
+    {
+        if (collider is CollisionShape3D cs)
+            return cs.Name.ToString();
+        return string.Empty;
+    }
+
+    private float MultiplicateurMateriauArmeContreFaune(SlotInventaire mainActive)
+    {
+        if (ItemPhysique.EstMatiereSilexParIdObjet(mainActive.ID))
+            return 1.18f;
+        if (mainActive.ID == 105)
+            return 1.14f;
+        if (mainActive.ID == 106)
+            return 1.22f;
+        if (mainActive.ID == IdObjetPiochePierreTier0)
+            return 1.05f;
+        if (mainActive.ID == IdObjetPellePierreTier0)
+            return 0.86f;
+        if (mainActive.ID == IdObjetLancePierreTier0)
+            return 1.28f;
+        if (mainActive.EstUnEclat)
+            return 1.1f;
+        if (mainActive.ID == 100)
+            return 1f + Mathf.Clamp(mainActive.IndexChimique, 0, 9) * 0.025f;
+        if (ItemPhysique.EstIdRocheMatiere(mainActive.ID))
+            return 0.95f;
+        return 0.9f;
+    }
+
     /// <summary>Relâchement clic gauche : sol → creusage / fauchage ; sinon frappe roches, arbres, rigides.</summary>
     private void ExecuterAction(float force, TypeMouvementFrappe mouvement)
     {
         AssurerDurabiliteOutilsSurLesMains();
         SlotInventaire mainActive = MainGaucheEstActive ? MainGauche : MainDroite;
         if (mainActive.EstVide || !PeutUtiliserFrappe(mainActive)) return;
+        force *= MultiplicateurForceFrappeEndurance();
 
         _rayon.ForceRaycastUpdate();
         if (!_rayon.IsColliding())
@@ -770,6 +841,11 @@ public partial class Joueur
 
         if (EstSolViseParRayon(_rayon, objetTouche))
         {
+            if (mainActive.ID == IdObjetLancePierreTier0)
+            {
+                GD.Print("ZERO-K : La lance est dédiée au combat. Utilisez-la contre une cible ou en lancer.");
+                return;
+            }
             ExecuterCreusage(force, effPelle, masseOutil, pointImpact);
             return;
         }
@@ -916,6 +992,8 @@ public partial class Joueur
             multiplicateurLame = Mathf.Max(multiplicateurLame, 2.35f);
         else if (mainActive.ID == 106 && EstFrappeHachette106AvecLaLame(pointImpact, directionFrappe))
             multiplicateurLame = Mathf.Max(multiplicateurLame, 2.85f);
+        else if (mainActive.ID == IdObjetLancePierreTier0 && EstFrappeLance111AvecLaPointe(pointImpact, directionFrappe))
+            multiplicateurLame = Mathf.Max(multiplicateurLame, 2.95f);
         else if (mainActive.EstUnEclat && mainActive.MeshEclat != null && mainActive.ID != 100)
             multiplicateurLame = Mathf.Min(multiplicateurLame, 40.0f);
 
@@ -1021,6 +1099,49 @@ public partial class Joueur
             }
             if (rochePlate && resultatCoupe > 0 && ObtenirNiveauFutureState("Force") < 15UL)
                 AjouterXpFutureState("Force", 1UL);
+            return;
+        }
+
+        BoeufSauvage boeufTouche = ObtenirBoeufDepuisCollider(objetTouche);
+        if (boeufTouche != null)
+        {
+            bool tranchant = false;
+            if (mainActive.ID == 105)
+                tranchant = EstFrappeDagueAvecLaLame(pointImpact, directionFrappe);
+            else if (mainActive.ID == 106 || mainActive.ID == IdObjetPiochePierreTier0 || mainActive.ID == IdObjetPellePierreTier0)
+                tranchant = EstFrappeHachette106AvecLaLame(pointImpact, directionFrappe);
+            else if (mainActive.ID == IdObjetLancePierreTier0)
+                tranchant = EstFrappeLance111AvecLaPointe(pointImpact, directionFrappe);
+            else if (mainActive.EstUnEclat)
+                tranchant = efficaciteHache > 0.45f;
+            else if (ItemPhysique.EstIdRocheMatiere(mainActive.ID) && mainActive.IndexMorphologique == 3)
+                tranchant = true;
+
+            Vector3 dirAvantCamera = _camera != null ? -_camera.GlobalTransform.Basis.Z.Normalized() : directionFrappe.Normalized();
+            float alignPointee = Mathf.Clamp(directionFrappe.Normalized().Dot(dirAvantCamera), -1f, 1f);
+            bool perforant = tranchant && alignPointee > 0.68f && (mainActive.ID == 105 || mainActive.ID == 106 || mainActive.ID == IdObjetLancePierreTier0 || mainActive.ID == 100 || mainActive.EstUnEclat);
+            string nomZone = NomZoneDepuisColliderRaycast(_rayon.GetCollider());
+
+            float materiau = MultiplicateurMateriauArmeContreFaune(mainActive);
+            float baseDegats = (masseOutil * force * 4.2f) * multiplicateurForce * materiau;
+            if (tranchant) baseDegats *= 1.15f;
+            else baseDegats *= 0.88f;
+            if (perforant) baseDegats *= 1.26f;
+            baseDegats = Mathf.Clamp(baseDegats, 0.05f, 120f);
+
+            bool applique = boeufTouche.RecevoirImpactCombat(
+                baseDegats,
+                pointImpact,
+                directionFrappe,
+                tranchant,
+                perforant,
+                nomZone,
+                (ulong)GetInstanceId());
+
+            if (applique)
+                AjouterXpFutureState("Force", 2UL);
+            if (applique && (mainActive.ID == 105 || mainActive.ID == 106 || mainActive.ID == IdObjetPellePierreTier0 || mainActive.ID == IdObjetPiochePierreTier0 || mainActive.ID == IdObjetLancePierreTier0 || mainActive.ID == 100))
+                AppliquerUsureOutilMainActive(0.85f + (baseDegats * 0.024f));
             return;
         }
 
@@ -1385,11 +1506,13 @@ public partial class Joueur
 
         rbCible.ApplyCentralImpulse(dirFrappeObj * impulsionFrappe);
 
-        if ((mainActive.ID == 105 || mainActive.ID == 106 || mainActive.ID == IdObjetPellePierreTier0) && ItemPhysique.EstIdRocheMatiere(item.ID_Objet))
+        if ((mainActive.ID == 105 || mainActive.ID == 106 || mainActive.ID == IdObjetPellePierreTier0 || mainActive.ID == IdObjetLancePierreTier0) && ItemPhysique.EstIdRocheMatiere(item.ID_Objet))
         {
             bool tranchantOk = mainActive.ID == 105
                 ? EstFrappeDagueAvecLaLame(pointImpact, directionFrappe)
-                : EstFrappeHachette106AvecLaLame(pointImpact, directionFrappe);
+                : (mainActive.ID == IdObjetLancePierreTier0
+                ? EstFrappeLance111AvecLaPointe(pointImpact, directionFrappe)
+                : EstFrappeHachette106AvecLaLame(pointImpact, directionFrappe));
             if (tranchantOk)
                 GD.Print("ZERO-K : L’outil ne peut pas briser cette roche — trop léger. Il faut un choc contondant ou une pierre lancée.");
             else
@@ -1398,7 +1521,8 @@ public partial class Joueur
         }
 
         if ((mainActive.ID == 105 && !EstFrappeDagueAvecLaLame(pointImpact, directionFrappe))
-            || ((mainActive.ID == 106 || mainActive.ID == IdObjetPellePierreTier0 || mainActive.ID == IdObjetPiochePierreTier0) && !EstFrappeHachette106AvecLaLame(pointImpact, directionFrappe)))
+            || ((mainActive.ID == 106 || mainActive.ID == IdObjetPellePierreTier0 || mainActive.ID == IdObjetPiochePierreTier0) && !EstFrappeHachette106AvecLaLame(pointImpact, directionFrappe))
+            || (mainActive.ID == IdObjetLancePierreTier0 && !EstFrappeLance111AvecLaPointe(pointImpact, directionFrappe)))
         {
             GD.Print("ZERO-K : Orientez le tranchant vers la cible — ce coup porte le manche ou le plat.");
             return;
@@ -1408,7 +1532,7 @@ public partial class Joueur
         int resultatFracture = item.SubirDegats(forceImpact, dirVue, pointImpact);
         if (resultatFracture == 0)
             GD.Print("ZERO-K : L'impact n'est pas assez puissant. La roche résonne mais ne cède pas (Rebond).");
-        else if (mainActive.ID == 105 || mainActive.ID == 106 || mainActive.ID == IdObjetPellePierreTier0 || mainActive.ID == IdObjetPiochePierreTier0)
+        else if (mainActive.ID == 105 || mainActive.ID == 106 || mainActive.ID == IdObjetPellePierreTier0 || mainActive.ID == IdObjetPiochePierreTier0 || mainActive.ID == IdObjetLancePierreTier0)
             AppliquerUsureOutilMainActive(2.15f + forceImpact * 0.017f);
     }
 

@@ -1,0 +1,8 @@
+Asset: Quaternius Ultimate Animated Animal Pack (Cow + Bull)
+Source page: https://quaternius.com/packs/ultimateanimatedanimals.html
+Download folder: https://drive.google.com/drive/folders/1uJ3N5HfB7jKTseJUNQr3N4YaN0UuEtHk
+License: CC0 1.0 (public domain), see License_Quaternius_UltimateAnimatedAnimalPack.txt
+
+Integration note:
+- Visual model in-game: Cow.gltf (textured + skinned + 13 native clips)
+- Extra real clips imported from Bull.gltf (same pack/skeleton family) to exceed 20 total clips.

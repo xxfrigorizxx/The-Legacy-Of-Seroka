@@ -1370,7 +1370,37 @@ public bool RecolterBaiesBuisson(Vector3 pointImpactGlobal, float rayon, out int
 		_onVoxelModifie?.Invoke(posGlobal, id);
 	}
 
-	public void FaucherFlore(Vector3 pointImpactGlobal, float rayon)
+	public bool FaucherFlore(Vector3 pointImpactGlobal, float rayon)
+	{
+		return FaucherFloreInterne(pointImpactGlobal, rayon, true);
+	}
+
+	public bool FaucherFloreSansLoot(Vector3 pointImpactGlobal, float rayon)
+	{
+		return FaucherFloreInterne(pointImpactGlobal, rayon, false);
+	}
+
+	public bool ExisteGazonDansRayon(Vector3 pointImpactGlobal, float rayon)
+	{
+		float rayon2 = rayon * rayon;
+		const float demiEpaisseurVerticale = 5f;
+		foreach (var kv in InventaireFlore)
+		{
+			if (kv.Value != FloreTypeGazon)
+				continue;
+			float dx = (kv.Key.X + 0.5f) - pointImpactGlobal.X;
+			float dz = (kv.Key.Z + 0.5f) - pointImpactGlobal.Z;
+			if (dx * dx + dz * dz > rayon2)
+				continue;
+			float dy = Mathf.Abs((kv.Key.Y + 0.5f) - pointImpactGlobal.Y);
+			if (dy > demiEpaisseurVerticale)
+				continue;
+			return true;
+		}
+		return false;
+	}
+
+	private bool FaucherFloreInterne(Vector3 pointImpactGlobal, float rayon, bool creerLoot)
 	{
 		float rayon2 = rayon * rayon;
 		const float demiEpaisseurVerticale = 5f; // Le raycast sol peut avoir un Y légèrement différent du voxel surface → la 3D pure ratée trop souvent.
@@ -1389,14 +1419,18 @@ public bool RecolterBaiesBuisson(Vector3 pointImpactGlobal, float rayon, out int
 				continue;
 			floreDetruite.Add(kv);
 		}
-		if (floreDetruite.Count == 0) return;
+		if (floreDetruite.Count == 0) return false;
 
 		foreach (var kv in floreDetruite)
 		{
 			InventaireFlore.Remove(kv.Key);
-			Vector3 posSpawn = new Vector3(kv.Key.X + 0.5f, kv.Key.Y + 0.5f, kv.Key.Z + 0.5f);
-			_callbackBlocChutant?.Invoke(posSpawn, 15);
+			if (creerLoot)
+			{
+				Vector3 posSpawn = new Vector3(kv.Key.X + 0.5f, kv.Key.Y + 0.5f, kv.Key.Z + 0.5f);
+				_callbackBlocChutant?.Invoke(posSpawn, 15);
+			}
 		}
 		_onFlorePurgée?.Invoke(new Vector2I(ChunkOffsetX, ChunkOffsetZ), new Dictionary<Vector3I, byte>(InventaireFlore));
+		return true;
 	}
 }

@@ -20,6 +20,8 @@ public partial class Joueur
                 _objetEnMain.RemoveMeta(MetaSignaturePelle107);
             if (_objetEnMain.HasMeta(MetaSignaturePioche108))
                 _objetEnMain.RemoveMeta(MetaSignaturePioche108);
+            if (_objetEnMain.HasMeta(MetaSignatureLance111))
+                _objetEnMain.RemoveMeta(MetaSignatureLance111);
             if (_objetEnMain.HasMeta(MetaSignatureAtelier200))
                 _objetEnMain.RemoveMeta(MetaSignatureAtelier200);
             if (_objetEnMain.HasMeta(MetaSignatureCorde20))
@@ -70,10 +72,11 @@ public partial class Joueur
             _objetEnMain.RotationDegrees = new Vector3(-15f + _rotationManuelleX, 10f + _rotationManuelleY, 5f + _rotationManuelleZ);
             return;
         }
-        if (main.ID == 106 || main.ID == IdObjetPellePierreTier0 || main.ID == IdObjetPiochePierreTier0)
+        if (main.ID == 106 || main.ID == IdObjetPellePierreTier0 || main.ID == IdObjetPiochePierreTier0 || main.ID == IdObjetLancePierreTier0)
         {
             bool estPelle = main.ID == IdObjetPellePierreTier0;
             bool estPioche = main.ID == IdObjetPiochePierreTier0;
+            bool estLance = main.ID == IdObjetLancePierreTier0;
             _objetEnMain.Mesh = null;
             _objetEnMain.MaterialOverride = null;
             if (_objetEnMain.HasMeta(MetaSignatureDague105))
@@ -88,21 +91,25 @@ public partial class Joueur
                 _objetEnMain.RemoveMeta(MetaSignatureCeinture102);
             if (_objetEnMain.HasMeta(MetaSignatureCeinture104))
                 _objetEnMain.RemoveMeta(MetaSignatureCeinture104);
-            int sig = estPioche ? SignatureSlotPioche108(main) : (estPelle ? SignatureSlotPelle107(main) : SignatureSlotHachette106(main));
+            int sig = estLance ? SignatureSlotLance111(main) : (estPioche ? SignatureSlotPioche108(main) : (estPelle ? SignatureSlotPelle107(main) : SignatureSlotHachette106(main)));
             int prev = estPioche
                 ? (_objetEnMain.HasMeta(MetaSignaturePioche108) ? (int)_objetEnMain.GetMeta(MetaSignaturePioche108).AsInt32() : -1)
                 : (estPelle
                 ? (_objetEnMain.HasMeta(MetaSignaturePelle107) ? (int)_objetEnMain.GetMeta(MetaSignaturePelle107).AsInt32() : -1)
-                : (_objetEnMain.HasMeta(MetaSignatureHachette106) ? (int)_objetEnMain.GetMeta(MetaSignatureHachette106).AsInt32() : -1));
+                : (estLance
+                ? (_objetEnMain.HasMeta(MetaSignatureLance111) ? (int)_objetEnMain.GetMeta(MetaSignatureLance111).AsInt32() : -1)
+                : (_objetEnMain.HasMeta(MetaSignatureHachette106) ? (int)_objetEnMain.GetMeta(MetaSignatureHachette106).AsInt32() : -1)));
             bool manqueModele = _objetEnMain.FindChild("ModeleArme", true, false) == null;
             if (manqueModele || sig != prev)
             {
                 NettoyerModelesEnfants(_objetEnMain);
-                InstancierModeleArme(_objetEnMain, main, estPioche ? 0.46f : (estPelle ? 0.44f : 0.42f), 1f);
-                _objetEnMain.SetMeta(estPioche ? MetaSignaturePioche108 : (estPelle ? MetaSignaturePelle107 : MetaSignatureHachette106), sig);
+                InstancierModeleArme(_objetEnMain, main, estLance ? 0.48f : (estPioche ? 0.46f : (estPelle ? 0.44f : 0.42f)), 1f);
+                _objetEnMain.SetMeta(estLance ? MetaSignatureLance111 : (estPioche ? MetaSignaturePioche108 : (estPelle ? MetaSignaturePelle107 : MetaSignatureHachette106)), sig);
             }
-            _objetEnMain.Scale = Vector3.One * ((estPioche ? 0.56f * 1.4f : (estPelle ? 0.54f * 1.4f : 0.52f)) * 1.2f * 1.25f);
-            _objetEnMain.RotationDegrees = estPioche
+            _objetEnMain.Scale = Vector3.One * ((estLance ? 0.60f * 1.4f : (estPioche ? 0.56f * 1.4f : (estPelle ? 0.54f * 1.4f : 0.52f))) * 1.2f * 1.25f);
+            _objetEnMain.RotationDegrees = estLance
+                ? new Vector3(-15f + _rotationManuelleX, 11f + _rotationManuelleY, 3f + _rotationManuelleZ)
+                : estPioche
                 ? new Vector3(-20f + _rotationManuelleX, 13f + _rotationManuelleY, 5f + _rotationManuelleZ)
                 : (estPelle
                 ? new Vector3(-17f + _rotationManuelleX, 14f + _rotationManuelleY, 6f + _rotationManuelleZ)
@@ -347,6 +354,8 @@ public partial class Joueur
             _objetEnMain.RemoveMeta(MetaSignatureDague105);
         if (_objetEnMain.HasMeta(MetaSignatureHachette106))
             _objetEnMain.RemoveMeta(MetaSignatureHachette106);
+        if (_objetEnMain.HasMeta(MetaSignatureLance111))
+            _objetEnMain.RemoveMeta(MetaSignatureLance111);
         if (_objetEnMain.HasMeta(MetaSignatureAtelier200))
             _objetEnMain.RemoveMeta(MetaSignatureAtelier200);
         if (_objetEnMain.HasMeta(MetaSignatureRack109))
@@ -418,6 +427,8 @@ public partial class Joueur
                 meshNode.RemoveMeta(MetaSignatureDague105);
             if (meshNode.HasMeta(MetaSignatureHachette106))
                 meshNode.RemoveMeta(MetaSignatureHachette106);
+            if (meshNode.HasMeta(MetaSignatureLance111))
+                meshNode.RemoveMeta(MetaSignatureLance111);
             if (meshNode.HasMeta(MetaSignatureAtelier200))
                 meshNode.RemoveMeta(MetaSignatureAtelier200);
             if (meshNode.HasMeta(MetaSignatureCorde20))
@@ -466,10 +477,11 @@ public partial class Joueur
             meshNode.RotationDegrees = new Vector3(20f, 45f, -20f);
             return;
         }
-        if (slot.ID == 106 || slot.ID == IdObjetPellePierreTier0 || slot.ID == IdObjetPiochePierreTier0)
+        if (slot.ID == 106 || slot.ID == IdObjetPellePierreTier0 || slot.ID == IdObjetPiochePierreTier0 || slot.ID == IdObjetLancePierreTier0)
         {
             bool estPelle = slot.ID == IdObjetPellePierreTier0;
             bool estPioche = slot.ID == IdObjetPiochePierreTier0;
+            bool estLance = slot.ID == IdObjetLancePierreTier0;
             meshNode.Mesh = null;
             meshNode.MaterialOverride = null;
             if (meshNode.HasMeta(MetaSignatureDague105))
@@ -484,21 +496,23 @@ public partial class Joueur
                 meshNode.RemoveMeta(MetaSignatureCeinture102);
             if (meshNode.HasMeta(MetaSignatureCeinture104))
                 meshNode.RemoveMeta(MetaSignatureCeinture104);
-            int sig = estPioche ? SignatureSlotPioche108(slot) : (estPelle ? SignatureSlotPelle107(slot) : SignatureSlotHachette106(slot));
+            int sig = estLance ? SignatureSlotLance111(slot) : (estPioche ? SignatureSlotPioche108(slot) : (estPelle ? SignatureSlotPelle107(slot) : SignatureSlotHachette106(slot)));
             int prev = estPioche
                 ? (meshNode.HasMeta(MetaSignaturePioche108) ? (int)meshNode.GetMeta(MetaSignaturePioche108).AsInt32() : -1)
                 : (estPelle
                 ? (meshNode.HasMeta(MetaSignaturePelle107) ? (int)meshNode.GetMeta(MetaSignaturePelle107).AsInt32() : -1)
-                : (meshNode.HasMeta(MetaSignatureHachette106) ? (int)meshNode.GetMeta(MetaSignatureHachette106).AsInt32() : -1));
+                : (estLance
+                ? (meshNode.HasMeta(MetaSignatureLance111) ? (int)meshNode.GetMeta(MetaSignatureLance111).AsInt32() : -1)
+                : (meshNode.HasMeta(MetaSignatureHachette106) ? (int)meshNode.GetMeta(MetaSignatureHachette106).AsInt32() : -1)));
             bool manque = meshNode.FindChild("ModeleArme", true, false) == null;
             if (manque || sig != prev)
             {
                 NettoyerModelesEnfants(meshNode);
-                InstancierModeleArme(meshNode, slot, estPioche ? 0.36f : (estPelle ? 0.35f : 0.34f), 1f);
-                meshNode.SetMeta(estPioche ? MetaSignaturePioche108 : (estPelle ? MetaSignaturePelle107 : MetaSignatureHachette106), sig);
+                InstancierModeleArme(meshNode, slot, estLance ? 0.37f : (estPioche ? 0.36f : (estPelle ? 0.35f : 0.34f)), 1f);
+                meshNode.SetMeta(estLance ? MetaSignatureLance111 : (estPioche ? MetaSignaturePioche108 : (estPelle ? MetaSignaturePelle107 : MetaSignatureHachette106)), sig);
             }
             meshNode.Scale = Vector3.One;
-            meshNode.RotationDegrees = estPioche ? new Vector3(22f, 42f, -18f) : (estPelle ? new Vector3(20f, 38f, -16f) : new Vector3(22f, 40f, -18f));
+            meshNode.RotationDegrees = estLance ? new Vector3(18f, 44f, -14f) : (estPioche ? new Vector3(22f, 42f, -18f) : (estPelle ? new Vector3(20f, 38f, -16f) : new Vector3(22f, 40f, -18f)));
             return;
         }
         if (slot.ID == 20)

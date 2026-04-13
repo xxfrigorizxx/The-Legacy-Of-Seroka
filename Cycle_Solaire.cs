@@ -20,6 +20,10 @@ public partial class Cycle_Solaire : Node
 	private double _pourcentageJourneePrecedent = -1.0;
 	/// <summary>Vrai pendant le chargement initial du terrain autour du joueur (cache soleil/lune pour éviter le "flash" avant stabilité).</summary>
 	private bool _chargementMondeActif;
+	/// <summary>Référence jour pour <c>volumetric_fog_ambient_inject</c> (scène).</summary>
+	private float _injectAmbiantVolBrouillardJour = 1.74f;
+	/// <summary>Texture ciel étoilé générée une fois (ProceduralSkyMaterial.SkyCover).</summary>
+	private bool _textureEtoilesAppliquee;
 
 	/// <summary>RPC appelé par le Serveur une seule fois quand le joueur spawn ou traverse un portail.</summary>
 	[Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = true)]
@@ -80,7 +84,51 @@ public partial class Cycle_Solaire : Node
 		}
 
 		AppliquerDistanceBrouillardProgressive();
+		if (_environnement?.Environment != null)
+			_injectAmbiantVolBrouillardJour = Mathf.Max(0.01f, _environnement.Environment.VolumetricFogAmbientInject);
+		AppliquerTextureEtoilesSiPossible();
 		GD.Print("Moteur Thermodynamique : EN LIGNE.");
+	}
+
+	/// <summary>Sans texture <see cref="ProceduralSkyMaterial.SkyCover"/>, les étoiles du ciel procédural ne s’affichent pas.</summary>
+	private void AppliquerTextureEtoilesSiPossible()
+	{
+		if (_textureEtoilesAppliquee || _environnement?.Environment?.Sky?.SkyMaterial is not ProceduralSkyMaterial skyMat)
+			return;
+		if (skyMat.SkyCover != null)
+		{
+			_textureEtoilesAppliquee = true;
+			return;
+		}
+		const int w = 2048;
+		const int h = 1024;
+		var img = Image.CreateEmpty(w, h, false, Image.Format.Rgba8);
+		img.Fill(Colors.Black);
+		var rng = new RandomNumberGenerator();
+		rng.Randomize();
+		for (int i = 0; i < 14000; i++)
+		{
+			int x = (int)(rng.Randf() * w);
+			int y = (int)(rng.Randf() * h);
+			float b = rng.RandfRange(0.25f, 1f);
+			img.SetPixel(x, y, new Color(b, b, b, 1f));
+		}
+		// Quelques étoiles plus grosses (constellations légères)
+		for (int i = 0; i < 900; i++)
+		{
+			int x = (int)(rng.Randf() * (w - 2)) + 1;
+			int y = (int)(rng.Randf() * (h - 2)) + 1;
+			float b = rng.RandfRange(0.55f, 1f);
+			var c = new Color(b, b, b, 1f);
+			img.SetPixel(x, y, c);
+			img.SetPixel(x - 1, y, c * 0.5f);
+			img.SetPixel(x + 1, y, c * 0.5f);
+			img.SetPixel(x, y - 1, c * 0.5f);
+			img.SetPixel(x, y + 1, c * 0.5f);
+		}
+		var tex = ImageTexture.CreateFromImage(img);
+		skyMat.SkyCover = tex;
+		_textureEtoilesAppliquee = true;
 	}
 
 	public void ConfigurerDistanceBrouillardProgressive(int renderDistanceChunks, int tailleChunk, int avanceChunks = 2)
@@ -117,6 +165,8 @@ public partial class Cycle_Solaire : Node
 			return;
 		}
 
+		AppliquerTextureEtoilesSiPossible();
+
 		DateTime heureDansCeMonde = DateTime.UtcNow.AddHours(_decalageMondeHeures);
 		TimeSpan heureActuelle = heureDansCeMonde.TimeOfDay;
 		double pourcentageJournee = heureActuelle.TotalHours / 24.0;
@@ -151,14 +201,15 @@ public partial class Cycle_Solaire : Node
 			if (_lune != null)
 			{
 				_lune.Visible = true;
-				_lune.LightEnergy = Mathf.Clamp(-hauteurSoleil * 0.15f, 0f, 0.15f);
+				_lune.LightEnergy = Mathf.Clamp(-hauteurSoleil * 0.055f, 0f, 0.055f);
 				_lune.Set("sky_mode", 1); // LightOnly : pas de disque blanc parasite.
 				_lune.Set("light_volumetric_fog_energy", 0.0f);
 			}
 		}
 		else
 		{
-			_soleil.LightEnergy = Mathf.Clamp(hauteurSoleil * 1.5f, 0f, 1.5f);
+			// Midi : moins agressif qu’avant (soleil « brûlé » + ciel trop dur).
+			_soleil.LightEnergy = Mathf.Clamp(hauteurSoleil * 1.15f, 0f, 1.05f);
 			_soleil.Set("sky_mode", 0); // LightAndSky (soleil visible via les nodes existants)
 			if (_lune != null)
 			{
@@ -172,15 +223,19 @@ public partial class Cycle_Solaire : Node
 		// Assombrissement du monde (brouillard, ambiance, CIEL)
 		if (_environnement != null && _environnement.Environment != null)
 		{
-			float intensiteJour = Mathf.Clamp(hauteurSoleil + 0.2f, 0f, 1f); // 0 = nuit, 1 = jour
+			float intensiteJour = Mathf.Clamp(hauteurSoleil + 0.11f, 0f, 1f); // 0 = nuit, 1 = jour
+			// Courbe rééquilibrée : nuit plus sombre qu'avant, mais ciel encore lisible.
+			float intensiteJourLisse = Mathf.Pow(intensiteJour, 1.35f);
 			bool crepuscule = hauteurSoleil > -0.15f && hauteurSoleil < 0.35f; // Lever/coucher
 			float intensiteCrepuscule = crepuscule ? 1f - Mathf.Abs(hauteurSoleil - 0.1f) / 0.45f : 0f;
 
 			Color couleurBrouillardJour = new Color(0.6f, 0.7f, 0.8f);
 			Color couleurBrouillardNuit = new Color(0.01f, 0.01f, 0.03f);
 
-			_environnement.Environment.AmbientLightEnergy = intensiteJour;
-			_environnement.Environment.AmbientLightSkyContribution = intensiteJour;
+			_environnement.Environment.AmbientLightEnergy = intensiteJourLisse;
+			_environnement.Environment.AmbientLightSkyContribution = intensiteJourLisse;
+			_environnement.Environment.VolumetricFogAmbientInject =
+				Mathf.Lerp(0.015f, _injectAmbiantVolBrouillardJour, intensiteJourLisse);
 
 			if (_environnement.Environment.FogEnabled)
 			{
@@ -201,10 +256,10 @@ public partial class Cycle_Solaire : Node
 				Color cielHorizonCrepuscule = new Color(0.95f, 0.45f, 0.25f); // Orange
 				Color solHorizonCrepuscule = new Color(0.6f, 0.3f, 0.2f);
 
-				// Couleurs nuit
-				Color cielHautNuit = new Color(0.02f, 0.02f, 0.08f);  // Bleu nuit profond
-				Color cielHorizonNuit = new Color(0.03f, 0.03f, 0.12f);
-				Color solHorizonNuit = new Color(0.05f, 0.05f, 0.15f);
+				// Couleurs nuit (pas du noir TV : garde un dégradé pour le procédural + étoiles).
+				Color cielHautNuit = new Color(0.045f, 0.05f, 0.14f);
+				Color cielHorizonNuit = new Color(0.06f, 0.065f, 0.18f);
+				Color solHorizonNuit = new Color(0.07f, 0.07f, 0.2f);
 
 				// Interpolation : nuit → crépuscule → jour
 				Color cielHaut, cielHorizon, solHorizon;
@@ -234,12 +289,13 @@ public partial class Cycle_Solaire : Node
 				skyMat.SkyTopColor = cielHaut;
 				skyMat.SkyHorizonColor = cielHorizon;
 				skyMat.GroundHorizonColor = solHorizon;
-				skyMat.GroundBottomColor = solHorizonNuit.Lerp(new Color(0.2f, 0.17f, 0.13f), intensiteJour);
-				skyMat.SkyEnergyMultiplier = Mathf.Lerp(0.15f, 1f, intensiteJour);
-				skyMat.GroundEnergyMultiplier = Mathf.Lerp(0.1f, 1f, intensiteJour);
-				// Étoiles visibles la nuit uniquement. En journée, alpha=0 pour supprimer tout spot blanc parasite du sky cover.
-				float alphaEtoiles = Mathf.Clamp((0.22f - intensiteJour) / 0.22f, 0f, 1f);
-				skyMat.SkyCoverModulate = new Color(1f, 1f, 1f, alphaEtoiles);
+				skyMat.GroundBottomColor = solHorizonNuit.Lerp(new Color(0.2f, 0.17f, 0.13f), intensiteJourLisse);
+				// Évite le "ciel noir total" la nuit.
+				skyMat.SkyEnergyMultiplier = Mathf.Lerp(0.24f, 1f, intensiteJourLisse);
+				skyMat.GroundEnergyMultiplier = Mathf.Lerp(0.14f, 1f, intensiteJourLisse);
+				// Étoiles : découplées du léger +0.11 sur intensiteJour (sinon ciel noir sans patch d’étoiles).
+				float alphaEtoiles = Mathf.Clamp((-0.055f - hauteurSoleil) / 0.36f, 0f, 1f);
+				skyMat.SkyCoverModulate = new Color(0.95f, 0.98f, 1f, alphaEtoiles);
 			}
 		}
 	}

@@ -163,6 +163,18 @@ public partial class ItemPhysique : RigidBody3D
 		rb.PhysicsMaterialOverride = new PhysicsMaterial { Friction = 0.66f, Bounce = 0.04f };
 	}
 
+	/// <summary>Lance pierre tier0 (111) : plus allongée, orientée attaque/lancer.</summary>
+	public static void AppliquerPhysiqueLance111(ItemPhysique rb)
+	{
+		if (rb == null || rb.ID_Objet != Joueur.IdObjetLancePierreTier0) return;
+		rb.ContinuousCd = true;
+		rb.LinearDampMode = RigidBody3D.DampMode.Replace;
+		rb.LinearDamp = 0.18f;
+		rb.AngularDampMode = RigidBody3D.DampMode.Replace;
+		rb.AngularDamp = 0.62f;
+		rb.PhysicsMaterialOverride = new PhysicsMaterial { Friction = 0.58f, Bounce = 0.05f };
+	}
+
 	/// <summary>Table géologique : compositions minérales réelles (couleur, rugosité, future résistance).</summary>
 	public static readonly ProfilMineral[] TableGeologique = new ProfilMineral[]
 	{
@@ -218,6 +230,8 @@ public partial class ItemPhysique : RigidBody3D
 	private bool _surImpactConnecte = false;
 	/// <summary>Pendant quelques frames après un lancer : ignore les micro-chocs (joueur / overlap) qui fracturaient dans le vide.</summary>
 	private ulong _frameFinGraceImpactLancer = 0;
+	private BoeufSauvage _bovinPlante;
+	private Vector3 _offsetLocalDansBovinPlante = Vector3.Zero;
 
 	/// <summary>À appeler juste après le spawn au lancer (roche) pour ne pas perdre la pierre au premier contact.</summary>
 	public void ActiverGraceImpactAuLancer(int nbFramesPhysiques = 22)
@@ -359,6 +373,15 @@ public partial class ItemPhysique : RigidBody3D
 			AppliquerPhysiquePioche108(this);
 			return;
 		}
+		if (ID_Objet == Joueur.IdObjetLancePierreTier0)
+		{
+			IndexChimique = Mathf.Clamp(IndexChimique, 0, TableGeologique.Length - 1);
+			Mass = 0.60f;
+			ResistanceActuelle = 30f;
+			Scale = Vector3.One;
+			AppliquerPhysiqueLance111(this);
+			return;
+		}
 		// Bûche (30) et Bâton (32) : propriétés depuis le profil botanique (chêne, pin, …) pour bien spécifier l'essence.
 		if (ID_Objet == 30 || ID_Objet == 32)
 		{
@@ -492,6 +515,18 @@ public partial class ItemPhysique : RigidBody3D
 	/// Pas de flottaison sur terre : évite les forces géantes qui faisaient traverser le sol.</summary>
 	public override void _PhysicsProcess(double delta)
 	{
+		if (_bovinPlante != null)
+		{
+			if (!GodotObject.IsInstanceValid(_bovinPlante) || !_bovinPlante.IsInsideTree())
+			{
+				_bovinPlante = null;
+				QueueFree();
+				return;
+			}
+			GlobalPosition = _bovinPlante.ToGlobal(_offsetLocalDansBovinPlante);
+			return;
+		}
+
 		// Roches matière : correction dynamique par morphologie (freinage réel, eau, et redressement des plates).
 		if (EstIdRocheMatiere(ID_Objet))
 		{
@@ -632,6 +667,38 @@ public partial class ItemPhysique : RigidBody3D
 		if (EstIdRocheMatiere(ID_Objet) && _frameFinGraceImpactLancer != 0 && Engine.GetPhysicsFrames() < _frameFinGraceImpactLancer)
 			return;
 
+		BoeufSauvage boeufTouche = ResoudreBoeufDepuisNoeud(body);
+		if (boeufTouche != null)
+		{
+			float vitesseImpact = LinearVelocity.Length();
+			float energieImpact = Mathf.Max(0.01f, Mass) * vitesseImpact;
+			if (EstIdRocheMatiere(ID_Objet))
+				energieImpact *= Mathf.Lerp(0.52f, 0.9f, Mathf.Clamp(IndexTailleRoche / 4f, 0f, 1f));
+			else if (ID_Objet == 105 || ID_Objet == 106 || ID_Objet == Joueur.IdObjetPiochePierreTier0 || ID_Objet == Joueur.IdObjetPellePierreTier0 || ID_Objet == Joueur.IdObjetLancePierreTier0)
+				energieImpact *= 1.18f;
+
+			bool tranchant = EstObjetTranchantPourImpactFaune();
+			bool perforant = tranchant && vitesseImpact > 3.3f && EstObjetPointeBienAligneeVers(boeufTouche);
+			string zone = DeterminerZoneImpactBovin(boeufTouche);
+
+			bool applique = boeufTouche.RecevoirImpactCombat(
+				energieImpact,
+				GlobalPosition,
+				LinearVelocity,
+				tranchant,
+				perforant,
+				zone,
+				(ulong)GetInstanceId());
+
+			if (applique)
+			{
+				LinearVelocity *= 0.4f;
+				AngularVelocity *= 0.35f;
+				if (perforant && vitesseImpact > 4.9f)
+					TenterPlanterDansBovin(boeufTouche);
+			}
+		}
+
 		// 1. Détection du corps fantôme (terrain bas-niveau)
 		bool frappeLeSol = (body == null);
 
@@ -683,6 +750,62 @@ public partial class ItemPhysique : RigidBody3D
 			Vector3? dirChoc = v.LengthSquared() > 0.04f ? v.Normalized() : (Vector3?)null;
 			Fracturer(dirChoc, GlobalPosition);
 		}
+	}
+
+	private static BoeufSauvage ResoudreBoeufDepuisNoeud(Node body)
+	{
+		for (Node n = body; n != null; n = n.GetParent())
+			if (n is BoeufSauvage b)
+				return b;
+		return null;
+	}
+
+	private bool EstObjetTranchantPourImpactFaune()
+	{
+		if (ID_Objet == 105 || ID_Objet == 106 || ID_Objet == Joueur.IdObjetPiochePierreTier0 || ID_Objet == Joueur.IdObjetPellePierreTier0 || ID_Objet == Joueur.IdObjetLancePierreTier0 || ID_Objet == 100)
+			return true;
+		if (EstUnEclat)
+			return true;
+		return EstIdRocheMatiere(ID_Objet) && IndexCacheMemoire == 3;
+	}
+
+	private bool EstObjetPointeBienAligneeVers(BoeufSauvage cible)
+	{
+		if (cible == null || !GodotObject.IsInstanceValid(cible) || LinearVelocity.LengthSquared() < 0.01f)
+			return false;
+		Vector3 versCible = (cible.GlobalPosition - GlobalPosition).Normalized();
+		Vector3 dirVitesse = LinearVelocity.Normalized();
+		Vector3 axePointeA = (-GlobalTransform.Basis.Z).Normalized();
+		Vector3 axePointeB = GlobalTransform.Basis.Y.Normalized();
+		float alignPointe = Mathf.Max(axePointeA.Dot(dirVitesse), axePointeB.Dot(dirVitesse));
+		float trajectoireVersCible = dirVitesse.Dot(versCible);
+		return alignPointe > 0.38f && trajectoireVersCible > 0.35f;
+	}
+
+	private string DeterminerZoneImpactBovin(BoeufSauvage boeuf)
+	{
+		if (boeuf == null || !GodotObject.IsInstanceValid(boeuf))
+			return "";
+		Vector3 local = boeuf.ToLocal(GlobalPosition);
+		if (local.Y > 0.95f) return "CollisionShape3D_Tete";
+		if (local.Y > 0.32f && local.Y < 0.85f) return "CollisionShape3D_Ventre";
+		return "CollisionShape3D";
+	}
+
+	private void TenterPlanterDansBovin(BoeufSauvage boeuf)
+	{
+		if (boeuf == null || !GodotObject.IsInstanceValid(boeuf) || _bovinPlante != null)
+			return;
+		_bovinPlante = boeuf;
+		Vector3 dir = LinearVelocity.LengthSquared() > 0.001f ? LinearVelocity.Normalized() : -boeuf.GlobalTransform.Basis.Z.Normalized();
+		_offsetLocalDansBovinPlante = boeuf.ToLocal(GlobalPosition + dir * 0.08f);
+		Freeze = true;
+		FreezeMode = FreezeModeEnum.Static;
+		Sleeping = true;
+		LinearVelocity = Vector3.Zero;
+		AngularVelocity = Vector3.Zero;
+		CollisionLayer = 0u;
+		CollisionMask = 0u;
 	}
 
 	/// <summary>Appelé depuis l'extérieur (ex: frappe du joueur) pour déclencher la fracture.</summary>
@@ -1736,6 +1859,11 @@ public partial class ItemPhysique : RigidBody3D
 		if (ID_Objet == Joueur.IdObjetPiochePierreTier0)
 		{
 			AppliquerPhysiquePioche108(this);
+			return;
+		}
+		if (ID_Objet == Joueur.IdObjetLancePierreTier0)
+		{
+			AppliquerPhysiqueLance111(this);
 			return;
 		}
 		if (EstIdRocheMatiere(ID_Objet))
