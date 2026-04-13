@@ -5,6 +5,18 @@ using System.Text.Json;
 
 public partial class BoeufSauvage : CharacterBody3D
 {
+	/// <summary>Scène <c>Tests/SmokeVacheNatation.tscn</c> (Godot <c>--headless</c>) : simule l’eau pour valider nage / physique sans monde complet.</summary>
+	public static bool ModeSmokeTestForcerDetectionEau { get; set; }
+
+	/// <summary>État courant « dans l’eau » (natation) — utile pour smoke test et debug.</summary>
+	public bool NatationEauDetectee => _dansEau;
+
+	/// <summary>Nom du clip courant sur l’<see cref="AnimationPlayer"/> (smoke / debug).</summary>
+	public string DiagnosticAnimationLocomotionCourante =>
+		_animationPlayer != null && GodotObject.IsInstanceValid(_animationPlayer)
+			? _animationPlayer.CurrentAnimation.ToString()
+			: "";
+
 	private enum EtatBoeuf
 	{
 		Errance,
@@ -136,6 +148,7 @@ public partial class BoeufSauvage : CharacterBody3D
 	[ExportGroup("UI faim")]
 	[Export] public bool AfficherFaimAuDessusBovin = false;
 	[Export(PropertyHint.Range, "0.5,4,0.05")] public float HauteurAffichageFaim = 1.55f;
+	[Export(PropertyHint.Range, "0.05,1,0.01")] public float IntervalleMajCohesionUiSec = 0.2f;
 	[ExportGroup("Stamina")]
 	[Export] public bool AfficherStaminaAuDessusBovin = false;
 	[Export] public float StaminaMax = 100f;
@@ -246,6 +259,8 @@ public partial class BoeufSauvage : CharacterBody3D
 	private float _cooldownRegenVie;
 	private float _cooldownVerificationBarresUI;
 	private float _cooldownEvaluationEnvironnement;
+	private float _cohesionUiCachee = 1f;
+	private ulong _tickDerniereMajCohesionUi;
 	private float _cooldownDirectionNage;
 	private bool _dansEau;
 	private Vector3 _directionNageEau = Vector3.Zero;
@@ -333,6 +348,7 @@ public partial class BoeufSauvage : CharacterBody3D
 	private Label3D _labelFaim3D;
 	private Label3D _labelStamina3D;
 	private Label3D _labelVie3D;
+	private static readonly Dictionary<int, string[]> _cacheBarresRatio = new Dictionary<int, string[]>();
 	private Cycle_Solaire _cycleSolaire;
 	private bool _abonneNouveauJour;
 
@@ -919,7 +935,14 @@ public partial class BoeufSauvage : CharacterBody3D
 	{
 		segments = Mathf.Clamp(segments, 4, 20);
 		int pleins = Mathf.Clamp(Mathf.RoundToInt(ratio * segments), 0, segments);
-		return "[" + new string('|', pleins) + new string('.', segments - pleins) + "]";
+		if (!_cacheBarresRatio.TryGetValue(segments, out var cacheSegment))
+		{
+			cacheSegment = new string[segments + 1];
+			for (int i = 0; i <= segments; i++)
+				cacheSegment[i] = "[" + new string('|', i) + new string('.', segments - i) + "]";
+			_cacheBarresRatio[segments] = cacheSegment;
+		}
+		return cacheSegment[pleins];
 	}
 
 	private void MettreAJourAffichageStamina3D()
@@ -974,7 +997,14 @@ public partial class BoeufSauvage : CharacterBody3D
 		string infoTroupeau = "";
 		if (_deblocageAffichageTroupeau)
 		{
-			int cohesion = Mathf.RoundToInt(CalculerRatioCohesionTroupeau() * 100f);
+			ulong now = Time.GetTicksMsec();
+			ulong intervalle = (ulong)Mathf.Clamp(IntervalleMajCohesionUiSec * 1000f, 50f, 1000f);
+			if (_tickDerniereMajCohesionUi == 0 || now - _tickDerniereMajCohesionUi >= intervalle)
+			{
+				_cohesionUiCachee = CalculerRatioCohesionTroupeau();
+				_tickDerniereMajCohesionUi = now;
+			}
+			int cohesion = Mathf.RoundToInt(_cohesionUiCachee * 100f);
 			infoTroupeau = $" | Troupe {cohesion}%";
 		}
 		_labelFaim3D.Text = $"Faim {pct}%{infoTroupeau}";
@@ -1387,7 +1417,11 @@ public partial class BoeufSauvage : CharacterBody3D
 
 	private bool EstDansEau()
 	{
-		if (!ActiverNatationFaune || _gestionnaire == null)
+		if (!ActiverNatationFaune)
+			return false;
+		if (ModeSmokeTestForcerDetectionEau)
+			return true;
+		if (_gestionnaire == null)
 			return false;
 		Vector3 dirAvant = _directionDeplacementHorizontale.LengthSquared() > 0.001f
 			? _directionDeplacementHorizontale.Normalized()

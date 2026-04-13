@@ -62,6 +62,8 @@ public partial class Monde_Client : Node3D
 	[Export] public int MaxSolidificationsParFrameExploration = 10;
 	/// <summary>Budget minimal de solidifications quand le joueur se déplace vite (anti-traversée du sol).</summary>
 	[Export] public int MaxSolidificationsPrioriteJoueur = 12;
+	/// <summary>Nombre max d'entrées inspectées pour choisir un chunk à solidifier (évite un scan complet de la file à chaque tick).</summary>
+	[Export] public int FenetreSelectionSolidification = 64;
 	/// <summary>Rayon (chunks) à réveiller en urgence autour de la position courante / anticipée du joueur.</summary>
 	[Export] public int RayonPrioriteCollisionJoueur = 2;
 	/// <summary>Anticipation (secondes) pour pré-réveiller les collisions devant le joueur.</summary>
@@ -142,6 +144,7 @@ public partial class Monde_Client : Node3D
 	private int _cacheCoordsChunksCount = -1;
 	private int _indexCullingScan = 0;
 	private int _indexDormanceScan = 0;
+	private int _curseurSelectionSolidification = 0;
 	private ulong _frameDernierRebuildCacheChunks = 0;
 
 	private Action<Vector2I> _enregistrerDemandeChunk;
@@ -416,7 +419,7 @@ public partial class Monde_Client : Node3D
 		}
 		stEau.GenerateNormals();
 		ArrayMesh meshEau = stEau.Commit();
-		if (meshEau.GetFaces().Length > 0)
+		if (meshEau != null && meshEau.GetSurfaceCount() > 0)
 		{
 			Rid waterRid = RenderingServer.Singleton.InstanceCreate();
 			RenderingServer.Singleton.InstanceSetBase(waterRid, meshEau.GetRid());
@@ -560,8 +563,9 @@ public partial class Monde_Client : Node3D
 			World3D w = GetWorld3D();
 			while (_fileAttenteSolidificationUrgente.Count > 0 && efforts < maxSolidifications && w != null)
 			{
-				ChunkData urgent = _fileAttenteSolidificationUrgente[0];
-				_fileAttenteSolidificationUrgente.RemoveAt(0);
+				int idxUrgent = _fileAttenteSolidificationUrgente.Count - 1;
+				ChunkData urgent = _fileAttenteSolidificationUrgente[idxUrgent];
+				_fileAttenteSolidificationUrgente.RemoveAt(idxUrgent);
 				if (urgent == null) continue;
 				AssurerCorpsPhysiqueChunk(urgent);
 				if (urgent.PhysicsBodyRID.IsValid)
@@ -573,16 +577,7 @@ public partial class Monde_Client : Node3D
 			}
 			while (_fileAttenteSolidification.Count > 0 && efforts < maxSolidifications)
 			{
-				int idxProche = 0;
-				int dBest = int.MaxValue;
-				for (int i = 0; i < _fileAttenteSolidification.Count; i++)
-				{
-					ChunkData c = _fileAttenteSolidification[i];
-					int ddx = c.Coordonnees.X - coordObsSolidif.X;
-					int ddz = c.Coordonnees.Y - coordObsSolidif.Y;
-					int d2 = ddx * ddx + ddz * ddz;
-					if (d2 < dBest) { dBest = d2; idxProche = i; }
-				}
+				int idxProche = ExtraireIndexSolidificationProche(coordObsSolidif);
 				ChunkData chunkASolidifier = _fileAttenteSolidification[idxProche];
 				int dx = Mathf.Abs(chunkASolidifier.Coordonnees.X - coordObsSolidif.X);
 				int dz = Mathf.Abs(chunkASolidifier.Coordonnees.Y - coordObsSolidif.Y);
@@ -806,8 +801,6 @@ public partial class Monde_Client : Node3D
 		if (data == null || data.PhysicsBodyRID.IsValid || data._meshRef == null) return;
 		World3D world = GetWorld3D();
 		if (world == null) return;
-		Vector3[] faces = data._meshRef.GetFaces();
-		if (faces == null || faces.Length == 0) return;
 
 		Shape3D shape = null;
 		try { shape = data._meshRef.CreateTrimeshShape(); }
@@ -1196,15 +1189,16 @@ public partial class Monde_Client : Node3D
 		float scoreMin = float.MaxValue;
 		int indexASupprimer = 0;
 		float rayonNear = Mathf.Max(3, RayonDormancePhysique + 1);
+		float rayonNearCarre = rayonNear * rayonNear;
 		for (int i = 0; i < liste.Count; i++)
 		{
 			Vector2 posChunk = new Vector2(liste[i].X, liste[i].Y);
 			Vector2 to = posChunk - posObsV2;
 			float dist = to.LengthSquared();
 			float score = dist;
-			float d = Mathf.Sqrt(Mathf.Max(0.0001f, dist));
-			if (d > rayonNear)
+			if (dist > rayonNearCarre)
 			{
+				float d = Mathf.Sqrt(Mathf.Max(0.0001f, dist));
 				Vector3 dir = new Vector3(to.X / d, 0f, to.Y / d);
 				float dot = directionObservation.Dot(dir);
 				if (dot < 0f) score += (1f - dot) * 200f;
@@ -1218,6 +1212,33 @@ public partial class Monde_Client : Node3D
 		}
 		liste.RemoveAt(indexASupprimer);
 		return chunkCible;
+	}
+
+	private int ExtraireIndexSolidificationProche(Vector2I coordObservation)
+	{
+		int count = _fileAttenteSolidification.Count;
+		if (count <= 1) return 0;
+		int fenetre = Mathf.Clamp(FenetreSelectionSolidification, 4, 256);
+		int scan = Mathf.Min(count, fenetre);
+		if (_curseurSelectionSolidification >= count) _curseurSelectionSolidification = 0;
+		int idxBest = _curseurSelectionSolidification;
+		int dBest = int.MaxValue;
+		for (int n = 0; n < scan; n++)
+		{
+			int idx = (_curseurSelectionSolidification + n) % count;
+			ChunkData c = _fileAttenteSolidification[idx];
+			if (c == null) continue;
+			int ddx = c.Coordonnees.X - coordObservation.X;
+			int ddz = c.Coordonnees.Y - coordObservation.Y;
+			int d2 = ddx * ddx + ddz * ddz;
+			if (d2 < dBest)
+			{
+				dBest = d2;
+				idxBest = idx;
+			}
+		}
+		_curseurSelectionSolidification = (_curseurSelectionSolidification + 1) % count;
+		return idxBest;
 	}
 
 	private void DeclencherReconstructionSection((int cx, int cz, int section) cible)

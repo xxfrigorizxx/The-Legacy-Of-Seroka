@@ -62,6 +62,7 @@ public partial class Gestionnaire_Monde : Node3D
 	private bool _etatPersistantRestaure;
 	private double _secondesDormanceObjets;
 	private const int RayonDormanceObjetsChunks = 5;
+	[Export] public int BudgetDormanceObjetsParCycle = 120;
 	[Export] public int RayonSecuriteTerrainObjetsChunks = 1;
 	private const float NiveauEauOcean = 103f;
 	private Area3D _oceanPhysique;
@@ -70,6 +71,8 @@ public partial class Gestionnaire_Monde : Node3D
 	private StandardMaterial3D _materielEclaboussureEau;
 	private bool _chargementCycleSolaire;
 	private double _secondesDepuisAutosauvegarde;
+	private int _indexDormanceBlocsPoses;
+	private int _indexDormanceObjetsDyn;
 
 	// Legacy
 	private List<Vector2I> _chunksACharger = new List<Vector2I>();
@@ -1092,72 +1095,50 @@ public partial class Gestionnaire_Monde : Node3D
 		int rayon = RayonDormanceObjetsChunks;
 		bool useGardeTerrain = UseArchitectureReseau && _mondeClient != null;
 		int rayonSecuriteTerrain = Mathf.Clamp(RayonSecuriteTerrainObjetsChunks, 0, 2);
-		foreach (Node n in GetTree().GetNodesInGroup("BlocsPoses"))
+
+		int budgetTotal = Mathf.Max(16, BudgetDormanceObjetsParCycle);
+		int budgetBlocs = Mathf.Max(1, Mathf.RoundToInt(budgetTotal * 0.65f));
+		int budgetDyn = Mathf.Max(1, budgetTotal - budgetBlocs);
+		TraiterDormanceGroupe("BlocsPoses", ref _indexDormanceBlocsPoses, budgetBlocs, chunkJoueur, rayon, useGardeTerrain, rayonSecuriteTerrain, ignorerRacks: true);
+		TraiterDormanceGroupe("ObjetsDormantsDynamiques", ref _indexDormanceObjetsDyn, budgetDyn, chunkJoueur, rayon, useGardeTerrain, rayonSecuriteTerrain, ignorerRacks: false);
+	}
+
+	private void TraiterDormanceGroupe(string nomGroupe, ref int indexCurseur, int budget, Vector2I chunkJoueur, int rayon, bool useGardeTerrain, int rayonSecuriteTerrain, bool ignorerRacks)
+	{
+		var noeuds = GetTree().GetNodesInGroup(nomGroupe);
+		int total = noeuds.Count;
+		if (total == 0) { indexCurseur = 0; return; }
+		if (indexCurseur >= total) indexCurseur = 0;
+		int iterations = Math.Min(Mathf.Max(1, budget), total);
+		for (int i = 0; i < iterations; i++)
 		{
+			if (indexCurseur >= total) indexCurseur = 0;
+			Node n = noeuds[indexCurseur++];
 			if (n is not RigidBody3D rb || !rb.IsInsideTree()) continue;
-			if (rb is ItemPhysique ip && (ip.ID_Objet == 200 || ip.ID_Objet == Joueur.IdObjetRackBatons || ip.ID_Objet == Joueur.IdObjetRackBuches))
+			if (ignorerRacks && rb is ItemPhysique ip && (ip.ID_Objet == 200 || ip.ID_Objet == Joueur.IdObjetRackBatons || ip.ID_Objet == Joueur.IdObjetRackBuches))
 				continue;
-			Vector2I c = WorldToChunkCoord(rb.GlobalPosition, TailleChunk);
-			bool dansRayon = Mathf.Abs(c.X - chunkJoueur.X) <= rayon && Mathf.Abs(c.Y - chunkJoueur.Y) <= rayon;
-			bool terrainPret = !useGardeTerrain || _mondeClient.CollisionTerrainActiveAutourPoint(rb.GlobalPosition, rayonSecuriteTerrain);
-			// Priorité gameplay: un objet proche du joueur ne doit jamais rester figé en l'air.
-			if (dansRayon)
-			{
-				if (rb.Freeze) rb.Freeze = false;
-				if (rb.Sleeping) rb.Sleeping = false;
-			}
-			else if (!terrainPret)
-			{
-				if (!rb.Freeze || !rb.Sleeping)
-				{
-					rb.LinearVelocity = Vector3.Zero;
-					rb.AngularVelocity = Vector3.Zero;
-					rb.Sleeping = true;
-					rb.Freeze = true;
-				}
-			}
-			else
-			{
-				if (!rb.Freeze || !rb.Sleeping)
-				{
-					rb.LinearVelocity = Vector3.Zero;
-					rb.AngularVelocity = Vector3.Zero;
-					rb.Sleeping = true;
-					rb.Freeze = true;
-				}
-			}
+			AppliquerDormanceRigidBody(rb, chunkJoueur, rayon, useGardeTerrain, rayonSecuriteTerrain);
 		}
-		foreach (Node n in GetTree().GetNodesInGroup("ObjetsDormantsDynamiques"))
+	}
+
+	private void AppliquerDormanceRigidBody(RigidBody3D rb, Vector2I chunkJoueur, int rayon, bool useGardeTerrain, int rayonSecuriteTerrain)
+	{
+		Vector2I c = WorldToChunkCoord(rb.GlobalPosition, TailleChunk);
+		bool dansRayon = Mathf.Abs(c.X - chunkJoueur.X) <= rayon && Mathf.Abs(c.Y - chunkJoueur.Y) <= rayon;
+		bool terrainPret = !useGardeTerrain || _mondeClient.CollisionTerrainActiveAutourPoint(rb.GlobalPosition, rayonSecuriteTerrain);
+		// Priorité gameplay: un objet proche du joueur ne doit jamais rester figé en l'air.
+		if (dansRayon)
 		{
-			if (n is not RigidBody3D rb || !rb.IsInsideTree()) continue;
-			Vector2I c = WorldToChunkCoord(rb.GlobalPosition, TailleChunk);
-			bool dansRayon = Mathf.Abs(c.X - chunkJoueur.X) <= rayon && Mathf.Abs(c.Y - chunkJoueur.Y) <= rayon;
-			bool terrainPret = !useGardeTerrain || _mondeClient.CollisionTerrainActiveAutourPoint(rb.GlobalPosition, rayonSecuriteTerrain);
-			if (dansRayon)
-			{
-				if (rb.Freeze) rb.Freeze = false;
-				if (rb.Sleeping) rb.Sleeping = false;
-			}
-			else if (!terrainPret)
-			{
-				if (!rb.Freeze || !rb.Sleeping)
-				{
-					rb.LinearVelocity = Vector3.Zero;
-					rb.AngularVelocity = Vector3.Zero;
-					rb.Sleeping = true;
-					rb.Freeze = true;
-				}
-			}
-			else
-			{
-				if (!rb.Freeze || !rb.Sleeping)
-				{
-					rb.LinearVelocity = Vector3.Zero;
-					rb.AngularVelocity = Vector3.Zero;
-					rb.Sleeping = true;
-					rb.Freeze = true;
-				}
-			}
+			if (rb.Freeze) rb.Freeze = false;
+			if (rb.Sleeping) rb.Sleeping = false;
+			return;
+		}
+		if (!terrainPret || (!rb.Freeze || !rb.Sleeping))
+		{
+			rb.LinearVelocity = Vector3.Zero;
+			rb.AngularVelocity = Vector3.Zero;
+			rb.Sleeping = true;
+			rb.Freeze = true;
 		}
 	}
 

@@ -415,6 +415,9 @@ public partial class Joueur : CharacterBody3D
     private const float DrainEnduranceSprintParSeconde = 22f;
     private const float RegenEnduranceParSeconde = 10f;
     private const float CoutFaimParPointEndurance = 0.045f;
+    /// <summary>Multiplicateur sur la perte de faim (passif, effort, sprint, coût lié à la régénération d'énergie).</summary>
+    private const float FacteurRalentissementDrainFaim = 0.5f;
+    private const float RatioGainFaimConsommationBaie = 0.10f;
     private const float MultiplicateurVitesseSprint = 1.65f;
     private const float GainFaimClicDroitMainVide = 12f;
     private const float CooldownGainFaimClicDroitSec = 0.22f;
@@ -1551,6 +1554,18 @@ public partial class Joueur : CharacterBody3D
         MettreAJourObjetTenueTps();
     }
 
+    /// <summary>
+    /// Désactive les caméras internes du joueur pour laisser une caméra externe (tests/cinématique) devenir active.
+    /// N'affecte pas la partie normale tant qu'aucun runner de test ne l'appelle.
+    /// </summary>
+    public void DesactiverCamerasPourCameraExterne()
+    {
+        if (_cameraFps != null) _cameraFps.Current = false;
+        if (_cameraTps != null) _cameraTps.Current = false;
+        if (_rayonFps != null) _rayonFps.Enabled = false;
+        if (_rayonTps != null) _rayonTps.Enabled = false;
+    }
+
     private void BasculerModeCamera()
     {
         ConfigurerModeCamera(!_vueTroisiemePersonne);
@@ -2092,7 +2107,7 @@ public partial class Joueur : CharacterBody3D
             drainFaim += DrainFaimEffortParSeconde;
         if (sprintActif)
             drainFaim += DrainFaimSprintParSeconde;
-        _faimJoueur = Mathf.Max(0f, _faimJoueur - drainFaim * dt);
+        _faimJoueur = Mathf.Max(0f, _faimJoueur - drainFaim * FacteurRalentissementDrainFaim * dt);
 
         float drainEndurance = 0f;
         if (effortIntense)
@@ -2112,7 +2127,7 @@ public partial class Joueur : CharacterBody3D
             if (regen > 0f)
             {
                 _enduranceJoueur = Mathf.Min(EnduranceMaxJoueur, _enduranceJoueur + regen);
-                _faimJoueur = Mathf.Max(0f, _faimJoueur - regen * CoutFaimParPointEndurance);
+                _faimJoueur = Mathf.Max(0f, _faimJoueur - regen * CoutFaimParPointEndurance * FacteurRalentissementDrainFaim);
             }
         }
 
@@ -2378,7 +2393,17 @@ public partial class Joueur : CharacterBody3D
                 }
                 else
                 {
-                    ExecuterLancer(Mathf.Clamp(_forceLancer, 0.5f, 5.0f));
+                    // Baie : maintien clic droit = manger une unité (+10 % faim), pas de lancer.
+                    if (mainActive.ID == IdObjetBaie)
+                    {
+                        ConsommerUneUniteMainActive();
+                        _faimJoueur = Mathf.Min(FaimMaxJoueur, _faimJoueur + RatioGainFaimConsommationBaie * FaimMaxJoueur);
+                        RafraichirHUD();
+                        ReinitialiserRotationManuelle();
+                        GetViewport().SetInputAsHandled();
+                    }
+                    else
+                        ExecuterLancer(Mathf.Clamp(_forceLancer, 0.5f, 5.0f));
                 }
                 _forceLancer = 0f;
             }
@@ -3429,8 +3454,12 @@ public partial class Joueur : CharacterBody3D
         Vector3 direction = -_camera.GlobalTransform.Basis.Z.Normalized();
         Vector3 pointDeSpawn = CalculerPointSpawnLancer(direction);
 
+        // Une seule unité physique (la pile reste en main jusqu'à ConsommerUneUniteMainActive).
+        SlotInventaire slotLancer = mainActive;
+        slotLancer.Quantite = 1;
+
         // 2. On invoque le bloc
-        Node3D corpsCree = CreerBlocPose(pointDeSpawn, mainActive);
+        Node3D corpsCree = CreerBlocPose(pointDeSpawn, slotLancer);
 
         // 3. Impulsion massique : vitesse quasi constante quelle que soit la masse (les lourds partent vraiment).
         if (corpsCree is RigidBody3D rb)
@@ -3445,9 +3474,8 @@ public partial class Joueur : CharacterBody3D
                 ipLance.ActiverGraceImpactAuLancer(24);
         }
 
-        // 4. On vide la main
-        if (MainGaucheEstActive) MainGauche = default;
-        else MainDroite = default;
+        // 4. Retirer une unité de la pile (comme à la pose au sol).
+        ConsommerUneUniteMainActive();
         RafraichirHUD();
         ReinitialiserRotationManuelle();
     }

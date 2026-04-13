@@ -1,5 +1,6 @@
 using Godot;
 using System;
+using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.IO;
 
@@ -754,6 +755,7 @@ public partial class Chunk_Serveur : RefCounted
 		int tx = TailleChunk + 1, ty = HauteurMax + 1, tz = TailleChunk + 1;
 		int voxelCount = tx * ty * tz;
 		var bytes = new byte[voxelCount * 9];
+		Span<byte> destination = bytes.AsSpan();
 		lock (_verrouVoxel)
 		{
 			int idx = 0;
@@ -761,9 +763,9 @@ public partial class Chunk_Serveur : RefCounted
 				for (int y = 0; y < ty; y++)
 					for (int z = 0; z < tz; z++)
 					{
-						Buffer.BlockCopy(BitConverter.GetBytes(_densities[x, y, z]), 0, bytes, idx, 4); idx += 4;
+						BinaryPrimitives.WriteSingleLittleEndian(destination.Slice(idx, 4), _densities[x, y, z]); idx += 4;
 						bytes[idx++] = _materials[x, y, z];
-						Buffer.BlockCopy(BitConverter.GetBytes(_densitiesEau[x, y, z]), 0, bytes, idx, 4); idx += 4;
+						BinaryPrimitives.WriteSingleLittleEndian(destination.Slice(idx, 4), _densitiesEau[x, y, z]); idx += 4;
 					}
 		}
 		return bytes;
@@ -783,7 +785,8 @@ public partial class Chunk_Serveur : RefCounted
 			writer.Write(donnees.Length);
 			writer.Write(donnees);
 		}
-		GD.Print($"ZERO-K : Cicatrice mémorisée. Chunk {ChunkOffsetX}_{ChunkOffsetZ} gravé sur le disque.");
+		if (OS.IsDebugBuild())
+			GD.Print($"ZERO-K : Cicatrice mémorisée. Chunk {ChunkOffsetX}_{ChunkOffsetZ} gravé sur le disque.");
 		_estModifie = false;
 	}
 

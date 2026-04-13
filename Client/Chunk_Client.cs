@@ -1724,6 +1724,7 @@ private static bool EstCorpsAuSol(PhysicsBody3D body)
 
 			float[] vals = _valsRecyclables;
 			Vector3[] verts = _vertsRecyclables;
+			byte[] mats = new byte[8];
 			var edgeTable = ConstantesMarchingCubes.EdgeTable;
 			var triTable = ConstantesMarchingCubes.TriTable;
 
@@ -1771,7 +1772,6 @@ private static bool EstCorpsAuSol(PhysicsBody3D body)
 						vertList[11] = Interp(verts[3], verts[7], vals[3], vals[7]);
 
 						// LECTURE DES 8 ATOMES DU CUBE — texture du coin solide (évite herbe sur murs/arbres)
-						byte[] mats = new byte[8];
 						mats[0] = MatD(x, y, z); mats[1] = MatD(x + 1, y, z);
 						mats[2] = MatD(x + 1, y + 1, z); mats[3] = MatD(x, y + 1, z);
 						mats[4] = MatD(x, y, z + 1); mats[5] = MatD(x + 1, y, z + 1);
@@ -2283,6 +2283,7 @@ private static bool EstCorpsAuSol(PhysicsBody3D body)
 			var edgeTable = ConstantesMarchingCubes.EdgeTable;
 			var triTable = ConstantesMarchingCubes.TriTable;
 			var noiseT = data.NoiseTemperature;
+			byte[] mats = new byte[8];
 
 			for (int x = 0; x < tc; x++)
 				for (int y = 0; y < yFin - yDebut; y++)
@@ -2317,7 +2318,6 @@ private static bool EstCorpsAuSol(PhysicsBody3D body)
 						vertList[10] = Interp(verts[2], verts[6], vals[2], vals[6]);
 						vertList[11] = Interp(verts[3], verts[7], vals[3], vals[7]);
 						// LECTURE DES 8 ATOMES DU CUBE — texture du coin solide (évite herbe sur murs/arbres)
-						byte[] mats = new byte[8];
 						mats[0] = MatD(x, y, z); mats[1] = MatD(x + 1, y, z);
 						mats[2] = MatD(x + 1, y + 1, z); mats[3] = MatD(x, y + 1, z);
 						mats[4] = MatD(x, y, z + 1); mats[5] = MatD(x + 1, y, z + 1);
