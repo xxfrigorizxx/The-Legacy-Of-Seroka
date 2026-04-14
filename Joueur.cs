@@ -4244,6 +4244,34 @@ public partial class Joueur : CharacterBody3D
         return false;
     }
 
+    /// <summary>Détecte un bord de berge devant le joueur alors qu'il est encore dans l'eau.</summary>
+    private bool DetecterBordBergeSortieEau(Vector3 directionHoriz, float surfaceEau)
+    {
+        if (_gestionnaireMonde == null)
+            return false;
+
+        Vector3 dir = directionHoriz;
+        dir.Y = 0f;
+        if (dir.LengthSquared() < 0.0001f)
+            dir = -GlobalTransform.Basis.Z;
+        dir.Y = 0f;
+        if (dir.LengthSquared() < 0.0001f)
+            return false;
+        dir = dir.Normalized();
+
+        Vector3 pAvantChevilles = GlobalPosition + dir * 0.62f + Vector3.Up * 0.16f;
+        Vector3 pAvantBassin = GlobalPosition + dir * 0.62f + Vector3.Up * 0.62f;
+
+        // Si l'eau est encore devant aux chevilles ou au bassin, ce n'est pas un bord de sortie.
+        if (PointImmergeJoueur(pAvantChevilles) || PointImmergeJoueur(pAvantBassin))
+            return false;
+
+        int idSolAvant = ObtenirMatiereExacteCachee(pAvantChevilles + Vector3.Down * 0.62f);
+        bool solBerge = idSolAvant != 0 && idSolAvant != 4;
+        bool procheSurface = GlobalPosition.Y <= surfaceEau + 0.55f;
+        return solBerge && procheSurface;
+    }
+
     public override void _PhysicsProcess(double delta)
     {
         float dt = (float)delta;
@@ -4305,6 +4333,8 @@ public partial class Joueur : CharacterBody3D
 
         bool estDansEau = EvaluerEtatEauJoueur(out float surfaceEau);
         bool sautMaintenu = !caoOuvert && (Input.IsActionPressed("ui_accept") || Input.IsActionPressed("jump"));
+        Vector3 directionEau = new Vector3(velocity.X, 0f, velocity.Z);
+        bool bordBergeEau = estDansEau && DetecterBordBergeSortieEau(directionEau, surfaceEau);
 
         if (IsOnFloor())
         {
@@ -4331,6 +4361,15 @@ public partial class Joueur : CharacterBody3D
             velocity.Z *= facteurFrottementXZ;
             velocity.Y *= 0.92f;
 
+            // Sortie de l'eau: au bord de berge, le corps remonte légèrement de lui-même.
+            if (bordBergeEau)
+            {
+                float cibleSortieY = surfaceEau + 0.06f;
+                float erreurSortieY = cibleSortieY - GlobalPosition.Y;
+                float vYAuto = Mathf.Clamp(erreurSortieY * 3.8f, -0.35f, 1.35f);
+                velocity.Y = Mathf.MoveToward(velocity.Y, Mathf.Max(velocity.Y, vYAuto), 7.2f * dt);
+            }
+
             if (sautMaintenu)
             {
                 // Nage active: on autorise une montée franche pour ressortir de l'eau.
@@ -4338,6 +4377,8 @@ public partial class Joueur : CharacterBody3D
                 float erreurY = cibleY - GlobalPosition.Y;
                 float vYCible = Mathf.Clamp(erreurY * 5.2f, -1.65f, 3.2f);
                 velocity.Y = Mathf.MoveToward(velocity.Y, vYCible, 9.2f * dt);
+                if (bordBergeEau)
+                    velocity.Y = Mathf.Max(velocity.Y, JumpVelocity * 0.92f);
             }
             else if (!IsOnFloor())
             {
