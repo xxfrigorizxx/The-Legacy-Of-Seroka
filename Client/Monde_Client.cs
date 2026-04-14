@@ -148,11 +148,30 @@ public partial class Monde_Client : Node3D
 	private int _indexDormanceScan = 0;
 	private int _curseurSelectionSolidification = 0;
 	private ulong _frameDernierRebuildCacheChunks = 0;
+	private Camera3D _cameraObservationCache;
+	private ulong _frameCameraObservationCache = ulong.MaxValue;
 
 	private Action<Vector2I> _enregistrerDemandeChunk;
 	private Action<Vector3, float, float> _demanderDestruction;
 	private Action<Vector3, Vector3, float, int> _demanderCreation;
 	private int _seedTerrain;
+
+	private Camera3D ObtenirCameraObservation()
+	{
+		ulong frame = Engine.GetProcessFrames();
+		if (_frameCameraObservationCache == frame)
+			return _cameraObservationCache;
+		_frameCameraObservationCache = frame;
+		Viewport viewport = GetViewport();
+		Camera3D camera = viewport?.GetCamera3D();
+		if (camera != null && GodotObject.IsInstanceValid(camera))
+		{
+			_cameraObservationCache = camera;
+			return _cameraObservationCache;
+		}
+		_cameraObservationCache = null;
+		return null;
+	}
 
 	// Références vers l'UI
 	private Panel _slotGauche;
@@ -327,24 +346,51 @@ public partial class Monde_Client : Node3D
 		World3D world = GetWorld3D();
 		if (world == null) return;
 
-		// 1. Fusion des payloads en un seul ArrayMesh (terrain)
-		var st = new SurfaceTool();
-		st.Begin(Mesh.PrimitiveType.Triangles);
+		// 1. Fusion des payloads en un seul ArrayMesh (terrain) sans SurfaceTool/GenerateNormals.
+		int totalTerrainVertices = 0;
+		foreach (var p in payloads)
+			if (p?.SommetsVisuels != null)
+				totalTerrainVertices += p.SommetsVisuels.Length;
+		if (totalTerrainVertices <= 0) return;
+
+		var terrainVertices = new Vector3[totalTerrainVertices];
+		var terrainNormals = new Vector3[totalTerrainVertices];
+		var terrainColors = new Color[totalTerrainVertices];
+		int terrainOffset = 0;
 		foreach (var p in payloads)
 		{
 			if (p?.SommetsVisuels == null || p.SommetsVisuels.Length == 0) continue;
-			for (int i = 0; i < p.SommetsVisuels.Length; i++)
-			{
-				st.SetNormal(p.NormalsVisuels != null && i < p.NormalsVisuels.Length ? p.NormalsVisuels[i] : Vector3.Up);
-				st.SetColor(p.CouleursVisuels != null && i < p.CouleursVisuels.Length ? p.CouleursVisuels[i] : Colors.White);
-				st.AddVertex(p.SommetsVisuels[i]);
-			}
-		}
-		st.GenerateNormals();
-		ArrayMesh mergedMesh = st.Commit();
-		if (mergedMesh.GetSurfaceCount() == 0) return;
+			int count = p.SommetsVisuels.Length;
+			Array.Copy(p.SommetsVisuels, 0, terrainVertices, terrainOffset, count);
 
-		Material matTerrain = MaterielTerrain ?? GD.Load<Material>("res://Manteau_Planetaire.tres");
+			if (p.NormalsVisuels != null && p.NormalsVisuels.Length >= count)
+				Array.Copy(p.NormalsVisuels, 0, terrainNormals, terrainOffset, count);
+			else
+				for (int i = 0; i < count; i++) terrainNormals[terrainOffset + i] = Vector3.Up;
+
+			if (p.CouleursVisuels != null && p.CouleursVisuels.Length >= count)
+				Array.Copy(p.CouleursVisuels, 0, terrainColors, terrainOffset, count);
+			else
+				for (int i = 0; i < count; i++) terrainColors[terrainOffset + i] = Colors.White;
+
+			terrainOffset += count;
+		}
+
+		var terrainArrays = new Godot.Collections.Array();
+		terrainArrays.Resize((int)Mesh.ArrayType.Max);
+		terrainArrays[(int)Mesh.ArrayType.Vertex] = terrainVertices;
+		terrainArrays[(int)Mesh.ArrayType.Normal] = terrainNormals;
+		terrainArrays[(int)Mesh.ArrayType.Color] = terrainColors;
+
+		var mergedMesh = new ArrayMesh();
+		mergedMesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, terrainArrays);
+
+		Material matTerrain = MaterielTerrain;
+		if (matTerrain == null)
+		{
+			_materielTerrainCache ??= GD.Load<Material>("res://Manteau_Planetaire.tres");
+			matTerrain = _materielTerrainCache;
+		}
 		if (matTerrain != null)
 			mergedMesh.SurfaceSetMaterial(0, matTerrain);
 
@@ -407,7 +453,7 @@ public partial class Monde_Client : Node3D
 			}
 		}
 
-		// 4. Eau : fusion des SommetsEau/NormalsEau de toutes les sections, même transform que le terrain
+		// 4. Eau : on conserve SurfaceTool ici (chemin robuste visuellement avec le matériau eau existant).
 		var stEau = new SurfaceTool();
 		stEau.Begin(Mesh.PrimitiveType.Triangles);
 		foreach (var p in payloads)
@@ -494,7 +540,7 @@ public partial class Monde_Client : Node3D
 	{
 		if (!IsInsideTree()) return; // GARROT SPATIAL : pas de manipulation de chunks si l'arbre s'effondre.
 		float dt = (float)delta;
-		Camera3D cameraActive = GetViewport()?.GetCamera3D();
+		Camera3D cameraActive = ObtenirCameraObservation();
 		Vector3 positionObservation = cameraActive != null ? cameraActive.GlobalPosition : (_joueur?.GlobalPosition ?? Vector3.Zero);
 		Vector3 directionObservation = cameraActive != null ? (-cameraActive.GlobalTransform.Basis.Z).Normalized() :
 			(_joueur != null ? (-_joueur.GlobalTransform.Basis.Z).Normalized() : Vector3.Forward);
@@ -1398,6 +1444,7 @@ public partial class Monde_Client : Node3D
 	}
 
 	[Export] public Material MaterielTerrain;
+	private Material _materielTerrainCache;
 
 	/// <summary>RPC : le serveur envoie chunk en byte[] uniquement. Ne jamais lancer Marching Cubes ici — Task.Run immédiat.</summary>
 	[Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = false)]
@@ -1447,7 +1494,7 @@ public partial class Monde_Client : Node3D
 	/// <summary>Position d'observation (caméra ou joueur). Utilisée par le radar et par les chunks pour la visibilité du gazon.</summary>
 	public Vector3 ObtenirPositionObservation()
 	{
-		Camera3D cam = GetViewport()?.GetCamera3D();
+		Camera3D cam = ObtenirCameraObservation();
 		return cam != null ? cam.GlobalPosition : (_joueur?.GlobalPosition ?? Vector3.Zero);
 	}
 

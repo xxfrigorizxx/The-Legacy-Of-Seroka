@@ -9,6 +9,7 @@ uniform float speculaire = 0.12;
 uniform float lumiere_ambiante = 0.28;
 uniform float douceur_ombre = 0.45;
 uniform float force_speculaire = 0.18;
+uniform float flash_rouge_degats : hint_range(0.0, 1.0) = 0.0;
 
 float bruit_rapide(vec3 p) {
 	p = floor(p);
@@ -25,6 +26,7 @@ void fragment() {
 	// Variation subtile pour casser l'uniformite visuelle.
 	float salissure = bruit_rapide(p * 7.0 + vec3(4.2, 1.0, 3.3));
 	couleur *= 0.88 + 0.18 * salissure;
+	couleur = mix(couleur, vec3(1.0, 0.12, 0.10), clamp(flash_rouge_degats, 0.0, 1.0));
 
 	ALBEDO = couleur;
 	ROUGHNESS = rugosite;

@@ -157,6 +157,7 @@ public partial class Joueur : CharacterBody3D
 
     public const float Speed = 2.5f;
     public const float JumpVelocity = 5.15f;
+    public const float MasseCorporelleBaseHumainKg = 78.0f;
 
     // SensibilitÃ© chirurgicale de la souris
     public const float MouseSensitivity = 0.003f;
@@ -274,9 +275,13 @@ public partial class Joueur : CharacterBody3D
     private bool _locomotionBlendTroisPoints;
     private const string NomEtatDeplacementBlend = "Deplacement";
     private const string NomEtatSautLocomotion = "Saut";
+    private static readonly StringName NomEtatDeplacementBlendString = new StringName(NomEtatDeplacementBlend);
+    private static readonly StringName NomEtatSautLocomotionString = new StringName(NomEtatSautLocomotion);
     private const string ParamBlendDeplacementLocomotion = "parameters/Deplacement/blend_position";
     /// <summary>Point blend max pour la marche quand un clip Run existe (0 = Idle, Run = 1).</summary>
     private const float BlendLocomotionMarcheMaxAvecCourse = 0.42f;
+    private float _dernierBlendLocomotion = float.NaN;
+    private float _derniereVitesseAnimationHumain = float.NaN;
     private const float DureeTamponSautSecondes = 0.28f;
     /// <summary>Capsule de rÃ©fÃ©rence dans la scÃ¨ne (souvent dÃ©sactivÃ©e) : bas local utilisÃ© pour aligner les pieds du mesh.</summary>
     private const string NomCollisionReferencePieds = "CollisionShape3D";
@@ -1463,7 +1468,7 @@ public partial class Joueur : CharacterBody3D
         }
 
         _tentativesLecturePlaybackArbreLocomotion = 0;
-        _playbackLocomotion.Start(new StringName(NomEtatDeplacementBlend));
+        _playbackLocomotion.Start(NomEtatDeplacementBlendString);
         _dernierEtatLocomotionTree = NomEtatDeplacementBlend;
     }
 
@@ -1669,22 +1674,25 @@ public partial class Joueur : CharacterBody3D
             if (!_animationTreeHumain.Active)
                 _animationTreeHumain.Active = true;
 
+            StringName noeudNom = _playbackLocomotion.GetCurrentNode();
+            string noeud = noeudNom.ToString();
+            bool noeudVide = string.IsNullOrEmpty(noeud);
+
             if (_animationTreeContientSaut)
             {
-                string noeud = _playbackLocomotion.GetCurrentNode().ToString();
                 if (noeud == NomEtatSautLocomotion)
                 {
                     if (auSolPourAnim || vitesse.Y <= 0.04f)
                     {
-                        _playbackLocomotion.Travel(new StringName(NomEtatDeplacementBlend));
+                        _playbackLocomotion.Travel(NomEtatDeplacementBlendString);
                         _dernierEtatLocomotionTree = NomEtatDeplacementBlend;
                     }
                 }
-                else if (noeud == NomEtatDeplacementBlend || string.IsNullOrEmpty(noeud))
+                else if (noeud == NomEtatDeplacementBlend || noeudVide)
                 {
                     if (!auSolPourAnim && etaitAuSol && vitesse.Y > 0.08f)
                     {
-                        _playbackLocomotion.Travel(new StringName(NomEtatSautLocomotion));
+                        _playbackLocomotion.Travel(NomEtatSautLocomotionString);
                         _dernierEtatLocomotionTree = NomEtatSautLocomotion;
                     }
                 }
@@ -1692,8 +1700,7 @@ public partial class Joueur : CharacterBody3D
 
             if (_animationTreeUtiliseBlendDeplacement)
             {
-                string noeudCourant = _playbackLocomotion.GetCurrentNode().ToString();
-                if (noeudCourant == NomEtatDeplacementBlend || string.IsNullOrEmpty(noeudCourant))
+                if (noeud == NomEtatDeplacementBlend || noeudVide)
                 {
                     float blendPos;
                     if (_locomotionBlendTroisPoints)
@@ -1710,7 +1717,11 @@ public partial class Joueur : CharacterBody3D
                     }
                     else
                         blendPos = Mathf.Clamp(vitesseHoriz / Mathf.Max(0.001f, Speed), 0f, 1f);
-                    _animationTreeHumain.Set(ParamBlendDeplacementLocomotion, blendPos);
+                    if (float.IsNaN(_dernierBlendLocomotion) || Mathf.Abs(_dernierBlendLocomotion - blendPos) > 0.0001f)
+                    {
+                        _animationTreeHumain.Set(ParamBlendDeplacementLocomotion, blendPos);
+                        _dernierBlendLocomotion = blendPos;
+                    }
                 }
             }
         }
@@ -1725,9 +1736,14 @@ public partial class Joueur : CharacterBody3D
         _etaitAuSolAnimPrecedent = auSolPourAnim;
 
         bool arbrePilote = _playbackLocomotion != null && _animationTreeHumain != null && _animationTreeHumain.Active;
-        _animationHumain.SpeedScale = arbrePilote
+        float vitesseAnimation = arbrePilote
             ? 1f
             : Mathf.Lerp(0.92f, 1.35f, Mathf.Clamp(vitesseHoriz / Mathf.Max(0.001f, Speed), 0f, 1f));
+        if (float.IsNaN(_derniereVitesseAnimationHumain) || Mathf.Abs(_derniereVitesseAnimationHumain - vitesseAnimation) > 0.0001f)
+        {
+            _animationHumain.SpeedScale = vitesseAnimation;
+            _derniereVitesseAnimationHumain = vitesseAnimation;
+        }
     }
 
     /// <summary>Avance / strafe alignÃ©s sur la vue camÃ©ra (plan XZ) : Ã©vite W qui part Â« sur le cÃ´tÃ© Â» quand le mesh a un yaw Mixamo diffÃ©rent du corps.</summary>
@@ -2871,6 +2887,29 @@ public partial class Joueur : CharacterBody3D
         for (int i = 0; i < GrilleCeintureStockage.Length; i++)
             total += ObtenirMasseTotaleSlotInventaireKg(GrilleCeintureStockage[i]);
         return total;
+    }
+
+    public float ObtenirMassePhysiqueLogiqueKg()
+    {
+        // Masse logique = corps de base + charge portée, bornée pour éviter les extrêmes non jouables.
+        float masse = MasseCorporelleBaseHumainKg + ObtenirPoidsTotalPorteKg();
+        return Mathf.Clamp(masse, 45f, 260f);
+    }
+
+    public void AppliquerPousseeBovin(Vector3 directionHorizontale, float impulsionMetresParSeconde)
+    {
+        Vector3 dir = directionHorizontale;
+        dir.Y = 0f;
+        if (dir.LengthSquared() < 0.0001f || impulsionMetresParSeconde <= 0.001f)
+            return;
+        dir = dir.Normalized();
+        float masse = ObtenirMassePhysiqueLogiqueKg();
+        float attenuation = Mathf.Clamp(80f / Mathf.Max(45f, masse), 0.35f, 1.2f);
+        float deltaV = impulsionMetresParSeconde * attenuation;
+        Vector3 v = Velocity;
+        v.X += dir.X * deltaV;
+        v.Z += dir.Z * deltaV;
+        Velocity = v;
     }
 
     public float ObtenirCapacitePoidsMaxKg()

@@ -1479,24 +1479,20 @@ public partial class Generateur_Voxel : Node3D
 		float baseX = ChunkOffsetX * TailleChunk;
 		float baseZ = ChunkOffsetZ * TailleChunk;
 		var gestionnaire = GetParent() as Gestionnaire_Monde;
-
-		foreach (int idx in sectionIndices)
+		var sections = new System.Collections.Generic.List<int>(sectionIndices);
+		Task.Run(() =>
 		{
-			int i = idx;
-			Task.Run(() =>
+			foreach (int i in sections)
 			{
 				var (meshTerrain, meshEau) = ConstruireMeshSection(i, baseX, baseZ);
-
-				if (gestionnaire != null)
-				{
-					var apply = () => AppliquerMeshSection(i, meshTerrain, meshEau);
-					if (urgent)
-						gestionnaire.EnqueueMiseAJourUrgente(apply);
-					else
-						gestionnaire.EnqueueMiseAJourMainThread(apply);
-				}
-			});
-		}
+				if (gestionnaire == null) continue;
+				var apply = () => AppliquerMeshSection(i, meshTerrain, meshEau);
+				if (urgent)
+					gestionnaire.EnqueueMiseAJourUrgente(apply);
+				else
+					gestionnaire.EnqueueMiseAJourMainThread(apply);
+			}
+		});
 	}
 
 	private void ActualiserSectionsAffectees(System.Collections.Generic.List<Vector3I> positions, bool urgent)

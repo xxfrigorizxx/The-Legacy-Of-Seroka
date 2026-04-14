@@ -34,6 +34,7 @@ public partial class Chunk_Client : Node3D
 	[ThreadStatic] private static float[] _valsRecyclables;
 	[ThreadStatic] private static Vector3[] _vertsRecyclables;
 	[ThreadStatic] private static Vector3[] _vertListRecyclables;
+	[ThreadStatic] private static byte[] _matsRecyclables;
 	[ThreadStatic] private static float[] _valsEauRecyclables;
 	[ThreadStatic] private static Vector3[] _vertsEauRecyclables;
 	[ThreadStatic] private static Vector3[] _vertListEauRecyclables;
@@ -1699,11 +1700,11 @@ private static bool EstCorpsAuSol(PhysicsBody3D body)
 		var bufferMaterials = ArrayPool<byte>.Shared.Rent(TAILLE_MAX_SECTION);
 		float[] bufferEau = _densitiesEauFlat != null ? ArrayPool<float>.Shared.Rent(TAILLE_MAX_SECTION) : null;
 
-		var vertsT = new List<Vector3>();
-		var normsT = new List<Vector3>();
-		var colsT = new List<Color>();
-		List<Vector3> vertsE = bufferEau != null ? new List<Vector3>() : null;
-		List<Vector3> normsE = bufferEau != null ? new List<Vector3>() : null;
+		var vertsT = new List<Vector3>(8192);
+		var normsT = new List<Vector3>(8192);
+		var colsT = new List<Color>(8192);
+		List<Vector3> vertsE = bufferEau != null ? new List<Vector3>(4096) : null;
+		List<Vector3> normsE = bufferEau != null ? new List<Vector3>(4096) : null;
 
 		try
 		{
@@ -1724,7 +1725,8 @@ private static bool EstCorpsAuSol(PhysicsBody3D body)
 
 			float[] vals = _valsRecyclables;
 			Vector3[] verts = _vertsRecyclables;
-			byte[] mats = new byte[8];
+			if (_matsRecyclables == null) _matsRecyclables = new byte[8];
+			byte[] mats = _matsRecyclables;
 			var edgeTable = ConstantesMarchingCubes.EdgeTable;
 			var triTable = ConstantesMarchingCubes.TriTable;
 
@@ -2254,14 +2256,18 @@ private static bool EstCorpsAuSol(PhysicsBody3D body)
 		var bufferDensities = ArrayPool<float>.Shared.Rent(TAILLE_MAX_SECTION_DATA);
 		var bufferMaterials = ArrayPool<byte>.Shared.Rent(TAILLE_MAX_SECTION_DATA);
 		float[] bufferEau = data.DensitiesEauFlat != null ? ArrayPool<float>.Shared.Rent(TAILLE_MAX_SECTION_DATA) : null;
-		var vertsT = new List<Vector3>();
-		var normsT = new List<Vector3>();
-		var colsT = new List<Color>();
-		List<Vector3> vertsE = bufferEau != null ? new List<Vector3>() : null;
-		List<Vector3> normsE = bufferEau != null ? new List<Vector3>() : null;
-		float[] vals = new float[8];
-		Vector3[] verts = new Vector3[8];
-		var vertList = new Vector3[12];
+		var vertsT = new List<Vector3>(8192);
+		var normsT = new List<Vector3>(8192);
+		var colsT = new List<Color>(8192);
+		List<Vector3> vertsE = bufferEau != null ? new List<Vector3>(4096) : null;
+		List<Vector3> normsE = bufferEau != null ? new List<Vector3>(4096) : null;
+		if (_valsRecyclables == null) _valsRecyclables = new float[8];
+		if (_vertsRecyclables == null) _vertsRecyclables = new Vector3[8];
+		if (_vertListRecyclables == null) _vertListRecyclables = new Vector3[12];
+		if (_matsRecyclables == null) _matsRecyclables = new byte[8];
+		float[] vals = _valsRecyclables;
+		Vector3[] verts = _vertsRecyclables;
+		Vector3[] vertList = _vertListRecyclables;
 
 		try
 		{
@@ -2283,7 +2289,7 @@ private static bool EstCorpsAuSol(PhysicsBody3D body)
 			var edgeTable = ConstantesMarchingCubes.EdgeTable;
 			var triTable = ConstantesMarchingCubes.TriTable;
 			var noiseT = data.NoiseTemperature;
-			byte[] mats = new byte[8];
+			byte[] mats = _matsRecyclables;
 
 			for (int x = 0; x < tc; x++)
 				for (int y = 0; y < yFin - yDebut; y++)
@@ -2349,8 +2355,10 @@ private static bool EstCorpsAuSol(PhysicsBody3D body)
 
 			if (bufferEau != null)
 			{
-				float[] valsEau = new float[8];
-				Vector3[] vertsEau = new Vector3[8];
+				if (_valsEauRecyclables == null) _valsEauRecyclables = new float[8];
+				if (_vertsEauRecyclables == null) _vertsEauRecyclables = new Vector3[8];
+				float[] valsEau = _valsEauRecyclables;
+				Vector3[] vertsEau = _vertsEauRecyclables;
 				for (int x = 0; x < tc; x++)
 					for (int y = 0; y < yFin - yDebut; y++)
 					{

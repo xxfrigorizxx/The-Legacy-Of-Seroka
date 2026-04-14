@@ -71,6 +71,7 @@ public partial class Gestionnaire_Monde : Node3D
 	private StandardMaterial3D _materielEclaboussureEau;
 	private readonly Dictionary<ulong, Node3D> _corpsSuiviRemous = new Dictionary<ulong, Node3D>();
 	private readonly Dictionary<ulong, GpuParticles3D> _effetsRemousParCorps = new Dictionary<ulong, GpuParticles3D>();
+	private readonly List<ulong> _tmpRemousASupprimer = new List<ulong>();
 	private bool _chargementCycleSolaire;
 	private double _secondesDepuisAutosauvegarde;
 	private int _indexDormanceBlocsPoses;
@@ -865,8 +866,9 @@ public partial class Gestionnaire_Monde : Node3D
 		p.ProcessMaterial = mat;
 		p.DrawPass1 = new QuadMesh { Size = new Vector2(0.06f, 0.06f) };
 		p.MaterialOverride = ObtenirMaterielEclaboussureEau();
-		p.GlobalPosition = new Vector3(corps.GlobalPosition.X, ObtenirNiveauSurfaceEau(), corps.GlobalPosition.Z);
 		_conteneurEffetsEau.AddChild(p);
+		if (p.IsInsideTree())
+			p.GlobalPosition = new Vector3(corps.GlobalPosition.X, ObtenirNiveauSurfaceEau(), corps.GlobalPosition.Z);
 		_corpsSuiviRemous[id] = corps;
 		_effetsRemousParCorps[id] = p;
 	}
@@ -886,19 +888,24 @@ public partial class Gestionnaire_Monde : Node3D
 	{
 		if (_effetsRemousParCorps.Count == 0) return;
 		float ySurface = ObtenirNiveauSurfaceEau() + 0.03f;
-		var aSupprimer = new List<ulong>();
+		_tmpRemousASupprimer.Clear();
 		foreach (var kv in _effetsRemousParCorps)
 		{
 			ulong id = kv.Key;
 			GpuParticles3D p = kv.Value;
 			if (p == null || !GodotObject.IsInstanceValid(p))
 			{
-				aSupprimer.Add(id);
+				_tmpRemousASupprimer.Add(id);
 				continue;
 			}
 			if (!_corpsSuiviRemous.TryGetValue(id, out Node3D corps) || corps == null || !GodotObject.IsInstanceValid(corps) || !_corpsDansOcean.Contains(id))
 			{
-				aSupprimer.Add(id);
+				_tmpRemousASupprimer.Add(id);
+				continue;
+			}
+			if (!corps.IsInsideTree() || !p.IsInsideTree())
+			{
+				_tmpRemousASupprimer.Add(id);
 				continue;
 			}
 
@@ -920,8 +927,8 @@ public partial class Gestionnaire_Monde : Node3D
 			p.Emitting = actif;
 		}
 
-		for (int i = 0; i < aSupprimer.Count; i++)
-			RetirerEffetRemousSuivi(aSupprimer[i]);
+		for (int i = 0; i < _tmpRemousASupprimer.Count; i++)
+			RetirerEffetRemousSuivi(_tmpRemousASupprimer[i]);
 	}
 
 	private StandardMaterial3D ObtenirMaterielEclaboussureEau()
@@ -1441,13 +1448,20 @@ public partial class Gestionnaire_Monde : Node3D
 
 			copieChunksACharger.Sort((a, b) => a.DistanceSquaredTo(chunkJoueur).CompareTo(b.DistanceSquaredTo(chunkJoueur)));
 
-			Callable.From(() => AppliquerNouveauTriRadarLegacy(copieChunksACharger.ToArray())).CallDeferred();
+			Callable.From(() => AppliquerNouveauTriRadarLegacy(copieChunksACharger)).CallDeferred();
 		});
 	}
 
-	private void AppliquerNouveauTriRadarLegacy(Vector2I[] nouvelleListeTriee)
+	private void AppliquerNouveauTriRadarLegacy(List<Vector2I> nouvelleListeTriee)
 	{
-		_chunksACharger = new List<Vector2I>(nouvelleListeTriee);
+		if (nouvelleListeTriee == null)
+		{
+			_chunksACharger.Clear();
+			_radarLegacyEnCours = false;
+			return;
+		}
+		_chunksACharger.Clear();
+		_chunksACharger.AddRange(nouvelleListeTriee);
 		_radarLegacyEnCours = false;
 
 		Vector2I chunkJoueur = ObtenirCoordonneesChunkJoueur();
