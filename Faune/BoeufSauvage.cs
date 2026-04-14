@@ -1488,7 +1488,7 @@ public partial class BoeufSauvage : CharacterBody3D
 
 	private void AppliquerPhysiqueNatation(float dt, ref Vector3 vHoriz, ref float vy, bool nageActive)
 	{
-		float surface = NiveauSurfaceEauReference + 0.35f;
+		float surface = _gestionnaire != null ? _gestionnaire.ObtenirNiveauSurfaceEau() : (NiveauSurfaceEauReference + 0.35f);
 		bool sousSurface = GlobalPosition.Y < surface;
 		bool peutNager = _staminaCourante > 0.35f;
 		bool nageEffective = nageActive && peutNager;
@@ -1508,22 +1508,25 @@ public partial class BoeufSauvage : CharacterBody3D
 
 		if (nageEffective && sousSurface)
 		{
-			float profondeur = Mathf.Clamp((surface - GlobalPosition.Y) / 3.5f, 0f, 1f);
-			float cibleVy = VitesseRemonteeNage + profondeur * 0.45f;
+			float profondeur = Mathf.Clamp((surface - GlobalPosition.Y) / 3.2f, 0f, 1f);
+			float cibleVy = VitesseRemonteeNage * 0.88f + profondeur * 0.34f;
 			EssayerDepenserStamina(CoutStaminaMaintienSurfaceParSeconde * dt);
-			vy = Mathf.MoveToward(vy, cibleVy, (PousseeRemonteeEau + 2.5f) * dt);
-			// Verrou anti-echec: en nage active, la vitesse verticale ne doit jamais rester negative.
-			vy = Mathf.Max(vy, 0.85f);
+			vy = Mathf.MoveToward(vy, cibleVy, (PousseeRemonteeEau + 1.9f) * dt);
 		}
 		else
 		{
-			// Sans nage active (ou stamina vide): il coule lentement.
-			float cibleDescente = sousSurface ? -Mathf.Max(0.1f, VitesseDescenteSansNage) : -0.2f;
-			vy = Mathf.MoveToward(vy, cibleDescente, (GraviteDansEau + 0.8f) * dt);
+			float cibleDescente = sousSurface ? -Mathf.Max(0.12f, VitesseDescenteSansNage * 1.12f) : -0.16f;
+			vy = Mathf.MoveToward(vy, cibleDescente, (GraviteDansEau + 0.9f) * dt);
 		}
 
 		if (!nageEffective)
 			vy -= GraviteDansEau * 0.35f * dt;
+
+		// Stabilisation douce proche de la surface (évite l'effet "yoyo" vertical).
+		float cibleSurface = surface - 0.50f;
+		float erreurSurface = cibleSurface - GlobalPosition.Y;
+		float correctionSurface = Mathf.Clamp(erreurSurface * (nageEffective ? 1.10f : 0.50f), -0.65f, 0.80f);
+		vy = Mathf.MoveToward(vy, vy + correctionSurface, (nageEffective ? 2.8f : 1.2f) * dt);
 		vy = Mathf.Clamp(vy, -2.1f, 2.35f);
 	}
 

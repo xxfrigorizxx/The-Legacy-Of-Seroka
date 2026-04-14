@@ -69,6 +69,8 @@ public partial class Gestionnaire_Monde : Node3D
 	private Node3D _conteneurEffetsEau;
 	private readonly HashSet<ulong> _corpsDansOcean = new HashSet<ulong>();
 	private StandardMaterial3D _materielEclaboussureEau;
+	private readonly Dictionary<ulong, Node3D> _corpsSuiviRemous = new Dictionary<ulong, Node3D>();
+	private readonly Dictionary<ulong, GpuParticles3D> _effetsRemousParCorps = new Dictionary<ulong, GpuParticles3D>();
 	private bool _chargementCycleSolaire;
 	private double _secondesDepuisAutosauvegarde;
 	private int _indexDormanceBlocsPoses;
@@ -83,6 +85,7 @@ public partial class Gestionnaire_Monde : Node3D
 
 	public void EnqueueMiseAJourMainThread(System.Action action) => _misesAJourMainThread.Enqueue(action);
 	public void EnqueueMiseAJourUrgente(System.Action action) => _misesAJourUrgentes.Enqueue(action);
+	public float ObtenirNiveauSurfaceEau() => NiveauEauOcean + 0.35f;
 
 	/// <summary>Conversion monde → chunk avec arrondi géométrique (Floor). OBLIGATOIRE pour coordonnées négatives : (int)(x/TailleChunk) tronque vers zéro et casse la zone de spawn.</summary>
 	public static Vector2I WorldToChunkCoord(float worldX, float worldZ, int tailleChunk)
@@ -593,6 +596,12 @@ public partial class Gestionnaire_Monde : Node3D
 
 	public override void _ExitTree()
 	{
+		foreach (var kv in _effetsRemousParCorps)
+			if (kv.Value != null && GodotObject.IsInstanceValid(kv.Value))
+				kv.Value.QueueFree();
+		_effetsRemousParCorps.Clear();
+		_corpsSuiviRemous.Clear();
+		_corpsDansOcean.Clear();
 		// Sauvegarde position joueur (reconnexion au même endroit) — uniquement si encore dans l'arbre.
 		if (_joueur != null && _joueur.IsInsideTree())
 			GameState.Instance?.SauvegarderPositionJoueur(_joueur.GlobalPosition);
@@ -800,26 +809,119 @@ public partial class Gestionnaire_Monde : Node3D
 	private void SurCorpsEntreOcean(Node3D corps)
 	{
 		if (corps == null || !GodotObject.IsInstanceValid(corps)) return;
-		if (corps == _joueur) return;
-		if (corps is not RigidBody3D rb) return;
 
 		ulong id = corps.GetInstanceId();
 		if (!_corpsDansOcean.Add(id)) return;
 
-		// Seulement un objet qui tombe (vitesse verticale descendante suffisante).
-		float vitesseChute = -rb.LinearVelocity.Y;
-		if (vitesseChute < 2.0f) return;
+		if (corps is CharacterBody3D or RigidBody3D)
+			AssurerEffetRemousSuiviPour(corps, id);
 
-		float intensite = Mathf.Clamp(vitesseChute / 18f, 0.35f, 1.35f);
-		Vector3 impactSurface = rb.GlobalPosition;
-		impactSurface.Y = NiveauEauOcean + 0.04f;
-		CreerEclaboussureSurface(impactSurface, intensite);
+		if (corps is RigidBody3D rb)
+		{
+			// Seulement un objet qui tombe (vitesse verticale descendante suffisante).
+			float vitesseChute = -rb.LinearVelocity.Y;
+			if (vitesseChute < 2.0f) return;
+			float intensite = Mathf.Clamp(vitesseChute / 18f, 0.35f, 1.35f);
+			Vector3 impactSurface = rb.GlobalPosition;
+			impactSurface.Y = NiveauEauOcean + 0.04f;
+			CreerEclaboussureSurface(impactSurface, intensite);
+		}
 	}
 
 	private void SurCorpsSortOcean(Node3D corps)
 	{
 		if (corps == null || !GodotObject.IsInstanceValid(corps)) return;
-		_corpsDansOcean.Remove(corps.GetInstanceId());
+		ulong id = corps.GetInstanceId();
+		_corpsDansOcean.Remove(id);
+		RetirerEffetRemousSuivi(id);
+	}
+
+	private void AssurerEffetRemousSuiviPour(Node3D corps, ulong id)
+	{
+		if (_effetsRemousParCorps.ContainsKey(id)) return;
+		AssurerConteneurEffetsEau();
+		if (_conteneurEffetsEau == null || !GodotObject.IsInstanceValid(_conteneurEffetsEau)) return;
+
+		var p = new GpuParticles3D
+		{
+			Name = $"Remous_{id}",
+			Amount = 10,
+			Lifetime = 0.50f,
+			OneShot = false,
+			Emitting = false
+		};
+		var mat = new ParticleProcessMaterial
+		{
+			Direction = new Vector3(0f, 1f, 0f),
+			Spread = 24f,
+			InitialVelocityMin = 0.18f,
+			InitialVelocityMax = 0.58f,
+			Gravity = new Vector3(0f, -1.2f, 0f),
+			ScaleMin = 0.08f,
+			ScaleMax = 0.15f,
+			DampingMin = 0.7f,
+			DampingMax = 1.2f
+		};
+		p.ProcessMaterial = mat;
+		p.DrawPass1 = new QuadMesh { Size = new Vector2(0.06f, 0.06f) };
+		p.MaterialOverride = ObtenirMaterielEclaboussureEau();
+		p.GlobalPosition = new Vector3(corps.GlobalPosition.X, ObtenirNiveauSurfaceEau(), corps.GlobalPosition.Z);
+		_conteneurEffetsEau.AddChild(p);
+		_corpsSuiviRemous[id] = corps;
+		_effetsRemousParCorps[id] = p;
+	}
+
+	private void RetirerEffetRemousSuivi(ulong id)
+	{
+		_corpsSuiviRemous.Remove(id);
+		if (_effetsRemousParCorps.TryGetValue(id, out var p))
+		{
+			_effetsRemousParCorps.Remove(id);
+			if (p != null && GodotObject.IsInstanceValid(p))
+				p.QueueFree();
+		}
+	}
+
+	private void MettreAJourEffetsRemousSuivis()
+	{
+		if (_effetsRemousParCorps.Count == 0) return;
+		float ySurface = ObtenirNiveauSurfaceEau() + 0.03f;
+		var aSupprimer = new List<ulong>();
+		foreach (var kv in _effetsRemousParCorps)
+		{
+			ulong id = kv.Key;
+			GpuParticles3D p = kv.Value;
+			if (p == null || !GodotObject.IsInstanceValid(p))
+			{
+				aSupprimer.Add(id);
+				continue;
+			}
+			if (!_corpsSuiviRemous.TryGetValue(id, out Node3D corps) || corps == null || !GodotObject.IsInstanceValid(corps) || !_corpsDansOcean.Contains(id))
+			{
+				aSupprimer.Add(id);
+				continue;
+			}
+
+			float vitesseHoriz = 0f;
+			if (corps is CharacterBody3D cb)
+			{
+				Vector3 v = cb.Velocity;
+				vitesseHoriz = Mathf.Sqrt(v.X * v.X + v.Z * v.Z);
+			}
+			else if (corps is RigidBody3D rb)
+			{
+				Vector3 v = rb.LinearVelocity;
+				vitesseHoriz = Mathf.Sqrt(v.X * v.X + v.Z * v.Z);
+			}
+
+			bool actif = vitesseHoriz > 0.45f && corps.GlobalPosition.Y <= ObtenirNiveauSurfaceEau() + 1.0f;
+			p.GlobalPosition = new Vector3(corps.GlobalPosition.X, ySurface, corps.GlobalPosition.Z);
+			p.AmountRatio = actif ? Mathf.Clamp((vitesseHoriz - 0.45f) / 3.8f, 0.08f, 0.72f) : 0f;
+			p.Emitting = actif;
+		}
+
+		for (int i = 0; i < aSupprimer.Count; i++)
+			RetirerEffetRemousSuivi(aSupprimer[i]);
 	}
 
 	private StandardMaterial3D ObtenirMaterielEclaboussureEau()
@@ -910,6 +1012,7 @@ public partial class Gestionnaire_Monde : Node3D
 
 	public override void _Process(double delta)
 	{
+		MettreAJourEffetsRemousSuivis();
 		if (ActiverAutosauvegarde && IntervalleAutosauvegardeSecondes > 0f)
 		{
 			_secondesDepuisAutosauvegarde += delta;

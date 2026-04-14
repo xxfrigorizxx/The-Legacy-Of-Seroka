@@ -4214,6 +4214,31 @@ public partial class Joueur : CharacterBody3D
         return false;
     }
 
+    private bool PointImmergeJoueur(Vector3 p)
+    {
+        if (_gestionnaireMonde == null) return false;
+        return _gestionnaireMonde.EstPointDansEau(p) || ObtenirMatiereExacteCachee(p) == 4;
+    }
+
+    private bool EvaluerEtatEauJoueur(out float surfaceEau)
+    {
+        surfaceEau = _gestionnaireMonde?.ObtenirNiveauSurfaceEau() ?? 103.35f;
+        if (_gestionnaireMonde == null) return false;
+
+        Vector3 pChevilles = GlobalPosition + Vector3.Up * 0.16f;
+        Vector3 pBassin = GlobalPosition + Vector3.Up * 0.62f;
+        Vector3 pTorse = GlobalPosition + Vector3.Up * 0.95f;
+        int touches = 0;
+        if (PointImmergeJoueur(pChevilles)) touches++;
+        if (PointImmergeJoueur(pBassin)) touches++;
+        if (PointImmergeJoueur(pTorse)) touches++;
+
+        if (EssayerTrouverSurfaceEauY(GlobalPosition + Vector3.Up * 0.3f, out float surfaceLocale))
+            surfaceEau = surfaceLocale;
+
+        return touches >= 2;
+    }
+
     public override void _PhysicsProcess(double delta)
     {
         float dt = (float)delta;
@@ -4273,8 +4298,7 @@ public partial class Joueur : CharacterBody3D
             _tempsAttenteSpawn = 0f;
         }
 
-        int idMilieu = ObtenirMatiereExacteCachee(GlobalPosition + Vector3.Up * 0.8f);
-        bool estDansEau = (idMilieu == 4);
+        bool estDansEau = EvaluerEtatEauJoueur(out float surfaceEau);
         bool sautMaintenu = !caoOuvert && (Input.IsActionPressed("ui_accept") || Input.IsActionPressed("jump"));
 
         if (IsOnFloor())
@@ -4297,22 +4321,21 @@ public partial class Joueur : CharacterBody3D
 
         if (estDansEau)
         {
-            velocity.X *= 0.92f;
-            velocity.Z *= 0.92f;
-            velocity.Y *= 0.96f;
+            float facteurFrottementXZ = sautMaintenu ? 0.92f : 0.88f;
+            velocity.X *= facteurFrottementXZ;
+            velocity.Z *= facteurFrottementXZ;
+            velocity.Y *= 0.95f;
 
-            if (sautMaintenu && EssayerTrouverSurfaceEauY(GlobalPosition + Vector3.Up * 0.3f, out float surfaceEau))
-            {
-                // Maintien stable Ã  la surface quand on garde saut: Ã©vite l'effet yo-yo vertical.
-                float cibleY = surfaceEau - 0.28f;
-                float erreur = cibleY - GlobalPosition.Y;
-                float vitesseVerticaleCible = Mathf.Clamp(erreur * 5.0f, -1.15f, 2.1f);
-                velocity.Y = Mathf.MoveToward(velocity.Y, vitesseVerticaleCible, 9.0f * dt);
-            }
-            else if (sautMaintenu)
-                velocity.Y += JumpVelocity * 0.7f * dt;
-            else
-                velocity.Y -= 1.5f * dt;
+            // Profil réaliste: corps plus "posé" dans l'eau, montée plus progressive.
+            float cibleY = (sautMaintenu ? surfaceEau - 0.30f : surfaceEau - 0.46f);
+            float erreurY = cibleY - GlobalPosition.Y;
+            float gainVertical = sautMaintenu ? 4.6f : 3.0f;
+            float vYCible = Mathf.Clamp(erreurY * gainVertical, -1.35f, sautMaintenu ? 1.65f : 0.95f);
+            float accelVerticale = sautMaintenu ? 7.2f : 4.8f;
+            velocity.Y = Mathf.MoveToward(velocity.Y, vYCible, accelVerticale * dt);
+
+            if (!sautMaintenu && GlobalPosition.Y > surfaceEau + 0.12f)
+                velocity.Y -= 1.15f * dt;
         }
         else if (!IsOnFloor())
         {

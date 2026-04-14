@@ -101,6 +101,8 @@ public partial class Monde_Client : Node3D
 	private List<ChunkData> _fileAttenteSolidification = new List<ChunkData>();
 	/// <summary>File urgente de collision autour du joueur (priorité absolue sécurité gameplay).</summary>
 	private readonly List<ChunkData> _fileAttenteSolidificationUrgente = new List<ChunkData>();
+	/// <summary>Miroir O(1) de la file urgente (évite Contains O(n) dans les anneaux autour du joueur).</summary>
+	private readonly HashSet<ChunkData> _setSolidificationUrgente = new HashSet<ChunkData>();
 
 	private List<Vector2I> _chunksACharger = new List<Vector2I>();
 	private readonly HashSet<Vector2I> _prioritaireSetTemp = new HashSet<Vector2I>();
@@ -278,7 +280,7 @@ public partial class Monde_Client : Node3D
 		if (_joueur != null)
 		{
 			Vector3 vel = _joueur.Velocity;
-			vitesseXZ = new Vector2(vel.X, vel.Z).Length();
+			vitesseXZ = Mathf.Sqrt(vel.X * vel.X + vel.Z * vel.Z);
 		}
 		float tMouvement = Mathf.Clamp((vitesseXZ - 0.6f) / 5.0f, 0f, 1f);
 		_facteurMouvementAuto = Mathf.Lerp(1f, 0.54f, tMouvement);
@@ -394,7 +396,7 @@ public partial class Monde_Client : Node3D
 				if (!data.EstEnFileSolidification)
 				{
 					_fileAttenteSolidification.Remove(data);
-					_fileAttenteSolidificationUrgente.Add(data);
+					EnfilerSolidificationUrgenteUnique(data);
 					data.EstEnFileSolidification = true;
 				}
 			}
@@ -461,6 +463,13 @@ public partial class Monde_Client : Node3D
 	private float _tempsDepuisNettoyage;
 	private const float IntervalleNettoyageChunks = 1.5f;
 
+	private void EnfilerSolidificationUrgenteUnique(ChunkData data)
+	{
+		if (data == null) return;
+		if (_setSolidificationUrgente.Add(data))
+			_fileAttenteSolidificationUrgente.Add(data);
+	}
+
 	private void EnfilerSolidificationUrgenteAutour(Vector3 pointMonde, int rayonChunks)
 	{
 		int rayon = Mathf.Clamp(rayonChunks, 0, 3);
@@ -476,8 +485,7 @@ public partial class Monde_Client : Node3D
 					_fileAttenteSolidification.Remove(data);
 				else
 					data.EstEnFileSolidification = true;
-				if (!_fileAttenteSolidificationUrgente.Contains(data))
-					_fileAttenteSolidificationUrgente.Add(data);
+				EnfilerSolidificationUrgenteUnique(data);
 			}
 		}
 	}
@@ -486,12 +494,17 @@ public partial class Monde_Client : Node3D
 	{
 		if (!IsInsideTree()) return; // GARROT SPATIAL : pas de manipulation de chunks si l'arbre s'effondre.
 		float dt = (float)delta;
+		Camera3D cameraActive = GetViewport()?.GetCamera3D();
+		Vector3 positionObservation = cameraActive != null ? cameraActive.GlobalPosition : (_joueur?.GlobalPosition ?? Vector3.Zero);
+		Vector3 directionObservation = cameraActive != null ? (-cameraActive.GlobalTransform.Basis.Z).Normalized() :
+			(_joueur != null ? (-_joueur.GlobalTransform.Basis.Z).Normalized() : Vector3.Forward);
+		Vector2I chunkObservationActuel = Gestionnaire_Monde.WorldToChunkCoord(positionObservation, TailleChunk);
 		MettreAJourAutoDiagnostic(dt);
 		float vitesseJoueurXZ = 0f;
 		if (_joueur != null)
 		{
 			Vector3 vv = _joueur.Velocity;
-			vitesseJoueurXZ = new Vector2(vv.X, vv.Z).Length();
+			vitesseJoueurXZ = Mathf.Sqrt(vv.X * vv.X + vv.Z * vv.Z);
 		}
 		bool prioriteJoueur = vitesseJoueurXZ >= SeuilVitessePrioriteJoueur;
 		if (_joueur != null)
@@ -552,7 +565,7 @@ public partial class Monde_Client : Node3D
 		// 3) Solidification physique lissée : collisions urgentes (autour joueur) puis fond.
 		if (_fileAttenteSolidificationUrgente.Count > 0 || _fileAttenteSolidification.Count > 0)
 		{
-			Vector2I coordObsSolidif = ObtenirCoordonneesChunkJoueur();
+			Vector2I coordObsSolidif = chunkObservationActuel;
 			int baseSolidifications = enChargement ? 10 : Mathf.Max(1, MaxSolidificationsParFrameExploration);
 			int maxSolidifications = Mathf.Clamp(Mathf.RoundToInt(baseSolidifications * Mathf.Lerp(0.60f, 1.12f, _ratioChargeAuto) * facteurAntiSpikeBacklog), 1, Mathf.Max(1, baseSolidifications + 2));
 			if (prioriteJoueur)
@@ -566,6 +579,7 @@ public partial class Monde_Client : Node3D
 				int idxUrgent = _fileAttenteSolidificationUrgente.Count - 1;
 				ChunkData urgent = _fileAttenteSolidificationUrgente[idxUrgent];
 				_fileAttenteSolidificationUrgente.RemoveAt(idxUrgent);
+				_setSolidificationUrgente.Remove(urgent);
 				if (urgent == null) continue;
 				AssurerCorpsPhysiqueChunk(urgent);
 				if (urgent.PhysicsBodyRID.IsValid)
@@ -606,7 +620,7 @@ public partial class Monde_Client : Node3D
 		}
 
 		// FORGE RESTREINTE : lancer au plus MaxTravailleurs calculs en arrière-plan (tri par distance au joueur).
-		Vector2I obsChunk = ObtenirCoordonneesChunkJoueur();
+		Vector2I obsChunk = chunkObservationActuel;
 		int maxTravailleurs = _maxTravailleursDyn;
 		while (Thread.VolatileRead(ref _chunksEnCoursDeCalcul) < maxTravailleurs)
 		{
@@ -687,12 +701,7 @@ public partial class Monde_Client : Node3D
 			actionsVisuelles++;
 		}
 
-		// Position d'observation : Caméra Active (caméra libre) ou corps du joueur — le verrou se base sur la caméra !
-		Camera3D cameraActive = GetViewport()?.GetCamera3D();
-		Vector3 positionObservation = cameraActive != null ? cameraActive.GlobalPosition : (_joueur?.GlobalPosition ?? Vector3.Zero);
-		Vector3 directionObservation = cameraActive != null ? (-cameraActive.GlobalTransform.Basis.Z).Normalized() :
-			(_joueur != null ? (-_joueur.GlobalTransform.Basis.Z).Normalized() : Vector3.Forward);
-		Vector2I chunkObservationActuel = Gestionnaire_Monde.WorldToChunkCoord(positionObservation, TailleChunk);
+		// Position d'observation : déjà résolue en tête de frame (caméra / joueur).
 		bool chunkObservationChange = chunkObservationActuel != _obsChunkDormance;
 		_obsChunkDormance = chunkObservationActuel;
 		AjusterFenetreRequetes(dt);
@@ -736,7 +745,7 @@ public partial class Monde_Client : Node3D
 		TraiterFloreDifferee(positionObservation, budgetFlore);
 
 		// Priorité : couvrir RayonDormancePhysique + marge (l’ancien 9×9 était trop petit vs grille 17×17 pour R=8).
-		Vector2I chunkPieds = Gestionnaire_Monde.WorldToChunkCoord(positionObservation, TailleChunk);
+		Vector2I chunkPieds = chunkObservationActuel;
 		int rayonPriorite = RayonDormancePhysique + Mathf.Max(0, MargePreloadChunks);
 		_prioritaireSetTemp.Clear();
 		void AjouterAnneauManquant(Vector2I centre, int rayonDemi)
@@ -1461,8 +1470,9 @@ public partial class Monde_Client : Node3D
 
 		_radarEnCours = true;
 		Vector2 posObsV2 = new Vector2(positionObservation.X / (float)TailleChunk, positionObservation.Z / (float)TailleChunk);
-		int cjX = Gestionnaire_Monde.WorldToChunkCoord(positionObservation.X, positionObservation.Z, TailleChunk).X;
-		int cjZ = Gestionnaire_Monde.WorldToChunkCoord(positionObservation.X, positionObservation.Z, TailleChunk).Y;
+		Vector2I chunkCentreRadar = Gestionnaire_Monde.WorldToChunkCoord(positionObservation.X, positionObservation.Z, TailleChunk);
+		int cjX = chunkCentreRadar.X;
+		int cjZ = chunkCentreRadar.Y;
 		int rayonRadar = RayonRadarPreparationActif();
 		HashSet<Vector2I> chunksCharges = new HashSet<Vector2I>(_chunksData.Keys);
 		List<Vector2I> copieChunksACharger = new List<Vector2I>(_chunksACharger);
@@ -1487,22 +1497,22 @@ public partial class Monde_Client : Node3D
 					}
 				}
 
-			// Tri radial strict : distance au carré depuis l'épicentre (évite racine carrée)
-			Vector2 posObs = posObsV2;
+			// Tri radial strict : distance au carré (pas de new Vector2 par comparaison — évite des milliers d'allocations).
+			float ox = posObsV2.X, oy = posObsV2.Y;
 			copieChunksACharger.Sort((a, b) =>
 			{
-				float da = new Vector2(a.X, a.Y).DistanceSquaredTo(posObs);
-				float db = new Vector2(b.X, b.Y).DistanceSquaredTo(posObs);
+				float da = (a.X - ox) * (a.X - ox) + (a.Y - oy) * (a.Y - oy);
+				float db = (b.X - ox) * (b.X - ox) + (b.Y - oy) * (b.Y - oy);
 				return da.CompareTo(db);
 			});
 
-			Callable.From(() => AppliquerNouveauTriRadar(copieChunksACharger.ToArray())).CallDeferred();
+			Callable.From(() => AppliquerNouveauTriRadar(copieChunksACharger)).CallDeferred();
 		});
 	}
 
-	private void AppliquerNouveauTriRadar(Vector2I[] nouvelleListeTriee)
+	private void AppliquerNouveauTriRadar(List<Vector2I> nouvelleListeTriee)
 	{
-		if (nouvelleListeTriee == null || nouvelleListeTriee.Length == 0)
+		if (nouvelleListeTriee == null || nouvelleListeTriee.Count == 0)
 		{
 			_chunksACharger.Clear();
 			_radarEnCours = false;
@@ -1510,10 +1520,12 @@ public partial class Monde_Client : Node3D
 		}
 		int rayonRadar = RayonRadarPreparationActif();
 		int cap = Mathf.Clamp((2 * rayonRadar + 1) * (2 * rayonRadar + 1), 256, 16000);
-		int n = Mathf.Min(cap, nouvelleListeTriee.Length);
-		var compacte = new List<Vector2I>(n);
-		for (int i = 0; i < n; i++) compacte.Add(nouvelleListeTriee[i]);
-		_chunksACharger = compacte;
+		int n = Mathf.Min(cap, nouvelleListeTriee.Count);
+		_chunksACharger.Clear();
+		if (_chunksACharger.Capacity < n)
+			_chunksACharger.Capacity = n;
+		for (int i = 0; i < n; i++)
+			_chunksACharger.Add(nouvelleListeTriee[i]);
 		_radarEnCours = false;
 		// Le dépilage est fait dans _PhysicsProcess (usine en continu, 60 TPS)
 	}
@@ -1552,7 +1564,7 @@ public partial class Monde_Client : Node3D
 					else if (!d.EstEnFileSolidification)
 					{
 						_fileAttenteSolidification.Remove(d);
-						_fileAttenteSolidificationUrgente.Add(d);
+						EnfilerSolidificationUrgenteUnique(d);
 						d.EstEnFileSolidification = true;
 					}
 				}
@@ -1620,7 +1632,7 @@ public partial class Monde_Client : Node3D
 				{
 					// Garantit qu'un chunk proche sans body est solidifié rapidement.
 					_fileAttenteSolidification.Remove(data);
-					_fileAttenteSolidificationUrgente.Add(data);
+					EnfilerSolidificationUrgenteUnique(data);
 					data.EstEnFileSolidification = true;
 				}
 			}
