@@ -4228,15 +4228,20 @@ public partial class Joueur : CharacterBody3D
         Vector3 pChevilles = GlobalPosition + Vector3.Up * 0.16f;
         Vector3 pBassin = GlobalPosition + Vector3.Up * 0.62f;
         Vector3 pTorse = GlobalPosition + Vector3.Up * 0.95f;
-        int touches = 0;
-        if (PointImmergeJoueur(pChevilles)) touches++;
-        if (PointImmergeJoueur(pBassin)) touches++;
-        if (PointImmergeJoueur(pTorse)) touches++;
+        bool chevillesImmerges = PointImmergeJoueur(pChevilles);
+        bool bassinImmerge = PointImmergeJoueur(pBassin);
+        bool torseImmerge = PointImmergeJoueur(pTorse);
 
         if (EssayerTrouverSurfaceEauY(GlobalPosition + Vector3.Up * 0.3f, out float surfaceLocale))
             surfaceEau = surfaceLocale;
 
-        return touches >= 2;
+        // Le mode nage doit rester réservé à une vraie immersion:
+        // évite de "coller" le joueur au comportement eau sur les berges peu profondes.
+        if (torseImmerge)
+            return true;
+        if (bassinImmerge && chevillesImmerges && !IsOnFloor())
+            return true;
+        return false;
     }
 
     public override void _PhysicsProcess(double delta)
@@ -4324,18 +4329,22 @@ public partial class Joueur : CharacterBody3D
             float facteurFrottementXZ = sautMaintenu ? 0.92f : 0.88f;
             velocity.X *= facteurFrottementXZ;
             velocity.Z *= facteurFrottementXZ;
-            velocity.Y *= 0.95f;
+            velocity.Y *= 0.92f;
 
-            // Profil réaliste: corps plus "posé" dans l'eau, montée plus progressive.
-            float cibleY = (sautMaintenu ? surfaceEau - 0.30f : surfaceEau - 0.46f);
-            float erreurY = cibleY - GlobalPosition.Y;
-            float gainVertical = sautMaintenu ? 4.6f : 3.0f;
-            float vYCible = Mathf.Clamp(erreurY * gainVertical, -1.35f, sautMaintenu ? 1.65f : 0.95f);
-            float accelVerticale = sautMaintenu ? 7.2f : 4.8f;
-            velocity.Y = Mathf.MoveToward(velocity.Y, vYCible, accelVerticale * dt);
-
-            if (!sautMaintenu && GlobalPosition.Y > surfaceEau + 0.12f)
-                velocity.Y -= 1.15f * dt;
+            if (sautMaintenu)
+            {
+                // Nage active: on autorise une montée franche pour ressortir de l'eau.
+                float cibleY = surfaceEau + 0.12f;
+                float erreurY = cibleY - GlobalPosition.Y;
+                float vYCible = Mathf.Clamp(erreurY * 5.2f, -1.65f, 3.2f);
+                velocity.Y = Mathf.MoveToward(velocity.Y, vYCible, 9.2f * dt);
+            }
+            else if (!IsOnFloor())
+            {
+                // Pas de nage active: aucune flottabilité montante automatique.
+                // On conserve seulement une gravité atténuée sous l'eau.
+                velocity += GetGravity() * (0.32f * dt);
+            }
         }
         else if (!IsOnFloor())
         {
