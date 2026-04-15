@@ -186,6 +186,10 @@ public partial class BoeufSauvage : CharacterBody3D
 	[Export(PropertyHint.Range, "0.1,12,0.1")] public float ImpulsionChargeSurJoueur = 5.8f;
 	[Export(PropertyHint.Range, "0.05,2,0.01")] public float CooldownImpactChargeJoueur = 0.38f;
 	[Export(PropertyHint.Range, "0.05,2,0.01")] public float DureeFlashRougeDegats = 0.22f;
+	[ExportGroup("Audio combat bovin")]
+	[Export(PropertyHint.File, "*.ogg,*.wav,*.mp3")] public string CheminSonCriDegats = "res://Audio/Faune/cow_moo_hit.wav";
+	[Export(PropertyHint.Range, "0.05,2,0.01")] public float CooldownCriDegatsSecondes = 0.35f;
+	[Export(PropertyHint.Range, "-24,6,0.1")] public float VolumeCriDegatsDb = -4.5f;
 
 	[ExportGroup("Animation vivante (squelette + scenes + arbre)")]
 	/// <summary>Pipeline : squelette sous Modele -> fusion des scenes dans la bibliotheque <c>locomotion_faune</c> -> <see cref="AnimationTree"/> (blend + etats). Si faux : lecture directe (secours).</summary>
@@ -274,6 +278,8 @@ public partial class BoeufSauvage : CharacterBody3D
 	private CollisionShape3D _hitboxTete;
 	private CollisionShape3D _hitboxVentre;
 	private readonly Dictionary<ulong, double> _horodatageDernierDegatParSource = new();
+	private AudioStreamPlayer3D _audioCriDegats;
+	private double _horodatageDernierCriDegats = -999.0;
 	private int _niveau = 1;
 	private int _seedTerrain;
 	private bool _initialise;
@@ -1140,7 +1146,40 @@ public partial class BoeufSauvage : CharacterBody3D
 			_modeleVisuel.Transform = new Transform3D(correction * t.Basis, t.Origin);
 		}
 		InitialiserAnimations();
+		InitialiserAudioCombat();
 		StabiliserMateriauxBoeuf();
+	}
+
+	private void InitialiserAudioCombat()
+	{
+		_audioCriDegats = GetNodeOrNull<AudioStreamPlayer3D>("AudioCriDegats");
+		if (_audioCriDegats == null)
+		{
+			_audioCriDegats = new AudioStreamPlayer3D { Name = "AudioCriDegats" };
+			AddChild(_audioCriDegats);
+		}
+		_audioCriDegats.MaxDistance = 36f;
+		_audioCriDegats.UnitSize = 1f;
+		_audioCriDegats.VolumeDb = VolumeCriDegatsDb;
+		if (_audioCriDegats.Stream == null && !string.IsNullOrWhiteSpace(CheminSonCriDegats))
+		{
+			AudioStream stream = GD.Load<AudioStream>(CheminSonCriDegats);
+			if (stream != null)
+				_audioCriDegats.Stream = stream;
+		}
+	}
+
+	private void JouerCriDegats(float degats)
+	{
+		if (_audioCriDegats == null || !GodotObject.IsInstanceValid(_audioCriDegats) || _audioCriDegats.Stream == null)
+			return;
+		double maintenant = Time.GetTicksMsec() / 1000.0;
+		if ((maintenant - _horodatageDernierCriDegats) < Mathf.Max(0.05f, CooldownCriDegatsSecondes))
+			return;
+		_horodatageDernierCriDegats = maintenant;
+		_audioCriDegats.PitchScale = _rng.RandfRange(0.94f, 1.06f);
+		_audioCriDegats.VolumeDb = VolumeCriDegatsDb + Mathf.Clamp((degats - 1.2f) * 0.09f, -1.5f, 2.4f);
+		_audioCriDegats.Play();
 	}
 
 	public override void _PhysicsProcess(double delta)
@@ -2845,6 +2884,7 @@ public partial class BoeufSauvage : CharacterBody3D
 			return false;
 
 		_vieCourante = Mathf.Max(0f, _vieCourante - degats);
+		JouerCriDegats(degats);
 		MettreAJourAffichageFaim3D();
 		if (_vieCourante <= 0.0001f)
 		{

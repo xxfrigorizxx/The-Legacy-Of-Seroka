@@ -106,6 +106,8 @@ public partial class Joueur : CharacterBody3D
     public const int IdObjetPiochePierreTier0 = 108;
     /// <summary>Lance en pierre tier 0 (arme d'attaque/lancer uniquement).</summary>
     public const int IdObjetLancePierreTier0 = 111;
+    /// <summary>Faux primitive en pierre (visuel épée tier0 + craft établi 3×3).</summary>
+    public const int IdObjetFauxPierreTier0 = 112;
     /// <summary>Rack Ã  bÃ¢tons (stockage dÃ©diÃ©).</summary>
     public const int IdObjetRackBatons = 109;
     /// <summary>Rack Ã  bÃ»ches (stockage dÃ©diÃ©).</summary>
@@ -331,6 +333,7 @@ public partial class Joueur : CharacterBody3D
     private const string MetaSignaturePelle107 = "SigPelle107";
     private const string MetaSignaturePioche108 = "SigPioche108";
     private const string MetaSignatureLance111 = "SigLance111";
+    private const string MetaSignatureFaux112 = "SigFaux112";
     private const string MetaSignatureAtelier200 = "SigAtelier200";
     private const string MetaSignatureCorde20 = "SigCorde20";
     private const string MetaSignatureTissu21 = "SigTissu21";
@@ -2345,20 +2348,23 @@ public partial class Joueur : CharacterBody3D
                 ReinitialiserMinageMainNueProgression();
                 return;
             }
+            TypeMouvementFrappe mouv = TypeMouvementFrappe.Estoc;
+            if (_mouvementSourisCumule.Length() > 40f)
+            {
+                if (Mathf.Abs(_mouvementSourisCumule.X) > Mathf.Abs(_mouvementSourisCumule.Y))
+                    mouv = _mouvementSourisCumule.X > 0 ? TypeMouvementFrappe.GaucheADroite : TypeMouvementFrappe.DroiteAGauche;
+                else
+                    mouv = _mouvementSourisCumule.Y > 0 ? TypeMouvementFrappe.DeHautEnBas : TypeMouvementFrappe.DeBasEnHaut;
+            }
+
             if (!mainActive.EstVide && PeutUtiliserFrappe(mainActive))
             {
-                TypeMouvementFrappe mouv = TypeMouvementFrappe.Estoc;
-
-                if (_mouvementSourisCumule.Length() > 40f)
-                {
-                    if (Mathf.Abs(_mouvementSourisCumule.X) > Mathf.Abs(_mouvementSourisCumule.Y))
-                        mouv = _mouvementSourisCumule.X > 0 ? TypeMouvementFrappe.GaucheADroite : TypeMouvementFrappe.DroiteAGauche;
-                    else
-                        mouv = _mouvementSourisCumule.Y > 0 ? TypeMouvementFrappe.DeHautEnBas : TypeMouvementFrappe.DeBasEnHaut;
-                }
-
                 ExecuterAction(1.0f, mouv);
                 JouerAnimationFrappe(mouv);
+            }
+            else if (mainActive.EstVide)
+            {
+                ExecuterActionMainNue(1.0f, mouv);
             }
             ReinitialiserMinageMainNueProgression();
         }
@@ -2398,8 +2404,11 @@ public partial class Joueur : CharacterBody3D
                 // Atelier + rack (structures fixes) : jamais de lancer.
                 if (estAtelierEnMain || estRackBatonsEnMain || estBuissonEnMain || estTerrainVoxel || _forceLancer < 0.5f)
                 {
-                    // Clic droit court + lame / roche plate / Ã©clat + sol : fauchage (mÃªme ressenti quâ€™un coup) â€” le gauche le fait aussi.
-                    if (!estAtelierEnMain && !estRackBatonsEnMain && !estTerrainVoxel && _forceLancer < 0.5f && ExecuterFauchageSolPrioritaireClicDroit())
+                    // Clic droit court + lame / roche plate / pointe + sol : fauchage (le gauche le fait aussi).
+                    // Objet lançable : le clic droit court sert à poser sous la visée — pas de vol du fauchage.
+                    if (!estAtelierEnMain && !estRackBatonsEnMain && !estTerrainVoxel && _forceLancer < 0.5f
+                        && !EstObjetLancableAuMaintien(mainActive)
+                        && ExecuterFauchageSolPrioritaireClicDroit())
                     {
                         _forceLancer = 0f;
                         GetViewport().SetInputAsHandled();
@@ -2573,6 +2582,11 @@ public partial class Joueur : CharacterBody3D
         {
             int ir = Mathf.Clamp(slotData.IndexChimique, 0, ItemPhysique.TableGeologique.Length - 1);
             style.BgColor = ItemPhysique.TableGeologique[ir].CouleurBase.Lerp(new Color(0.46f, 0.34f, 0.2f), 0.24f);
+        }
+        else if (idMatiere == IdObjetFauxPierreTier0)
+        {
+            int ir = Mathf.Clamp(slotData.IndexChimique, 0, ItemPhysique.TableGeologique.Length - 1);
+            style.BgColor = ItemPhysique.TableGeologique[ir].CouleurBase.Lerp(new Color(0.4f, 0.32f, 0.22f), 0.3f);
         }
         else
             style.BgColor = new Color(0.4f, 0.4f, 0.6f); // Violet (Autre)
@@ -2834,6 +2848,7 @@ public partial class Joueur : CharacterBody3D
         IdObjetPellePierreTier0 => 0.62f,
         IdObjetPiochePierreTier0 => 0.66f,
         IdObjetLancePierreTier0 => 0.60f,
+        IdObjetFauxPierreTier0 => 0.38f,
         IdObjetBaie => 0.03f,
         34 => 0.04f,
         999 => 1.2f,
@@ -3001,19 +3016,19 @@ public partial class Joueur : CharacterBody3D
     {
         if (s.EstVide) return false;
         if (EstObjetProcedural(s.ID)) return true;
-        if (s.ID == 105 || s.ID == 106 || s.ID == IdObjetPellePierreTier0 || s.ID == IdObjetPiochePierreTier0 || s.ID == IdObjetLancePierreTier0) return true;
+        if (s.ID == 105 || s.ID == 106 || s.ID == IdObjetPellePierreTier0 || s.ID == IdObjetPiochePierreTier0 || s.ID == IdObjetLancePierreTier0 || s.ID == IdObjetFauxPierreTier0) return true;
         return s.ID == 100 && s.EstUnEclat && s.MeshEclat != null;
     }
 
     private void AssurerDurabiliteOutilsSurLesMains()
     {
-        if (MainGauche.ID == 105 || MainGauche.ID == 106 || MainGauche.ID == IdObjetPellePierreTier0 || MainGauche.ID == IdObjetPiochePierreTier0 || MainGauche.ID == IdObjetLancePierreTier0)
+        if (MainGauche.ID == 105 || MainGauche.ID == 106 || MainGauche.ID == IdObjetPellePierreTier0 || MainGauche.ID == IdObjetPiochePierreTier0 || MainGauche.ID == IdObjetLancePierreTier0 || MainGauche.ID == IdObjetFauxPierreTier0)
         {
             var m = MainGauche;
             Atlas_Matiere.InitialiserDurabiliteOutilSiBesoin(ref m);
             MainGauche = m;
         }
-        if (MainDroite.ID == 105 || MainDroite.ID == 106 || MainDroite.ID == IdObjetPellePierreTier0 || MainDroite.ID == IdObjetPiochePierreTier0 || MainDroite.ID == IdObjetLancePierreTier0)
+        if (MainDroite.ID == 105 || MainDroite.ID == 106 || MainDroite.ID == IdObjetPellePierreTier0 || MainDroite.ID == IdObjetPiochePierreTier0 || MainDroite.ID == IdObjetLancePierreTier0 || MainDroite.ID == IdObjetFauxPierreTier0)
         {
             var m = MainDroite;
             Atlas_Matiere.InitialiserDurabiliteOutilSiBesoin(ref m);
@@ -3029,7 +3044,7 @@ public partial class Joueur : CharacterBody3D
         int idOutilCasse = 0;
         if (MainGaucheEstActive)
         {
-            if (MainGauche.ID != 105 && MainGauche.ID != 106 && MainGauche.ID != IdObjetPellePierreTier0 && MainGauche.ID != IdObjetPiochePierreTier0 && MainGauche.ID != IdObjetLancePierreTier0) return 0;
+            if (MainGauche.ID != 105 && MainGauche.ID != 106 && MainGauche.ID != IdObjetPellePierreTier0 && MainGauche.ID != IdObjetPiochePierreTier0 && MainGauche.ID != IdObjetLancePierreTier0 && MainGauche.ID != IdObjetFauxPierreTier0) return 0;
             var m = MainGauche;
             int idOutil = m.ID;
             Atlas_Matiere.InitialiserDurabiliteOutilSiBesoin(ref m);
@@ -3045,7 +3060,7 @@ public partial class Joueur : CharacterBody3D
         }
         else
         {
-            if (MainDroite.ID != 105 && MainDroite.ID != 106 && MainDroite.ID != IdObjetPellePierreTier0 && MainDroite.ID != IdObjetPiochePierreTier0 && MainDroite.ID != IdObjetLancePierreTier0) return 0;
+            if (MainDroite.ID != 105 && MainDroite.ID != 106 && MainDroite.ID != IdObjetPellePierreTier0 && MainDroite.ID != IdObjetPiochePierreTier0 && MainDroite.ID != IdObjetLancePierreTier0 && MainDroite.ID != IdObjetFauxPierreTier0) return 0;
             var m = MainDroite;
             int idOutil = m.ID;
             Atlas_Matiere.InitialiserDurabiliteOutilSiBesoin(ref m);
@@ -3063,6 +3078,8 @@ public partial class Joueur : CharacterBody3D
         {
             if (idOutilCasse == 105)
                 GD.Print("ZERO-K : La dague primitive se brise â€” lame ou manche a cÃ©dÃ©. Il vous faudra une nouvelle lame et une corde.");
+            else if (idOutilCasse == IdObjetFauxPierreTier0)
+                GD.Print("ZERO-K : La faux primitive se brise — il faut refaire l’outil (roche pointue, ligature, manche et bâtons en T).");
             else if (idOutilCasse == 106)
                 GD.Print("ZERO-K : La hachette primitive se brise â€” lame ou manche a cÃ©dÃ©. Il vous faudra refaire lâ€™outil.");
             else if (idOutilCasse == IdObjetPellePierreTier0)
@@ -3078,7 +3095,7 @@ public partial class Joueur : CharacterBody3D
 
     private static void RemplirDurabiliteOutilDepuisItemPhysique(ref SlotInventaire slot, ItemPhysique item)
     {
-        if ((slot.ID != 105 && slot.ID != 106 && slot.ID != IdObjetPellePierreTier0 && slot.ID != IdObjetPiochePierreTier0 && slot.ID != IdObjetLancePierreTier0) || item == null) return;
+        if ((slot.ID != 105 && slot.ID != 106 && slot.ID != IdObjetPellePierreTier0 && slot.ID != IdObjetPiochePierreTier0 && slot.ID != IdObjetLancePierreTier0 && slot.ID != IdObjetFauxPierreTier0) || item == null) return;
         if (item.HasMeta(MetaDurabiliteOutilMax))
         {
             slot.DurabiliteOutilMax = (float)item.GetMeta(MetaDurabiliteOutilMax).AsDouble();
@@ -3088,7 +3105,7 @@ public partial class Joueur : CharacterBody3D
         }
         else
             Atlas_Matiere.InitialiserDurabiliteOutilSiBesoin(ref slot);
-        if (item.HasMeta(MetaTailleLameRoche))
+        if (item.HasMeta(MetaTailleLameRoche) && (slot.ID == 105 || slot.ID == IdObjetFauxPierreTier0))
             slot.IndexTailleLameRoche = (int)item.GetMeta(MetaTailleLameRoche).AsInt32();
     }
 
@@ -3170,6 +3187,7 @@ public partial class Joueur : CharacterBody3D
         else if (id == IdObjetPellePierreTier0) return null; // GLB res://Modeles/Equipements/Pelle_Pierre_tier0.glb via InstancierModeleArme
         else if (id == IdObjetPiochePierreTier0) return null; // GLB res://Modeles/Equipements/Pioche_pierre_tier0.glb via InstancierModeleArme
         else if (id == IdObjetLancePierreTier0) return null; // GLB res://Modeles/Equipements/Lance_en_pierre_tier0.glb via InstancierModeleArme
+        else if (id == IdObjetFauxPierreTier0) return null; // GLB res://Modeles/Equipements/Epe_pierre_tier0.glb via InstancierModeleArme
         else if (id == IdObjetRackBatons || id == IdObjetRackBuches) return null; // GLB rack (bÃ¢tons / bÃ»ches) via instanciation dÃ©diÃ©e
         else if (id == 30 || id == 32)
         {
@@ -3519,6 +3537,39 @@ public partial class Joueur : CharacterBody3D
         ReinitialiserRotationManuelle();
     }
 
+    /// <summary>Dague (105) au sol : une enveloppe convexe par mesh du GLB (même principe que l’atelier, mais convexe — trimesh concave interdit sur RigidBody dynamique).</summary>
+    private static int AjouterCollisionsConvexesDepuisMeshesSousRacineItem(ItemPhysique corpsRacine, Node racineVisuel)
+    {
+        var pile = new List<Node> { racineVisuel };
+        int nb = 0;
+        for (int i = 0; i < pile.Count; i++)
+        {
+            foreach (Node c in pile[i].GetChildren())
+            {
+                pile.Add(c);
+                if (c is not MeshInstance3D mi || mi.Mesh == null)
+                    continue;
+                Shape3D shape = mi.Mesh.CreateConvexShape(true, true);
+                if (shape == null)
+                    continue;
+                Transform3D t = mi.Transform;
+                for (Node p = mi.GetParent(); p != null && p != corpsRacine; p = p.GetParent())
+                {
+                    if (p is Node3D n3)
+                        t = n3.Transform * t;
+                }
+                corpsRacine.AddChild(new CollisionShape3D
+                {
+                    Name = "CollisionConvexGlb" + nb,
+                    Shape = shape,
+                    Transform = t
+                });
+                nb++;
+            }
+        }
+        return nb;
+    }
+
     /// <summary>CrÃ©e un bloc physique posÃ© avec IndexCacheMemoire assignÃ© (forme exacte conservÃ©e au rejet). Retourne le nÅ“ud crÃ©Ã© (pour lancer avec impulsion). ItemPhysique est le RigidBody3D racine.</summary>
     private Node3D CreerBlocPose(Vector3 pointDeChute, SlotInventaire mainActive)
     {
@@ -3594,11 +3645,14 @@ public partial class Joueur : CharacterBody3D
             var meshRoot = new MeshInstance3D { Name = "MeshInstance3D" };
             InstancierModeleArme(meshRoot, slotDague, 0.625f, ObtenirFacteurEchelleLameDague(slotDague));
             item.AddChild(meshRoot);
-            item.AddChild(new CollisionShape3D
+            if (AjouterCollisionsConvexesDepuisMeshesSousRacineItem(item, meshRoot) == 0)
             {
-                Name = "CollisionShape3D",
-                Shape = new CapsuleShape3D { Radius = 0.07f, Height = 0.46f }
-            });
+                item.AddChild(new CollisionShape3D
+                {
+                    Name = "CollisionShape3D",
+                    Shape = new CapsuleShape3D { Radius = 0.07f, Height = 0.46f }
+                });
+            }
             corps = item;
         }
         else if (id == 106)
@@ -3714,6 +3768,34 @@ public partial class Joueur : CharacterBody3D
             {
                 Name = "CollisionShape3D",
                 Shape = new CapsuleShape3D { Radius = 0.055f, Height = 0.92f }
+            });
+            corps = item;
+        }
+        else if (id == IdObjetFauxPierreTier0)
+        {
+            SlotInventaire slotFaux = mainActive;
+            Atlas_Matiere.InitialiserDurabiliteOutilSiBesoin(ref slotFaux);
+            var item = new ItemPhysique
+            {
+                ID_Objet = id,
+                IndexChimique = mainActive.IndexChimique,
+                IndexCacheMemoire = mainActive.IndexMorphologique,
+                IndexTailleRoche = mainActive.IndexTaille,
+                IndexBotanique = mainActive.IndexBotanique,
+                NiveauFracture = mainActive.NiveauFracture,
+                Name = "ItemPhysique",
+                ContinuousCd = true
+            };
+            item.SetMeta(MetaDurabiliteOutilMax, slotFaux.DurabiliteOutilMax);
+            item.SetMeta(MetaDurabiliteOutilActuelle, slotFaux.DurabiliteOutilActuelle);
+            item.SetMeta(MetaTailleLameRoche, Mathf.Clamp(slotFaux.IndexTailleLameRoche <= 0 ? 2 : slotFaux.IndexTailleLameRoche, 0, 4));
+            var meshRoot = new MeshInstance3D { Name = "MeshInstance3D" };
+            InstancierModeleArme(meshRoot, slotFaux, 0.63f, ObtenirFacteurEchelleLameDague(slotFaux));
+            item.AddChild(meshRoot);
+            item.AddChild(new CollisionShape3D
+            {
+                Name = "CollisionShape3D",
+                Shape = new CapsuleShape3D { Radius = 0.07f, Height = 0.48f }
             });
             corps = item;
         }
@@ -4192,6 +4274,8 @@ public partial class Joueur : CharacterBody3D
                 ItemPhysique.AppliquerPhysiquePioche108(ipPioche);
             else if (id == IdObjetLancePierreTier0 && rbPose is ItemPhysique ipLance)
                 ItemPhysique.AppliquerPhysiqueLance111(ipLance);
+            else if (id == IdObjetFauxPierreTier0 && rbPose is ItemPhysique ipFaux)
+                ItemPhysique.AppliquerPhysiqueFaux112(ipFaux);
         }
         // Fibres / corde non Ã©lastiques : ne pas appliquer dâ€™Ã©chelle Â« Ã©tirÃ©e Â» (herbe, liane, corde boyau+herbe, etc.)
         bool estFlexOuCorde = id == 15 || id == 16 || id == 17 || id == 20 || id == 21 || id == IdObjetCeinturePoches || id == IdObjetCeintureSacoches || id == IdObjetPochetteTier0 || id == IdObjetSacTier0;
@@ -4324,7 +4408,7 @@ public partial class Joueur : CharacterBody3D
         {
             if (!mainActive.EstVide && Input.IsActionPressed("clic_droit"))
                 _forceLancer = Mathf.Min(5.0f, _forceLancer + (VitesseChargeBras * 2.5f) * dt);
-            if (_gaucheMaintenu && (mainActive.EstVide || mainActive.ID == 105 || mainActive.ID == 106 || mainActive.ID == IdObjetPellePierreTier0 || mainActive.ID == IdObjetPiochePierreTier0 || mainActive.ID == IdObjetLancePierreTier0))
+            if (_gaucheMaintenu && (mainActive.EstVide || mainActive.ID == 105 || mainActive.ID == 106 || mainActive.ID == IdObjetPellePierreTier0 || mainActive.ID == IdObjetPiochePierreTier0 || mainActive.ID == IdObjetLancePierreTier0 || mainActive.ID == IdObjetFauxPierreTier0))
                 MettreAJourMinageMainNueOuAtelier(dt, mainActive);
             else
                 ReinitialiserMinageMainNueProgression();

@@ -2,6 +2,7 @@
 
 [ext_resource type="Script" uid="uid://dwohoif5u64b0" path="res://Faune/VacheSauvage.cs" id="1_vache_script"]
 [ext_resource type="PackedScene" uid="uid://u2fwftms7k47" path="res://Modeles/Entites/Boeufs/Quaternius/Cow.gltf" id="2_vache_glb"]
+[ext_resource type="AudioStream" path="res://Audio/Faune/cow_moo_hit.wav" id="3_cri_vache"]
 
 [sub_resource type="CapsuleShape3D" id="1_shape"]
 radius = 0.2
@@ -22,3 +23,8 @@ shape = SubResource("1_shape")
 
 [node name="Modele" parent="." unique_id=338935589 instance=ExtResource("2_vache_glb")]
 transform = Transform3D(-0.32, 0, 0, 0, 0.32, 0, 0, 0, -0.32, 0, 0.03, 0)
+
+[node name="AudioCriDegats" type="AudioStreamPlayer3D" parent="."]
+stream = ExtResource("3_cri_vache")
+volume_db = -4.5
+max_distance = 36.0

@@ -22,6 +22,8 @@ public partial class Joueur
                 _objetEnMain.RemoveMeta(MetaSignaturePioche108);
             if (_objetEnMain.HasMeta(MetaSignatureLance111))
                 _objetEnMain.RemoveMeta(MetaSignatureLance111);
+            if (_objetEnMain.HasMeta(MetaSignatureFaux112))
+                _objetEnMain.RemoveMeta(MetaSignatureFaux112);
             if (_objetEnMain.HasMeta(MetaSignatureAtelier200))
                 _objetEnMain.RemoveMeta(MetaSignatureAtelier200);
             if (_objetEnMain.HasMeta(MetaSignatureCorde20))
@@ -40,14 +42,23 @@ public partial class Joueur
             _objetEnMain.MaterialOverride = null;
             return;
         }
-        if (main.ID == 105)
+        if (main.ID == 105 || main.ID == IdObjetFauxPierreTier0)
         {
+            bool estFaux = main.ID == IdObjetFauxPierreTier0;
             _objetEnMain.Mesh = null;
             _objetEnMain.MaterialOverride = null;
             if (_objetEnMain.HasMeta(MetaSignatureHachette106))
                 _objetEnMain.RemoveMeta(MetaSignatureHachette106);
             if (_objetEnMain.HasMeta(MetaSignaturePelle107))
                 _objetEnMain.RemoveMeta(MetaSignaturePelle107);
+            if (_objetEnMain.HasMeta(MetaSignaturePioche108))
+                _objetEnMain.RemoveMeta(MetaSignaturePioche108);
+            if (_objetEnMain.HasMeta(MetaSignatureLance111))
+                _objetEnMain.RemoveMeta(MetaSignatureLance111);
+            if (estFaux && _objetEnMain.HasMeta(MetaSignatureDague105))
+                _objetEnMain.RemoveMeta(MetaSignatureDague105);
+            if (!estFaux && _objetEnMain.HasMeta(MetaSignatureFaux112))
+                _objetEnMain.RemoveMeta(MetaSignatureFaux112);
             if (_objetEnMain.HasMeta(MetaSignatureAtelier200))
                 _objetEnMain.RemoveMeta(MetaSignatureAtelier200);
             if (_objetEnMain.HasMeta(MetaSignatureCorde20))
@@ -58,16 +69,17 @@ public partial class Joueur
                 _objetEnMain.RemoveMeta(MetaSignatureCeinture102);
             if (_objetEnMain.HasMeta(MetaSignatureCeinture104))
                 _objetEnMain.RemoveMeta(MetaSignatureCeinture104);
-            int sig = SignatureSlotDague105(main);
-            int prev = _objetEnMain.HasMeta(MetaSignatureDague105) ? (int)_objetEnMain.GetMeta(MetaSignatureDague105).AsInt32() : -1;
+            int sig = estFaux ? SignatureSlotFaux112(main) : SignatureSlotDague105(main);
+            string cleMeta = estFaux ? MetaSignatureFaux112 : MetaSignatureDague105;
+            int prev = _objetEnMain.HasMeta(cleMeta) ? (int)_objetEnMain.GetMeta(cleMeta).AsInt32() : -1;
             bool manqueModele = _objetEnMain.FindChild("ModeleArme", true, false) == null;
             if (manqueModele || sig != prev)
             {
                 NettoyerModelesEnfants(_objetEnMain);
-                InstancierModeleArme(_objetEnMain, main, 0.35f, ObtenirFacteurEchelleLameDague(main));
-                _objetEnMain.SetMeta(MetaSignatureDague105, sig);
+                InstancierModeleArme(_objetEnMain, main, estFaux ? 0.36f : 0.35f, ObtenirFacteurEchelleLameDague(main));
+                _objetEnMain.SetMeta(cleMeta, sig);
             }
-            // +20 % vs l’ancien 0,5, puis +25 % (0,6 → 0,75) : lisibilité dague en main.
+            // +20 % vs l’ancien 0,5, puis +25 % (0,6 → 0,75) : lisibilité dague / faux en main.
             _objetEnMain.Scale = Vector3.One * (0.5f * 1.2f * 1.25f);
             _objetEnMain.RotationDegrees = new Vector3(-15f + _rotationManuelleX, 10f + _rotationManuelleY, 5f + _rotationManuelleZ);
             return;
@@ -81,6 +93,8 @@ public partial class Joueur
             _objetEnMain.MaterialOverride = null;
             if (_objetEnMain.HasMeta(MetaSignatureDague105))
                 _objetEnMain.RemoveMeta(MetaSignatureDague105);
+            if (_objetEnMain.HasMeta(MetaSignatureFaux112))
+                _objetEnMain.RemoveMeta(MetaSignatureFaux112);
             if (_objetEnMain.HasMeta(MetaSignatureAtelier200))
                 _objetEnMain.RemoveMeta(MetaSignatureAtelier200);
             if (_objetEnMain.HasMeta(MetaSignatureCorde20))
@@ -429,6 +443,8 @@ public partial class Joueur
                 meshNode.RemoveMeta(MetaSignatureHachette106);
             if (meshNode.HasMeta(MetaSignatureLance111))
                 meshNode.RemoveMeta(MetaSignatureLance111);
+            if (meshNode.HasMeta(MetaSignatureFaux112))
+                meshNode.RemoveMeta(MetaSignatureFaux112);
             if (meshNode.HasMeta(MetaSignatureAtelier200))
                 meshNode.RemoveMeta(MetaSignatureAtelier200);
             if (meshNode.HasMeta(MetaSignatureCorde20))
@@ -447,12 +463,23 @@ public partial class Joueur
             meshNode.MaterialOverride = null;
             return;
         }
-        if (slot.ID == 105)
+        if (slot.ID == 105 || slot.ID == IdObjetFauxPierreTier0)
         {
+            bool estFaux = slot.ID == IdObjetFauxPierreTier0;
             meshNode.Mesh = null;
             meshNode.MaterialOverride = null;
             if (meshNode.HasMeta(MetaSignatureHachette106))
                 meshNode.RemoveMeta(MetaSignatureHachette106);
+            if (meshNode.HasMeta(MetaSignaturePelle107))
+                meshNode.RemoveMeta(MetaSignaturePelle107);
+            if (meshNode.HasMeta(MetaSignaturePioche108))
+                meshNode.RemoveMeta(MetaSignaturePioche108);
+            if (meshNode.HasMeta(MetaSignatureLance111))
+                meshNode.RemoveMeta(MetaSignatureLance111);
+            if (estFaux && meshNode.HasMeta(MetaSignatureDague105))
+                meshNode.RemoveMeta(MetaSignatureDague105);
+            if (!estFaux && meshNode.HasMeta(MetaSignatureFaux112))
+                meshNode.RemoveMeta(MetaSignatureFaux112);
             if (meshNode.HasMeta(MetaSignatureAtelier200))
                 meshNode.RemoveMeta(MetaSignatureAtelier200);
             if (meshNode.HasMeta(MetaSignatureCorde20))
@@ -463,15 +490,16 @@ public partial class Joueur
                 meshNode.RemoveMeta(MetaSignatureCeinture102);
             if (meshNode.HasMeta(MetaSignatureCeinture104))
                 meshNode.RemoveMeta(MetaSignatureCeinture104);
-            int sig = SignatureSlotDague105(slot);
-            int prev = meshNode.HasMeta(MetaSignatureDague105) ? (int)meshNode.GetMeta(MetaSignatureDague105).AsInt32() : -1;
+            int sig = estFaux ? SignatureSlotFaux112(slot) : SignatureSlotDague105(slot);
+            string cleMeta = estFaux ? MetaSignatureFaux112 : MetaSignatureDague105;
+            int prev = meshNode.HasMeta(cleMeta) ? (int)meshNode.GetMeta(cleMeta).AsInt32() : -1;
             bool manque = meshNode.FindChild("ModeleArme", true, false) == null;
             if (manque || sig != prev)
             {
                 NettoyerModelesEnfants(meshNode);
                 // Moitié de l’échelle précédente (0,6 → 0,3) dans les slots HUD / menu anatomie.
-                InstancierModeleArme(meshNode, slot, 0.3f, ObtenirFacteurEchelleLameDague(slot));
-                meshNode.SetMeta(MetaSignatureDague105, sig);
+                InstancierModeleArme(meshNode, slot, estFaux ? 0.305f : 0.3f, ObtenirFacteurEchelleLameDague(slot));
+                meshNode.SetMeta(cleMeta, sig);
             }
             meshNode.Scale = Vector3.One;
             meshNode.RotationDegrees = new Vector3(20f, 45f, -20f);
@@ -486,6 +514,8 @@ public partial class Joueur
             meshNode.MaterialOverride = null;
             if (meshNode.HasMeta(MetaSignatureDague105))
                 meshNode.RemoveMeta(MetaSignatureDague105);
+            if (meshNode.HasMeta(MetaSignatureFaux112))
+                meshNode.RemoveMeta(MetaSignatureFaux112);
             if (meshNode.HasMeta(MetaSignatureAtelier200))
                 meshNode.RemoveMeta(MetaSignatureAtelier200);
             if (meshNode.HasMeta(MetaSignatureCorde20))

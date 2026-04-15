@@ -175,6 +175,18 @@ public partial class ItemPhysique : RigidBody3D
 		rb.PhysicsMaterialOverride = new PhysicsMaterial { Friction = 0.58f, Bounce = 0.05f };
 	}
 
+	/// <summary>Faux primitive (112) : même esprit que la dague, légèrement plus amortie (mesh épée).</summary>
+	public static void AppliquerPhysiqueFaux112(ItemPhysique rb)
+	{
+		if (rb == null || rb.ID_Objet != Joueur.IdObjetFauxPierreTier0) return;
+		rb.ContinuousCd = true;
+		rb.LinearDampMode = RigidBody3D.DampMode.Replace;
+		rb.LinearDamp = 0.23f;
+		rb.AngularDampMode = RigidBody3D.DampMode.Replace;
+		rb.AngularDamp = 0.88f;
+		rb.PhysicsMaterialOverride = new PhysicsMaterial { Friction = 0.64f, Bounce = 0.045f };
+	}
+
 	/// <summary>Table géologique : compositions minérales réelles (couleur, rugosité, future résistance).</summary>
 	public static readonly ProfilMineral[] TableGeologique = new ProfilMineral[]
 	{
@@ -371,6 +383,15 @@ public partial class ItemPhysique : RigidBody3D
 			ResistanceActuelle = 32f;
 			Scale = Vector3.One;
 			AppliquerPhysiquePioche108(this);
+			return;
+		}
+		if (ID_Objet == Joueur.IdObjetFauxPierreTier0)
+		{
+			IndexChimique = Mathf.Clamp(IndexChimique, 0, TableGeologique.Length - 1);
+			Mass = 0.38f;
+			ResistanceActuelle = 22f;
+			Scale = Vector3.One;
+			AppliquerPhysiqueFaux112(this);
 			return;
 		}
 		if (ID_Objet == Joueur.IdObjetLancePierreTier0)
@@ -671,11 +692,12 @@ public partial class ItemPhysique : RigidBody3D
 		if (boeufTouche != null)
 		{
 			float vitesseImpact = LinearVelocity.Length();
-			float energieImpact = Mathf.Max(0.01f, Mass) * vitesseImpact;
-			if (EstIdRocheMatiere(ID_Objet))
-				energieImpact *= Mathf.Lerp(0.52f, 0.9f, Mathf.Clamp(IndexTailleRoche / 4f, 0f, 1f));
-			else if (ID_Objet == 105 || ID_Objet == 106 || ID_Objet == Joueur.IdObjetPiochePierreTier0 || ID_Objet == Joueur.IdObjetPellePierreTier0 || ID_Objet == Joueur.IdObjetLancePierreTier0)
-				energieImpact *= 1.18f;
+			float masseImpact = Mathf.Max(0.01f, Mass);
+			float energieImpactCinetique = 0.5f * masseImpact * vitesseImpact * vitesseImpact;
+			float impulsion = masseImpact * vitesseImpact;
+			float energieImpact = (energieImpactCinetique * 0.44f + impulsion * 3.4f)
+				* CoefficientMorphologieImpact()
+				* CoefficientMateriauImpactFaune();
 
 			bool tranchant = EstObjetTranchantPourImpactFaune();
 			bool perforant = tranchant && vitesseImpact > 3.3f && EstObjetPointeBienAligneeVers(boeufTouche);
@@ -707,9 +729,10 @@ public partial class ItemPhysique : RigidBody3D
 		if (!frappeLeSol && body is RigidBody3D rigidBody)
 			velociteRelative += rigidBody.LinearVelocity.Length();
 
-		float energieCinetique = Mass * velociteRelative;
+		float masseCourante = Mathf.Max(0.01f, Mass);
+		float energieCinetique = 0.5f * masseCourante * velociteRelative * velociteRelative;
 		// Roches : seuil haut + grâce au lancer — évite fracture « dans le vide » au départ.
-		float seuilEnergie = EstIdRocheMatiere(ID_Objet) ? 105f : 10f;
+		float seuilEnergie = EstIdRocheMatiere(ID_Objet) ? 85f : 8f;
 		if (energieCinetique < seuilEnergie) return;
 
 		// Choc contre un personnage (sortie de main / frottement) : pas de casse sauf très gros choc.
@@ -729,10 +752,10 @@ public partial class ItemPhysique : RigidBody3D
 		// 4. Calcul des dégâts internes
 		int idxMoi = Mathf.Clamp(IndexChimique, 0, TableGeologique.Length - 1);
 		float maDurete = TableGeologique[idxMoi].ResistanceFuture;
-		float degatsSubis = (energieCinetique * dureteAdverse) / Mathf.Max(0.01f, maDurete);
+		float degatsSubis = (Mathf.Sqrt(energieCinetique) * 9.5f * dureteAdverse) / Mathf.Max(1f, maDurete);
 		if (EstIdRocheMatiere(ID_Objet))
 		{
-			degatsSubis *= Mathf.Clamp((energieCinetique - seuilEnergie) / 95f, 0.12f, 1f);
+			degatsSubis *= Mathf.Clamp((energieCinetique - seuilEnergie) / 78f, 0.1f, 1.18f);
 			if (body is CharacterBody3D)
 				degatsSubis *= 0.12f;
 			// Un seul contact ne peut pas vider toute la résistance (lancer violent sur sol dur).
@@ -762,11 +785,40 @@ public partial class ItemPhysique : RigidBody3D
 
 	private bool EstObjetTranchantPourImpactFaune()
 	{
-		if (ID_Objet == 105 || ID_Objet == 106 || ID_Objet == Joueur.IdObjetPiochePierreTier0 || ID_Objet == Joueur.IdObjetPellePierreTier0 || ID_Objet == Joueur.IdObjetLancePierreTier0 || ID_Objet == 100)
+		if (ID_Objet == 105 || ID_Objet == 106 || ID_Objet == Joueur.IdObjetPiochePierreTier0 || ID_Objet == Joueur.IdObjetPellePierreTier0 || ID_Objet == Joueur.IdObjetLancePierreTier0 || ID_Objet == Joueur.IdObjetFauxPierreTier0 || ID_Objet == 100)
 			return true;
 		if (EstUnEclat)
 			return true;
 		return EstIdRocheMatiere(ID_Objet) && IndexCacheMemoire == 3;
+	}
+
+	private float CoefficientMorphologieImpact()
+	{
+		if (!EstIdRocheMatiere(ID_Objet))
+			return 1f;
+		int morph = Mathf.Clamp(IndexCacheMemoire, 0, 3);
+		return morph switch
+		{
+			1 => 0.88f, // plate : pénètre moins en lancer
+			2 => 1.02f, // ovale : compromis
+			3 => 1.16f, // pointe : transfert plus agressif
+			_ => 0.97f  // ronde
+		};
+	}
+
+	private float CoefficientMateriauImpactFaune()
+	{
+		if (EstMatiereSilexParIdObjet(ID_Objet))
+			return 1.16f;
+		if (ID_Objet == Joueur.IdObjetLancePierreTier0)
+			return 1.22f;
+		if (ID_Objet == 106 || ID_Objet == Joueur.IdObjetPiochePierreTier0)
+			return 1.08f;
+		if (ID_Objet == 105 || ID_Objet == Joueur.IdObjetPellePierreTier0 || ID_Objet == Joueur.IdObjetFauxPierreTier0)
+			return 0.96f;
+		if (EstIdRocheMatiere(ID_Objet))
+			return Mathf.Lerp(0.72f, 1.06f, Mathf.Clamp(IndexTailleRoche / 4f, 0f, 1f));
+		return 1f;
 	}
 
 	private bool EstObjetPointeBienAligneeVers(BoeufSauvage cible)
@@ -1864,6 +1916,11 @@ public partial class ItemPhysique : RigidBody3D
 		if (ID_Objet == Joueur.IdObjetLancePierreTier0)
 		{
 			AppliquerPhysiqueLance111(this);
+			return;
+		}
+		if (ID_Objet == Joueur.IdObjetFauxPierreTier0)
+		{
+			AppliquerPhysiqueFaux112(this);
 			return;
 		}
 		if (EstIdRocheMatiere(ID_Objet))

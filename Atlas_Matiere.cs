@@ -259,9 +259,39 @@ public static class Atlas_Matiere
         return Mathf.Clamp(maxDur, 26f, 200f);
     }
 
+    /// <summary>Durabilité max à la création : roche pointe + ligature + manche + deux bâtons en T (craft).</summary>
+    public static float CalculerDurabiliteMaxNouvelleFaux(SlotInventaire rocheLame, SlotInventaire corde, SlotInventaire manche, SlotInventaire batonT1, SlotInventaire batonT2)
+    {
+        int idxLame = Mathf.Clamp(rocheLame.ID - ItemPhysique.IdRocheMatiereMin, 0, ItemPhysique.TableGeologique.Length - 1);
+        float mineral = ItemPhysique.TableGeologique[idxLame].ResistanceFuture;
+        ObtenirStatsCorde(corde.IndexChimique, corde.IndexMorphologique, corde.IndexBotanique, out float durCord, out _);
+        float dManche = ObtenirDurabiliteBois(manche.IndexBotanique);
+        float dT1 = ObtenirDurabiliteBois(batonT1.IndexBotanique);
+        float dT2 = ObtenirDurabiliteBois(batonT2.IndexBotanique);
+        float durBoisMin = Mathf.Min(dManche, Mathf.Min(dT1, dT2));
+        float capPierre = mineral * 0.68f;
+        float capCorde = durCord * 7.2f;
+        float capBois = durBoisMin * 4.05f;
+        float maxDur = Mathf.Min(capPierre, Mathf.Min(capCorde, capBois));
+        return Mathf.Clamp(maxDur, 20f, 155f);
+    }
+
+    public static float CalculerDurabiliteMaxFauxDepuisSlot(SlotInventaire faux)
+    {
+        int idxLame = Mathf.Clamp(faux.IndexChimique, 0, ItemPhysique.TableGeologique.Length - 1);
+        float mineral = ItemPhysique.TableGeologique[idxLame].ResistanceFuture;
+        ObtenirStatsCorde(faux.IndexMorphologique, faux.IndexTaille, faux.NiveauFracture, out float durCord, out _);
+        float durBois = ObtenirDurabiliteBois(faux.IndexBotanique);
+        float capPierre = mineral * 0.68f;
+        float capCorde = durCord * 7.2f;
+        float capBois = durBois * 4.35f;
+        float maxDur = Mathf.Min(capPierre, Mathf.Min(capCorde, capBois));
+        return Mathf.Clamp(maxDur, 20f, 155f);
+    }
+
     public static void InitialiserDurabiliteOutilSiBesoin(ref SlotInventaire s)
     {
-        if (s.ID != 105 && s.ID != 106 && s.ID != Joueur.IdObjetPellePierreTier0 && s.ID != Joueur.IdObjetPiochePierreTier0 && s.ID != Joueur.IdObjetLancePierreTier0) return;
+        if (s.ID != 105 && s.ID != 106 && s.ID != Joueur.IdObjetPellePierreTier0 && s.ID != Joueur.IdObjetPiochePierreTier0 && s.ID != Joueur.IdObjetLancePierreTier0 && s.ID != Joueur.IdObjetFauxPierreTier0) return;
         if (s.DurabiliteOutilMax > 0.5f)
         {
             if (s.DurabiliteOutilActuelle <= 0f)
@@ -295,6 +325,12 @@ public static class Atlas_Matiere
         else if (s.ID == Joueur.IdObjetLancePierreTier0)
         {
             float max = CalculerDurabiliteMaxLanceDepuisSlot(s);
+            s.DurabiliteOutilMax = max;
+            s.DurabiliteOutilActuelle = max;
+        }
+        else if (s.ID == Joueur.IdObjetFauxPierreTier0)
+        {
+            float max = CalculerDurabiliteMaxFauxDepuisSlot(s);
             s.DurabiliteOutilMax = max;
             s.DurabiliteOutilActuelle = max;
         }
@@ -380,6 +416,18 @@ public static class Atlas_Matiere
             }
             return nom;
         }
+        if (id == Joueur.IdObjetFauxPierreTier0)
+        {
+            int i = Mathf.Clamp(slot.IndexChimique, 0, ItemPhysique.TableGeologique.Length - 1);
+            string nom = $"Faux primitive ({ItemPhysique.TableGeologique[i].Nom})";
+            if (slot.DurabiliteOutilMax > 0.5f)
+            {
+                int a = Mathf.Max(0, Mathf.RoundToInt(slot.DurabiliteOutilActuelle));
+                int m = Mathf.Max(1, Mathf.RoundToInt(slot.DurabiliteOutilMax));
+                return $"{nom} ({a}/{m})";
+            }
+            return nom;
+        }
         if (id == 100)
         {
             int clef = Joueur.ClefRegistreOutilForge(slot);
@@ -447,6 +495,11 @@ public static class Atlas_Matiere
         }
         if (id == 32)
         {
+            if (slot.IndexChimique == 1 && slot.IndexMorphologique == 4)
+            {
+                string essenceEnT = slot.IndexBotanique switch { 0 => "Chêne", 1 => "Bouleau", 2 => "Pin", 3 => "Sapin", 4 => "Fromager", _ => "Bois" };
+                return $"Bâton façonné en T ({essenceEnT})";
+            }
             string essence = slot.IndexBotanique switch { 0 => "Chêne", 1 => "Bouleau", 2 => "Pin", 3 => "Sapin", 4 => "Fromager", _ => "Bois" };
             string longueur = slot.IndexTaille switch { 0 => "Brin brut", 1 => "Bâton standard", 2 => "Demi-bâton", 3 => "Rondin fin", _ => "Morceau" };
             string fente = slot.IndexMorphologique switch { 0 => "", 1 => " (Fendu en 2)", 2 => " (Fendu en 4)", 3 => " (Planchette)", _ => "" };
@@ -979,8 +1032,36 @@ public static class Atlas_Matiere
         // Pelle pierre tier0 (107) : colonne verticale en 3x3 atelier [1]=bâton façonné (toute essence), [4]=ficelle, [7]=petite roche ovale.
         static bool EstSlotBatonFaconneCraft(SlotInventaire s) =>
             !s.EstVide && s.ID == 32 && s.IndexChimique == 1;
+        /// <summary>Bâton façonné hors tag craft « en T » (morph 4 réservé au composant PB).</summary>
+        static bool EstSlotBatonFaconneMorphStandardCraft(SlotInventaire s) =>
+            EstSlotBatonFaconneCraft(s) && s.IndexMorphologique != 4;
+        static bool EstSlotBatonEnTCraft(SlotInventaire s) =>
+            EstSlotBatonFaconneCraft(s) && s.IndexMorphologique == 4;
         static bool EstSlotPetiteRocheOvaleCraft(SlotInventaire s) =>
             !s.EstVide && ItemPhysique.EstIdRocheMatiere(s.ID) && s.IndexMorphologique == 2 && (s.IndexTaille == 0 || s.IndexTaille == 1);
+        // Bâton en T (morph 4) : trois bâtons façonnés standard en T sur l’établi 3×3 — cases [1],[3],[4], le reste vide.
+        if (grilleCraft3x3Table && grille.Length >= 9
+            && EstSlotBatonFaconneMorphStandardCraft(grille[1])
+            && EstSlotBatonFaconneMorphStandardCraft(grille[3])
+            && EstSlotBatonFaconneMorphStandardCraft(grille[4]))
+        {
+            bool autresVides = grille[0].EstVide && grille[2].EstVide && grille[5].EstVide && grille[6].EstVide && grille[7].EstVide && grille[8].EstVide;
+            if (autresVides)
+            {
+                SlotInventaire pivot = grille[4];
+                return new SlotInventaire
+                {
+                    ID = 32,
+                    IndexChimique = 1,
+                    IndexMorphologique = 4,
+                    IndexBotanique = pivot.IndexBotanique,
+                    IndexTaille = pivot.IndexTaille,
+                    ScaleEclat = pivot.ScaleEclat,
+                    EstUnEclat = false,
+                    NiveauFracture = 0
+                };
+            }
+        }
         if (grilleCraft3x3Table && grille.Length >= 9
             && EstSlotBatonFaconneCraft(grille[1]) && EstSlotLigatureOutilCraft(grille[4]) && EstSlotPetiteRocheOvaleCraft(grille[7]))
         {
@@ -1082,6 +1163,42 @@ public static class Atlas_Matiere
                     IndexMorphologique = corde.IndexChimique,
                     IndexTaille = corde.IndexMorphologique,
                     IndexBotanique = baton.IndexBotanique,
+                    EstUnEclat = false,
+                    NiveauFracture = corde.IndexBotanique,
+                    DurabiliteOutilMax = dMax,
+                    DurabiliteOutilActuelle = dMax
+                };
+            }
+        }
+
+        // Faux primitive pierre tier0 (112) 3×3 : (X)(R)(X) / (PB)(C)(PB) / (X)(B)(X).
+        if (grilleCraft3x3Table && grille.Length >= 9)
+        {
+            bool patronFaux = grille[0].EstVide
+                && EstSlotPetiteRochePointeCraft(grille[1])
+                && grille[2].EstVide
+                && EstSlotBatonEnTCraft(grille[3])
+                && EstSlotLigatureOutilCraft(grille[4])
+                && EstSlotBatonEnTCraft(grille[5])
+                && grille[6].EstVide
+                && EstSlotBatonFaconneMorphStandardCraft(grille[7])
+                && grille[8].EstVide;
+            if (patronFaux)
+            {
+                SlotInventaire roche = grille[1];
+                SlotInventaire corde = NormaliserLigatureOutil(grille[4]);
+                SlotInventaire manche = grille[7];
+                SlotInventaire pb1 = grille[3];
+                SlotInventaire pb2 = grille[5];
+                float dMax = CalculerDurabiliteMaxNouvelleFaux(roche, corde, manche, pb1, pb2);
+                return new SlotInventaire
+                {
+                    ID = Joueur.IdObjetFauxPierreTier0,
+                    IndexChimique = roche.ID - ItemPhysique.IdRocheMatiereMin,
+                    IndexMorphologique = corde.IndexChimique,
+                    IndexTaille = corde.IndexMorphologique,
+                    IndexBotanique = manche.IndexBotanique,
+                    IndexTailleLameRoche = Mathf.Clamp(roche.IndexTaille, 0, 4),
                     EstUnEclat = false,
                     NiveauFracture = corde.IndexBotanique,
                     DurabiliteOutilMax = dMax,

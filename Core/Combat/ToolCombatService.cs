@@ -96,7 +96,7 @@ public partial class Joueur
     /// <summary>Dague/Pelle : minage maintenu 3s sur buisson (dague coupe, pelle déracine replantable).</summary>
     private bool MettreAJourRecolteBuissonOutil(float dt, SlotInventaire mainActive)
     {
-        bool dague = mainActive.ID == 105;
+        bool dague = mainActive.ID == 105 || mainActive.ID == IdObjetFauxPierreTier0;
         bool pelle = mainActive.ID == IdObjetPellePierreTier0;
         if (!dague && !pelle) return false;
         if (!EssayerObtenirCibleBuisson(out Vector3 pointImpact, out Vector3 pointBuissonMonde, out Vector3I posBuisson, out byte typeBuisson))
@@ -152,7 +152,7 @@ public partial class Joueur
     /// <summary>Dague sur liane jungle: maintien 2s pour couper/récolter.</summary>
     private bool MettreAJourRecolteLianeDague(float dt, SlotInventaire mainActive)
     {
-        if (mainActive.ID != 105)
+        if (mainActive.ID != 105 && mainActive.ID != IdObjetFauxPierreTier0)
         {
             ReinitialiserMinageLianeDagueProgression();
             return false;
@@ -256,7 +256,8 @@ public partial class Joueur
         if (!_rayon.IsColliding()) return false;
 
         Node objetTouche = NoeudDepuisColliderRaycast(_rayon.GetCollider());
-        if (objetTouche != null && (objetTouche is ItemPhysique || ResoudreRigidBodyDepuisCollider(objetTouche) != null || objetTouche.IsInGroup("BlocsPoses") || ObtenirArbreDepuisCollider(objetTouche) != null))
+        // Bovin : le rayon touche le corps (CharacterBody3D), pas le voxel — sans ce garde-fou on sonde « derrière » la bête et on extrait de la terre.
+        if (objetTouche != null && (objetTouche is ItemPhysique || ResoudreRigidBodyDepuisCollider(objetTouche) != null || objetTouche.IsInGroup("BlocsPoses") || ObtenirArbreDepuisCollider(objetTouche) != null || ObtenirBoeufDepuisCollider(objetTouche) != null))
             return false;
 
         pointImpactVoxel = _rayon.GetCollisionPoint();
@@ -276,7 +277,7 @@ public partial class Joueur
         if (!_rayon.IsColliding()) return false;
 
         Node objetTouche = NoeudDepuisColliderRaycast(_rayon.GetCollider());
-        if (objetTouche != null && (objetTouche is ItemPhysique || ResoudreRigidBodyDepuisCollider(objetTouche) != null || objetTouche.IsInGroup("BlocsPoses") || ObtenirArbreDepuisCollider(objetTouche) != null))
+        if (objetTouche != null && (objetTouche is ItemPhysique || ResoudreRigidBodyDepuisCollider(objetTouche) != null || objetTouche.IsInGroup("BlocsPoses") || ObtenirArbreDepuisCollider(objetTouche) != null || ObtenirBoeufDepuisCollider(objetTouche) != null))
             return false;
 
         pointImpactVoxel = _rayon.GetCollisionPoint();
@@ -457,7 +458,7 @@ public partial class Joueur
     {
         bool mainVide = mainActive.EstVide;
         bool hachette = mainActive.ID == 106;
-        bool dague = mainActive.ID == 105;
+        bool dague = mainActive.ID == 105 || mainActive.ID == IdObjetFauxPierreTier0;
         bool pelle = mainActive.ID == IdObjetPellePierreTier0;
         bool pioche = mainActive.ID == IdObjetPiochePierreTier0;
 
@@ -617,6 +618,8 @@ public partial class Joueur
             return (0.82f, 0.18f, 2.0f);
         if (mainActive.ID == 105)
             return (0.78f, 0.22f, 1.15f);
+        if (mainActive.ID == IdObjetFauxPierreTier0)
+            return (0.79f, 0.21f, 1.28f);
         if (mainActive.ID == 106)
             return (0.88f, 0.12f, 2.05f);
         if (mainActive.ID == IdObjetPiochePierreTier0)
@@ -663,6 +666,8 @@ public partial class Joueur
             epaisseurLame = 0.05f;
         else if (mainActive.ID == 105)
             epaisseurLame = 0.04f;
+        else if (mainActive.ID == IdObjetFauxPierreTier0)
+            epaisseurLame = 0.042f;
         else if (mainActive.ID == 106)
             epaisseurLame = 0.065f;
         else if (mainActive.ID == IdObjetPiochePierreTier0)
@@ -776,6 +781,35 @@ public partial class Joueur
         return Mathf.Max(alignVisée, alignMouvement) > 0.22f;
     }
 
+    /// <summary>Faux 112 : lame <c>tripo_part_2</c>, manche bois <c>tripo_part_0</c> (même convention que pelle/lance sur l’épée GLB).</summary>
+    private bool EstFrappeFaux112AvecLaLame(Vector3 pointImpact, Vector3 directionFrappe)
+    {
+        if (_objetEnMain == null || _camera == null) return false;
+        var modele = _objetEnMain.FindChild("ModeleArme", true, false) as Node3D;
+        if (modele == null) return false;
+        MeshInstance3D lameMi = modele.GetNodeOrNull<MeshInstance3D>("tripo_part_2")
+            ?? TrouverMeshInstanceDontLeNomContient(modele, "tripo_part_2")
+            ?? TrouverMeshParMots(modele, "tip", "pointe", "blade", "lame", "head", "stone", "rock", "pierre", "epee", "épée");
+        MeshInstance3D mancheMi = modele.GetNodeOrNull<MeshInstance3D>("tripo_part_0")
+            ?? TrouverMeshInstanceDontLeNomContient(modele, "tripo_part_0")
+            ?? TrouverMeshParMots(modele, "handle", "shaft", "manche", "baton", "stick", "bois", "wood");
+        if (lameMi?.Mesh == null || mancheMi?.Mesh == null) return false;
+        Vector3 cL = lameMi.GlobalTransform * lameMi.Mesh.GetAabb().GetCenter();
+        Vector3 cM = mancheMi.GlobalTransform * mancheMi.Mesh.GetAabb().GetCenter();
+        Vector3 lameDepuisManche = cL - cM;
+        if (lameDepuisManche.LengthSquared() < 1e-10f) return false;
+        lameDepuisManche = lameDepuisManche.Normalized();
+        Vector3 versCible = pointImpact - _camera.GlobalPosition;
+        if (versCible.LengthSquared() < 1e-10f) return false;
+        versCible = versCible.Normalized();
+
+        float alignVisée = versCible.Dot(lameDepuisManche);
+        float alignMouvement = 0f;
+        if (directionFrappe.LengthSquared() > 1e-8f)
+            alignMouvement = directionFrappe.Normalized().Dot(lameDepuisManche);
+        return Mathf.Max(alignVisée, alignMouvement) > 0.18f;
+    }
+
     private static BoeufSauvage ObtenirBoeufDepuisCollider(Node col)
     {
         for (Node n = col; n != null; n = n.GetParent())
@@ -796,6 +830,8 @@ public partial class Joueur
             return 1.18f;
         if (mainActive.ID == 105)
             return 1.14f;
+        if (mainActive.ID == IdObjetFauxPierreTier0)
+            return 1.12f;
         if (mainActive.ID == 106)
             return 1.22f;
         if (mainActive.ID == IdObjetPiochePierreTier0)
@@ -811,6 +847,65 @@ public partial class Joueur
         if (ItemPhysique.EstIdRocheMatiere(mainActive.ID))
             return 0.95f;
         return 0.9f;
+    }
+
+    private const float MasseFrappeMainNueKg = 3.2f;
+    private const float CoefMainNueFaune = 0.72f;
+    private const float CoefMainNueRigid = 0.48f;
+
+    private static float CoefficientContactImpact(bool tranchant, bool perforant)
+    {
+        if (perforant) return 1.34f;
+        if (tranchant) return 1.12f;
+        return 0.82f;
+    }
+
+    private float CalculerVitesseFrappe(TypeMouvementFrappe mouvement, Vector3 directionFrappe, Vector3 normaleImpact)
+    {
+        float vitesseBase = 2.35f + Mathf.Clamp(_mouvementSourisCumule.Length() / 105f, 0f, 2.8f);
+        float bonusMouvement = mouvement switch
+        {
+            TypeMouvementFrappe.DeHautEnBas => 1.18f,
+            TypeMouvementFrappe.GaucheADroite => 1.08f,
+            TypeMouvementFrappe.DroiteAGauche => 1.08f,
+            TypeMouvementFrappe.Estoc => 1.14f,
+            _ => 1f
+        };
+        Vector3 dirNorm = directionFrappe.LengthSquared() > 1e-6f ? directionFrappe.Normalized() : Vector3.Forward;
+        Vector3 normaleNorm = normaleImpact.LengthSquared() > 1e-6f ? normaleImpact.Normalized() : Vector3.Up;
+        // Plus le coup arrive "dans" la surface, plus l'impact est efficace.
+        float alignementSurface = Mathf.Clamp((-dirNorm).Dot(normaleNorm), -1f, 1f);
+        float facteurAlignement = Mathf.Lerp(0.72f, 1.28f, (alignementSurface + 1f) * 0.5f);
+        return Mathf.Max(0.45f, vitesseBase * bonusMouvement * facteurAlignement);
+    }
+
+    private float CalculerIntensiteImpactPhysique(
+        float masseImpact,
+        float forceMotrice,
+        TypeMouvementFrappe mouvement,
+        Vector3 directionFrappe,
+        Vector3 normaleImpact,
+        float coefficientContact,
+        float coefficientMatiere,
+        float coefficientCible)
+    {
+        float masse = Mathf.Max(0.05f, masseImpact);
+        float vitesse = CalculerVitesseFrappe(mouvement, directionFrappe, normaleImpact);
+        float energie = 0.5f * masse * vitesse * vitesse;
+        float impulsion = masse * vitesse * Mathf.Clamp(forceMotrice, 0.2f, 4f);
+        float intensite = (energie * 0.58f + impulsion * 0.42f)
+            * Mathf.Max(0.15f, coefficientContact)
+            * Mathf.Max(0.15f, coefficientMatiere)
+            * Mathf.Max(0.15f, coefficientCible);
+        return Mathf.Max(0.01f, intensite);
+    }
+
+    private static float CoefficientZoneBovin(string nomZone)
+    {
+        string nom = (nomZone ?? string.Empty).ToLowerInvariant();
+        if (nom.Contains("tete")) return 1.08f;
+        if (nom.Contains("ventre")) return 1.03f;
+        return 1f;
     }
 
     /// <summary>Relâchement clic gauche : sol → creusage / fauchage ; sinon frappe roches, arbres, rigides.</summary>
@@ -856,7 +951,92 @@ public partial class Joueur
             return;
         }
 
-        ExecuterFrappePhysique(force, effHache, masseOutil, objetTouche, pointImpact, directionMouvement);
+        ExecuterFrappePhysique(force, effHache, masseOutil, objetTouche, pointImpact, directionMouvement, mouvement);
+    }
+
+    private void ExecuterActionMainNue(float force, TypeMouvementFrappe mouvement)
+    {
+        force *= MultiplicateurForceFrappeEndurance();
+        _rayon.ForceRaycastUpdate();
+        if (!_rayon.IsColliding())
+            return;
+
+        Node objetTouche = NoeudDepuisColliderRaycast(_rayon.GetCollider());
+        if (objetTouche == null || EstSolViseParRayon(_rayon, objetTouche))
+            return;
+
+        Vector3 pointImpact = _rayon.GetCollisionPoint();
+        Vector3 directionMouvement = -_camera.GlobalTransform.Basis.Z.Normalized();
+        if (mouvement == TypeMouvementFrappe.DeHautEnBas) directionMouvement = -_camera.GlobalTransform.Basis.Y.Normalized();
+        else if (mouvement == TypeMouvementFrappe.DeBasEnHaut) directionMouvement = _camera.GlobalTransform.Basis.Y.Normalized();
+        else if (mouvement == TypeMouvementFrappe.GaucheADroite) directionMouvement = _camera.GlobalTransform.Basis.X.Normalized();
+        else if (mouvement == TypeMouvementFrappe.DroiteAGauche) directionMouvement = -_camera.GlobalTransform.Basis.X.Normalized();
+        ExecuterFrappeMainNue(force, objetTouche, pointImpact, directionMouvement, mouvement);
+    }
+
+    private void ExecuterFrappeMainNue(float force, Node objetTouche, Vector3 pointImpact, Vector3 directionFrappe, TypeMouvementFrappe mouvement)
+    {
+        ArbreVivant arbre = ObtenirArbreDepuisCollider(objetTouche);
+        if (arbre != null)
+        {
+            GD.Print("ZERO-K : Vos poings ne suffisent pas pour blesser un arbre. Utilisez un outil.");
+            return;
+        }
+
+        Vector3 normaleImpact = _rayon != null && _rayon.IsColliding() ? _rayon.GetCollisionNormal() : -directionFrappe;
+        float massePoing = MasseFrappeMainNueKg * Mathf.Clamp(ObtenirMultiplicateurDegatsForce(), 0.9f, 2.2f);
+
+        BoeufSauvage boeufTouche = ObtenirBoeufDepuisCollider(objetTouche);
+        if (boeufTouche != null)
+        {
+            string nomZone = NomZoneDepuisColliderRaycast(_rayon.GetCollider());
+            float intensite = CalculerIntensiteImpactPhysique(
+                massePoing,
+                force,
+                mouvement,
+                directionFrappe,
+                normaleImpact,
+                CoefMainNueFaune,
+                0.74f,
+                CoefficientZoneBovin(nomZone));
+            float degats = Mathf.Clamp(intensite * 0.92f, 0.06f, 12f);
+            bool applique = boeufTouche.RecevoirImpactCombat(
+                degats,
+                pointImpact,
+                directionFrappe,
+                false,
+                false,
+                nomZone,
+                (ulong)GetInstanceId());
+            if (applique)
+                AjouterXpFutureState("Force", 1UL);
+            return;
+        }
+
+        RigidBody3D rbCible = ResoudreRigidBodyDepuisCollider(objetTouche);
+        if (rbCible == null)
+            return;
+
+        Vector3 dirFrappeObj = _rayon != null && _rayon.IsColliding() ? -_rayon.GetCollisionNormal() : directionFrappe;
+        float intensiteRigid = CalculerIntensiteImpactPhysique(
+            massePoing,
+            force,
+            mouvement,
+            directionFrappe,
+            normaleImpact,
+            CoefMainNueRigid,
+            0.76f,
+            0.88f);
+        rbCible.ApplyCentralImpulse(dirFrappeObj.Normalized() * Mathf.Clamp(intensiteRigid * 0.16f, 0.35f, 4.6f));
+
+        var item = rbCible as ItemPhysique ?? rbCible.GetNodeOrNull<ItemPhysique>("ItemPhysique");
+        if (item == null)
+            return;
+
+        Vector3 dirVue = (pointImpact - _camera.GlobalPosition).Normalized();
+        int resultat = item.SubirDegats(Mathf.Clamp(intensiteRigid * 0.95f, 0.04f, 45f), dirVue, pointImpact);
+        if (resultat > 0)
+            AjouterXpFutureState("Force", 1UL);
     }
 
     private void JouerAnimationFrappe(TypeMouvementFrappe type)
@@ -902,10 +1082,12 @@ public partial class Joueur
         float multiplicateurForce = ObtenirMultiplicateurDegatsForce();
 
         // Dague sur buisson: interdit en coup instantané, uniquement minage maintenu 3s.
-        if (mainActive.ID == 105 && (_gestionnaireMonde?.EssayerDetecterBuissonSousPoint(pointImpact, RayonDetectionBuisson, out Vector3 posBuisson, out _)) == true
+        if ((mainActive.ID == 105 || mainActive.ID == IdObjetFauxPierreTier0) && (_gestionnaireMonde?.EssayerDetecterBuissonSousPoint(pointImpact, RayonDetectionBuisson, out Vector3 posBuisson, out _)) == true
             && pointImpact.DistanceTo(posBuisson) <= DistanceMaxViseeDirecteBuisson)
         {
-            GD.Print("ZERO-K : Maintenez 3s avec la dague pour couper le buisson.");
+            GD.Print(mainActive.ID == IdObjetFauxPierreTier0
+                ? "ZERO-K : Maintenez 3s avec la faux pour couper le buisson."
+                : "ZERO-K : Maintenez 3s avec la dague pour couper le buisson.");
             return;
         }
 
@@ -924,16 +1106,16 @@ public partial class Joueur
         {
             // Fauchage : dague (105), roche plate (1) ou en pointe (3), ou éclat — pas la hachette (106), inadaptée au gazon fin.
             bool estRocheFaucheuse = ItemPhysique.EstIdRocheMatiere(mainActive.ID) && (mainActive.IndexMorphologique == 1 || mainActive.IndexMorphologique == 3);
-            bool estOutilFaucheur = mainActive.ID == 105
+            bool estOutilFaucheur = mainActive.ID == 105 || mainActive.ID == IdObjetFauxPierreTier0
                 || estRocheFaucheuse
                 || mainActive.EstUnEclat;
 
             if (estOutilFaucheur)
             {
                 _gestionnaireMonde?.AppliquerFauchageGlobal(pointImpact, 3.1f);
-                if (mainActive.ID == 105)
-                    AppliquerUsureOutilMainActive(0.75f);
-                if (mainActive.ID == 105)
+                if (mainActive.ID == 105 || mainActive.ID == IdObjetFauxPierreTier0)
+                    AppliquerUsureOutilMainActive(mainActive.ID == IdObjetFauxPierreTier0 ? 0.78f : 0.75f);
+                if (mainActive.ID == 105 || mainActive.ID == IdObjetFauxPierreTier0)
                     AjouterXpFutureState("Dextiriter", 1UL);
                 else if (estRocheFaucheuse && ObtenirNiveauFutureState("Dextiriter") < 15UL)
                     AjouterXpFutureState("Dextiriter", 1UL);
@@ -956,16 +1138,18 @@ public partial class Joueur
         if (forceCreusage > 10f)
         {
             GD.Print($"ZERO-K : Extraction du sol réussie. (Force Volume: {forceCreusage:F1})");
-            if (mainActive.ID == 105 || mainActive.ID == 106 || mainActive.ID == IdObjetPellePierreTier0)
+            if (mainActive.ID == 105 || mainActive.ID == IdObjetFauxPierreTier0 || mainActive.ID == 106 || mainActive.ID == IdObjetPellePierreTier0)
                 AppliquerUsureOutilMainActive(3.2f);
         }
-        else if (mainActive.ID == 105 && efficacitePelle >= 0.6f)
+        else if ((mainActive.ID == 105 || mainActive.ID == IdObjetFauxPierreTier0) && efficacitePelle >= 0.6f)
         {
             // Dague mal orientée en « pelle » : le creusage formel est trop faible, mais on gratte quand même un peu + fauchage herbe.
             _gestionnaireMonde?.AppliquerDestructionGlobale(pointImpact, 0.95f, 4.5f);
             _gestionnaireMonde?.AppliquerFauchageGlobal(pointImpact, 2.8f);
             AppliquerUsureOutilMainActive(2.4f);
-            GD.Print("ZERO-K : La dague racle la surface (coup orienté pelle, peu de pénétration).");
+            GD.Print(mainActive.ID == IdObjetFauxPierreTier0
+                ? "ZERO-K : La faux racle la surface (coup orienté pelle, peu de pénétration)."
+                : "ZERO-K : La dague racle la surface (coup orienté pelle, peu de pénétration).");
         }
         else
         {
@@ -974,7 +1158,7 @@ public partial class Joueur
     }
 
     /// <summary>Arbres vivants/morts, roches, rigides — efficacité hache émergente.</summary>
-    private void ExecuterFrappePhysique(float force, float efficaciteHache, float masseOutil, Node objetTouche, Vector3 pointImpact, Vector3 directionFrappe)
+    private void ExecuterFrappePhysique(float force, float efficaciteHache, float masseOutil, Node objetTouche, Vector3 pointImpact, Vector3 directionFrappe, TypeMouvementFrappe mouvement)
     {
         SlotInventaire mainActive = MainGaucheEstActive ? MainGauche : MainDroite;
         float multiplicateurForce = ObtenirMultiplicateurDegatsForce();
@@ -990,6 +1174,8 @@ public partial class Joueur
             multiplicateurLame = Mathf.Max(multiplicateurLame, 2.5f);
         else if (mainActive.ID == 105 && EstFrappeDagueAvecLaLame(pointImpact, directionFrappe))
             multiplicateurLame = Mathf.Max(multiplicateurLame, 2.35f);
+        else if (mainActive.ID == IdObjetFauxPierreTier0 && EstFrappeFaux112AvecLaLame(pointImpact, directionFrappe))
+            multiplicateurLame = Mathf.Max(multiplicateurLame, 2.32f);
         else if (mainActive.ID == 106 && EstFrappeHachette106AvecLaLame(pointImpact, directionFrappe))
             multiplicateurLame = Mathf.Max(multiplicateurLame, 2.85f);
         else if (mainActive.ID == IdObjetLancePierreTier0 && EstFrappeLance111AvecLaPointe(pointImpact, directionFrappe))
@@ -997,7 +1183,17 @@ public partial class Joueur
         else if (mainActive.EstUnEclat && mainActive.MeshEclat != null && mainActive.ID != 100)
             multiplicateurLame = Mathf.Min(multiplicateurLame, 40.0f);
 
-        float forceImpact = (masseOutil * force * 15f) * multiplicateurLame * multiplicateurForce;
+        Vector3 normaleImpact = _rayon != null && _rayon.IsColliding() ? _rayon.GetCollisionNormal() : -directionFrappe;
+        float facteurContactOutil = Mathf.Clamp(multiplicateurLame / 2.2f, 0.82f, 1.36f);
+        float forceImpact = CalculerIntensiteImpactPhysique(
+            masseOutil * multiplicateurForce,
+            force,
+            mouvement,
+            directionFrappe,
+            normaleImpact,
+            facteurContactOutil,
+            1f,
+            1f) * 9.4f;
         float epaisseurLame = CalculerEpaisseurLamePourImpact(mainActive, directionFrappe);
 
         if (objetTouche == null)
@@ -1011,9 +1207,11 @@ public partial class Joueur
                 && (mainActive.IndexMorphologique == 1 || mainActive.IndexMorphologique == 2);
             bool rochePointe = ItemPhysique.EstIdRocheMatiere(mainActive.ID) && mainActive.IndexMorphologique == 3;
             // Dague sur liane: désormais en maintien (2s), pas en clic instantané.
-            if (mainActive.ID == 105 && arbre.IndexBotanique == LSystem_Botanique.IndexJungle)
+            if ((mainActive.ID == 105 || mainActive.ID == IdObjetFauxPierreTier0) && arbre.IndexBotanique == LSystem_Botanique.IndexJungle)
             {
-                GD.Print("ZERO-K : Maintenez le clic avec la dague pendant 2s pour couper la liane.");
+                GD.Print(mainActive.ID == IdObjetFauxPierreTier0
+                    ? "ZERO-K : Maintenez le clic avec la faux pendant 2s pour couper la liane."
+                    : "ZERO-K : Maintenez le clic avec la dague pendant 2s pour couper la liane.");
                 return;
             }
 
@@ -1108,6 +1306,8 @@ public partial class Joueur
             bool tranchant = false;
             if (mainActive.ID == 105)
                 tranchant = EstFrappeDagueAvecLaLame(pointImpact, directionFrappe);
+            else if (mainActive.ID == IdObjetFauxPierreTier0)
+                tranchant = EstFrappeFaux112AvecLaLame(pointImpact, directionFrappe);
             else if (mainActive.ID == 106 || mainActive.ID == IdObjetPiochePierreTier0 || mainActive.ID == IdObjetPellePierreTier0)
                 tranchant = EstFrappeHachette106AvecLaLame(pointImpact, directionFrappe);
             else if (mainActive.ID == IdObjetLancePierreTier0)
@@ -1119,14 +1319,19 @@ public partial class Joueur
 
             Vector3 dirAvantCamera = _camera != null ? -_camera.GlobalTransform.Basis.Z.Normalized() : directionFrappe.Normalized();
             float alignPointee = Mathf.Clamp(directionFrappe.Normalized().Dot(dirAvantCamera), -1f, 1f);
-            bool perforant = tranchant && alignPointee > 0.68f && (mainActive.ID == 105 || mainActive.ID == 106 || mainActive.ID == IdObjetLancePierreTier0 || mainActive.ID == 100 || mainActive.EstUnEclat);
+            bool perforant = tranchant && alignPointee > 0.68f && (mainActive.ID == 105 || mainActive.ID == IdObjetFauxPierreTier0 || mainActive.ID == 106 || mainActive.ID == IdObjetLancePierreTier0 || mainActive.ID == 100 || mainActive.EstUnEclat);
             string nomZone = NomZoneDepuisColliderRaycast(_rayon.GetCollider());
 
             float materiau = MultiplicateurMateriauArmeContreFaune(mainActive);
-            float baseDegats = (masseOutil * force * 4.2f) * multiplicateurForce * materiau;
-            if (tranchant) baseDegats *= 1.15f;
-            else baseDegats *= 0.88f;
-            if (perforant) baseDegats *= 1.26f;
+            float baseDegats = CalculerIntensiteImpactPhysique(
+                masseOutil * multiplicateurForce,
+                force,
+                mouvement,
+                directionFrappe,
+                normaleImpact,
+                CoefficientContactImpact(tranchant, perforant),
+                materiau,
+                CoefficientZoneBovin(nomZone));
             baseDegats = Mathf.Clamp(baseDegats, 0.05f, 120f);
 
             bool applique = boeufTouche.RecevoirImpactCombat(
@@ -1140,7 +1345,7 @@ public partial class Joueur
 
             if (applique)
                 AjouterXpFutureState("Force", 2UL);
-            if (applique && (mainActive.ID == 105 || mainActive.ID == 106 || mainActive.ID == IdObjetPellePierreTier0 || mainActive.ID == IdObjetPiochePierreTier0 || mainActive.ID == IdObjetLancePierreTier0 || mainActive.ID == 100))
+            if (applique && (mainActive.ID == 105 || mainActive.ID == IdObjetFauxPierreTier0 || mainActive.ID == 106 || mainActive.ID == IdObjetPellePierreTier0 || mainActive.ID == IdObjetPiochePierreTier0 || mainActive.ID == IdObjetLancePierreTier0 || mainActive.ID == 100))
                 AppliquerUsureOutilMainActive(0.85f + (baseDegats * 0.024f));
             return;
         }
@@ -1506,13 +1711,15 @@ public partial class Joueur
 
         rbCible.ApplyCentralImpulse(dirFrappeObj * impulsionFrappe);
 
-        if ((mainActive.ID == 105 || mainActive.ID == 106 || mainActive.ID == IdObjetPellePierreTier0 || mainActive.ID == IdObjetLancePierreTier0) && ItemPhysique.EstIdRocheMatiere(item.ID_Objet))
+        if ((mainActive.ID == 105 || mainActive.ID == IdObjetFauxPierreTier0 || mainActive.ID == 106 || mainActive.ID == IdObjetPellePierreTier0 || mainActive.ID == IdObjetLancePierreTier0) && ItemPhysique.EstIdRocheMatiere(item.ID_Objet))
         {
             bool tranchantOk = mainActive.ID == 105
                 ? EstFrappeDagueAvecLaLame(pointImpact, directionFrappe)
+                : (mainActive.ID == IdObjetFauxPierreTier0
+                ? EstFrappeFaux112AvecLaLame(pointImpact, directionFrappe)
                 : (mainActive.ID == IdObjetLancePierreTier0
                 ? EstFrappeLance111AvecLaPointe(pointImpact, directionFrappe)
-                : EstFrappeHachette106AvecLaLame(pointImpact, directionFrappe));
+                : EstFrappeHachette106AvecLaLame(pointImpact, directionFrappe)));
             if (tranchantOk)
                 GD.Print("ZERO-K : L’outil ne peut pas briser cette roche — trop léger. Il faut un choc contondant ou une pierre lancée.");
             else
@@ -1521,6 +1728,7 @@ public partial class Joueur
         }
 
         if ((mainActive.ID == 105 && !EstFrappeDagueAvecLaLame(pointImpact, directionFrappe))
+            || (mainActive.ID == IdObjetFauxPierreTier0 && !EstFrappeFaux112AvecLaLame(pointImpact, directionFrappe))
             || ((mainActive.ID == 106 || mainActive.ID == IdObjetPellePierreTier0 || mainActive.ID == IdObjetPiochePierreTier0) && !EstFrappeHachette106AvecLaLame(pointImpact, directionFrappe))
             || (mainActive.ID == IdObjetLancePierreTier0 && !EstFrappeLance111AvecLaPointe(pointImpact, directionFrappe)))
         {
@@ -1532,7 +1740,7 @@ public partial class Joueur
         int resultatFracture = item.SubirDegats(forceImpact, dirVue, pointImpact);
         if (resultatFracture == 0)
             GD.Print("ZERO-K : L'impact n'est pas assez puissant. La roche résonne mais ne cède pas (Rebond).");
-        else if (mainActive.ID == 105 || mainActive.ID == 106 || mainActive.ID == IdObjetPellePierreTier0 || mainActive.ID == IdObjetPiochePierreTier0 || mainActive.ID == IdObjetLancePierreTier0)
+        else if (mainActive.ID == 105 || mainActive.ID == IdObjetFauxPierreTier0 || mainActive.ID == 106 || mainActive.ID == IdObjetPellePierreTier0 || mainActive.ID == IdObjetPiochePierreTier0 || mainActive.ID == IdObjetLancePierreTier0)
             AppliquerUsureOutilMainActive(2.15f + forceImpact * 0.017f);
     }
 

@@ -8,7 +8,7 @@ public partial class Joueur
     private static bool EstObjetAvecVisuel(int id)
     {
         if (id >= 1 && id <= 9) return true;
-        return ItemPhysique.EstIdRocheMatiere(id) || id == 10 || id == 11 || id == BlocChutant.ID_BRANCHE || id == 15 || id == 16 || id == 17 || id == 20 || id == 21 || id == Joueur.IdObjetCeinturePoches || id == Joueur.IdObjetCeintureSacoches || id == Joueur.IdObjetPochetteTier0 || id == Joueur.IdObjetSacTier0 || id == 30 || id == 32 || id == 34 || id == Joueur.IdObjetBaie || id == 100 || id == 105 || id == 106 || id == Joueur.IdObjetPellePierreTier0 || id == Joueur.IdObjetPiochePierreTier0 || id == Joueur.IdObjetLancePierreTier0 || id == 200 || id == Joueur.IdObjetRackBatons || id == Joueur.IdObjetRackBuches;
+        return ItemPhysique.EstIdRocheMatiere(id) || id == 10 || id == 11 || id == BlocChutant.ID_BRANCHE || id == 15 || id == 16 || id == 17 || id == 20 || id == 21 || id == Joueur.IdObjetCeinturePoches || id == Joueur.IdObjetCeintureSacoches || id == Joueur.IdObjetPochetteTier0 || id == Joueur.IdObjetSacTier0 || id == 30 || id == 32 || id == 34 || id == Joueur.IdObjetBaie || id == 100 || id == 105 || id == 106 || id == Joueur.IdObjetPellePierreTier0 || id == Joueur.IdObjetPiochePierreTier0 || id == Joueur.IdObjetLancePierreTier0 || id == Joueur.IdObjetFauxPierreTier0 || id == 200 || id == Joueur.IdObjetRackBatons || id == Joueur.IdObjetRackBuches;
     }
 
     public static void NettoyerModelesEnfants(Node3D parent)
@@ -41,6 +41,8 @@ public partial class Joueur
             parent.RemoveMeta(MetaSignaturePioche108);
         if (parent.HasMeta(MetaSignatureLance111))
             parent.RemoveMeta(MetaSignatureLance111);
+        if (parent.HasMeta(MetaSignatureFaux112))
+            parent.RemoveMeta(MetaSignatureFaux112);
     }
 
     private static Aabb TransformerAabb(Transform3D t, Aabb a)
@@ -163,6 +165,12 @@ public partial class Joueur
         return HashCode.Combine(s.IndexChimique, s.IndexMorphologique, s.IndexTaille, s.IndexBotanique, s.NiveauFracture);
     }
 
+    private static int SignatureSlotFaux112(SlotInventaire s)
+    {
+        if (s.ID != Joueur.IdObjetFauxPierreTier0) return -1;
+        return HashCode.Combine(s.IndexChimique, s.IndexMorphologique, s.IndexTaille, s.IndexTailleLameRoche, s.IndexBotanique, s.NiveauFracture);
+    }
+
     private static int SignatureSlotAtelier200(SlotInventaire s)
     {
         if (s.ID != 200) return -1;
@@ -223,7 +231,7 @@ public partial class Joueur
     /// <summary>Échelle de la lame dague : référence = roche moyenne (index 2) ; plus grosse roche en pointe → lame un peu plus massive.</summary>
     private static float ObtenirFacteurEchelleLameDague(SlotInventaire slot)
     {
-        if (slot.ID != 105) return 1f;
+        if (slot.ID != 105 && slot.ID != Joueur.IdObjetFauxPierreTier0) return 1f;
         int t = slot.IndexTailleLameRoche <= 0 ? 2 : Mathf.Clamp(slot.IndexTailleLameRoche, 0, 4);
         return 1f + (t - 2) * 0.065f;
     }
@@ -954,16 +962,17 @@ public partial class Joueur
     public static void InstancierModeleArme(Node3D parent, SlotInventaire slot, float tailleMaxUnites = 0.525f, float facteurEchelleLame = 1f)
     {
         NettoyerModelesEnfants(parent);
-        if (slot.ID != 105 && slot.ID != 106 && slot.ID != Joueur.IdObjetPellePierreTier0 && slot.ID != Joueur.IdObjetPiochePierreTier0 && slot.ID != Joueur.IdObjetLancePierreTier0) return;
+        if (slot.ID != 105 && slot.ID != 106 && slot.ID != Joueur.IdObjetPellePierreTier0 && slot.ID != Joueur.IdObjetPiochePierreTier0 && slot.ID != Joueur.IdObjetLancePierreTier0 && slot.ID != Joueur.IdObjetFauxPierreTier0) return;
 
-        if (slot.ID == 106 || slot.ID == Joueur.IdObjetPellePierreTier0 || slot.ID == Joueur.IdObjetPiochePierreTier0 || slot.ID == Joueur.IdObjetLancePierreTier0)
+        if (slot.ID == 106 || slot.ID == Joueur.IdObjetPellePierreTier0 || slot.ID == Joueur.IdObjetPiochePierreTier0 || slot.ID == Joueur.IdObjetLancePierreTier0 || slot.ID == Joueur.IdObjetFauxPierreTier0)
         {
             bool estPelle = slot.ID == Joueur.IdObjetPellePierreTier0;
             bool estPioche = slot.ID == Joueur.IdObjetPiochePierreTier0;
             bool estLance = slot.ID == Joueur.IdObjetLancePierreTier0;
+            bool estFaux = slot.ID == Joueur.IdObjetFauxPierreTier0;
             PackedScene sceneHachette = GD.Load<PackedScene>(estPelle
                 ? "res://Modeles/Equipements/Pelle_Pierre_tier0.glb"
-                : (estPioche ? "res://Modeles/Equipements/Pioche_pierre_tier0.glb" : (estLance ? "res://Modeles/Equipements/Lance_en_pierre_tier0.glb" : "res://Modeles/Equipements/hachette_premitive_tier0.glb")));
+                : (estPioche ? "res://Modeles/Equipements/Pioche_pierre_tier0.glb" : (estLance ? "res://Modeles/Equipements/Lance_en_pierre_tier0.glb" : (estFaux ? "res://Modeles/Equipements/Epe_pierre_tier0.glb" : "res://Modeles/Equipements/hachette_premitive_tier0.glb"))));
             if (sceneHachette == null) return;
 
             float tailleNorm = tailleMaxUnites * Mathf.Clamp(facteurEchelleLame, 0.72f, 1.28f);
@@ -973,7 +982,7 @@ public partial class Joueur
             MeshInstance3D miLame106;
             MeshInstance3D miManche106;
             MeshInstance3D miCorde106;
-            if (estPelle || estLance)
+            if (estPelle || estLance || estFaux)
             {
                 // Pelle/Lance : mapping primaire part_0 = manche, part_1 = corde, part_2 = roche/pointe.
                 MeshInstance3D part0 = modeleHachette.GetNodeOrNull<MeshInstance3D>("tripo_part_0")

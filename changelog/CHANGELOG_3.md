@@ -16,6 +16,34 @@ Ce fichier regroupe les **modifications prévues, en cours ou non encore fusionn
 
 ## Entrées
 
+### 2026-04-14 — Cursor Agent
+
+- **Fichiers modifiés**
+  - `Atlas_Matiere.cs`
+  - `Core/Combat/ToolCombatService.cs`
+  - `Core/Rendering/HeldItemRenderService.cs`
+  - `Core/Rendering/ModelInstantiationService.cs`
+  - `Core/World/WorldInteractionService.cs`
+  - `Faune/BoeufSauvage.cs`
+  - `ItemPhysique.cs`
+  - `Joueur.cs`
+  - `Scenes/Faune/BoeufSauvage.tscn`
+  - `Scenes/Faune/VacheSauvage.tscn`
+  - `Modeles/Equipements/Epe_pierre_tier0.glb` (+ `.import`)
+  - `changelog/CHANGELOG_3.md`
+- **Résumé court**
+  - **Faux primitive pierre (ID 112)** : recette atelier 3×3 (bâtons / corde / lame), durabilité, rendu `Epe_pierre_tier0.glb`, pose au sol, combat et persistance alignés sur les autres outils pierre.
+  - **Objets lançables** : clic droit court dédié à la **pose** sous la visée (le fauchage gazon ne prend plus la priorité sur dague / faux / roche plate ou pointue) ; distance minimale de pose ramenée à **0,55 m** pour les lançables (pose au pied du curseur sans rejet silencieux à 1,4 m).
+  - **Dague (105) au sol** : hitbox issue des **meshes du GLB** (enveloppes convexes composées, pas capsule seule) — compatible RigidBody dynamique (pas de trimesh concave).
+  - **Minage** : le rayon ne cible plus le terrain « à travers » un **bœuf** sous le curseur (main nue et pioche) — aligné avec l’exclusion déjà faite pour ItemPhysique / rigides / arbres.
+  - **Faune / tests** : ajustements mineurs sur `BoeufSauvage` et scènes de test associées.
+- **Impact gameplay / technique**
+  - Nouvel outil tranchant craftable et utilisable comme les outils pierre existants.
+  - Pose au sol plus prévisible pour tous les objets lançables ; fauchage herbe inchangé au **clic gauche**.
+  - Collisions dague posée plus fidèles au modèle 3D (convexes, pas maillage concave exact).
+  - Minage cohérent face à la vache (moins d’extraction fantôme derrière l’animal).
+  - Build vérifié : `dotnet build "Zero-K - Frozen Legacy.csproj"`.
+
 ### 2026-04-13 — Agent Codex
 
 - **Fichiers modifiés**
