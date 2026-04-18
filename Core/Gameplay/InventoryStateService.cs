@@ -182,6 +182,8 @@ public partial class Joueur
 
     public bool ACeintureSacochesEquipe() => !EquipementCeinture.EstVide && EquipementCeinture.ID == IdObjetCeintureSacoches;
 
+    public bool ACarnetSavoirEquipe() => !EquipementCarnet.EstVide && EquipementCarnet.ID == IdObjetCarnetSavoir;
+
     /// <summary>Grille affichée et utilisée pour les clics craft : plan de l’atelier (9) ou poche (4). Le coffre utilise <see cref="RefSlotCoffreStockage"/> (10 slots), pas cette méthode.</summary>
     public SlotInventaire[] ObtenirGrilleCraftAffichee()
     {
@@ -328,6 +330,20 @@ public partial class Joueur
         SauvegarderStockageCeintureSacochesEquipeDansMemoire();
         EquipementCeinture = new SlotInventaire();
         ChargerStockageDepuisCeintureSacochesEquipe();
+        NotifierChangementEquipementCorps();
+    }
+
+    public void AssignerEquipementCarnet(SlotInventaire slot)
+    {
+        if (!slot.EstVide && slot.ID != IdObjetCarnetSavoir)
+            return;
+        EquipementCarnet = slot;
+        NotifierChangementEquipementCorps();
+    }
+
+    public void RetirerEquipementCarnet()
+    {
+        EquipementCarnet = new SlotInventaire();
         NotifierChangementEquipementCorps();
     }
 

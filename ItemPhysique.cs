@@ -287,7 +287,7 @@ public partial class ItemPhysique : RigidBody3D
 			else if (child is CollisionShape3D cs) hitbox = cs;
 		}
 
-		if ((ID_Objet == 20 || ID_Objet == 21 || ID_Objet == Joueur.IdObjetCeinturePoches || ID_Objet == Joueur.IdObjetCeintureSacoches || ID_Objet == Joueur.IdObjetPochetteTier0 || ID_Objet == Joueur.IdObjetSacTier0) && visuel == null)
+		if ((ID_Objet == 20 || ID_Objet == 21 || ID_Objet == Joueur.IdObjetCeinturePoches || ID_Objet == Joueur.IdObjetCeintureSacoches || ID_Objet == Joueur.IdObjetPochetteTier0 || ID_Objet == Joueur.IdObjetSacTier0 || ID_Objet == Joueur.IdObjetCarnetSavoir) && visuel == null)
 			visuel = TrouverPremierMeshInstanceAvecMesh(this);
 
 		if (ID_Objet == 200)
@@ -357,9 +357,9 @@ public partial class ItemPhysique : RigidBody3D
 		}
 
 		// Fibre (15), corde (20), tissu (21), ceinture (102), pochette tier 0 (103) : mesh et matériau déjà assignés par Joueur.CreerBlocPose / BlocChutant.
-		if (ID_Objet == 15 || ID_Objet == 20 || ID_Objet == 21 || ID_Objet == Joueur.IdObjetCeinturePoches || ID_Objet == Joueur.IdObjetCeintureSacoches || ID_Objet == Joueur.IdObjetPochetteTier0 || ID_Objet == Joueur.IdObjetSacTier0)
+		if (ID_Objet == 15 || ID_Objet == 20 || ID_Objet == 21 || ID_Objet == Joueur.IdObjetCeinturePoches || ID_Objet == Joueur.IdObjetCeintureSacoches || ID_Objet == Joueur.IdObjetPochetteTier0 || ID_Objet == Joueur.IdObjetSacTier0 || ID_Objet == Joueur.IdObjetCarnetSavoir)
 		{
-			Mass = ID_Objet == 21 ? 0.1f : (ID_Objet == Joueur.IdObjetCeinturePoches ? 0.14f : (ID_Objet == Joueur.IdObjetCeintureSacoches ? 0.18f : (ID_Objet == Joueur.IdObjetPochetteTier0 ? 0.12f : (ID_Objet == Joueur.IdObjetSacTier0 ? 0.16f : 0.08f))));
+			Mass = ID_Objet == 21 ? 0.1f : (ID_Objet == Joueur.IdObjetCeinturePoches ? 0.14f : (ID_Objet == Joueur.IdObjetCeintureSacoches ? 0.18f : (ID_Objet == Joueur.IdObjetPochetteTier0 ? 0.12f : (ID_Objet == Joueur.IdObjetSacTier0 ? 0.16f : (ID_Objet == Joueur.IdObjetCarnetSavoir ? 0.24f : 0.08f)))));
 			ResistanceActuelle = 1f;
 			return;
 		}

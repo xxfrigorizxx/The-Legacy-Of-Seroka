@@ -110,6 +110,8 @@ public partial class Joueur : CharacterBody3D
     public const int IdObjetFauxPierreTier0 = 112;
     /// <summary>Coffre en bois tier 0 (10 slots stockage, craft 3×3).</summary>
     public const int IdObjetCoffreBoisTier0 = 113;
+    /// <summary>Carnet du savoir dédié (slot UI exclusif + pages éditables).</summary>
+    public const int IdObjetCarnetSavoir = 114;
     /// <summary>Rack Ã  bÃ¢tons (stockage dÃ©diÃ©).</summary>
     public const int IdObjetRackBatons = 109;
     /// <summary>Rack Ã  bÃ»ches (stockage dÃ©diÃ©).</summary>
@@ -187,6 +189,8 @@ public partial class Joueur : CharacterBody3D
     public SlotInventaire EquipementSacDos = new SlotInventaire();
     /// <summary>Ceinture Ã  poches Ã©quipÃ©e.</summary>
     public SlotInventaire EquipementCeinture = new SlotInventaire();
+    /// <summary>Carnet du savoir équipé dans son slot dédié (hors barre basse).</summary>
+    public SlotInventaire EquipementCarnet = new SlotInventaire();
 
     /// <summary>Craft 2Ã—2 dans le menu inventaire (Q) â€” jamais mÃ©langÃ© avec la grille de lâ€™Ã©tabli posÃ©.</summary>
     public SlotInventaire[] GrilleCraftPoche = new SlotInventaire[4];
@@ -360,6 +364,7 @@ public partial class Joueur : CharacterBody3D
     private const string MetaSignatureSac101 = "SigSac101";
     private const string MetaSignatureRack109 = "SigRack109";
     private const string MetaSignatureCoffre113 = "SigCoffre113";
+    private const string MetaSignatureCarnet114 = "SigCarnet114";
     private const string MetaSignatureBaie35 = "SigBaie35";
     private SubViewportContainer _viewportSlotGauche;
     private SubViewportContainer _viewportSlotDroite;
@@ -496,9 +501,11 @@ public partial class Joueur : CharacterBody3D
         _gestionnaireMonde = GetParent().GetNode<Gestionnaire_Monde>("Gestionnaire_Monde");
         _slotGauche = GetParent().GetNode<Panel>("Gestionnaire_Monde/HUD_Inventaire/Conteneur_Ancrage/Boite_Slots/Slot_Main_Gauche");
         _slotDroite = GetParent().GetNode<Panel>("Gestionnaire_Monde/HUD_Inventaire/Conteneur_Ancrage/Boite_Slots/Slot_Main_Droite");
+        ResoudreSlotCarnetHud();
         InsererNomsAuDessusSlotsHud();
 
         CreerPreviewsInventaire3D();
+        InitialiserCarnetSavoirSysteme();
 
         _modelisateur = new Modelisateur_UI();
         // Le parent (Monde_Zero) est encore en _Ready : add_child direct Ã©choue â†’ diffÃ©rÃ©.
@@ -534,6 +541,7 @@ public partial class Joueur : CharacterBody3D
         {
             CreerHudStatsSurvie();
         }
+        InitialiserChatInGame();
     }
 
     private void InitialiserSanteCorps()
@@ -1664,6 +1672,8 @@ public partial class Joueur : CharacterBody3D
     public override void _Process(double delta)
     {
         float dt = (float)delta;
+        if (_cooldownMessageCarnet > 0f)
+            _cooldownMessageCarnet = Mathf.Max(0f, _cooldownMessageCarnet - dt);
         if (_aimantIkMainDroite == null || !GodotObject.IsInstanceValid(_aimantIkMainDroite) || _ikBrasDroitFps == null || !GodotObject.IsInstanceValid(_ikBrasDroitFps))
             return;
 
@@ -2240,6 +2250,8 @@ public partial class Joueur : CharacterBody3D
     {
         _viewportSlotGauche = CreerSubViewportPourSlot(_slotGauche, out _meshPreviewGauche);
         _viewportSlotDroite = CreerSubViewportPourSlot(_slotDroite, out _meshPreviewDroite);
+        if (_slotCarnet != null && GodotObject.IsInstanceValid(_slotCarnet))
+            _viewportSlotCarnet = CreerSubViewportPourSlot(_slotCarnet, out _meshPreviewCarnet);
     }
 
     private SubViewportContainer CreerSubViewportPourSlot(Panel slot, out MeshInstance3D meshPreview)
@@ -2327,6 +2339,22 @@ public partial class Joueur : CharacterBody3D
             return;
         }
 
+        if (EssayerBasculerChatInGameDepuisInput(@event))
+        {
+            GetViewport().SetInputAsHandled();
+            return;
+        }
+
+        if (ChatInGameOuvert())
+        {
+            if (@event.IsActionPressed("ui_cancel"))
+            {
+                FermerChatInGame();
+                GetViewport().SetInputAsHandled();
+            }
+            return;
+        }
+
         if (_menuAnatomie != null && @event.IsActionPressed("inventaire"))
         {
             if (!_menuAnatomie.EstOuvert)
@@ -2339,6 +2367,21 @@ public partial class Joueur : CharacterBody3D
             _menuAnatomie.BasculerVisibilite();
             RafraichirHUD();
             GetViewport().SetInputAsHandled();
+            return;
+        }
+
+        if (EssayerBasculerCarnetDepuisInput(@event))
+        {
+            GetViewport().SetInputAsHandled();
+            return;
+        }
+        if (CarnetSavoirOuvert())
+        {
+            if (@event.IsActionPressed("ui_cancel"))
+            {
+                FermerCarnetSavoirUI();
+                GetViewport().SetInputAsHandled();
+            }
             return;
         }
 
@@ -2537,6 +2580,9 @@ public partial class Joueur : CharacterBody3D
             return;
         }
 
+        if (CarnetSavoirOuvert())
+            return;
+
         if (_modelisateur != null && _modelisateur.EstOuvert)
             return;
 
@@ -2649,6 +2695,8 @@ public partial class Joueur : CharacterBody3D
             int ir = Mathf.Clamp(slotData.IndexChimique, 0, ItemPhysique.TableGeologique.Length - 1);
             style.BgColor = ItemPhysique.TableGeologique[ir].CouleurBase.Lerp(new Color(0.4f, 0.32f, 0.22f), 0.3f);
         }
+        else if (idMatiere == IdObjetCarnetSavoir)
+            style.BgColor = new Color(0.39f, 0.24f, 0.14f);
         else
             style.BgColor = new Color(0.4f, 0.4f, 0.6f); // Violet (Autre)
 
@@ -2670,12 +2718,34 @@ public partial class Joueur : CharacterBody3D
     /// <summary>True si le menu inventaire (Q) est ouvert â€” utilisÃ© par le gestionnaire pour Ã‰chap â†’ pause sans fermer lâ€™UI.</summary>
     public bool MenuAnatomieOuvert() => _menuAnatomie != null && _menuAnatomie.EstOuvert;
 
+    /// <summary>True si une UI joueur bloque le contrôle déplacement/saut.</summary>
+    private bool EstUiJoueurBloquanteOuverte()
+    {
+        return (_modelisateur != null && _modelisateur.EstOuvert)
+            || (_menuFutureState != null && _menuFutureState.EstOuvert)
+            || (_menuAnatomie != null && _menuAnatomie.EstOuvert)
+            || CarnetSavoirOuvert()
+            || ChatInGameOuvert();
+    }
+
     /// <summary>Ferme les UI joueur (inventaire/craft ou CAO) via Ã‰chap et remet le contrÃ´le jeu.</summary>
     public bool FermerUIJoueurSiOuverte()
     {
         if (_menuFutureState != null && _menuFutureState.EstOuvert)
         {
             _menuFutureState.BasculerVisibilite();
+            Input.MouseMode = Input.MouseModeEnum.Captured;
+            return true;
+        }
+        if (CarnetSavoirOuvert())
+        {
+            FermerCarnetSavoirUI();
+            Input.MouseMode = Input.MouseModeEnum.Captured;
+            return true;
+        }
+        if (ChatInGameOuvert())
+        {
+            FermerChatInGame();
             Input.MouseMode = Input.MouseModeEnum.Captured;
             return true;
         }
@@ -2905,6 +2975,7 @@ public partial class Joueur : CharacterBody3D
         IdObjetCeintureSacoches => 0.18f,
         IdObjetPochetteTier0 => 0.12f,
         IdObjetSacTier0 => 0.16f,
+        IdObjetCarnetSavoir => 0.24f,
         105 => 0.32f,
         106 => 0.58f,
         IdObjetPellePierreTier0 => 0.62f,
@@ -2958,6 +3029,7 @@ public partial class Joueur : CharacterBody3D
         total += ObtenirMasseTotaleSlotInventaireKg(MainDroite);
         total += ObtenirMasseTotaleSlotInventaireKg(EquipementSacDos);
         total += ObtenirMasseTotaleSlotInventaireKg(EquipementCeinture);
+        total += ObtenirMasseTotaleSlotInventaireKg(EquipementCarnet);
         for (int i = 0; i < GrilleCraftPoche.Length; i++)
             total += ObtenirMasseTotaleSlotInventaireKg(GrilleCraftPoche[i]);
         for (int i = 0; i < GrilleSacStockage.Length; i++)
@@ -3062,6 +3134,7 @@ public partial class Joueur : CharacterBody3D
         AssurerDurabiliteOutilsSurLesMains();
         MettreAJourSlotUI(_slotGauche, MainGauche, MainGaucheEstActive);
         MettreAJourSlotUI(_slotDroite, MainDroite, !MainGaucheEstActive);
+        MettreAJourSlotUI(_slotCarnet, EquipementCarnet, false);
         MettreAJourLibellesNomsHud();
         MettreAJourHudStatsSurvie();
         MettreAJourObjetEnMain();
@@ -3256,6 +3329,7 @@ public partial class Joueur : CharacterBody3D
         else if (id == 20) return null; // GLB res://Modeles/materials/traisagre_corde_tier0.glb via InstancierModeleCordeTier0Gazon
         else if (id == 21) return null; // GLB res://Modeles/materials/tissu_tier0.glb via InstancierModeleTissuTier0
         else if (id == IdObjetSacTier0) return null; // GLB res://Modeles/Equipable/Sac_Tiere0.glb via InstancierModeleSacTier0
+        else if (id == IdObjetCarnetSavoir) return null; // modèle procédural via InstancierModeleCarnetSavoir
         else if (id == IdObjetCeinturePoches || id == IdObjetCeintureSacoches) return null; // GLB ceinture / ceinture+pochettes via instanciation dÃ©diÃ©e
         else if (id == IdObjetPochetteTier0) return null; // GLB res://Modeles/materials/Pochette_Tiere0.glb via InstancierModelePochetteTier0
         else if (id == IdObjetPellePierreTier0) return null; // GLB res://Modeles/Equipements/Pelle_Pierre_tier0.glb via InstancierModeleArme
@@ -4170,6 +4244,24 @@ public partial class Joueur : CharacterBody3D
             item.AddChild(new CollisionShape3D { Shape = new BoxShape3D { Size = new Vector3(0.36f, 0.14f, 0.28f) } });
             corps = item;
         }
+        else if (id == IdObjetCarnetSavoir)
+        {
+            var item = new ItemPhysique
+            {
+                ID_Objet = id,
+                IndexChimique = mainActive.IndexChimique,
+                IndexCacheMemoire = mainActive.IndexMorphologique,
+                IndexBotanique = mainActive.IndexBotanique,
+                NiveauFracture = mainActive.NiveauFracture,
+                Name = "ItemPhysique",
+                ContinuousCd = true
+            };
+            var meshRoot = new Node3D { Name = "MeshInstance3D" };
+            InstancierModeleCarnetSavoir(meshRoot, mainActive, 0.48f, false);
+            item.AddChild(meshRoot);
+            item.AddChild(new CollisionShape3D { Shape = new BoxShape3D { Size = new Vector3(0.30f, 0.055f, 0.42f) } });
+            corps = item;
+        }
         else if (id == 30 || id == 32)
         {
             int f = Mathf.Clamp(mainActive.IndexMorphologique, 0, 3);
@@ -4356,7 +4448,7 @@ public partial class Joueur : CharacterBody3D
                 rbPose.LinearDamp = 0.42f;
                 rbPose.AngularDamp = 1.0f;
             }
-            else if (id == 20 || id == 21 || id == IdObjetCeinturePoches || id == IdObjetCeintureSacoches || id == IdObjetPochetteTier0 || id == IdObjetSacTier0)
+            else if (id == 20 || id == 21 || id == IdObjetCeinturePoches || id == IdObjetCeintureSacoches || id == IdObjetPochetteTier0 || id == IdObjetSacTier0 || id == IdObjetCarnetSavoir)
             {
                 rbPose.PhysicsMaterialOverride = _physMatCorde;
                 rbPose.LinearDampMode = RigidBody3D.DampMode.Replace;
@@ -4533,9 +4625,9 @@ public partial class Joueur : CharacterBody3D
         if (!_positionReferenceMetabolisteInitialisee)
             ReinitialiserReferencePositionMetaboliste();
         SlotInventaire mainActive = MainGaucheEstActive ? MainGauche : MainDroite;
-        bool caoOuvert = _modelisateur != null && _modelisateur.EstOuvert;
+        bool uiBloquanteOuverte = EstUiJoueurBloquanteOuverte();
 
-        if (!caoOuvert)
+        if (!uiBloquanteOuverte)
         {
             if (!mainActive.EstVide && Input.IsActionPressed("clic_droit"))
                 _forceLancer = Mathf.Min(5.0f, _forceLancer + (VitesseChargeBras * 2.5f) * dt);
@@ -4586,7 +4678,7 @@ public partial class Joueur : CharacterBody3D
         }
 
         bool estDansEau = EvaluerEtatEauJoueur(out float surfaceEau);
-        bool sautMaintenu = !caoOuvert && (Input.IsActionPressed("ui_accept") || Input.IsActionPressed("jump"));
+        bool sautMaintenu = !uiBloquanteOuverte && (Input.IsActionPressed("ui_accept") || Input.IsActionPressed("jump"));
         Vector3 directionEau = new Vector3(velocity.X, 0f, velocity.Z);
         bool bordBergeEau = estDansEau && DetecterBordBergeSortieEau(directionEau, surfaceEau);
 
@@ -4602,7 +4694,7 @@ public partial class Joueur : CharacterBody3D
         }
 
         _tamponSautRestant = Mathf.Max(0f, _tamponSautRestant - dt);
-        if (!caoOuvert && (Input.IsActionJustPressed("jump") || Input.IsActionJustPressed("ui_accept")))
+        if (!uiBloquanteOuverte && (Input.IsActionJustPressed("jump") || Input.IsActionJustPressed("ui_accept")))
             _tamponSautRestant = Mathf.Max(_tamponSautRestant, DureeTamponSautSecondes);
 
         bool auSolPourAnim = IsOnFloor() || _bufferSolCoyoteAnim > 0f;
@@ -4649,19 +4741,19 @@ public partial class Joueur : CharacterBody3D
         bool sautDepuisSolStable = !estDansEau
             && _tamponSautRestant > 0f
             && solAccepteSaut;
-        if (!caoOuvert && sautDepuisSolStable)
+        if (!uiBloquanteOuverte && sautDepuisSolStable)
         {
             velocity.Y = JumpVelocity;
             _tamponSautRestant = 0f;
             _bufferCoyoteSaut = 0f;
         }
 
-        Vector2 inputDir = caoOuvert ? Vector2.Zero : Input.GetVector("move_left", "move_right", "move_forward", "move_backward");
+        Vector2 inputDir = uiBloquanteOuverte ? Vector2.Zero : Input.GetVector("move_left", "move_right", "move_forward", "move_backward");
         Vector3 direction = CalculerDirectionMouvementAuSol(inputDir);
         bool ctrlCourse = Input.IsPhysicalKeyPressed(Key.Ctrl);
-        bool sprintDemande = !caoOuvert && !estDansEau && ctrlCourse && direction != Vector3.Zero;
+        bool sprintDemande = !uiBloquanteOuverte && !estDansEau && ctrlCourse && direction != Vector3.Zero;
         bool sprintActif = sprintDemande && PeutSprinter();
-        bool effortIntense = !caoOuvert && (sprintActif || sautMaintenu || _gaucheMaintenu || _forceLancer > 0.15f || (direction != Vector3.Zero && estDansEau));
+        bool effortIntense = !uiBloquanteOuverte && (sprintActif || sautMaintenu || _gaucheMaintenu || _forceLancer > 0.15f || (direction != Vector3.Zero && estDansEau));
         ulong debutMetaboUs = ActiverProfilagePerfJoueur ? PerfBudgetMonitor.Begin() : 0UL;
         AppliquerMetabolismeJoueur(dt, effortIntense, sprintActif);
         if (ActiverProfilagePerfJoueur)

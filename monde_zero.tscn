@@ -47,12 +47,8 @@ adjustment_contrast = 1.25
 
 [node name="Gestionnaire_Monde" type="Node3D" parent="." unique_id=2015054098]
 script = ExtResource("3_monde")
-RenderDistance = 14
-RenderDistanceDetailChunks = 10
-RayonQualiteProcheChunks = 5
-RayonGazonVisibleChunks = 9
-RayonBuissonsVisibleChunks = 16
-MargeChunksToujoursVisibles = 8
+RayonQualiteProcheChunks = 4
+RayonGazonVisibleChunks = 8
 MaterielTerrain = ExtResource("14_manteau")
 
 [node name="HUD_Inventaire" type="CanvasLayer" parent="Gestionnaire_Monde" unique_id=1861864172]
@@ -83,6 +79,21 @@ layout_mode = 2
 [node name="Slot_Main_Droite" type="Panel" parent="Gestionnaire_Monde/HUD_Inventaire/Conteneur_Ancrage/Boite_Slots" unique_id=602911561]
 custom_minimum_size = Vector2(64, 64)
 layout_mode = 2
+
+[node name="HUD_Carnet" type="CanvasLayer" parent="Gestionnaire_Monde" unique_id=790482658]
+
+[node name="Slot_Carnet_Savoir" type="Panel" parent="Gestionnaire_Monde/HUD_Carnet" unique_id=721194378]
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -128.0
+offset_top = -112.0
+offset_right = -56.0
+offset_bottom = -40.0
+grow_horizontal = 0
+grow_vertical = 0
 
 [node name="Joueur" parent="." unique_id=1690833917 instance=ExtResource("2_joueur_scene")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 8, 125, -8)

@@ -310,6 +310,23 @@ public partial class Joueur
             _objetEnMain.RotationDegrees = new Vector3(-11f + _rotationManuelleX, 20f + _rotationManuelleY, 3f + _rotationManuelleZ);
             return;
         }
+        if (main.ID == IdObjetCarnetSavoir)
+        {
+            _objetEnMain.Mesh = null;
+            _objetEnMain.MaterialOverride = null;
+            int sig = SignatureSlotCarnet114(main);
+            int prev = _objetEnMain.HasMeta(MetaSignatureCarnet114) ? (int)_objetEnMain.GetMeta(MetaSignatureCarnet114).AsInt32() : -1;
+            bool manqueModele = _objetEnMain.FindChild("ModeleArme", true, false) == null;
+            if (manqueModele || sig != prev)
+            {
+                NettoyerModelesEnfants(_objetEnMain);
+                InstancierModeleCarnetSavoir(_objetEnMain, main, 0.34f);
+                _objetEnMain.SetMeta(MetaSignatureCarnet114, sig);
+            }
+            _objetEnMain.Scale = Vector3.One;
+            _objetEnMain.RotationDegrees = new Vector3(6f + _rotationManuelleX, 115f + _rotationManuelleY, -9f + _rotationManuelleZ);
+            return;
+        }
         if (main.ID == IdObjetBaie)
         {
             _objetEnMain.Mesh = null;
@@ -435,10 +452,13 @@ public partial class Joueur
     {
         MettreAJourPreviewSlot(_meshPreviewGauche, MainGauche);
         MettreAJourPreviewSlot(_meshPreviewDroite, MainDroite);
+        MettreAJourPreviewSlot(_meshPreviewCarnet, EquipementCarnet);
     }
 
     private void MettreAJourPreviewSlot(MeshInstance3D meshNode, SlotInventaire slot)
     {
+        if (meshNode == null || !GodotObject.IsInstanceValid(meshNode))
+            return;
         if (slot.EstVide || !EstObjetAvecVisuel(slot.ID))
         {
             NettoyerModelesEnfants(meshNode);
@@ -464,6 +484,8 @@ public partial class Joueur
                 meshNode.RemoveMeta(MetaSignaturePochette103);
             if (meshNode.HasMeta(MetaSignatureSac101))
                 meshNode.RemoveMeta(MetaSignatureSac101);
+            if (meshNode.HasMeta(MetaSignatureCarnet114))
+                meshNode.RemoveMeta(MetaSignatureCarnet114);
             meshNode.Mesh = null;
             meshNode.MaterialOverride = null;
             return;
@@ -730,6 +752,23 @@ public partial class Joueur
             meshNode.RotationDegrees = new Vector3(8f, 30f, -4f);
             return;
         }
+        if (slot.ID == IdObjetCarnetSavoir)
+        {
+            meshNode.Mesh = null;
+            meshNode.MaterialOverride = null;
+            int sig = SignatureSlotCarnet114(slot);
+            int prev = meshNode.HasMeta(MetaSignatureCarnet114) ? (int)meshNode.GetMeta(MetaSignatureCarnet114).AsInt32() : -1;
+            bool manque = meshNode.FindChild("ModeleArme", true, false) == null;
+            if (manque || sig != prev)
+            {
+                NettoyerModelesEnfants(meshNode);
+                InstancierModeleCarnetSavoir(meshNode, slot, 0.30f);
+                meshNode.SetMeta(MetaSignatureCarnet114, sig);
+            }
+            meshNode.Scale = Vector3.One;
+            meshNode.RotationDegrees = new Vector3(10f, 44f, -6f);
+            return;
+        }
         if (slot.ID == IdObjetBaie)
         {
             meshNode.Mesh = null;
@@ -857,6 +896,7 @@ public partial class Joueur
     {
         if (_viewportSlotGauche != null) _viewportSlotGauche.Visible = !MainGauche.EstVide && EstObjetAvecVisuel(MainGauche.ID);
         if (_viewportSlotDroite != null) _viewportSlotDroite.Visible = !MainDroite.EstVide && EstObjetAvecVisuel(MainDroite.ID);
+        if (_viewportSlotCarnet != null) _viewportSlotCarnet.Visible = !EquipementCarnet.EstVide && EstObjetAvecVisuel(EquipementCarnet.ID);
     }
 
 }

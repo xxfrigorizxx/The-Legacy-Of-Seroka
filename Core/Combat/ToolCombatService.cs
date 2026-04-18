@@ -1122,7 +1122,7 @@ public partial class Joueur
                 GD.Print("ZERO-K : Fauchage de la flore. Récolte de fibres en cours.");
                 return;
             }
-            GD.Print("ZERO-K : L'angle de cette lame ne permet pas de déplacer la terre. Il vous faut une surface plate (Pelle/Houe).");
+            AlerteSqueletteBoiteNoire("Mauvais angle de lame pour deplacer la terre. Il faut une surface plate (Pelle/Houe).");
             return;
         }
 
@@ -1165,7 +1165,7 @@ public partial class Joueur
 
         if (efficaciteHache < 0.4f && masseOutil > 2f && mainActive.ID != 106)
         {
-            GD.Print("ZERO-K : REBOND MASSIF ! Vous frappez avec le plat de l'outil. Choc structurel violent !");
+            AlerteSqueletteBoiteNoire("REBOND MASSIF ! Tu frappes avec le plat de l'outil. Choc structurel violent !");
             return;
         }
 
@@ -1420,7 +1420,7 @@ public partial class Joueur
                 || (ItemPhysique.EstIdRocheMatiere(main.ID) && (main.IndexMorphologique == 1 || main.IndexMorphologique == 3));
             if (!peutLibererTronc)
             {
-                GD.Print("ZERO-K : Il faut un tranchant : roche plate ou en pointe, éclat ou hachette.");
+                AlerteSqueletteBoiteNoire("Il faut un tranchant: roche plate ou en pointe, eclat ou hachette.");
                 return;
             }
 
@@ -1498,7 +1498,7 @@ public partial class Joueur
             // Post-abattage (bois au sol) : hachette ou roche plate.
             if (!outilFendageBois)
             {
-                GD.Print("ZERO-K : Il vous faut une Hachette (ID 106) ou une roche plate pour standardiser/fendre le bois au sol.");
+                AlerteSqueletteBoiteNoire("Il faut une hachette (ID 106) ou une roche plate pour standardiser/fendre le bois au sol.");
                 rbCible.ApplyCentralImpulse(dirFrappeObj * impulsionFrappe);
                 return;
             }
@@ -1508,7 +1508,7 @@ public partial class Joueur
             if (!coupeNette && mainActive.ID == 106)
             {
                 // Tolérance gameplay: avec la hachette on peut continuer à travailler le bois, mais plus lentement.
-                GD.Print("ZERO-K : Coup moins propre (manche/plat). La coupe progresse quand même, plus lentement.");
+                AlerteSqueletteBoiteNoire("Coup manche/plat: la coupe progresse, mais plus lentement.");
                 impulsionFrappe *= 0.8f;
             }
 
@@ -1723,7 +1723,7 @@ public partial class Joueur
             if (tranchantOk)
                 GD.Print("ZERO-K : L’outil ne peut pas briser cette roche — trop léger. Il faut un choc contondant ou une pierre lancée.");
             else
-                GD.Print("ZERO-K : Vous heurtez la pierre avec le manche ou le plat, sans effet de taille.");
+                AlerteSqueletteBoiteNoire("Tu heurtes la pierre avec le manche ou le plat, sans effet de taille.");
             return;
         }
 
@@ -1732,7 +1732,7 @@ public partial class Joueur
             || ((mainActive.ID == 106 || mainActive.ID == IdObjetPellePierreTier0 || mainActive.ID == IdObjetPiochePierreTier0) && !EstFrappeHachette106AvecLaLame(pointImpact, directionFrappe))
             || (mainActive.ID == IdObjetLancePierreTier0 && !EstFrappeLance111AvecLaPointe(pointImpact, directionFrappe)))
         {
-            GD.Print("ZERO-K : Orientez le tranchant vers la cible — ce coup porte le manche ou le plat.");
+            AlerteSqueletteBoiteNoire("Oriente le tranchant vers la cible: ce coup porte le manche ou le plat.");
             return;
         }
 

@@ -18,6 +18,7 @@ public partial class MenuAnatomie : Control
 	[Export] public Panel InterfaceFutureSlot;
 	[Export] public Panel SacSlot;
 	[Export] public Panel EquipementSacSlot;
+	[Export] public Panel CarnetSavoirSlot;
 	/// <summary>Grille <c>GrilleEquipCorps</c> : pour l’instant une seule case (ceinture 102). Pour d’autres équipements, ajouter des panneaux frères dans la scène et augmenter <c>columns</c> si besoin.</summary>
 	[Export] public Panel EquipementCorpsSlot;
 	[Export] public Panel SlotResultatCraft;
@@ -36,6 +37,9 @@ public partial class MenuAnatomie : Control
 	private SubViewportContainer _vpMenuSacEquip;
 	private MeshInstance3D _meshPreviewMenuSacEquip;
 	private Label _lblSlotSacEquip;
+	private SubViewportContainer _vpMenuCarnet;
+	private MeshInstance3D _meshPreviewMenuCarnet;
+	private Label _lblSlotCarnet;
 
 	/// <summary>Objet « tenu par la souris » dans l’inventaire Q : échange au clic avec une main ou une case 2×2.</summary>
 	private SlotInventaire _curseurMenu;
@@ -54,6 +58,7 @@ public partial class MenuAnatomie : Control
 	private const string CheminMainDroite = "MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/LigneMainsCeinture/MainDroiteSlot";
 	private const string CheminEquipementCorpsSlot = "MarginPrincipal/VBoxPrincipal/CorpsHBox/GrilleEquipCorps/EquipementCorpsSlot";
 	private const string CheminEquipementSacSlot = "MarginPrincipal/VBoxPrincipal/CorpsHBox/GrilleEquipCorps/EquipementSacSlot";
+	private const string CheminCarnetSavoirSlot = "MarginPrincipal/VBoxPrincipal/CorpsHBox/GrilleEquipCorps/CarnetSavoirSlot";
 	private const string CheminGrilleAssemblage = "MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/LigneCraft/CadreCraft/GrilleAssemblage";
 	private const string CheminSlotResultatCraft = "MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/LigneCraft/CraftSortie";
 	private const string CheminLigneMainsCeinture = "MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/LigneMainsCeinture";
@@ -162,6 +167,8 @@ public partial class MenuAnatomie : Control
 			EquipementCorpsSlot = GetNodeOrNull<Panel>(CheminEquipementCorpsSlot) ?? FindChild("EquipementCorpsSlot", true, false) as Panel;
 		if (EquipementSacSlot == null || !GodotObject.IsInstanceValid(EquipementSacSlot))
 			EquipementSacSlot = GetNodeOrNull<Panel>(CheminEquipementSacSlot) ?? FindChild("EquipementSacSlot", true, false) as Panel;
+		if (CarnetSavoirSlot == null || !GodotObject.IsInstanceValid(CarnetSavoirSlot))
+			CarnetSavoirSlot = GetNodeOrNull<Panel>(CheminCarnetSavoirSlot) ?? FindChild("CarnetSavoirSlot", true, false) as Panel;
 	}
 
 	private void ResoudreGrilleAssemblage()
@@ -604,6 +611,11 @@ public partial class MenuAnatomie : Control
 			_meshPreviewMenuSacEquip = CreerViewportPreviewDansSlot(EquipementSacSlot, "ViewportMenuSacEquip", out _vpMenuSacEquip);
 			_lblSlotSacEquip = TrouverOuCreerLabel(EquipementSacSlot, "Sac\n[vide]");
 		}
+		if (CarnetSavoirSlot != null && (_meshPreviewMenuCarnet == null || !GodotObject.IsInstanceValid(_meshPreviewMenuCarnet)))
+		{
+			_meshPreviewMenuCarnet = CreerViewportPreviewDansSlot(CarnetSavoirSlot, "ViewportMenuCarnet", out _vpMenuCarnet);
+			_lblSlotCarnet = TrouverOuCreerLabel(CarnetSavoirSlot, "Carnet\n[vide]");
+		}
 	}
 
 	private static MeshInstance3D CreerViewportPreviewDansSlot(Panel panel, string nomConteneur, out SubViewportContainer holder)
@@ -691,6 +703,11 @@ public partial class MenuAnatomie : Control
 		{
 			_clicsSlotSacConnecte = true;
 			Branche(EquipementSacSlot, e => TraiterClicInventaire(e, 5));
+		}
+		if (CarnetSavoirSlot != null && !CarnetSavoirSlot.HasMeta("ClickBound_8"))
+		{
+			Branche(CarnetSavoirSlot, e => TraiterClicInventaire(e, 8));
+			CarnetSavoirSlot.SetMeta("ClickBound_8", true);
 		}
 		if (!_clicsGrilleSacConnectes && ObtenirGrilleSac() is GridContainer grilleSac)
 		{
@@ -809,6 +826,11 @@ public partial class MenuAnatomie : Control
 			int capCeinture = Joueur.ObtenirCapaciteCeintureStockage(_joueurRef.EquipementCeinture);
 			if (!_joueurRef.ACeintureSacochesEquipe() || craftIdx < 0 || craftIdx >= capCeinture) return;
 			InteragirCurseurAvecSlot(ref _joueurRef.RefSlotCeintureStockage(craftIdx), clicGauche, clicDroit, slotCeintureStockage: true, indexSlotCeinture: craftIdx);
+		}
+		else if (mode == 8)
+		{
+			if (!EchangerCurseurAvecEquipementCarnetSiValide())
+				return;
 		}
 		else if (mode == 9 && craftIdx >= 0)
 		{
@@ -1056,6 +1078,21 @@ public partial class MenuAnatomie : Control
 		SlotInventaire depuisCurseur = _curseurMenu;
 		_joueurRef.AssignerEquipementSacDos(depuisCurseur);
 		_curseurMenu = surSac;
+		return true;
+	}
+
+	private bool EchangerCurseurAvecEquipementCarnetSiValide()
+	{
+		if (_joueurRef == null) return false;
+		if (!_curseurMenu.EstVide && _curseurMenu.ID != Joueur.IdObjetCarnetSavoir)
+		{
+			GD.Print("ZERO-K : Ce slot n'accepte que le carnet du savoir.");
+			return false;
+		}
+		SlotInventaire surCarnet = _joueurRef.EquipementCarnet;
+		SlotInventaire depuisCurseur = _curseurMenu;
+		_joueurRef.AssignerEquipementCarnet(depuisCurseur);
+		_curseurMenu = surCarnet;
 		return true;
 	}
 
@@ -1407,6 +1444,12 @@ public partial class MenuAnatomie : Control
 			&& (h == EquipementSacSlot || EquipementSacSlot.IsAncestorOf(h)))
 		{
 			slot = _joueurRef.EquipementSacDos;
+			return true;
+		}
+		if (CarnetSavoirSlot != null && GodotObject.IsInstanceValid(CarnetSavoirSlot)
+			&& (h == CarnetSavoirSlot || CarnetSavoirSlot.IsAncestorOf(h)))
+		{
+			slot = _joueurRef.EquipementCarnet;
 			return true;
 		}
 		if (SlotResultatCraft != null && GodotObject.IsInstanceValid(SlotResultatCraft)
@@ -2325,6 +2368,31 @@ public partial class MenuAnatomie : Control
 				_lblSlotSacEquip.Text = string.IsNullOrEmpty(nomS) ? "Sac\n[slot vide]" : $"Sac\n[{nomS}]";
 			}
 			RafraichirQuantiteSlot(EquipementSacSlot, eqS);
+		}
+		if (CarnetSavoirSlot != null && _meshPreviewMenuCarnet != null && GodotObject.IsInstanceValid(_meshPreviewMenuCarnet))
+		{
+			var eqK = _joueurRef.EquipementCarnet;
+			bool visK = _joueurRef.InventaireSlotAunVisuel3D(eqK);
+			bool vpKOk = _vpMenuCarnet != null && GodotObject.IsInstanceValid(_vpMenuCarnet);
+			if (vpKOk)
+			{
+				_vpMenuCarnet.Visible = visK;
+				if (visK)
+					_joueurRef.SynchroniserPreviewSlotMenu(_meshPreviewMenuCarnet, eqK);
+				else
+				{
+					_meshPreviewMenuCarnet.Mesh = null;
+					_meshPreviewMenuCarnet.MaterialOverride = null;
+				}
+			}
+			if (_lblSlotCarnet != null)
+			{
+				bool montrerTexte = !visK || !vpKOk;
+				_lblSlotCarnet.Visible = montrerTexte;
+				string nomK = Atlas_Matiere.ObtenirNomObjet(eqK);
+				_lblSlotCarnet.Text = string.IsNullOrEmpty(nomK) ? "Carnet\n[vide]" : $"Carnet\n[{nomK}]";
+			}
+			RafraichirQuantiteSlot(CarnetSavoirSlot, eqK);
 		}
 
 		AppliquerDispositionGrilleCraft();

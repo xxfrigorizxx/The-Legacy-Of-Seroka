@@ -2,10 +2,11 @@ using Godot;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Text.Json;
 
 public partial class Joueur
 {
-    private const int VersionPersistenceJoueur = 2;
+    private const int VersionPersistenceJoueur = 3;
     private const int VersionPersistenceObjetsPoses = 4;
     private const int VersionPersistenceProgression = 2;
     private bool _etatPersistantCharge;
@@ -104,6 +105,7 @@ public partial class Joueur
 
         SauvegarderProgressionJoueurMonde();
         SauvegarderInventaireMonde();
+        SauvegarderCarnetSavoirMonde();
         SauvegarderObjetsPosesMonde(tree);
         SauvegarderBlocsChutantsMonde(tree);
         ObtenirGestionnaireFauneCourant(tree)?.SauvegarderFauneMonde();
@@ -115,6 +117,9 @@ public partial class Joueur
         _etatPersistantCharge = true;
         ChargerProgressionJoueurMonde();
         ChargerInventaireMonde();
+        bool carnetCharge = ChargerCarnetSavoirMonde();
+        if (!carnetCharge)
+            InitialiserCarnetParDefautSiAucuneDonnee();
         ChargerObjetsPosesMonde();
         ChargerBlocsChutantsMonde();
         ObtenirGestionnaireFauneCourant(null)?.ChargerFauneMonde();
@@ -233,6 +238,7 @@ public partial class Joueur
             EcrireSlot(w, MainDroite);
             EcrireSlot(w, EquipementSacDos);
             EcrireSlot(w, EquipementCeinture);
+            EcrireSlot(w, EquipementCarnet);
             w.Write(MainGaucheEstActive);
             for (int i = 0; i < 4; i++)
                 EcrireSlot(w, i < GrilleCraftPoche.Length ? GrilleCraftPoche[i] : new SlotInventaire());
@@ -267,6 +273,7 @@ public partial class Joueur
             MainDroite = LireSlot(r, lireExtras);
             EquipementSacDos = LireSlot(r, lireExtras);
             EquipementCeinture = LireSlot(r, lireExtras);
+            EquipementCarnet = version >= 3 ? LireSlot(r, true) : new SlotInventaire();
             MainGaucheEstActive = r.ReadBoolean();
             for (int i = 0; i < 4 && i < GrilleCraftPoche.Length; i++)
                 GrilleCraftPoche[i] = LireSlot(r, lireExtras);
@@ -291,6 +298,61 @@ public partial class Joueur
         catch (Exception ex)
         {
             GD.PrintErr($"ZERO-K : Erreur chargement inventaire joueur : {ex.Message}");
+        }
+    }
+
+    private sealed class CarnetSavoirData
+    {
+        public string[] pages { get; set; } = Array.Empty<string>();
+        public int page_index { get; set; }
+    }
+
+    private void SauvegarderCarnetSavoirMonde()
+    {
+        try
+        {
+            ObtenirEtatCarnetPourSauvegarde(out string[] pages, out int pageIndex);
+            var data = new CarnetSavoirData
+            {
+                pages = pages ?? Array.Empty<string>(),
+                page_index = pageIndex
+            };
+
+            string dossier = ObtenirCheminDossierSauvegardeMonde();
+            Directory.CreateDirectory(dossier);
+            string chemin = Path.Combine(dossier, "player_carnet_savoir.json");
+            string json = JsonSerializer.Serialize(data);
+            File.WriteAllText(chemin, json);
+        }
+        catch (Exception ex)
+        {
+            GD.PrintErr($"ZERO-K : Erreur sauvegarde carnet du savoir : {ex.Message}");
+        }
+    }
+
+    private bool ChargerCarnetSavoirMonde()
+    {
+        try
+        {
+            string chemin = Path.Combine(ObtenirCheminDossierSauvegardeMonde(), "player_carnet_savoir.json");
+            if (!File.Exists(chemin))
+                return false;
+
+            string json = File.ReadAllText(chemin);
+            if (string.IsNullOrWhiteSpace(json))
+                return false;
+
+            CarnetSavoirData data = JsonSerializer.Deserialize<CarnetSavoirData>(json);
+            if (data == null)
+                return false;
+
+            DefinirEtatCarnetDepuisSauvegarde(data.pages ?? Array.Empty<string>(), data.page_index);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            GD.PrintErr($"ZERO-K : Erreur chargement carnet du savoir : {ex.Message}");
+            return false;
         }
     }
 

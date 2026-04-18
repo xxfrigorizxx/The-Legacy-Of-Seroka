@@ -126,6 +126,7 @@ script = ExtResource("1_script")
 MainGaucheSlot = NodePath("MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/LigneMainsCeinture/MainGaucheSlot")
 MainDroiteSlot = NodePath("MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/LigneMainsCeinture/MainDroiteSlot")
 EquipementSacSlot = NodePath("MarginPrincipal/VBoxPrincipal/CorpsHBox/GrilleEquipCorps/EquipementSacSlot")
+CarnetSavoirSlot = NodePath("MarginPrincipal/VBoxPrincipal/CorpsHBox/GrilleEquipCorps/CarnetSavoirSlot")
 EquipementCorpsSlot = NodePath("MarginPrincipal/VBoxPrincipal/CorpsHBox/GrilleEquipCorps/EquipementCorpsSlot")
 VueJoueurPanel = NodePath("MarginPrincipal/VBoxPrincipal/CorpsHBox/VueJoueurPanel")
 GrilleAssemblage = NodePath("MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/LigneCraft/CadreCraft/GrilleAssemblage")
@@ -430,6 +431,25 @@ grow_horizontal = 2
 grow_vertical = 2
 theme_override_font_sizes/font_size = 8
 text = "Ceinture"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 0
+clip_text = true
+
+[node name="CarnetSavoirSlot" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/GrilleEquipCorps"]
+custom_minimum_size = Vector2(68, 68)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleVertSlot")
+
+[node name="Label" type="Label" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/GrilleEquipCorps/CarnetSavoirSlot"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 8
+text = "Carnet"
 horizontal_alignment = 1
 vertical_alignment = 1
 autowrap_mode = 0

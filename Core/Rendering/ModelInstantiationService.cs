@@ -8,7 +8,7 @@ public partial class Joueur
     private static bool EstObjetAvecVisuel(int id)
     {
         if (id >= 1 && id <= 9) return true;
-        return ItemPhysique.EstIdRocheMatiere(id) || id == 10 || id == 11 || id == BlocChutant.ID_BRANCHE || id == 15 || id == 16 || id == 17 || id == 20 || id == 21 || id == Joueur.IdObjetCeinturePoches || id == Joueur.IdObjetCeintureSacoches || id == Joueur.IdObjetPochetteTier0 || id == Joueur.IdObjetSacTier0 || id == 30 || id == 32 || id == 34 || id == Joueur.IdObjetBaie || id == 100 || id == 105 || id == 106 || id == Joueur.IdObjetPellePierreTier0 || id == Joueur.IdObjetPiochePierreTier0 || id == Joueur.IdObjetLancePierreTier0 || id == Joueur.IdObjetFauxPierreTier0 || id == 200 || id == Joueur.IdObjetRackBatons || id == Joueur.IdObjetRackBuches || id == Joueur.IdObjetCoffreBoisTier0;
+        return ItemPhysique.EstIdRocheMatiere(id) || id == 10 || id == 11 || id == BlocChutant.ID_BRANCHE || id == 15 || id == 16 || id == 17 || id == 20 || id == 21 || id == Joueur.IdObjetCeinturePoches || id == Joueur.IdObjetCeintureSacoches || id == Joueur.IdObjetPochetteTier0 || id == Joueur.IdObjetSacTier0 || id == Joueur.IdObjetCarnetSavoir || id == 30 || id == 32 || id == 34 || id == Joueur.IdObjetBaie || id == 100 || id == 105 || id == 106 || id == Joueur.IdObjetPellePierreTier0 || id == Joueur.IdObjetPiochePierreTier0 || id == Joueur.IdObjetLancePierreTier0 || id == Joueur.IdObjetFauxPierreTier0 || id == 200 || id == Joueur.IdObjetRackBatons || id == Joueur.IdObjetRackBuches || id == Joueur.IdObjetCoffreBoisTier0;
     }
 
     public static void NettoyerModelesEnfants(Node3D parent)
@@ -43,6 +43,8 @@ public partial class Joueur
             parent.RemoveMeta(MetaSignatureLance111);
         if (parent.HasMeta(MetaSignatureFaux112))
             parent.RemoveMeta(MetaSignatureFaux112);
+        if (parent.HasMeta(MetaSignatureCarnet114))
+            parent.RemoveMeta(MetaSignatureCarnet114);
     }
 
     private static Aabb TransformerAabb(Transform3D t, Aabb a)
@@ -223,6 +225,12 @@ public partial class Joueur
     {
         if (s.ID != Joueur.IdObjetSacTier0) return -1;
         return HashCode.Combine(s.IndexChimique, s.IndexMorphologique, s.NiveauFracture, s.CleConteneur ?? "", s.IndexBotanique);
+    }
+
+    private static int SignatureSlotCarnet114(SlotInventaire s)
+    {
+        if (s.ID != Joueur.IdObjetCarnetSavoir) return -1;
+        return HashCode.Combine(s.IndexChimique, s.IndexMorphologique, s.IndexTaille, s.NiveauFracture, s.IndexBotanique);
     }
 
     private static Material ObtenirMaterielPochetteCeinture(SlotInventaire ceinture, byte tagPochette)
@@ -579,6 +587,60 @@ public partial class Joueur
         }
 
         ParcourirMeshes(modele);
+        if (ancrerBaseAuSol)
+            NormaliserEchelleTableAtelierAuSol(modele, tailleMaxMetres);
+        else
+            NormaliserEchelleEtCentrerModeleArme(modele, tailleMaxMetres);
+        parent.AddChild(modele);
+    }
+
+    /// <summary>Carnet du savoir : modèle procédural simple avec couverture texturée temporaire.</summary>
+    public static void InstancierModeleCarnetSavoir(Node3D parent, SlotInventaire slot, float tailleMaxMetres = 0.42f, bool ancrerBaseAuSol = false)
+    {
+        var modele = new Node3D { Name = "ModeleArme" };
+
+        var couverture = new MeshInstance3D
+        {
+            Name = "Couverture",
+            Mesh = new BoxMesh { Size = new Vector3(0.34f, 0.045f, 0.46f) },
+            Position = new Vector3(0f, 0.028f, 0f)
+        };
+        var matCouv = new StandardMaterial3D
+        {
+            AlbedoColor = new Color(0.34f, 0.21f, 0.12f),
+            Roughness = 0.82f,
+            Metallic = 0.02f
+        };
+        couverture.MaterialOverride = matCouv;
+        modele.AddChild(couverture);
+
+        var pages = new MeshInstance3D
+        {
+            Name = "Pages",
+            Mesh = new BoxMesh { Size = new Vector3(0.30f, 0.032f, 0.42f) },
+            Position = new Vector3(0f, 0.03f, 0f)
+        };
+        pages.MaterialOverride = new StandardMaterial3D
+        {
+            AlbedoColor = new Color(0.88f, 0.84f, 0.74f),
+            Roughness = 0.94f,
+            Metallic = 0f
+        };
+        modele.AddChild(pages);
+
+        var tranche = new MeshInstance3D
+        {
+            Name = "Tranche",
+            Mesh = new BoxMesh { Size = new Vector3(0.02f, 0.046f, 0.46f) },
+            Position = new Vector3(-0.16f, 0.028f, 0f)
+        };
+        tranche.MaterialOverride = new StandardMaterial3D
+        {
+            AlbedoColor = new Color(0.24f, 0.16f, 0.11f),
+            Roughness = 0.78f
+        };
+        modele.AddChild(tranche);
+
         if (ancrerBaseAuSol)
             NormaliserEchelleTableAtelierAuSol(modele, tailleMaxMetres);
         else

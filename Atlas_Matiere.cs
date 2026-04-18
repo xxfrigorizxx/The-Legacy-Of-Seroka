@@ -565,6 +565,8 @@ public static class Atlas_Matiere
             return "Rack à bâtons";
         if (id == Joueur.IdObjetRackBuches)
             return "Rack à bûches";
+        if (id == Joueur.IdObjetCarnetSavoir)
+            return "Carnet du savoir";
         return id switch
         {
             1 => "Terre",
