@@ -108,6 +108,8 @@ public partial class Joueur : CharacterBody3D
     public const int IdObjetLancePierreTier0 = 111;
     /// <summary>Faux primitive en pierre (visuel épée tier0 + craft établi 3×3).</summary>
     public const int IdObjetFauxPierreTier0 = 112;
+    /// <summary>Coffre en bois tier 0 (10 slots stockage, craft 3×3).</summary>
+    public const int IdObjetCoffreBoisTier0 = 113;
     /// <summary>Rack Ã  bÃ¢tons (stockage dÃ©diÃ©).</summary>
     public const int IdObjetRackBatons = 109;
     /// <summary>Rack Ã  bÃ»ches (stockage dÃ©diÃ©).</summary>
@@ -198,11 +200,15 @@ public partial class Joueur : CharacterBody3D
     public ItemPhysique AtelierPlanTravailOuvert;
     /// <summary>Rack Ã  bÃ¢tons (ItemPhysique 109) dont le stockage 3Ã—3 est affichÃ© ; null hors mode rack.</summary>
     public ItemPhysique RackBatonsOuvert;
+    /// <summary>Coffre en bois (113) ouvert : stockage 10 cases dans le menu Q.</summary>
+    public ItemPhysique CoffreOuvert;
 
     /// <summary>True si le menu a Ã©tÃ© ouvert depuis lâ€™atelier posÃ© : recettes et UI en 3Ã—3. False aprÃ¨s Q ou fermeture du menu.</summary>
     public bool CraftGrille3x3AuTable { get; set; }
     /// <summary>True si la grille 3Ã—3 sert de stockage rack bÃ¢tons (pas de recettes).</summary>
     public bool StockageRackBatonsOuvert { get; set; }
+    /// <summary>True si le panneau stockage 10 slots du coffre en bois est actif.</summary>
+    public bool StockageCoffreOuvert { get; set; }
 
     /// <summary>Slot contenant le rÃ©sultat d'une recette valide.</summary>
     public SlotInventaire SlotResultatCraft = new SlotInventaire();
@@ -213,6 +219,8 @@ public partial class Joueur : CharacterBody3D
     private Camera3D _cameraTps;
     private RayCast3D _rayonFps;
     private RayCast3D _rayonTps;
+    /// <summary>Limite les appels à <see cref="MenuAnatomie.RafraichirMenu"/> depuis le HUD (évite coût SubViewport par frame).</summary>
+    private ulong _msDernierRafraichirMenuCompletHud;
     private Node3D _pivotCameraTps;
     private SpringArm3D _brasCameraTps;
     private bool _vueTroisiemePersonne;
@@ -327,6 +335,15 @@ public partial class Joueur : CharacterBody3D
     private ProgressBar _barreEndurance;
     private Label _labelFaim;
     private Label _labelEndurance;
+    [ExportGroup("Diagnostic performance")]
+    [Export] public bool ActiverProfilagePerfJoueur = false;
+    [Export(PropertyHint.Range, "0.2,10,0.1")] public float IntervalleLogProfilageJoueurSec = 2.0f;
+    private float _cooldownDrainProfilageJoueur = 0f;
+    private int _dernierPourcentageFaimHud = -1;
+    private int _dernierPourcentageEnduranceHud = -1;
+    private float _derniereValeurBarreFaimHud = float.NaN;
+    private float _derniereValeurBarreEnduranceHud = float.NaN;
+    private readonly Dictionary<int, StyleBoxFlat> _cacheStyleSlotsHud = new Dictionary<int, StyleBoxFlat>();
     private MeshInstance3D _objetEnMain;
     private const string MetaSignatureDague105 = "SigDague105";
     private const string MetaSignatureHachette106 = "SigHachette106";
@@ -342,6 +359,7 @@ public partial class Joueur : CharacterBody3D
     private const string MetaSignaturePochette103 = "SigPochette103";
     private const string MetaSignatureSac101 = "SigSac101";
     private const string MetaSignatureRack109 = "SigRack109";
+    private const string MetaSignatureCoffre113 = "SigCoffre113";
     private const string MetaSignatureBaie35 = "SigBaie35";
     private SubViewportContainer _viewportSlotGauche;
     private SubViewportContainer _viewportSlotDroite;
@@ -427,6 +445,8 @@ public partial class Joueur : CharacterBody3D
     private const float FacteurRalentissementDrainFaim = 0.5f;
     private const float RatioGainFaimConsommationBaie = 0.10f;
     private const float MultiplicateurVitesseSprint = 1.65f;
+    /// <summary>Au sol : vitesse physique ×1,05 ; <see cref="Speed"/> reste la référence des blends d’animation.</summary>
+    private const float FacteurVitesseMouvementAuSol = 1.05f;
     private const float GainFaimClicDroitMainVide = 12f;
     private const float CooldownGainFaimClicDroitSec = 0.22f;
     private float _faimJoueur = FaimMaxJoueur;
@@ -2104,19 +2124,48 @@ public partial class Joueur : CharacterBody3D
             hudInventaire.AddChild(_hudStatsSurvie);
         }
 
-        MettreAJourHudStatsSurvie();
+        MettreAJourHudStatsSurvie(force: true);
     }
 
-    private void MettreAJourHudStatsSurvie()
+    private void MettreAJourHudStatsSurvie(bool force = false)
     {
+        float faimClampee = Mathf.Clamp(_faimJoueur, 0f, FaimMaxJoueur);
+        float enduranceClampee = Mathf.Clamp(_enduranceJoueur, 0f, EnduranceMaxJoueur);
+        int pctFaim = Mathf.RoundToInt(Mathf.Clamp((faimClampee / FaimMaxJoueur) * 100f, 0f, 100f));
+        int pctEndurance = Mathf.RoundToInt(Mathf.Clamp((enduranceClampee / EnduranceMaxJoueur) * 100f, 0f, 100f));
+
         if (_barreFaim != null)
-            _barreFaim.Value = _faimJoueur;
+        {
+            if (force || float.IsNaN(_derniereValeurBarreFaimHud) || Mathf.Abs(_derniereValeurBarreFaimHud - faimClampee) > 0.02f)
+            {
+                _barreFaim.Value = faimClampee;
+                _derniereValeurBarreFaimHud = faimClampee;
+            }
+        }
         if (_barreEndurance != null)
-            _barreEndurance.Value = _enduranceJoueur;
+        {
+            if (force || float.IsNaN(_derniereValeurBarreEnduranceHud) || Mathf.Abs(_derniereValeurBarreEnduranceHud - enduranceClampee) > 0.02f)
+            {
+                _barreEndurance.Value = enduranceClampee;
+                _derniereValeurBarreEnduranceHud = enduranceClampee;
+            }
+        }
         if (_labelFaim != null)
-            _labelFaim.Text = $"Faim {Mathf.RoundToInt(Mathf.Clamp((_faimJoueur / FaimMaxJoueur) * 100f, 0f, 100f))}%";
+        {
+            if (force || pctFaim != _dernierPourcentageFaimHud)
+            {
+                _labelFaim.Text = $"Faim {pctFaim}%";
+                _dernierPourcentageFaimHud = pctFaim;
+            }
+        }
         if (_labelEndurance != null)
-            _labelEndurance.Text = $"Énergie {Mathf.RoundToInt(Mathf.Clamp((_enduranceJoueur / EnduranceMaxJoueur) * 100f, 0f, 100f))}%";
+        {
+            if (force || pctEndurance != _dernierPourcentageEnduranceHud)
+            {
+                _labelEndurance.Text = $"Énergie {pctEndurance}%";
+                _dernierPourcentageEnduranceHud = pctEndurance;
+            }
+        }
     }
 
     private void AppliquerMetabolismeJoueur(float dt, bool effortIntense, bool sprintActif)
@@ -2184,7 +2233,6 @@ public partial class Joueur : CharacterBody3D
             _lblHudNomMainD.Text = MainDroite.EstVide ? "" : n;
             _lblHudNomMainD.Visible = !MainDroite.EstVide && !string.IsNullOrEmpty(n);
         }
-        MettreAJourHudStatsSurvie();
     }
 
     /// <summary>SubViewport + MeshInstance3D dans chaque slot pour afficher la pierre exacte en 2D.</summary>
@@ -2399,14 +2447,15 @@ public partial class Joueur : CharacterBody3D
                 bool estTerrainVoxel = mainActive.ID >= 1 && mainActive.ID <= 9;
                 bool estAtelierEnMain = mainActive.ID == 200;
                 bool estRackBatonsEnMain = mainActive.ID == IdObjetRackBatons || mainActive.ID == IdObjetRackBuches;
+                bool estCoffreEnMain = mainActive.ID == IdObjetCoffreBoisTier0;
                 bool estBuissonEnMain = mainActive.ID == 10 || mainActive.ID == 11;
                 // Clic bref = poser. Maintien du clic = lancer (seuil 0,5 s).
                 // Atelier + rack (structures fixes) : jamais de lancer.
-                if (estAtelierEnMain || estRackBatonsEnMain || estBuissonEnMain || estTerrainVoxel || _forceLancer < 0.5f)
+                if (estAtelierEnMain || estRackBatonsEnMain || estCoffreEnMain || estBuissonEnMain || estTerrainVoxel || _forceLancer < 0.5f)
                 {
                     // Clic droit court + lame / roche plate / pointe + sol : fauchage (le gauche le fait aussi).
                     // Objet lançable : le clic droit court sert à poser sous la visée — pas de vol du fauchage.
-                    if (!estAtelierEnMain && !estRackBatonsEnMain && !estTerrainVoxel && _forceLancer < 0.5f
+                    if (!estAtelierEnMain && !estRackBatonsEnMain && !estCoffreEnMain && !estTerrainVoxel && _forceLancer < 0.5f
                         && !EstObjetLancableAuMaintien(mainActive)
                         && ExecuterFauchageSolPrioritaireClicDroit())
                     {
@@ -2531,6 +2580,18 @@ public partial class Joueur : CharacterBody3D
         if (slot == null || !GodotObject.IsInstanceValid(slot))
             return;
 
+        int cleStyle = HashCode.Combine(slotData.ID, slotData.IndexChimique, selectionne ? 1 : 0);
+        if (!_cacheStyleSlotsHud.TryGetValue(cleStyle, out StyleBoxFlat style) || !GodotObject.IsInstanceValid(style))
+        {
+            style = CreerStyleSlotHud(slotData, selectionne);
+            _cacheStyleSlotsHud[cleStyle] = style;
+        }
+
+        slot.AddThemeStyleboxOverride("panel", style);
+    }
+
+    private StyleBoxFlat CreerStyleSlotHud(SlotInventaire slotData, bool selectionne)
+    {
         int idMatiere = slotData.ID;
         var style = new StyleBoxFlat();
         if (idMatiere == 0)
@@ -2596,8 +2657,7 @@ public partial class Joueur : CharacterBody3D
             style.BorderColor = new Color(1f, 0.9f, 0.2f);
             style.SetBorderWidthAll(3);
         }
-
-        slot.AddThemeStyleboxOverride("panel", style);
+        return style;
     }
 
     /// <summary>Masque le mesh Â« en main Â» devant la camÃ©ra quand le menu CAO est ouvert (Ã©vite la confusion avec le transit UI).</summary>
@@ -2625,6 +2685,8 @@ public partial class Joueur : CharacterBody3D
             AtelierPlanTravailOuvert = null;
             StockageRackBatonsOuvert = false;
             RackBatonsOuvert = null;
+            StockageCoffreOuvert = false;
+            CoffreOuvert = null;
             _menuAnatomie.BasculerVisibilite();
             RafraichirHUD();
             Input.MouseMode = Input.MouseModeEnum.Captured;
@@ -2855,6 +2917,7 @@ public partial class Joueur : CharacterBody3D
         200 => 12.0f,
         IdObjetRackBatons => 8.0f,
         IdObjetRackBuches => 8.0f,
+        IdObjetCoffreBoisTier0 => 42f,
         _ => 0.5f
     };
 
@@ -3006,7 +3069,18 @@ public partial class Joueur : CharacterBody3D
         MettreAJourPreviewsSlots();
         MettreAJourVisibilitePreviews();
         if (_menuAnatomie != null && _menuAnatomie.EstOuvert)
-            _menuAnatomie.RafraichirMenu();
+        {
+            const ulong intervalleMenuHudMs = 50UL;
+            ulong maintenant = Time.GetTicksMsec();
+            if (maintenant - _msDernierRafraichirMenuCompletHud >= intervalleMenuHudMs
+                || _msDernierRafraichirMenuCompletHud == 0UL)
+            {
+                _msDernierRafraichirMenuCompletHud = maintenant;
+                _menuAnatomie.RafraichirMenu();
+            }
+        }
+        else
+            _msDernierRafraichirMenuCompletHud = 0UL;
     }
 
     /// <summary>Assigne le Mesh exact de la main active au MeshInstance3D devant la camÃ©ra.</summary>
@@ -3189,6 +3263,7 @@ public partial class Joueur : CharacterBody3D
         else if (id == IdObjetLancePierreTier0) return null; // GLB res://Modeles/Equipements/Lance_en_pierre_tier0.glb via InstancierModeleArme
         else if (id == IdObjetFauxPierreTier0) return null; // GLB res://Modeles/Equipements/Epe_pierre_tier0.glb via InstancierModeleArme
         else if (id == IdObjetRackBatons || id == IdObjetRackBuches) return null; // GLB rack (bÃ¢tons / bÃ»ches) via instanciation dÃ©diÃ©e
+        else if (id == IdObjetCoffreBoisTier0) return null; // GLB coffre via InstancierModeleCoffreBoisTier0
         else if (id == 30 || id == 32)
         {
             CalculerDimensionsBoisPose(id, indexMorpho, indexTaille, out float br, out float bl, out _, out _);
@@ -3853,6 +3928,53 @@ public partial class Joueur : CharacterBody3D
             item.SetMeta("CleConteneur", cle);
             corps = item;
         }
+        else if (id == IdObjetCoffreBoisTier0)
+        {
+            var item = new ItemPhysique
+            {
+                ID_Objet = id,
+                IndexBotanique = mainActive.IndexBotanique,
+                IndexChimique = mainActive.IndexChimique,
+                IndexCacheMemoire = mainActive.IndexMorphologique,
+                Name = "ItemPhysique",
+                ContinuousCd = true,
+                Freeze = true,
+                FreezeMode = RigidBody3D.FreezeModeEnum.Static
+            };
+            var meshRoot = new Node3D { Name = "MeshInstance3D" };
+            InstancierModeleCoffreBoisTier0(meshRoot, mainActive, 0.88f, true);
+            item.AddChild(meshRoot);
+            var pileCoffre = new List<Node> { meshRoot };
+            for (int i = 0; i < pileCoffre.Count; i++)
+            {
+                foreach (Node c in pileCoffre[i].GetChildren())
+                {
+                    if (c is MeshInstance3D mi && mi.Mesh != null)
+                    {
+                        Shape3D shape = mi.Mesh.CreateTrimeshShape();
+                        if (shape != null)
+                        {
+                            Transform3D t = mi.Transform;
+                            Node parentNode = mi.GetParent();
+                            while (parentNode != null && parentNode != item && parentNode is Node3D n3d)
+                            {
+                                t = n3d.Transform * t;
+                                parentNode = parentNode.GetParent();
+                            }
+                            var colNode = new CollisionShape3D { Shape = shape, Transform = t };
+                            item.AddChild(colNode);
+                        }
+                    }
+                    pileCoffre.Add(c);
+                }
+            }
+            if (item.GetChildCount() <= 1)
+                item.AddChild(new CollisionShape3D { Shape = new BoxShape3D { Size = new Vector3(0.52f, 0.38f, 0.42f) }, Position = new Vector3(0f, 0.19f, 0f) });
+            string cleCoffre = !string.IsNullOrEmpty(mainActive.CleConteneur) ? mainActive.CleConteneur : Guid.NewGuid().ToString("N");
+            item.SetMeta("CleConteneur", cleCoffre);
+            RestaurerContenuCoffreSurItem(item, cleCoffre);
+            corps = item;
+        }
         else if (id == 200)
         {
             var item = new ItemPhysique
@@ -4136,7 +4258,7 @@ public partial class Joueur : CharacterBody3D
         GetParent().AddChild(corps);
         // Placement pur : pas de translation Y supplÃ©mentaire (Ã©vite double offset / lÃ©vitation atelier).
         corps.GlobalPosition = pointDeChute;
-        if (id == IdObjetRackBatons || id == IdObjetRackBuches)
+        if (id == IdObjetRackBatons || id == IdObjetRackBuches || id == IdObjetCoffreBoisTier0)
         {
             // Snap sol robuste pour le rack: corrige les cas oÃ¹ le raycast vise une surface dÃ©calÃ©e.
             var espace = GetWorld3D()?.DirectSpaceState;
@@ -4199,7 +4321,7 @@ public partial class Joueur : CharacterBody3D
                     rbPose.AngularDamp = 0.88f;
                 }
             }
-            else if (id == 30 || id == 32 || id == 200 || id == IdObjetRackBatons || id == IdObjetRackBuches)
+            else if (id == 30 || id == 32 || id == 200 || id == IdObjetRackBatons || id == IdObjetRackBuches || id == IdObjetCoffreBoisTier0)
             {
                 rbPose.PhysicsMaterialOverride = _physMatBois;
                 rbPose.LinearDampMode = RigidBody3D.DampMode.Replace;
@@ -4216,6 +4338,12 @@ public partial class Joueur : CharacterBody3D
                 else if (id == IdObjetRackBatons || id == IdObjetRackBuches)
                 {
                     rbPose.Mass = 1200f;
+                    rbPose.GravityScale = 0f;
+                    rbPose.Sleeping = true;
+                }
+                else if (id == IdObjetCoffreBoisTier0)
+                {
+                    rbPose.Mass = 42f;
                     rbPose.GravityScale = 0f;
                     rbPose.Sleeping = true;
                 }
@@ -4397,6 +4525,9 @@ public partial class Joueur : CharacterBody3D
 
     public override void _PhysicsProcess(double delta)
     {
+        ulong debutFramePerfUs = ActiverProfilagePerfJoueur ? PerfBudgetMonitor.Begin() : 0UL;
+        _cooldownDrainProfilageJoueur += (float)delta;
+        ReinitialiserConteneurOuvertSiReferencePerdue();
         float dt = (float)delta;
         _cooldownGainFaimClicDroit = Mathf.Max(0f, _cooldownGainFaimClicDroit - dt);
         if (!_positionReferenceMetabolisteInitialisee)
@@ -4531,8 +4662,13 @@ public partial class Joueur : CharacterBody3D
         bool sprintDemande = !caoOuvert && !estDansEau && ctrlCourse && direction != Vector3.Zero;
         bool sprintActif = sprintDemande && PeutSprinter();
         bool effortIntense = !caoOuvert && (sprintActif || sautMaintenu || _gaucheMaintenu || _forceLancer > 0.15f || (direction != Vector3.Zero && estDansEau));
+        ulong debutMetaboUs = ActiverProfilagePerfJoueur ? PerfBudgetMonitor.Begin() : 0UL;
         AppliquerMetabolismeJoueur(dt, effortIntense, sprintActif);
+        if (ActiverProfilagePerfJoueur)
+            PerfBudgetMonitor.End("Joueur/MetabolismeHud", debutMetaboUs);
         float vitesseMouvement = estDansEau ? Speed * (sautMaintenu ? 0.58f : 0.4f) : Speed;
+        if (!estDansEau)
+            vitesseMouvement *= FacteurVitesseMouvementAuSol;
         if (sprintActif)
             vitesseMouvement *= MultiplicateurVitesseSprint;
         vitesseMouvement *= ObtenirFacteurVitesseSelonChargePortee();
@@ -4560,6 +4696,15 @@ public partial class Joueur : CharacterBody3D
             EssayerCollerCapsuleAuSolTerrain(estDansEau);
         AppliquerContrainteVerticaleHauteurTerrainMonde(estDansEau, ignorerSiMonteeSaut: true, dt);
         MettreAJourProgressionMetabolisteParDeplacement();
+        if (ActiverProfilagePerfJoueur)
+        {
+            PerfBudgetMonitor.End("Joueur/Frame", debutFramePerfUs);
+            if (_cooldownDrainProfilageJoueur >= Mathf.Max(0.2f, IntervalleLogProfilageJoueurSec))
+            {
+                _cooldownDrainProfilageJoueur = 0f;
+                PerfBudgetMonitor.FlushSiEchu("Joueur", IntervalleLogProfilageJoueurSec);
+            }
+        }
     }
 }
 

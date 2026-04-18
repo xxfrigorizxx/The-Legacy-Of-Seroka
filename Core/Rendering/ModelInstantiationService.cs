@@ -8,7 +8,7 @@ public partial class Joueur
     private static bool EstObjetAvecVisuel(int id)
     {
         if (id >= 1 && id <= 9) return true;
-        return ItemPhysique.EstIdRocheMatiere(id) || id == 10 || id == 11 || id == BlocChutant.ID_BRANCHE || id == 15 || id == 16 || id == 17 || id == 20 || id == 21 || id == Joueur.IdObjetCeinturePoches || id == Joueur.IdObjetCeintureSacoches || id == Joueur.IdObjetPochetteTier0 || id == Joueur.IdObjetSacTier0 || id == 30 || id == 32 || id == 34 || id == Joueur.IdObjetBaie || id == 100 || id == 105 || id == 106 || id == Joueur.IdObjetPellePierreTier0 || id == Joueur.IdObjetPiochePierreTier0 || id == Joueur.IdObjetLancePierreTier0 || id == Joueur.IdObjetFauxPierreTier0 || id == 200 || id == Joueur.IdObjetRackBatons || id == Joueur.IdObjetRackBuches;
+        return ItemPhysique.EstIdRocheMatiere(id) || id == 10 || id == 11 || id == BlocChutant.ID_BRANCHE || id == 15 || id == 16 || id == 17 || id == 20 || id == 21 || id == Joueur.IdObjetCeinturePoches || id == Joueur.IdObjetCeintureSacoches || id == Joueur.IdObjetPochetteTier0 || id == Joueur.IdObjetSacTier0 || id == 30 || id == 32 || id == 34 || id == Joueur.IdObjetBaie || id == 100 || id == 105 || id == 106 || id == Joueur.IdObjetPellePierreTier0 || id == Joueur.IdObjetPiochePierreTier0 || id == Joueur.IdObjetLancePierreTier0 || id == Joueur.IdObjetFauxPierreTier0 || id == 200 || id == Joueur.IdObjetRackBatons || id == Joueur.IdObjetRackBuches || id == Joueur.IdObjetCoffreBoisTier0;
     }
 
     public static void NettoyerModelesEnfants(Node3D parent)
@@ -181,6 +181,12 @@ public partial class Joueur
     {
         if (s.ID != Joueur.IdObjetRackBatons && s.ID != Joueur.IdObjetRackBuches) return -1;
         return HashCode.Combine(s.ID, s.IndexBotanique, s.IndexChimique, s.IndexMorphologique, s.CleConteneur ?? "", s.GenomeAssemblage ?? "");
+    }
+
+    private static int SignatureSlotCoffre113(SlotInventaire s)
+    {
+        if (s.ID != Joueur.IdObjetCoffreBoisTier0) return -1;
+        return HashCode.Combine(s.IndexBotanique, s.IndexChimique, s.IndexMorphologique, s.CleConteneur ?? "");
     }
 
     private static int SignatureSlotCorde20(SlotInventaire s)
@@ -573,6 +579,44 @@ public partial class Joueur
         }
 
         ParcourirMeshes(modele);
+        if (ancrerBaseAuSol)
+            NormaliserEchelleTableAtelierAuSol(modele, tailleMaxMetres);
+        else
+            NormaliserEchelleEtCentrerModeleArme(modele, tailleMaxMetres);
+        parent.AddChild(modele);
+    }
+
+    /// <summary>Coffre en bois tier0 : GLB + matériau bois selon l’essence du craft.</summary>
+    public static void InstancierModeleCoffreBoisTier0(Node3D parent, SlotInventaire slot, float tailleMaxMetres = 0.82f, bool ancrerBaseAuSol = true)
+    {
+        PackedScene scene = GD.Load<PackedScene>("res://Modeles/Storage/Coffre_boie_tier0.glb");
+        if (scene == null)
+        {
+            var fb = new MeshInstance3D
+            {
+                Name = "ModeleArme",
+                Mesh = new BoxMesh { Size = new Vector3(0.52f, 0.36f, 0.4f) },
+                MaterialOverride = ArbreVivant.ObtenirMaterielBoisTriplanar((byte)Mathf.Clamp((int)slot.IndexBotanique, 0, 4))
+            };
+            parent.AddChild(fb);
+            return;
+        }
+
+        Node3D modele = scene.Instantiate<Node3D>();
+        modele.Name = "ModeleArme";
+        byte essenceBois = slot.IndexBotanique;
+        if (essenceBois == Joueur.TagVarianteLiane || essenceBois == Joueur.TagVarianteHerbeSolide)
+            essenceBois = LSystem_Botanique.IndexChene;
+
+        void ParcourirMeshesCoffre(Node n)
+        {
+            if (n is MeshInstance3D mi)
+                mi.MaterialOverride = ArbreVivant.ObtenirMaterielBoisTriplanar(essenceBois);
+            foreach (Node c in n.GetChildren())
+                ParcourirMeshesCoffre(c);
+        }
+
+        ParcourirMeshesCoffre(modele);
         if (ancrerBaseAuSol)
             NormaliserEchelleTableAtelierAuSol(modele, tailleMaxMetres);
         else

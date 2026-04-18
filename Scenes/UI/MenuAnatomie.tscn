@@ -562,6 +562,98 @@ custom_minimum_size = Vector2(80, 80)
 layout_mode = 2
 theme_override_styles/panel = SubResource("StyleVertSlot")
 
+[node name="CadreCoffreBois" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite"]
+visible = false
+custom_minimum_size = Vector2(400, 168)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/panel = SubResource("StyleCadreCraft")
+
+[node name="GrilleCoffreBois" type="GridContainer" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/CadreCoffreBois"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 8.0
+offset_top = 8.0
+offset_right = -8.0
+offset_bottom = -8.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/h_separation = 4
+theme_override_constants/v_separation = 4
+columns = 5
+
+[node name="CoffreCell0" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/CadreCoffreBois/GrilleCoffreBois"]
+custom_minimum_size = Vector2(72, 72)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_styles/panel = SubResource("StyleCellCraft")
+
+[node name="CoffreCell1" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/CadreCoffreBois/GrilleCoffreBois"]
+custom_minimum_size = Vector2(72, 72)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_styles/panel = SubResource("StyleCellCraft")
+
+[node name="CoffreCell2" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/CadreCoffreBois/GrilleCoffreBois"]
+custom_minimum_size = Vector2(72, 72)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_styles/panel = SubResource("StyleCellCraft")
+
+[node name="CoffreCell3" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/CadreCoffreBois/GrilleCoffreBois"]
+custom_minimum_size = Vector2(72, 72)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_styles/panel = SubResource("StyleCellCraft")
+
+[node name="CoffreCell4" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/CadreCoffreBois/GrilleCoffreBois"]
+custom_minimum_size = Vector2(72, 72)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_styles/panel = SubResource("StyleCellCraft")
+
+[node name="CoffreCell5" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/CadreCoffreBois/GrilleCoffreBois"]
+custom_minimum_size = Vector2(72, 72)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_styles/panel = SubResource("StyleCellCraft")
+
+[node name="CoffreCell6" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/CadreCoffreBois/GrilleCoffreBois"]
+custom_minimum_size = Vector2(72, 72)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_styles/panel = SubResource("StyleCellCraft")
+
+[node name="CoffreCell7" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/CadreCoffreBois/GrilleCoffreBois"]
+custom_minimum_size = Vector2(72, 72)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_styles/panel = SubResource("StyleCellCraft")
+
+[node name="CoffreCell8" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/CadreCoffreBois/GrilleCoffreBois"]
+custom_minimum_size = Vector2(72, 72)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_styles/panel = SubResource("StyleCellCraft")
+
+[node name="CoffreCell9" type="Panel" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/CadreCoffreBois/GrilleCoffreBois"]
+custom_minimum_size = Vector2(72, 72)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_styles/panel = SubResource("StyleCellCraft")
+
 [node name="GrilleCeintureStockage" type="GridContainer" parent="MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite"]
 layout_mode = 2
 size_flags_horizontal = 3

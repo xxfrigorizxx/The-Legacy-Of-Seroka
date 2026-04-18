@@ -113,10 +113,10 @@ toggle_camera_mode={
 [physics]
 
 3d/physics_engine="Jolt Physics"
-jolt_physics_3d/limits/temporary_memory_buffer_size=4294967296
-jolt_physics_3d/limits/max_bodies=10240000
-jolt_physics_3d/limits/max_body_pairs=65536000
-jolt_physics_3d/limits/max_contact_constraints=20480000
+jolt_physics_3d/limits/temporary_memory_buffer_size=134217728
+jolt_physics_3d/limits/max_bodies=65536
+jolt_physics_3d/limits/max_body_pairs=524288
+jolt_physics_3d/limits/max_contact_constraints=131072
 
 [rendering]
 

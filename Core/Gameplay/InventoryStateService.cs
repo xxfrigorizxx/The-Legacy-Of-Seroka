@@ -182,7 +182,7 @@ public partial class Joueur
 
     public bool ACeintureSacochesEquipe() => !EquipementCeinture.EstVide && EquipementCeinture.ID == IdObjetCeintureSacoches;
 
-    /// <summary>Grille affichée et utilisée pour les clics craft : plan de l’atelier (9) ou poche (4).</summary>
+    /// <summary>Grille affichée et utilisée pour les clics craft : plan de l’atelier (9) ou poche (4). Le coffre utilise <see cref="RefSlotCoffreStockage"/> (10 slots), pas cette méthode.</summary>
     public SlotInventaire[] ObtenirGrilleCraftAffichee()
     {
         if (StockageRackBatonsOuvert && RackBatonsOuvert != null && GodotObject.IsInstanceValid(RackBatonsOuvert))
@@ -199,6 +199,63 @@ public partial class Joueur
         if (CraftGrille3x3AuTable && AtelierPlanTravailOuvert != null && GodotObject.IsInstanceValid(AtelierPlanTravailOuvert))
             return ref AtelierPlanTravailOuvert.GrillePlanTravailAtelier[idx];
         return ref GrilleCraftPoche[idx];
+    }
+
+    /// <summary>Réinitialise les flags d’inventaire liés à un conteneur monde si le nœud a été libéré (chunk, minage, déchargement) — évite que <see cref="RefSlotCoffreStockage"/> retombe sur <c>GrilleCraftPoche[0]</c> pour tous les index.</summary>
+    public void ReinitialiserConteneurOuvertSiReferencePerdue()
+    {
+        if (StockageCoffreOuvert && (CoffreOuvert == null || !GodotObject.IsInstanceValid(CoffreOuvert)))
+        {
+            StockageCoffreOuvert = false;
+            CoffreOuvert = null;
+        }
+        if (StockageRackBatonsOuvert && (RackBatonsOuvert == null || !GodotObject.IsInstanceValid(RackBatonsOuvert)))
+        {
+            StockageRackBatonsOuvert = false;
+            RackBatonsOuvert = null;
+        }
+        if (AtelierPlanTravailOuvert != null && !GodotObject.IsInstanceValid(AtelierPlanTravailOuvert))
+        {
+            AtelierPlanTravailOuvert = null;
+            CraftGrille3x3AuTable = false;
+        }
+    }
+
+    /// <summary>10 slots du coffre ouvert (menu Q). Garde-fou : index 0–9.</summary>
+    public ref SlotInventaire RefSlotCoffreStockage(int idx)
+    {
+        if (!StockageCoffreOuvert || CoffreOuvert == null || !GodotObject.IsInstanceValid(CoffreOuvert))
+            return ref GrilleCraftPoche[0];
+        idx = Mathf.Clamp(idx, 0, 9);
+        return ref CoffreOuvert.GrilleStockageCoffre[idx];
+    }
+
+    /// <summary>Copie la grille du coffre posé vers la mémoire joueur (ramassage / cohérence inventaire).</summary>
+    public void MemoriserContenuCoffreDepuisItem(ItemPhysique item, string cle)
+    {
+        if (item == null || item.GrilleStockageCoffre == null || item.GrilleStockageCoffre.Length < 10) return;
+        string k = string.IsNullOrEmpty(cle) ? GenererCleConteneur() : cle;
+        _memoireStockageSacs[k] = CopierSlots(item.GrilleStockageCoffre, 10);
+    }
+
+    /// <summary>Remplit la grille du coffre posé depuis la mémoire (repose depuis inventaire).</summary>
+    public void RestaurerContenuCoffreSurItem(ItemPhysique item, string cle)
+    {
+        if (item == null || item.GrilleStockageCoffre == null) return;
+        for (int i = 0; i < 10; i++)
+            item.GrilleStockageCoffre[i] = new SlotInventaire();
+        if (string.IsNullOrEmpty(cle) || !_memoireStockageSacs.TryGetValue(cle, out var slots) || slots == null)
+            return;
+        int n = Mathf.Min(10, slots.Length);
+        for (int i = 0; i < n; i++)
+            item.GrilleStockageCoffre[i] = slots[i];
+    }
+
+    /// <summary>True si l’objet ne doit pas entrer dans un coffre (structures lourdes, coffre dans coffre).</summary>
+    public static bool EstObjetInterditDansCoffre(SlotInventaire s)
+    {
+        if (s.EstVide) return false;
+        return s.ID == 200 || s.ID == IdObjetRackBatons || s.ID == IdObjetRackBuches || s.ID == IdObjetCoffreBoisTier0;
     }
 
     public static bool EstSlotStockableRackBatons(SlotInventaire s) => !s.EstVide && (s.ID == 30 || s.ID == 32);

@@ -65,7 +65,7 @@ public partial class BoeufSauvage : CharacterBody3D
 	[Export] public float ExperienceBroutage = 3f;
 	[Export] public float ExperienceFuiteParSeconde = 1f;
 	[Export] public bool UtiliserShaderPelageProcedural = false;
-	[Export] public string CheminTextureDiffuseModele = "res://Modeles/Entites/Boeufs/BoeufSauvage_BoeufSauvage.jpg";
+	[Export] public string CheminTextureDiffuseModele = "";
 	/// <summary>Rotation Y locale appliquee au nœud Modele (degres), apres la transform de scene — corrige un mesh importe tourne sur le cote.</summary>
 	[Export] public float CorrectionOrientationModeleDegres = 0f;
 	/// <summary>Rotation Y supplementaire (degres) apres alignement -Z sur la direction (voir <see cref="OrienterCorpsVersDirectionDeplacement"/>). Reglez par pas de 90 si le mesh avance sur le cote.</summary>
@@ -192,7 +192,14 @@ public partial class BoeufSauvage : CharacterBody3D
 	[Export(PropertyHint.Range, "-24,6,0.1")] public float VolumeCriDegatsDb = -4.5f;
 
 	[ExportGroup("Animation vivante (squelette + scenes + arbre)")]
-	/// <summary>Pipeline : squelette sous Modele -> fusion des scenes dans la bibliotheque <c>locomotion_faune</c> -> <see cref="AnimationTree"/> (blend + etats). Si faux : lecture directe (secours).</summary>
+	/// <summary>
+	/// Pipeline : squelette sous Modele → fusion <c>locomotion_faune</c> → <see cref="AnimationTree"/> (machine d'états).
+	/// Correspondance noms (clips GLB / chemins) ↔ champs code : marche→<see cref="_clipMarche"/> (walk…), course/galop→<see cref="_clipCourse"/>,
+	/// saut→<see cref="_clipSaut"/> (jump…), saut en course→<see cref="_clipSautGalop"/> (gallop_jump…), manger→<see cref="_clipManger"/> (eating, eat…),
+	/// mort→<see cref="_clipMort"/>, ruade arrière→<see cref="_clipAttaqueKick"/>, coup de tête avant→<see cref="_clipAttaqueTete"/>.
+	/// Nœuds machine (fixes) : <c>Deplacement</c>, <c>Broutage</c>, <c>Mort</c>, <c>Nage</c>, <c>Saut</c>, <c>SautGalop</c>, <c>AttaqueKick</c>, <c>AttaqueTete</c>.
+	/// Registre JSON <see cref="CheminRegistryAnimationsFaune"/> : clés idle, walk, run, trot, graze, swim, death, jump, gallop_jump, attack_kick, attack_head (motifs → clips).
+	/// </summary>
 	[Export] public bool UtiliserAnimationTreeLocomotion = true;
 	[Export(PropertyHint.Range, "0.4,1.4,0.01")]
 	public float MultiplicateurVitesseAnimation = 0.84f;
@@ -227,8 +234,11 @@ public partial class BoeufSauvage : CharacterBody3D
 	[Export(PropertyHint.File, "*.json")] public string CheminRegistryAnimationsFaune = "res://Faune/animation_registry_bovins.json";
 	[Export(PropertyHint.Range, "2,180,0.5")] public float IntervalleVariationAnimationSecondes = 16f;
 	[Export(PropertyHint.Range, "0,1,0.01")] public float IntensiteSelectionAnimationEvolutive = 0.72f;
+	[Export(PropertyHint.Range, "2,24,0.5")] public float IntervalleMinCycleIdleSecondes = 4.5f;
+	[Export(PropertyHint.Range, "3,36,0.5")] public float IntervalleMaxCycleIdleSecondes = 11f;
 
 	private Gestionnaire_Monde _gestionnaire;
+	private GestionnaireFauneBoeufs _gestionnaireFaune;
 	private CharacterBody3D _joueur;
 	/// <summary>Direction horizontale normalisee vers <see cref="_cibleCourante"/> (ou zero), mise a jour chaque frame physique avant <see cref="MoveAndSlide"/>.</summary>
 	private Vector3 _directionDeplacementHorizontale;
@@ -291,10 +301,18 @@ public partial class BoeufSauvage : CharacterBody3D
 	private const string NomNoeudDeplacement = "Deplacement";
 	private const string NomNoeudBroutage = "Broutage";
 	private const string NomNoeudMort = "Mort";
+	private const string NomNoeudSaut = "Saut";
+	private const string NomNoeudSautGalop = "SautGalop";
+	private const string NomNoeudAttaqueKick = "AttaqueKick";
+	private const string NomNoeudAttaqueTete = "AttaqueTete";
 	private static readonly StringName NomNoeudDeplacementString = new StringName(NomNoeudDeplacement);
 	private static readonly StringName NomNoeudBroutageString = new StringName(NomNoeudBroutage);
 	private static readonly StringName NomNoeudMortString = new StringName(NomNoeudMort);
 	private static readonly StringName NomNoeudNageString = new StringName("Nage");
+	private static readonly StringName NomNoeudSautString = new StringName(NomNoeudSaut);
+	private static readonly StringName NomNoeudSautGalopString = new StringName(NomNoeudSautGalop);
+	private static readonly StringName NomNoeudAttaqueKickString = new StringName(NomNoeudAttaqueKick);
+	private static readonly StringName NomNoeudAttaqueTeteString = new StringName(NomNoeudAttaqueTete);
 	private const string ParamBlendDeplacement = "parameters/Deplacement/blend_position";
 	private static readonly StringName NomBibliothequeLocomotionFaune = "locomotion_faune";
 	/// <summary>Nœud optionnel dans la scene (ex. <c>VacheSauvage.tscn</c>) : si present, on le configure au lieu d'en creer un dynamiquement.</summary>
@@ -311,6 +329,36 @@ public partial class BoeufSauvage : CharacterBody3D
 		"res://Modeles/Entites/Boeufs/boeuf_animations.gltf",
 	};
 
+	/// <summary>Même remappage squelette pour tous les individus d’une scène : on ne recharge pas les GLB externes à chaque spawn.</summary>
+	private static readonly object VerrouCacheBibliothequesAnimExternes = new object();
+	private static readonly Dictionary<string, List<(string libDest, AnimationLibrary lib)>> CacheBibliothequesExternesRemappees =
+		new(StringComparer.Ordinal);
+	private static List<string> CacheListeCheminsDossierAnimationsCompatibles;
+	private static string DossierListeCheminsCache = "";
+	private static bool LogScanDossierAnimationsCompatiblesEffectue;
+	private static bool DiagnosticListeClipsDejaAffichePourProcessus;
+
+	/// <summary>Libère les <see cref="AnimationLibrary"/> mises en cache entre les individus (évite désordre dispose à la fermeture du moteur).</summary>
+	public static void ViderCachesBibliothequesExternesPourDechargementMonde()
+	{
+		lock (VerrouCacheBibliothequesAnimExternes)
+		{
+			foreach (var liste in CacheBibliothequesExternesRemappees.Values)
+			{
+				if (liste == null) continue;
+				foreach ((_, AnimationLibrary lib) in liste)
+				{
+					if (lib != null && GodotObject.IsInstanceValid(lib))
+						lib.Dispose();
+				}
+			}
+			CacheBibliothequesExternesRemappees.Clear();
+			CacheListeCheminsDossierAnimationsCompatibles = null;
+			DossierListeCheminsCache = "";
+			LogScanDossierAnimationsCompatiblesEffectue = false;
+			DiagnosticListeClipsDejaAffichePourProcessus = false;
+		}
+	}
 	private AnimationPlayer _animationPlayer;
 	private AnimationTree _animationTreeFaune;
 	private AnimationNodeStateMachinePlayback _playbackEtatFaune;
@@ -319,6 +367,10 @@ public partial class BoeufSauvage : CharacterBody3D
 	private bool _machineAPorteBroutage;
 	private bool _machineAPorteMort;
 	private bool _machineAPorteNage;
+	private bool _machineAPorteSaut;
+	private bool _machineAPorteSautGalop;
+	private bool _machineAPorteAttaqueKick;
+	private bool _machineAPorteAttaqueTete;
 	private int _tentativesLiaisonPlaybackArbre;
 	private const int MaxTentativesLiaisonPlaybackArbre = 40;
 	private string _clipIdle = "";
@@ -328,6 +380,23 @@ public partial class BoeufSauvage : CharacterBody3D
 	private string _clipMort = "";
 	private string _clipTrot = "";
 	private string _clipNage = "";
+	private string _clipSaut = "";
+	private string _clipSautGalop = "";
+	/// <summary>Coup de pied / ruade (cible derriere ou sur le cote arriere).</summary>
+	private string _clipAttaqueKick = "";
+	/// <summary>Coup de tete frontal.</summary>
+	private string _clipAttaqueTete = "";
+	private float _tempsVerrouAnimationCombat;
+	private string _noeudAnimationCombatVerrou = "";
+	private float _timerCycleIdleSecondes;
+	private int _indexCycleIdle = -1;
+	private bool _reconfigurationArbreAnimationEnAttente;
+	private float _cooldownReconfigurationArbreAnimation;
+	[ExportGroup("Diagnostic performance")]
+	[Export] public bool ActiverProfilagePerfBovin = false;
+	[Export(PropertyHint.Range, "0.2,10,0.1")] public float IntervalleLogProfilageBovinSec = 2.0f;
+	[Export(PropertyHint.Range, "0.05,2,0.01")] public float CooldownReconfigurationAnimationTreeSec = 0.25f;
+	private float _cooldownDrainProfilage;
 	private readonly Dictionary<string, StringName> _cacheStringNameAnimations = new(StringComparer.Ordinal);
 	private float _dernierBlendAnimation = float.NaN;
 	private float _derniereVitesseAnimation = float.NaN;
@@ -339,6 +408,9 @@ public partial class BoeufSauvage : CharacterBody3D
 	private float _cooldownVariationAnimation;
 	private Shader _shaderPelageBoeuf;
 	private Texture2D _textureDiffuseModele;
+	// Cache global + anti-spam : on n'essaie de charger la texture qu'une seule fois par chemin, quel que soit le nombre de bovins.
+	private static readonly System.Collections.Generic.Dictionary<string, Texture2D> _cacheTextureDiffuseBoeuf = new System.Collections.Generic.Dictionary<string, Texture2D>();
+	private static readonly System.Collections.Generic.HashSet<string> _cheminsTextureIntrouvablesLoggues = new System.Collections.Generic.HashSet<string>();
 	private Node3D _modeleVisuel;
 	private Skeleton3D _squelletteModele;
 	private float _phaseLocomotionSqueletteProcedurale;
@@ -438,6 +510,7 @@ public partial class BoeufSauvage : CharacterBody3D
 	public void Configurer(Gestionnaire_Monde gestionnaire, CharacterBody3D joueur, int seedTerrain, Vector3 ancreTroupeau)
 	{
 		_gestionnaire = gestionnaire;
+		_gestionnaireFaune = GetParent() as GestionnaireFauneBoeufs;
 		_joueur = joueur;
 		_seedTerrain = seedTerrain;
 		_ancreTroupeau = ancreTroupeau;
@@ -1185,11 +1258,15 @@ public partial class BoeufSauvage : CharacterBody3D
 	public override void _PhysicsProcess(double delta)
 	{
 		if (!_initialise || _gestionnaire == null) return;
+		ulong debutFrameUs = ActiverProfilagePerfBovin ? PerfBudgetMonitor.Begin() : 0UL;
+		_cooldownDrainProfilage += (float)delta;
 		float dt = (float)delta;
 
 		if (_etat == EtatBoeuf.Mort)
 		{
 			GererMort(dt);
+			if (ActiverProfilagePerfBovin)
+				PerfBudgetMonitor.End("Faune/BovinFrame", debutFrameUs);
 			return;
 		}
 		MettreAJourFlashDegatsVisuel(dt);
@@ -1212,6 +1289,7 @@ public partial class BoeufSauvage : CharacterBody3D
 		_cooldownVariationAnimation -= dt;
 		_cooldownCohesionAnimation -= dt;
 		_cooldownImpactChargeJoueur -= dt;
+		_cooldownReconfigurationArbreAnimation = Mathf.Max(0f, _cooldownReconfigurationArbreAnimation - dt);
 		_verrouMouvementMorsure = Mathf.Max(0f, _verrouMouvementMorsure - dt);
 		_tempsIdleErrance = Mathf.Max(0f, _tempsIdleErrance - dt);
 		_tempsFuite = Mathf.Max(0f, _tempsFuite - dt);
@@ -1223,7 +1301,11 @@ public partial class BoeufSauvage : CharacterBody3D
 		GererRegenerationVie(dt);
 		GererDegatsFamine(dt);
 		if (_etat == EtatBoeuf.Mort)
+		{
+			if (ActiverProfilagePerfBovin)
+				PerfBudgetMonitor.End("Faune/BovinFrame", debutFrameUs);
 			return;
+		}
 		if (_cooldownVerificationBarresUI <= 0f)
 		{
 			_cooldownVerificationBarresUI = 1.0f;
@@ -1256,6 +1338,7 @@ public partial class BoeufSauvage : CharacterBody3D
 		_cooldownTickCerveau -= dt;
 		if (_cooldownTickCerveau <= 0f)
 		{
+			ulong debutCerveauUs = ActiverProfilagePerfBovin ? PerfBudgetMonitor.Begin() : 0UL;
 			float dtCerveau = Mathf.Max(0.005f, _dtAccumuleTickCerveau);
 			_dtAccumuleTickCerveau = 0f;
 			float intervalle = CalculerIntervalleTickCerveau();
@@ -1263,6 +1346,8 @@ public partial class BoeufSauvage : CharacterBody3D
 			GererPresenceJoueur();
 			GererReproductionEtGestation();
 			GererEtatEtCible(dtCerveau);
+			if (ActiverProfilagePerfBovin)
+				PerfBudgetMonitor.End("Faune/BovinCerveau", debutCerveauUs);
 		}
 
 		Vector3 direction = (_cibleCourante - GlobalPosition);
@@ -1335,10 +1420,28 @@ public partial class BoeufSauvage : CharacterBody3D
 
 		float vitesseHoriz = new Vector3(Velocity.X, 0f, Velocity.Z).Length();
 		MettreAJourApprentissageNavigation(dt, direction, vitesseHoriz);
-		MettreAJourAnimation(vitesseHoriz);
+		MettreAJourCycleIdleMultiples(dt, vitesseHorizActuelle);
+		MettreAJourAnimation(dt, vitesseHoriz);
 		if (EstFallbackLocomotionBobSeulement())
 			AppliquerLocomotionSquelettiqueProcedural(dt, vitesseHoriz);
 		OrienteCorpsVersDirectionDeplacement(dt, vitesseHoriz);
+		if (_reconfigurationArbreAnimationEnAttente
+			&& _cooldownReconfigurationArbreAnimation <= 0f
+			&& UtiliserAnimationTreeLocomotion)
+		{
+			_reconfigurationArbreAnimationEnAttente = false;
+			ConfigurerAnimationTreeFaune();
+			_cooldownReconfigurationArbreAnimation = Mathf.Max(0.05f, CooldownReconfigurationAnimationTreeSec);
+		}
+		if (ActiverProfilagePerfBovin)
+		{
+			PerfBudgetMonitor.End("Faune/BovinFrame", debutFrameUs);
+			if (_cooldownDrainProfilage >= Mathf.Max(0.2f, IntervalleLogProfilageBovinSec))
+			{
+				_cooldownDrainProfilage = 0f;
+				PerfBudgetMonitor.FlushSiEchu("Faune", IntervalleLogProfilageBovinSec);
+			}
+		}
 	}
 
 	private float CalculerIntervalleTickCerveau()
@@ -1815,17 +1918,23 @@ public partial class BoeufSauvage : CharacterBody3D
 		return detecte || _memoireDetectionJoueur > 0f;
 	}
 
+	private IReadOnlyList<BoeufSauvage> ObtenirPopulationLocale()
+	{
+		if (_gestionnaireFaune == null || !GodotObject.IsInstanceValid(_gestionnaireFaune))
+			_gestionnaireFaune = GetParent() as GestionnaireFauneBoeufs;
+		return _gestionnaireFaune?.ObtenirBoeufsActifs();
+	}
+
 	private bool TrouverFemelleMenaceeParJoueur(out VacheSauvage femelleMenacee)
 	{
 		femelleMenacee = null;
-		Node parent = GetParent();
-		if (_joueur == null || parent == null) return false;
+		if (_joueur == null) return false;
+		IReadOnlyList<BoeufSauvage> population = ObtenirPopulationLocale();
+		if (population == null) return false;
 		float meilleure = float.MaxValue;
-		int childCount = parent.GetChildCount();
-		for (int i = 0; i < childCount; i++)
+		for (int i = 0; i < population.Count; i++)
 		{
-			Node n = parent.GetChild(i);
-			if (n is not VacheSauvage f || !GodotObject.IsInstanceValid(f) || f._etat == EtatBoeuf.Mort)
+			if (population[i] is not VacheSauvage f || f == this || !GodotObject.IsInstanceValid(f) || f._etat == EtatBoeuf.Mort)
 				continue;
 			float dJ = f.GlobalPosition.DistanceTo(_joueur.GlobalPosition);
 			if (dJ > DistanceAlerteFemelle)
@@ -1906,17 +2015,16 @@ public partial class BoeufSauvage : CharacterBody3D
 		bool estStress = _tempsFuite > 0f || _memoireDetectionJoueur > 0f;
 		bool environnementStable = _faimCourante > Mathf.Max(10f, SeuilRechercheHerbe) && ratioStamina > 0.55f && !estStress;
 		bool procheTroupe = false;
-		Node parent = GetParent();
-		if (parent != null)
+		IReadOnlyList<BoeufSauvage> population = ObtenirPopulationLocale();
+		if (population != null)
 		{
 			int voisins = 0;
 			float rayon2 = Mathf.Max(4f, RayonRassemblement);
 			rayon2 *= rayon2;
-			int childCount = parent.GetChildCount();
-			for (int i = 0; i < childCount; i++)
+			for (int i = 0; i < population.Count; i++)
 			{
-				Node n = parent.GetChild(i);
-				if (n == this || n is not BoeufSauvage b || !GodotObject.IsInstanceValid(b) || b._etat == EtatBoeuf.Mort)
+				BoeufSauvage b = population[i];
+				if (b == this || b == null || !GodotObject.IsInstanceValid(b) || b._etat == EtatBoeuf.Mort)
 					continue;
 				if (GlobalPosition.DistanceSquaredTo(b.GlobalPosition) <= rayon2)
 					voisins++;
@@ -1989,14 +2097,13 @@ public partial class BoeufSauvage : CharacterBody3D
 	private bool TrouverMaleProchePourReproduction(out BoeufSauvage male)
 	{
 		male = null;
-		Node parent = GetParent();
-		if (parent == null) return false;
+		IReadOnlyList<BoeufSauvage> population = ObtenirPopulationLocale();
+		if (population == null) return false;
 		float meilleure = float.MaxValue;
-		int childCount = parent.GetChildCount();
-		for (int i = 0; i < childCount; i++)
+		for (int i = 0; i < population.Count; i++)
 		{
-			Node n = parent.GetChild(i);
-			if (n == this || n is not BoeufSauvage b || !GodotObject.IsInstanceValid(b) || b._etat == EtatBoeuf.Mort)
+			BoeufSauvage b = population[i];
+			if (b == this || b == null || !GodotObject.IsInstanceValid(b) || b._etat == EtatBoeuf.Mort)
 				continue;
 			if (!b.EstTaureau)
 				continue;
@@ -2013,17 +2120,16 @@ public partial class BoeufSauvage : CharacterBody3D
 	private bool TrouverMaleSurvivantPrioritairePourReproduction(out BoeufSauvage male)
 	{
 		male = null;
-		Node parent = GetParent();
-		if (parent == null)
+		IReadOnlyList<BoeufSauvage> population = ObtenirPopulationLocale();
+		if (population == null)
 			return false;
 		float rayon = Mathf.Max(5f, RayonReproductionJour);
 		float rayon2 = rayon * rayon;
 		_scratchCandidatsReproduction.Clear();
-		int childCount = parent.GetChildCount();
-		for (int i = 0; i < childCount; i++)
+		for (int i = 0; i < population.Count; i++)
 		{
-			Node n = parent.GetChild(i);
-			if (n == this || n is not BoeufSauvage b || !GodotObject.IsInstanceValid(b) || b._etat == EtatBoeuf.Mort)
+			BoeufSauvage b = population[i];
+			if (b == this || b == null || !GodotObject.IsInstanceValid(b) || b._etat == EtatBoeuf.Mort)
 				continue;
 			if (!b.EstTaureau || b._estVeauActif || b._tentativeReproductionJourEffectuee)
 				continue;
@@ -2386,6 +2492,50 @@ public partial class BoeufSauvage : CharacterBody3D
 			_joueur.Velocity = v;
 		}
 		_cooldownImpactChargeJoueur = Mathf.Max(0.05f, CooldownImpactChargeJoueur);
+		DeclencherAnimationAttaqueChargeVersJoueur();
+	}
+
+	/// <summary>Joue <see cref="_clipAttaqueKick"/> (cible derriere / sur le flanc arriere) ou <see cref="_clipAttaqueTete"/> (cible devant).</summary>
+	private void DeclencherAnimationAttaqueChargeVersJoueur()
+	{
+		if (_animationPlayer == null || !GodotObject.IsInstanceValid(_animationPlayer))
+			return;
+		if (_joueur == null || !GodotObject.IsInstanceValid(_joueur))
+			return;
+		Vector3 forward = -GlobalTransform.Basis.Z;
+		forward.Y = 0f;
+		if (forward.LengthSquared() < 1e-6f)
+			forward = Vector3.Forward;
+		forward = forward.Normalized();
+		Vector3 versJoueur = _joueur.GlobalPosition - GlobalPosition;
+		versJoueur.Y = 0f;
+		float dot = versJoueur.LengthSquared() > 1e-6f ? forward.Dot(versJoueur.Normalized()) : 1f;
+		bool joueurDevant = dot >= 0.25f;
+		string clip = joueurDevant ? _clipAttaqueTete : _clipAttaqueKick;
+		string noeud = joueurDevant ? NomNoeudAttaqueTete : NomNoeudAttaqueKick;
+		if (string.IsNullOrEmpty(clip) || !_animationPlayer.HasAnimation(clip))
+			return;
+
+		float duree = 0.72f;
+		Animation animRef = _animationPlayer.GetAnimation(ObtenirStringNameAnimation(clip));
+		if (animRef != null)
+			duree = Mathf.Clamp(animRef.Length, 0.38f, 2.4f);
+		_tempsVerrouAnimationCombat = duree;
+
+		if (_blendLocomotionActif && _playbackEtatFaune != null && _animationTreeFaune != null && _animationTreeFaune.Active)
+		{
+			bool noeudPresent = (noeud == NomNoeudAttaqueTete && _machineAPorteAttaqueTete) || (noeud == NomNoeudAttaqueKick && _machineAPorteAttaqueKick);
+			if (noeudPresent)
+			{
+				_noeudAnimationCombatVerrou = noeud;
+				_playbackEtatFaune.Travel(ObtenirNomEtatAnimation(noeud));
+				_etatCourantMachineAnimation = noeud;
+				return;
+			}
+		}
+
+		_noeudAnimationCombatVerrou = "";
+		_animationPlayer.Play(ObtenirStringNameAnimation(clip), 0.08f);
 	}
 
 	private void ChoisirNouvelleCible(bool initial)
@@ -2435,14 +2585,13 @@ public partial class BoeufSauvage : CharacterBody3D
 	private bool TrouverAllieEnDetresse(out BoeufSauvage allie)
 	{
 		allie = null;
-		Node parent = GetParent();
-		if (parent == null) return false;
+		IReadOnlyList<BoeufSauvage> population = ObtenirPopulationLocale();
+		if (population == null) return false;
 		float meilleure = float.MaxValue;
-		int childCount = parent.GetChildCount();
-		for (int i = 0; i < childCount; i++)
+		for (int i = 0; i < population.Count; i++)
 		{
-			Node n = parent.GetChild(i);
-			if (n == this || n is not BoeufSauvage b || !GodotObject.IsInstanceValid(b) || b._etat == EtatBoeuf.Mort) continue;
+			BoeufSauvage b = population[i];
+			if (b == this || b == null || !GodotObject.IsInstanceValid(b) || b._etat == EtatBoeuf.Mort) continue;
 			if (!b.EstEnDetresse()) continue;
 			float d2 = GlobalPosition.DistanceSquaredTo(b.GlobalPosition);
 			if (d2 < meilleure)
@@ -2457,14 +2606,13 @@ public partial class BoeufSauvage : CharacterBody3D
 	private bool TrouverAllieLePlusProche(out BoeufSauvage allie)
 	{
 		allie = null;
-		Node parent = GetParent();
-		if (parent == null) return false;
+		IReadOnlyList<BoeufSauvage> population = ObtenirPopulationLocale();
+		if (population == null) return false;
 		float meilleure = float.MaxValue;
-		int childCount = parent.GetChildCount();
-		for (int i = 0; i < childCount; i++)
+		for (int i = 0; i < population.Count; i++)
 		{
-			Node n = parent.GetChild(i);
-			if (n == this || n is not BoeufSauvage b || !GodotObject.IsInstanceValid(b) || b._etat == EtatBoeuf.Mort) continue;
+			BoeufSauvage b = population[i];
+			if (b == this || b == null || !GodotObject.IsInstanceValid(b) || b._etat == EtatBoeuf.Mort) continue;
 			float d2 = GlobalPosition.DistanceSquaredTo(b.GlobalPosition);
 			if (d2 < meilleure)
 			{
@@ -2477,18 +2625,17 @@ public partial class BoeufSauvage : CharacterBody3D
 
 	private float CalculerRatioCohesionTroupeau()
 	{
-		Node parent = GetParent();
-		if (parent == null)
+		IReadOnlyList<BoeufSauvage> population = ObtenirPopulationLocale();
+		if (population == null)
 			return 0f;
 		int voisins = 0;
 		int proches = 0;
 		float rayon = Mathf.Max(4f, RayonRassemblement);
 		float rayon2 = rayon * rayon;
-		int childCount = parent.GetChildCount();
-		for (int i = 0; i < childCount; i++)
+		for (int i = 0; i < population.Count; i++)
 		{
-			Node n = parent.GetChild(i);
-			if (n == this || n is not BoeufSauvage b || !GodotObject.IsInstanceValid(b) || b._etat == EtatBoeuf.Mort)
+			BoeufSauvage b = population[i];
+			if (b == this || b == null || !GodotObject.IsInstanceValid(b) || b._etat == EtatBoeuf.Mort)
 				continue;
 			voisins++;
 			if (GlobalPosition.DistanceSquaredTo(b.GlobalPosition) <= rayon2)
@@ -2923,7 +3070,12 @@ public partial class BoeufSauvage : CharacterBody3D
 		_machineAPorteBroutage = false;
 		_machineAPorteMort = false;
 		_machineAPorteNage = false;
+		_machineAPorteSaut = false;
+		_machineAPorteSautGalop = false;
+		_machineAPorteAttaqueKick = false;
+		_machineAPorteAttaqueTete = false;
 		_clipIdle = _clipMarche = _clipCourse = _clipTrot = _clipNage = _clipManger = _clipMort = "";
+		_clipSaut = _clipSautGalop = _clipAttaqueKick = _clipAttaqueTete = "";
 
 		if (!ResoudreLecteurAnimationPrincipalSurSquelette())
 			return;
@@ -2933,6 +3085,7 @@ public partial class BoeufSauvage : CharacterBody3D
 		DiagnosticListeClipsSiDemande(tous);
 		ResoudreNomsClipsLocomotionDepuisBibliothequeEtListe(tous);
 		InitialiserSelectionEvolutionnaireAnimations(tous);
+		_timerCycleIdleSecondes = _rng.RandfRange(IntervalleMinCycleIdleSecondes * 0.35f, IntervalleMaxCycleIdleSecondes);
 
 		if (string.IsNullOrEmpty(_clipIdle))
 		{
@@ -3112,7 +3265,10 @@ public partial class BoeufSauvage : CharacterBody3D
 
 	private void DiagnosticListeClipsSiDemande(List<string> tous)
 	{
-		if (!AfficherDiagnosticClipsUneFois || _diagnosticClipsAffiche || tous.Count == 0) return;
+		if (!AfficherDiagnosticClipsUneFois || tous.Count == 0) return;
+		if (DiagnosticListeClipsDejaAffichePourProcessus)
+			return;
+		DiagnosticListeClipsDejaAffichePourProcessus = true;
 		_diagnosticClipsAffiche = true;
 		GD.Print($"ZERO-K Faune : lecteur {GetPathTo(_animationPlayer)} — {tous.Count} clip(s) : {string.Join(", ", tous)}");
 	}
@@ -3120,6 +3276,9 @@ public partial class BoeufSauvage : CharacterBody3D
 	private void ResoudreNomsClipsLocomotionDepuisBibliothequeEtListe(List<string> tous)
 	{
 		AppliquerClipsBibliothequeLocomotionFauneEnPriorite();
+
+		string candidatGallopPur = "";
+		string candidatCourseGenerique = "";
 
 		foreach (string nomComplet in tous)
 		{
@@ -3129,17 +3288,39 @@ public partial class BoeufSauvage : CharacterBody3D
 				_clipIdle = nomComplet;
 			if (string.IsNullOrEmpty(_clipMarche) && !NomClipSembleMort(n) && (n.Contains("walk") || n.Contains("marche") || n.Contains("locomotion") || n.Contains("cycle")))
 				_clipMarche = nomComplet;
-			if (string.IsNullOrEmpty(_clipCourse) && !NomClipSembleMort(n) && !NomClipSembleCombatOuSaut(n) && (n.Contains("run") || n.Contains("gallop") || n.Contains("course") || n.Contains("charge")))
-				_clipCourse = nomComplet;
+			if (string.IsNullOrEmpty(_clipSautGalop) && NomClipSembleSautGalop(n))
+				_clipSautGalop = nomComplet;
+			if (string.IsNullOrEmpty(_clipSaut) && n.Contains("jump") && !NomClipSembleSautGalop(n) && !NomClipSembleMort(n))
+				_clipSaut = nomComplet;
+			if (string.IsNullOrEmpty(_clipAttaqueKick) && !NomClipSembleMort(n) && ResoudreClipSembleAttaqueDerriere(n))
+				_clipAttaqueKick = nomComplet;
+			if (string.IsNullOrEmpty(_clipAttaqueTete) && !NomClipSembleMort(n) && ResoudreClipSembleAttaqueDevant(n))
+				_clipAttaqueTete = nomComplet;
 			if (string.IsNullOrEmpty(_clipTrot) && !NomClipSembleMort(n) && (n.Contains("trot") || n.Contains("jog") || n.Contains("lope")))
 				_clipTrot = nomComplet;
 			if (string.IsNullOrEmpty(_clipNage) && !NomClipSembleMort(n) && (n.Contains("swim") || n.Contains("paddle") || n.Contains("nage")))
 				_clipNage = nomComplet;
-			if (string.IsNullOrEmpty(_clipManger) && !NomClipSembleMort(n) && (n.Contains("eat") || n.Contains("graze") || n.Contains("chew") || n.Contains("manger") || n.Contains("browse")))
+			if (string.IsNullOrEmpty(_clipManger) && !NomClipSembleMort(n) && (n.Contains("eat") || n.Contains("eating") || n.Contains("graze") || n.Contains("chew") || n.Contains("manger") || n.Contains("browse")))
 				_clipManger = nomComplet;
 			if (string.IsNullOrEmpty(_clipMort) && (n.Contains("death") || n.Contains("dead") || n.Contains("die") || n.Contains("mort")))
 				_clipMort = nomComplet;
+
+			bool ressembleCourse = n.Contains("run") || n.Contains("gallop") || n.Contains("course") || n.Contains("charge");
+			if (!NomClipSembleMort(n) && ressembleCourse
+				&& !NomClipSembleSautGalop(n)
+				&& !ResoudreClipSembleAttaqueDevant(n)
+				&& !ResoudreClipSembleAttaqueDerriere(n)
+				&& !(n.Contains("jump") && !n.Contains("gallop")))
+			{
+				if (string.IsNullOrEmpty(candidatGallopPur) && n.Contains("gallop") && !NomClipSembleSautGalop(n))
+					candidatGallopPur = nomComplet;
+				if (string.IsNullOrEmpty(candidatCourseGenerique))
+					candidatCourseGenerique = nomComplet;
+			}
 		}
+
+		if (string.IsNullOrEmpty(_clipCourse))
+			_clipCourse = !string.IsNullOrEmpty(candidatGallopPur) ? candidatGallopPur : candidatCourseGenerique;
 
 		if (string.IsNullOrEmpty(_clipMarche) || NomClipSembleMort(_clipMarche))
 			_clipMarche = PremierClipLocomotionUtileNonMortel(tous);
@@ -3160,6 +3341,56 @@ public partial class BoeufSauvage : CharacterBody3D
 		}
 		if (!string.IsNullOrEmpty(_clipMort) && NomClipSembleMort(_clipManger) && _clipManger == _clipMort)
 			_clipManger = !string.IsNullOrEmpty(_clipMarche) ? _clipMarche : _clipIdle;
+
+		// Secours : pack avec un seul clip "kick" / "headbutt" sans mots-cles directionnels.
+		if (string.IsNullOrEmpty(_clipAttaqueKick))
+		{
+			foreach (string nomComplet in tous)
+			{
+				if (EstClipSystemeOuVide(nomComplet)) continue;
+				string n = nomComplet.ToLowerInvariant();
+				if (NomClipSembleMort(n) || ResoudreClipSembleAttaqueDevant(n)) continue;
+				if (n.Contains("kick") && !n.Contains("walk") && !n.Contains("sidekick"))
+				{
+					_clipAttaqueKick = nomComplet;
+					break;
+				}
+			}
+		}
+		if (string.IsNullOrEmpty(_clipAttaqueTete))
+		{
+			foreach (string nomComplet in tous)
+			{
+				if (EstClipSystemeOuVide(nomComplet)) continue;
+				string n = nomComplet.ToLowerInvariant();
+				if (NomClipSembleMort(n)) continue;
+				if (n.Contains("headbutt") || (n.Contains("attack") && n.Contains("head")))
+				{
+					_clipAttaqueTete = nomComplet;
+					break;
+				}
+			}
+		}
+	}
+
+	private static bool NomClipSembleSautGalop(string n)
+	{
+		if (string.IsNullOrEmpty(n)) return false;
+		return n.Contains("gallop_jump") || n.Contains("gallopjump") || n.Contains("run_jump");
+	}
+
+	private static bool ResoudreClipSembleAttaqueDerriere(string n)
+	{
+		if (n.Contains("headbutt") || (n.Contains("attack") && n.Contains("head")))
+			return false;
+		return n.Contains("attack_kick") || n.Contains("kick_back") || n.Contains("kick_rear") || n.Contains("rear_kick")
+			|| n.Contains("back_kick") || (n.Contains("kick") && (n.Contains("back") || n.Contains("rear") || n.Contains("behind") || n.Contains("derriere")));
+	}
+
+	private static bool ResoudreClipSembleAttaqueDevant(string n)
+	{
+		return n.Contains("headbutt") || n.Contains("attack_head") || n.Contains("attack_headbutt")
+			|| (n.Contains("attack") && n.Contains("head")) || n.Contains("coup_de_tete") || n.Contains("ram");
 	}
 
 	private void InitialiserSelectionEvolutionnaireAnimations(List<string> tous)
@@ -3172,6 +3403,10 @@ public partial class BoeufSauvage : CharacterBody3D
 		InitialiserPoolCategorie("graze");
 		InitialiserPoolCategorie("swim");
 		InitialiserPoolCategorie("death");
+		InitialiserPoolCategorie("jump");
+		InitialiserPoolCategorie("gallop_jump");
+		InitialiserPoolCategorie("attack_kick");
+		InitialiserPoolCategorie("attack_head");
 
 		AjouterClipAuPool("idle", _clipIdle);
 		AjouterClipAuPool("walk", _clipMarche);
@@ -3180,6 +3415,10 @@ public partial class BoeufSauvage : CharacterBody3D
 		AjouterClipAuPool("graze", _clipManger);
 		AjouterClipAuPool("swim", _clipNage);
 		AjouterClipAuPool("death", _clipMort);
+		AjouterClipAuPool("jump", _clipSaut);
+		AjouterClipAuPool("gallop_jump", _clipSautGalop);
+		AjouterClipAuPool("attack_kick", _clipAttaqueKick);
+		AjouterClipAuPool("attack_head", _clipAttaqueTete);
 
 		if (tous != null)
 		{
@@ -3192,20 +3431,34 @@ public partial class BoeufSauvage : CharacterBody3D
 					AjouterClipAuPool("idle", c);
 				if (!NomClipSembleMort(n) && (n.Contains("walk") || n.Contains("marche") || n.Contains("locomotion") || n.Contains("cycle")))
 					AjouterClipAuPool("walk", c);
-				if (!NomClipSembleMort(n) && !NomClipSembleCombatOuSaut(n) && (n.Contains("run") || n.Contains("gallop") || n.Contains("course") || n.Contains("charge")))
+				bool ressembleCourse = n.Contains("run") || n.Contains("gallop") || n.Contains("course") || n.Contains("charge");
+				if (!NomClipSembleMort(n) && ressembleCourse
+					&& !NomClipSembleSautGalop(n)
+					&& !ResoudreClipSembleAttaqueDevant(n)
+					&& !ResoudreClipSembleAttaqueDerriere(n)
+					&& !(n.Contains("jump") && !n.Contains("gallop")))
 					AjouterClipAuPool("run", c);
 				if (!NomClipSembleMort(n) && (n.Contains("trot") || n.Contains("jog") || n.Contains("lope")))
 					AjouterClipAuPool("trot", c);
-				if (!NomClipSembleMort(n) && (n.Contains("eat") || n.Contains("graze") || n.Contains("chew") || n.Contains("manger") || n.Contains("browse")))
+				if (!NomClipSembleMort(n) && (n.Contains("eat") || n.Contains("eating") || n.Contains("graze") || n.Contains("chew") || n.Contains("manger") || n.Contains("browse")))
 					AjouterClipAuPool("graze", c);
 				if (!NomClipSembleMort(n) && (n.Contains("swim") || n.Contains("paddle") || n.Contains("nage")))
 					AjouterClipAuPool("swim", c);
 				if (n.Contains("death") || n.Contains("dead") || n.Contains("die") || n.Contains("mort"))
 					AjouterClipAuPool("death", c);
+				if (!NomClipSembleMort(n) && n.Contains("jump") && !NomClipSembleSautGalop(n))
+					AjouterClipAuPool("jump", c);
+				if (!NomClipSembleMort(n) && NomClipSembleSautGalop(n))
+					AjouterClipAuPool("gallop_jump", c);
+				if (!NomClipSembleMort(n) && ResoudreClipSembleAttaqueDerriere(n))
+					AjouterClipAuPool("attack_kick", c);
+				if (!NomClipSembleMort(n) && ResoudreClipSembleAttaqueDevant(n))
+					AjouterClipAuPool("attack_head", c);
 			}
 		}
 
 		ChargerRegistryAnimationsEvolutivesDepuisJson(tous ?? new List<string>());
+		RemplirClipsSpeciauxDepuisPoolsSiEncoreVides();
 		AppliquerSelectionAnimationEvolutive(forceReconfigurerArbre: false);
 		_cooldownVariationAnimation = Mathf.Max(2f, IntervalleVariationAnimationSecondes) * _rng.RandfRange(0.72f, 1.28f);
 	}
@@ -3224,6 +3477,35 @@ public partial class BoeufSauvage : CharacterBody3D
 		List<string> pool = _poolsAnimationsEvolutives[categorie];
 		if (!pool.Contains(clip))
 			pool.Add(clip);
+	}
+
+	/// <summary>Apres le JSON <see cref="CheminRegistryAnimationsFaune"/>, complete les clips sauts / attaques si la detection par nom seul les a rates.</summary>
+	private void RemplirClipsSpeciauxDepuisPoolsSiEncoreVides()
+	{
+		if (_animationPlayer == null || !GodotObject.IsInstanceValid(_animationPlayer))
+			return;
+
+		void ChercherPremierClipValide(string categorie, ref string cible)
+		{
+			if (!string.IsNullOrEmpty(cible) && _animationPlayer.HasAnimation(cible))
+				return;
+			if (!_poolsAnimationsEvolutives.TryGetValue(categorie, out List<string> pool) || pool == null)
+				return;
+			for (int i = 0; i < pool.Count; i++)
+			{
+				string clip = pool[i];
+				if (!string.IsNullOrEmpty(clip) && _animationPlayer.HasAnimation(clip))
+				{
+					cible = clip;
+					return;
+				}
+			}
+		}
+
+		ChercherPremierClipValide("jump", ref _clipSaut);
+		ChercherPremierClipValide("gallop_jump", ref _clipSautGalop);
+		ChercherPremierClipValide("attack_kick", ref _clipAttaqueKick);
+		ChercherPremierClipValide("attack_head", ref _clipAttaqueTete);
 	}
 
 	private void ChargerRegistryAnimationsEvolutivesDepuisJson(List<string> tous)
@@ -3279,6 +3561,7 @@ public partial class BoeufSauvage : CharacterBody3D
 		}
 
 		string m = motif.ToLowerInvariant();
+		string mUnderscore = m.Replace(" ", "_");
 		for (int i = 0; i < tous.Count; i++)
 		{
 			string c = tous[i];
@@ -3286,6 +3569,8 @@ public partial class BoeufSauvage : CharacterBody3D
 				return c;
 			string n = c.ToLowerInvariant();
 			if (n.Contains(m, StringComparison.Ordinal))
+				return c;
+			if (mUnderscore != m && n.Contains(mUnderscore, StringComparison.Ordinal))
 				return c;
 		}
 		return "";
@@ -3313,7 +3598,9 @@ public partial class BoeufSauvage : CharacterBody3D
 		string ancienManger = _clipManger;
 		string ancienNage = _clipNage;
 
-		_clipIdle = ChoisirClipDepuisPoolEvolutif("idle", _clipIdle, scoreCalme * intensite + (1f - intensite) * 0.5f);
+		bool idleMultiples = _poolsAnimationsEvolutives.TryGetValue("idle", out List<string> poolIdle) && poolIdle != null && poolIdle.Count >= 2;
+		if (!idleMultiples)
+			_clipIdle = ChoisirClipDepuisPoolEvolutif("idle", _clipIdle, scoreCalme * intensite + (1f - intensite) * 0.5f);
 		_clipMarche = ChoisirClipDepuisPoolEvolutif("walk", _clipMarche, (scoreCalme * 0.45f + scoreDynamique * 0.55f) * intensite + (1f - intensite) * 0.5f);
 		_clipCourse = ChoisirClipDepuisPoolEvolutif("run", _clipCourse, scoreDynamique * intensite + (1f - intensite) * 0.5f);
 		_clipTrot = ChoisirClipDepuisPoolEvolutif("trot", _clipTrot, (scoreCalme * 0.3f + scoreDynamique * 0.7f) * intensite + (1f - intensite) * 0.5f);
@@ -3322,7 +3609,7 @@ public partial class BoeufSauvage : CharacterBody3D
 		_clipMort = ChoisirClipDepuisPoolEvolutif("death", _clipMort, 0.5f);
 
 		bool change =
-			ancienIdle != _clipIdle ||
+			(!idleMultiples && ancienIdle != _clipIdle) ||
 			ancienMarche != _clipMarche ||
 			ancienCourse != _clipCourse ||
 			ancienTrot != _clipTrot ||
@@ -3334,7 +3621,7 @@ public partial class BoeufSauvage : CharacterBody3D
 
 		AppliquerBouclesSurClipsLocomotion();
 		if (forceReconfigurerArbre && UtiliserAnimationTreeLocomotion)
-			ConfigurerAnimationTreeFaune();
+			DemanderReconfigurationAnimationTree();
 	}
 
 	private string ChoisirClipDepuisPoolEvolutif(string categorie, string fallback, float score)
@@ -3381,6 +3668,20 @@ public partial class BoeufSauvage : CharacterBody3D
 		}
 	}
 
+	private void DemanderReconfigurationAnimationTree()
+	{
+		if (!UtiliserAnimationTreeLocomotion)
+			return;
+		if (_cooldownReconfigurationArbreAnimation <= 0f)
+		{
+			ConfigurerAnimationTreeFaune();
+			_cooldownReconfigurationArbreAnimation = Mathf.Max(0.05f, CooldownReconfigurationAnimationTreeSec);
+			_reconfigurationArbreAnimationEnAttente = false;
+			return;
+		}
+		_reconfigurationArbreAnimationEnAttente = true;
+	}
+
 	private void ConfigurerAnimationTreeFaune()
 	{
 		DetruireAnimationTreeFaune();
@@ -3422,9 +3723,15 @@ public partial class BoeufSauvage : CharacterBody3D
 		var machine = new AnimationNodeStateMachine();
 		machine.AddNode(NomNoeudDeplacement, blend, new Vector2(220f, 120f));
 
+		bool PorteClip(string c) => !string.IsNullOrEmpty(c) && _animationPlayer.HasAnimation(c);
+
 		_machineAPorteBroutage = !string.IsNullOrEmpty(_clipManger) && _clipManger != _clipIdle;
 		_machineAPorteMort = !string.IsNullOrEmpty(_clipMort);
 		_machineAPorteNage = !string.IsNullOrEmpty(_clipNage) && _clipNage != _clipMarche && _clipNage != _clipCourse;
+		_machineAPorteSaut = PorteClip(_clipSaut);
+		_machineAPorteSautGalop = PorteClip(_clipSautGalop);
+		_machineAPorteAttaqueKick = PorteClip(_clipAttaqueKick);
+		_machineAPorteAttaqueTete = PorteClip(_clipAttaqueTete);
 
 		if (_machineAPorteBroutage)
 			machine.AddNode(NomNoeudBroutage, new AnimationNodeAnimation { Animation = new StringName(_clipManger) }, new Vector2(460f, 40f));
@@ -3432,6 +3739,14 @@ public partial class BoeufSauvage : CharacterBody3D
 			machine.AddNode(NomNoeudMort, new AnimationNodeAnimation { Animation = new StringName(_clipMort) }, new Vector2(460f, 220f));
 		if (_machineAPorteNage)
 			machine.AddNode("Nage", new AnimationNodeAnimation { Animation = new StringName(_clipNage) }, new Vector2(460f, 320f));
+		if (_machineAPorteSaut)
+			machine.AddNode(NomNoeudSaut, new AnimationNodeAnimation { Animation = new StringName(_clipSaut) }, new Vector2(40f, 0f));
+		if (_machineAPorteSautGalop)
+			machine.AddNode(NomNoeudSautGalop, new AnimationNodeAnimation { Animation = new StringName(_clipSautGalop) }, new Vector2(40f, 72f));
+		if (_machineAPorteAttaqueKick)
+			machine.AddNode(NomNoeudAttaqueKick, new AnimationNodeAnimation { Animation = new StringName(_clipAttaqueKick) }, new Vector2(680f, 100f));
+		if (_machineAPorteAttaqueTete)
+			machine.AddNode(NomNoeudAttaqueTete, new AnimationNodeAnimation { Animation = new StringName(_clipAttaqueTete) }, new Vector2(680f, 200f));
 
 		const float xfade = 0.14f;
 		var depuisStart = new AnimationNodeStateMachineTransition
@@ -3454,12 +3769,45 @@ public partial class BoeufSauvage : CharacterBody3D
 			machine.AddTransition("Nage", NomNoeudDeplacement, new AnimationNodeStateMachineTransition { XfadeTime = 0.12f });
 		}
 
+		var xfdSaut = new AnimationNodeStateMachineTransition { XfadeTime = 0.11f };
+		var xfdSautRetour = new AnimationNodeStateMachineTransition { XfadeTime = 0.14f };
+		if (_machineAPorteSaut)
+		{
+			machine.AddTransition(NomNoeudDeplacement, NomNoeudSaut, xfdSaut);
+			machine.AddTransition(NomNoeudSaut, NomNoeudDeplacement, xfdSautRetour);
+		}
+		if (_machineAPorteSautGalop)
+		{
+			machine.AddTransition(NomNoeudDeplacement, NomNoeudSautGalop, xfdSaut);
+			machine.AddTransition(NomNoeudSautGalop, NomNoeudDeplacement, xfdSautRetour);
+		}
+		var xfdAttaque = new AnimationNodeStateMachineTransition { XfadeTime = 0.08f };
+		var xfdAttaqueRetour = new AnimationNodeStateMachineTransition { XfadeTime = 0.1f };
+		if (_machineAPorteAttaqueKick)
+		{
+			machine.AddTransition(NomNoeudDeplacement, NomNoeudAttaqueKick, xfdAttaque);
+			machine.AddTransition(NomNoeudAttaqueKick, NomNoeudDeplacement, xfdAttaqueRetour);
+		}
+		if (_machineAPorteAttaqueTete)
+		{
+			machine.AddTransition(NomNoeudDeplacement, NomNoeudAttaqueTete, xfdAttaque);
+			machine.AddTransition(NomNoeudAttaqueTete, NomNoeudDeplacement, xfdAttaqueRetour);
+		}
+
 		var versMort = new AnimationNodeStateMachineTransition { XfadeTime = 0.1f, SwitchMode = AnimationNodeStateMachineTransition.SwitchModeEnum.Immediate };
 		if (_machineAPorteMort)
 		{
 			machine.AddTransition(NomNoeudDeplacement, NomNoeudMort, versMort);
 			if (_machineAPorteBroutage)
 				machine.AddTransition(NomNoeudBroutage, NomNoeudMort, versMort);
+			if (_machineAPorteSaut)
+				machine.AddTransition(NomNoeudSaut, NomNoeudMort, versMort);
+			if (_machineAPorteSautGalop)
+				machine.AddTransition(NomNoeudSautGalop, NomNoeudMort, versMort);
+			if (_machineAPorteAttaqueKick)
+				machine.AddTransition(NomNoeudAttaqueKick, NomNoeudMort, versMort);
+			if (_machineAPorteAttaqueTete)
+				machine.AddTransition(NomNoeudAttaqueTete, NomNoeudMort, versMort);
 		}
 
 		_animationTreeFaune.ProcessMode = ProcessModeEnum.Always;
@@ -3548,18 +3896,60 @@ public partial class BoeufSauvage : CharacterBody3D
 			NomNoeudBroutage => NomNoeudBroutageString,
 			NomNoeudMort => NomNoeudMortString,
 			"Nage" => NomNoeudNageString,
+			NomNoeudSaut => NomNoeudSautString,
+			NomNoeudSautGalop => NomNoeudSautGalopString,
+			NomNoeudAttaqueKick => NomNoeudAttaqueKickString,
+			NomNoeudAttaqueTete => NomNoeudAttaqueTeteString,
 			_ => new StringName(etat)
 		};
 	}
 
-	private void MettreAJourAnimation(float vitesseHoriz)
+	/// <summary>En errance calme, enchaine les clips <c>idle</c> du pool (ex. 5 variantes) sans toucher marche/course.</summary>
+	private void MettreAJourCycleIdleMultiples(float dt, float vitesseHoriz)
+	{
+		if (_animationPlayer == null || !GodotObject.IsInstanceValid(_animationPlayer))
+			return;
+		if (!_poolsAnimationsEvolutives.TryGetValue("idle", out List<string> pool) || pool == null || pool.Count < 2)
+			return;
+		bool calme = _etat != EtatBoeuf.Fuite && _etat != EtatBoeuf.Charge && _etat != EtatBoeuf.Broutage
+			&& vitesseHoriz <= 0.2f && !_dansEau && _tempsVerrouAnimationCombat <= 0f;
+		if (!calme)
+			return;
+		_timerCycleIdleSecondes -= dt;
+		if (_timerCycleIdleSecondes > 0f)
+			return;
+		float imin = Mathf.Max(1.5f, IntervalleMinCycleIdleSecondes);
+		float imax = Mathf.Max(imin + 0.5f, IntervalleMaxCycleIdleSecondes);
+		_timerCycleIdleSecondes = _rng.RandfRange(imin, imax);
+		_indexCycleIdle = (_indexCycleIdle + 1) % pool.Count;
+		string suivant = pool[_indexCycleIdle];
+		if (string.IsNullOrEmpty(suivant) || suivant == _clipIdle)
+			return;
+		_clipIdle = suivant;
+		AppliquerBouclesSurClipsLocomotion();
+		if (UtiliserAnimationTreeLocomotion)
+			DemanderReconfigurationAnimationTree();
+	}
+
+	private void MettreAJourAnimation(float dt, float vitesseHoriz)
 	{
 		if (_animationPlayer == null) return;
+		_tempsVerrouAnimationCombat = Mathf.Max(0f, _tempsVerrouAnimationCombat - dt);
+		if (_tempsVerrouAnimationCombat <= 0f && !string.IsNullOrEmpty(_noeudAnimationCombatVerrou)
+			&& _blendLocomotionActif && _playbackEtatFaune != null && _animationTreeFaune != null && _animationTreeFaune.Active)
+		{
+			_playbackEtatFaune.Travel(NomNoeudDeplacementString);
+			_etatCourantMachineAnimation = NomNoeudDeplacement;
+			_noeudAnimationCombatVerrou = "";
+		}
+
 		float vitesseMarcheActuelle = VitesseMarche * MultiplicateurNiveau * (VitesseStatActuelle / Mathf.Max(0.1f, VitesseBase));
 		float vitesseFuiteActuelle = VitesseFuite * MultiplicateurNiveau * (VitesseStatActuelle / Mathf.Max(0.1f, VitesseBase));
 		float seuilIdle = 0.12f;
 		float seuilMarche = 0.25f;
 		bool sautAscendant = !_dansEau && !IsOnFloor() && Velocity.Y > 0.10f;
+		bool sprintAnime = (_etat == EtatBoeuf.Fuite || _etat == EtatBoeuf.Charge) && SprintAutoriseParStamina();
+		bool clipsSautDedies = _machineAPorteSaut || _machineAPorteSautGalop;
 
 		if (_blendLocomotionActif && _playbackEtatFaune != null && _animationTreeFaune != null && _animationTreeFaune.Active)
 		{
@@ -3568,6 +3958,19 @@ public partial class BoeufSauvage : CharacterBody3D
 				etatVoulu = "Nage";
 			else if (!_dansEau && _etat == EtatBoeuf.Broutage && _machineAPorteBroutage)
 				etatVoulu = NomNoeudBroutage;
+			else if (_tempsVerrouAnimationCombat > 0f && !string.IsNullOrEmpty(_noeudAnimationCombatVerrou))
+			{
+				if (_noeudAnimationCombatVerrou == NomNoeudAttaqueKick && _machineAPorteAttaqueKick)
+					etatVoulu = NomNoeudAttaqueKick;
+				else if (_noeudAnimationCombatVerrou == NomNoeudAttaqueTete && _machineAPorteAttaqueTete)
+					etatVoulu = NomNoeudAttaqueTete;
+			}
+			else if (!_dansEau && sautAscendant && sprintAnime && _machineAPorteSautGalop)
+				etatVoulu = NomNoeudSautGalop;
+			else if (!_dansEau && sautAscendant && _machineAPorteSaut && (!_machineAPorteSautGalop || !sprintAnime))
+				etatVoulu = NomNoeudSaut;
+			else if (!_dansEau && IsOnFloor() && (_etatCourantMachineAnimation == NomNoeudSaut || _etatCourantMachineAnimation == NomNoeudSautGalop))
+				etatVoulu = NomNoeudDeplacement;
 
 			if (etatVoulu != _etatCourantMachineAnimation)
 			{
@@ -3578,14 +3981,12 @@ public partial class BoeufSauvage : CharacterBody3D
 			if (etatVoulu == NomNoeudDeplacement && _animationTreeFaune != null)
 			{
 				float blend = 0f;
-				bool sprintAnime = (_etat == EtatBoeuf.Fuite || _etat == EtatBoeuf.Charge) && SprintAutoriseParStamina();
 				if (sprintAnime)
 					blend = Mathf.Clamp(vitesseHoriz / Mathf.Max(0.01f, vitesseFuiteActuelle), 0f, 1f);
 				else if (vitesseHoriz > seuilMarche)
 					blend = Mathf.Clamp(vitesseHoriz / Mathf.Max(0.01f, vitesseMarcheActuelle) * 0.65f, 0f, 0.95f);
-				if (sautAscendant)
+				if (sautAscendant && !clipsSautDedies)
 				{
-					// Saut avec elan = locomotion avant visible; saut sur place = idle.
 					blend = vitesseHoriz > seuilMarche ? Mathf.Max(blend, 0.80f) : 0f;
 				}
 				if (IntensiteMicroVivaciteAnimation > 0.0001f && _etat != EtatBoeuf.Fuite && _etat != EtatBoeuf.Charge && vitesseHoriz > seuilIdle && vitesseHoriz < 0.38f)
@@ -3603,13 +4004,17 @@ public partial class BoeufSauvage : CharacterBody3D
 			float speed = 1f;
 			if (_dansEau)
 				speed = Mathf.Clamp(vitesseHoriz / Mathf.Max(0.1f, VitesseNageHorizontale), 0.75f, 1.25f);
-			else if (_etat == EtatBoeuf.Broutage)
+			else if (etatVoulu == NomNoeudBroutage)
 				speed = 0.9f;
-			else if ((_etat == EtatBoeuf.Fuite || _etat == EtatBoeuf.Charge) && SprintAutoriseParStamina())
+			else if (etatVoulu == NomNoeudSautGalop || (etatVoulu == NomNoeudDeplacement && sprintAnime))
 				speed = Mathf.Clamp(vitesseHoriz / Mathf.Max(0.1f, vitesseFuiteActuelle), 0.85f, 1.75f);
+			else if (etatVoulu == NomNoeudSaut)
+				speed = vitesseHoriz > seuilMarche ? Mathf.Clamp(vitesseHoriz / Mathf.Max(0.1f, vitesseMarcheActuelle), 0.85f, 1.35f) : 0.92f;
+			else if (etatVoulu == NomNoeudAttaqueKick || etatVoulu == NomNoeudAttaqueTete)
+				speed = 1f;
 			else if (vitesseHoriz > seuilMarche)
 				speed = Mathf.Clamp(vitesseHoriz / Mathf.Max(0.1f, vitesseMarcheActuelle), 0.8f, 1.45f);
-			if (sautAscendant)
+			if (sautAscendant && !clipsSautDedies && etatVoulu == NomNoeudDeplacement)
 				speed = vitesseHoriz > seuilMarche ? Mathf.Max(speed, 1.05f) : 0.92f;
 			if (IntensiteMicroVivaciteAnimation > 0.0001f && etatVoulu == NomNoeudDeplacement && vitesseHoriz > seuilIdle)
 			{
@@ -3645,10 +4050,23 @@ public partial class BoeufSauvage : CharacterBody3D
 		else if (sautAscendant)
 		{
 			bool sautAvecElan = vitesseHoriz > seuilMarche;
-			cible = sautAvecElan
-				? (!string.IsNullOrEmpty(_clipCourse) ? _clipCourse : (!string.IsNullOrEmpty(_clipTrot) ? _clipTrot : _clipMarche))
-				: _clipIdle;
-			speedDirect = sautAvecElan ? 1.05f : 0.92f;
+			if (sprintAnime && !string.IsNullOrEmpty(_clipSautGalop) && _animationPlayer.HasAnimation(_clipSautGalop))
+			{
+				cible = _clipSautGalop;
+				speedDirect = 1.12f;
+			}
+			else if (!string.IsNullOrEmpty(_clipSaut) && _animationPlayer.HasAnimation(_clipSaut))
+			{
+				cible = _clipSaut;
+				speedDirect = sautAvecElan ? 1.05f : 0.92f;
+			}
+			else
+			{
+				cible = sautAvecElan
+					? (!string.IsNullOrEmpty(_clipCourse) ? _clipCourse : (!string.IsNullOrEmpty(_clipTrot) ? _clipTrot : _clipMarche))
+					: _clipIdle;
+				speedDirect = sautAvecElan ? 1.05f : 0.92f;
+			}
 		}
 		else if (vitesseHoriz > seuilMarche)
 		{
@@ -3785,6 +4203,13 @@ public partial class BoeufSauvage : CharacterBody3D
 		if (lib.HasAnimation("Course")) _clipCourse = Pref("Course");
 		if (lib.HasAnimation("Broutage")) _clipManger = Pref("Broutage");
 		if (lib.HasAnimation("Mort")) _clipMort = Pref("Mort");
+		if (lib.HasAnimation("Walk") && string.IsNullOrEmpty(_clipMarche)) _clipMarche = Pref("Walk");
+		if (lib.HasAnimation("Gallop") && string.IsNullOrEmpty(_clipCourse)) _clipCourse = Pref("Gallop");
+		if (lib.HasAnimation("Jump") && string.IsNullOrEmpty(_clipSaut)) _clipSaut = Pref("Jump");
+		if (lib.HasAnimation("GallopJump") && string.IsNullOrEmpty(_clipSautGalop)) _clipSautGalop = Pref("GallopJump");
+		if (lib.HasAnimation("Eating") && string.IsNullOrEmpty(_clipManger)) _clipManger = Pref("Eating");
+		if (lib.HasAnimation("AttaqueKick") && string.IsNullOrEmpty(_clipAttaqueKick)) _clipAttaqueKick = Pref("AttaqueKick");
+		if (lib.HasAnimation("AttaqueTete") && string.IsNullOrEmpty(_clipAttaqueTete)) _clipAttaqueTete = Pref("AttaqueTete");
 	}
 
 	private static T TrouverPremierNoeudDeType<T>(Node racine) where T : Node
@@ -3853,11 +4278,15 @@ public partial class BoeufSauvage : CharacterBody3D
 	private static string DeriverNomStandardClipOuNull(string nomComplet)
 	{
 		string n = nomComplet.ToLowerInvariant();
+		if (n.Contains("death") || n.Contains("dead") || n.Contains("die") || n.Contains("mort")) return "Mort";
+		if (NomClipSembleSautGalop(n) || (n.Contains("jump") && !n.Contains("gallop")))
+			return null;
+		if (n.Contains("attack") || n.Contains("headbutt") || (n.Contains("kick") && !n.Contains("walk")))
+			return null;
 		if (n.Contains("idle") || n.Contains("stand") || n.Contains("repos")) return "Idle";
 		if (n.Contains("walk") || n.Contains("marche") || n.Contains("locomotion") || n.Contains("cycle")) return "Marche";
-		if (n.Contains("run") || n.Contains("gallop") || n.Contains("course") || n.Contains("charge") || n.Contains("attack") || n.Contains("headbutt") || n.Contains("kick") || n.Contains("jump")) return "Course";
-		if (n.Contains("eat") || n.Contains("graze") || n.Contains("manger") || n.Contains("browse")) return "Broutage";
-		if (n.Contains("death") || n.Contains("dead") || n.Contains("die") || n.Contains("mort")) return "Mort";
+		if (n.Contains("run") || n.Contains("gallop") || n.Contains("course") || n.Contains("charge")) return "Course";
+		if (n.Contains("eat") || n.Contains("eating") || n.Contains("graze") || n.Contains("manger") || n.Contains("browse")) return "Broutage";
 		return null;
 	}
 
@@ -3873,7 +4302,20 @@ public partial class BoeufSauvage : CharacterBody3D
 	{
 		if (string.IsNullOrWhiteSpace(DossierAnimationsAnimalesCompatibles))
 			return;
-		var chemins = ListerFichiersAnimationsRecursifs(DossierAnimationsAnimalesCompatibles.Trim());
+		string dossierNorm = DossierAnimationsAnimalesCompatibles.Trim();
+		List<string> chemins;
+		lock (VerrouCacheBibliothequesAnimExternes)
+		{
+			if (CacheListeCheminsDossierAnimationsCompatibles != null
+				&& string.Equals(DossierListeCheminsCache, dossierNorm, StringComparison.OrdinalIgnoreCase))
+				chemins = CacheListeCheminsDossierAnimationsCompatibles;
+			else
+			{
+				chemins = ListerFichiersAnimationsRecursifs(dossierNorm);
+				CacheListeCheminsDossierAnimationsCompatibles = chemins;
+				DossierListeCheminsCache = dossierNorm;
+			}
+		}
 		int ajoutes = 0;
 		foreach (string chemin in chemins)
 		{
@@ -3889,8 +4331,11 @@ public partial class BoeufSauvage : CharacterBody3D
 			FusionnerBibliothequesDepuisCheminExterne(chemin, sourceKey);
 			ajoutes++;
 		}
-		if (ajoutes > 0)
-			GD.Print($"ZERO-K Faune : scan dossier animations compatibles -> {ajoutes} fichier(s) traites.");
+		if (ajoutes > 0 && !LogScanDossierAnimationsCompatiblesEffectue)
+		{
+			LogScanDossierAnimationsCompatiblesEffectue = true;
+			GD.Print($"ZERO-K Faune : scan dossier animations compatibles -> {ajoutes} fichier(s) (cache partage entre individus).");
+		}
 	}
 
 	private static List<string> ListerFichiersAnimationsRecursifs(string dossierRes)
@@ -4049,11 +4494,34 @@ public partial class BoeufSauvage : CharacterBody3D
 		if (string.IsNullOrWhiteSpace(sourceKey))
 			sourceKey = "source";
 
+		Skeleton3D skLivePrecalc = TrouverPremierNoeudDeType<Skeleton3D>(_modeleVisuel != null ? _modeleVisuel : this);
+		Node racineLivePrecalc = _animationPlayer.GetParent() ?? (_modeleVisuel ?? (Node)this);
+		string prefixLivePrecalc = skLivePrecalc != null ? racineLivePrecalc.GetPathTo(skLivePrecalc).ToString() : "";
+		string cleCache = $"{chemin}|{sourceKey}|{prefixLivePrecalc}";
+
+		lock (VerrouCacheBibliothequesAnimExternes)
+		{
+			if (CacheBibliothequesExternesRemappees.TryGetValue(cleCache, out List<(string libDest, AnimationLibrary lib)> enCache)
+				&& enCache != null && enCache.Count > 0)
+			{
+				foreach ((string libDest, AnimationLibrary lib) in enCache)
+				{
+					if (lib == null) continue;
+					var instLib = (AnimationLibrary)lib.Duplicate(true);
+					if (_animationPlayer.HasAnimationLibrary(libDest))
+						_animationPlayer.RemoveAnimationLibrary(libDest);
+					_animationPlayer.AddAnimationLibrary(libDest, instLib);
+				}
+				return;
+			}
+		}
+
 		var ps = GD.Load<PackedScene>(chemin);
 		Node inst = ps?.Instantiate();
 		if (inst == null)
 			return;
 
+		var snapshotPourCache = new List<(string libDest, AnimationLibrary lib)>();
 		try
 		{
 			AnimationPlayer apExt = ChoisirMeilleurAnimationPlayer(inst);
@@ -4061,14 +4529,14 @@ public partial class BoeufSauvage : CharacterBody3D
 				return;
 
 			Skeleton3D skExt = TrouverPremierNoeudDeType<Skeleton3D>(inst);
-			Skeleton3D skLive = TrouverPremierNoeudDeType<Skeleton3D>(_modeleVisuel != null ? _modeleVisuel : this);
+			Skeleton3D skLive = skLivePrecalc;
 			HashSet<string> osLive = ExtraireNomsOsNormalises(skLive);
 			string prefixExt = "";
 			string prefixLive = "";
 			if (skExt != null && skLive != null)
 			{
 				Node racineExt = apExt.GetParent() ?? inst;
-				Node racineLive = _animationPlayer.GetParent() ?? (_modeleVisuel ?? (Node)this);
+				Node racineLive = racineLivePrecalc;
 				prefixExt = racineExt.GetPathTo(skExt).ToString();
 				prefixLive = racineLive.GetPathTo(skLive).ToString();
 			}
@@ -4098,6 +4566,7 @@ public partial class BoeufSauvage : CharacterBody3D
 				if (_animationPlayer.HasAnimationLibrary(libDest))
 					_animationPlayer.RemoveAnimationLibrary(libDest);
 				_animationPlayer.AddAnimationLibrary(libDest, copie);
+				snapshotPourCache.Add((libDest, (AnimationLibrary)copie.Duplicate(true)));
 				libsAjoutees++;
 			}
 
@@ -4127,12 +4596,22 @@ public partial class BoeufSauvage : CharacterBody3D
 					if (_animationPlayer.HasAnimationLibrary(libDestLegacy))
 						_animationPlayer.RemoveAnimationLibrary(libDestLegacy);
 					_animationPlayer.AddAnimationLibrary(libDestLegacy, libLegacy);
+					snapshotPourCache.Add((libDestLegacy, (AnimationLibrary)libLegacy.Duplicate(true)));
 					libsAjoutees++;
 				}
 			}
 
+			if (snapshotPourCache.Count > 0)
+			{
+				lock (VerrouCacheBibliothequesAnimExternes)
+				{
+					if (!CacheBibliothequesExternesRemappees.ContainsKey(cleCache))
+						CacheBibliothequesExternesRemappees[cleCache] = snapshotPourCache;
+				}
+			}
+
 			if (libsAjoutees > 0)
-				GD.Print($"ZERO-K Faune : animations externes fusionnees depuis {chemin} ({libsAjoutees} bibliotheque(s)).");
+				GD.Print($"ZERO-K Faune : animations externes fusionnees depuis {chemin} ({libsAjoutees} bibliotheque(s)) [cache pour prochains individus].");
 		}
 		finally
 		{
@@ -4156,13 +4635,15 @@ public partial class BoeufSauvage : CharacterBody3D
 			|| n.Contains("ragdoll") || n.Contains("corpse");
 	}
 
-private static bool NomClipSembleCombatOuSaut(string nomComplet)
-{
-	if (string.IsNullOrWhiteSpace(nomComplet)) return false;
-	string n = nomComplet.ToLowerInvariant();
-	return n.Contains("attack") || n.Contains("headbutt") || n.Contains("kick") || n.Contains("jump")
-		|| n.Contains("bite") || n.Contains("hit");
-}
+	private static bool NomClipSembleCombatOuSaut(string nomComplet)
+	{
+		if (string.IsNullOrWhiteSpace(nomComplet)) return false;
+		string n = nomComplet.ToLowerInvariant();
+		if (NomClipSembleSautGalop(n))
+			return false;
+		return n.Contains("attack") || n.Contains("headbutt") || n.Contains("kick") || n.Contains("jump")
+			|| n.Contains("bite") || n.Contains("hit");
+	}
 
 	private static string PremierClipLocomotionUtileNonMortel(List<string> tous)
 	{
@@ -4277,10 +4758,21 @@ private static bool NomClipSembleCombatOuSaut(string nomComplet)
 		_materiauxPelageInstances.Clear();
 		if (_textureDiffuseModele == null && !string.IsNullOrWhiteSpace(CheminTextureDiffuseModele))
 		{
-			if (ResourceLoader.Exists(CheminTextureDiffuseModele))
+			if (_cacheTextureDiffuseBoeuf.TryGetValue(CheminTextureDiffuseModele, out Texture2D texCache))
+			{
+				_textureDiffuseModele = texCache;
+			}
+			else if (ResourceLoader.Exists(CheminTextureDiffuseModele))
+			{
 				_textureDiffuseModele = GD.Load<Texture2D>(CheminTextureDiffuseModele);
+				_cacheTextureDiffuseBoeuf[CheminTextureDiffuseModele] = _textureDiffuseModele;
+			}
 			else
-				GD.PrintErr($"ZERO-K Faune : texture diffuse introuvable : {CheminTextureDiffuseModele}");
+			{
+				_cacheTextureDiffuseBoeuf[CheminTextureDiffuseModele] = null;
+				if (_cheminsTextureIntrouvablesLoggues.Add(CheminTextureDiffuseModele))
+					GD.Print($"ZERO-K Faune : texture diffuse absente ({CheminTextureDiffuseModele}), utilisation des matériaux GLTF natifs.");
+			}
 		}
 		StabiliserMateriauxRecursif(this, _shaderPelageBoeuf, _textureDiffuseModele);
 	}

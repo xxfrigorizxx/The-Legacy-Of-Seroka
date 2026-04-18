@@ -6,7 +6,7 @@ using System.IO;
 public partial class Joueur
 {
     private const int VersionPersistenceJoueur = 2;
-    private const int VersionPersistenceObjetsPoses = 3;
+    private const int VersionPersistenceObjetsPoses = 4;
     private const int VersionPersistenceProgression = 2;
     private bool _etatPersistantCharge;
 
@@ -88,13 +88,25 @@ public partial class Joueur
         return s;
     }
 
-    public void SauvegarderEtatPersistantMonde()
+    /// <param name="arbreScene">Si le joueur n’est plus dans l’arbre (<see cref="Node._ExitTree"/>), passer le <see cref="SceneTree"/> du <c>Gestionnaire_Monde</c> parent.</param>
+    public void SauvegarderEtatPersistantMonde(SceneTree arbreScene = null)
     {
+        SceneTree tree = arbreScene;
+        if (tree == null && IsInsideTree())
+            tree = GetTree();
+        if (tree == null)
+            tree = Engine.GetMainLoop() as SceneTree;
+        if (tree == null)
+        {
+            GD.PrintErr("ZERO-K : Sauvegarde état monde annulée (SceneTree indisponible).");
+            return;
+        }
+
         SauvegarderProgressionJoueurMonde();
         SauvegarderInventaireMonde();
-        SauvegarderObjetsPosesMonde();
-        SauvegarderBlocsChutantsMonde();
-        ObtenirGestionnaireFauneCourant()?.SauvegarderFauneMonde();
+        SauvegarderObjetsPosesMonde(tree);
+        SauvegarderBlocsChutantsMonde(tree);
+        ObtenirGestionnaireFauneCourant(tree)?.SauvegarderFauneMonde();
     }
 
     public void ChargerEtatPersistantMonde()
@@ -105,13 +117,24 @@ public partial class Joueur
         ChargerInventaireMonde();
         ChargerObjetsPosesMonde();
         ChargerBlocsChutantsMonde();
-        ObtenirGestionnaireFauneCourant()?.ChargerFauneMonde();
+        ObtenirGestionnaireFauneCourant(null)?.ChargerFauneMonde();
         RafraichirHUD();
     }
 
-    private GestionnaireFauneBoeufs ObtenirGestionnaireFauneCourant()
+    private GestionnaireFauneBoeufs ObtenirGestionnaireFauneCourant(SceneTree arbreScene)
     {
-        Node scene = GetTree()?.CurrentScene;
+        if (_gestionnaireMonde != null && GodotObject.IsInstanceValid(_gestionnaireMonde))
+        {
+            var depuisMonde = _gestionnaireMonde.GetNodeOrNull<GestionnaireFauneBoeufs>("GestionnaireFauneBoeufs");
+            if (depuisMonde != null)
+                return depuisMonde;
+        }
+        SceneTree tree = arbreScene;
+        if (tree == null && IsInsideTree())
+            tree = GetTree();
+        if (tree == null)
+            tree = Engine.GetMainLoop() as SceneTree;
+        Node scene = tree?.CurrentScene;
         if (scene == null) return null;
         return scene.GetNodeOrNull<GestionnaireFauneBoeufs>("GestionnaireFauneBoeufs");
     }
@@ -338,25 +361,42 @@ public partial class Joueur
         return copie;
     }
 
-    private void SauvegarderObjetsPosesMonde()
+    private static SlotInventaire[] CopierGrilleCoffreOuVide(ItemPhysique item)
+    {
+        var copie = new SlotInventaire[10];
+        for (int i = 0; i < copie.Length; i++)
+            copie[i] = new SlotInventaire();
+        if (item?.GrilleStockageCoffre == null) return copie;
+        int len = Mathf.Min(10, item.GrilleStockageCoffre.Length);
+        for (int i = 0; i < len; i++)
+            copie[i] = item.GrilleStockageCoffre[i];
+        return copie;
+    }
+
+    private void SauvegarderObjetsPosesMonde(SceneTree tree)
     {
         try
         {
+            if (tree == null) return;
             string dossier = ObtenirCheminDossierSauvegardeMonde();
             Directory.CreateDirectory(dossier);
             string chemin = Path.Combine(dossier, "placed_objects.dat");
-            var aSauver = new List<(SlotInventaire slot, Vector3 pos, Vector3 rot, SlotInventaire[] atelier)>();
-            foreach (Node n in GetTree().GetNodesInGroup("BlocsPoses"))
+            var aSauver = new List<(SlotInventaire slot, Vector3 pos, Vector3 rot, SlotInventaire[] atelier, SlotInventaire[] coffre)>();
+            foreach (Node n in tree.GetNodesInGroup("BlocsPoses"))
             {
                 if (EssayerConstruireSlotObjetPose(n, out var s, out var p, out var r))
                 {
                     SlotInventaire[] atelier = null;
-                    if ((s.ID == 200 || s.ID == IdObjetRackBatons || s.ID == IdObjetRackBuches) && n is Node3D n3)
+                    SlotInventaire[] coffre = null;
+                    if (n is Node3D n3)
                     {
                         var item = TrouverItemPhysiqueDansNoeud(n3);
-                        atelier = CopierGrilleAtelierOuVide(item);
+                        if (s.ID == 200 || s.ID == IdObjetRackBatons || s.ID == IdObjetRackBuches)
+                            atelier = CopierGrilleAtelierOuVide(item);
+                        if (s.ID == IdObjetCoffreBoisTier0)
+                            coffre = CopierGrilleCoffreOuVide(item);
                     }
-                    aSauver.Add((s, p, r, atelier));
+                    aSauver.Add((s, p, r, atelier, coffre));
                 }
             }
 
@@ -375,6 +415,13 @@ public partial class Joueur
                     for (int i = 0; i < 9; i++)
                         EcrireSlot(w, i < e.atelier.Length ? e.atelier[i] : new SlotInventaire());
                 }
+                bool aCoffre = e.slot.ID == IdObjetCoffreBoisTier0 && e.coffre != null;
+                w.Write(aCoffre);
+                if (aCoffre)
+                {
+                    for (int i = 0; i < 10; i++)
+                        EcrireSlot(w, i < e.coffre.Length ? e.coffre[i] : new SlotInventaire());
+                }
             }
         }
         catch (Exception ex)
@@ -390,8 +437,11 @@ public partial class Joueur
             string chemin = Path.Combine(ObtenirCheminDossierSauvegardeMonde(), "placed_objects.dat");
             if (!File.Exists(chemin)) return;
 
-            foreach (Node n in GetTree().GetNodesInGroup("BlocsPoses"))
-                n.QueueFree();
+            if (IsInsideTree())
+            {
+                foreach (Node n in GetTree().GetNodesInGroup("BlocsPoses"))
+                    n.QueueFree();
+            }
 
             using var r = new BinaryReader(File.Open(chemin, FileMode.Open, System.IO.FileAccess.Read, FileShare.Read));
             int version = r.ReadInt32();
@@ -404,6 +454,7 @@ public partial class Joueur
                 Vector3 p = new Vector3(r.ReadSingle(), r.ReadSingle(), r.ReadSingle());
                 Vector3 rot = new Vector3(r.ReadSingle(), r.ReadSingle(), r.ReadSingle());
                 SlotInventaire[] grilleAtelier = null;
+                SlotInventaire[] grilleCoffre = null;
                 if (version >= 2)
                 {
                     bool aAtelier = r.ReadBoolean();
@@ -412,6 +463,16 @@ public partial class Joueur
                         grilleAtelier = new SlotInventaire[9];
                         for (int g = 0; g < 9; g++)
                             grilleAtelier[g] = LireSlot(r, lireExtras);
+                    }
+                }
+                if (version >= 4)
+                {
+                    bool aCoffre = r.ReadBoolean();
+                    if (aCoffre)
+                    {
+                        grilleCoffre = new SlotInventaire[10];
+                        for (int g = 0; g < 10; g++)
+                            grilleCoffre[g] = LireSlot(r, lireExtras);
                     }
                 }
                 if (s.EstVide) continue;
@@ -433,6 +494,16 @@ public partial class Joueur
                                 SynchroniserVisuelRackBuches(item);
                         }
                     }
+                    if (s.ID == IdObjetCoffreBoisTier0 && grilleCoffre != null)
+                    {
+                        var itemC = TrouverItemPhysiqueDansNoeud(n);
+                        if (itemC != null && itemC.GrilleStockageCoffre != null)
+                        {
+                            int lenC = Mathf.Min(10, itemC.GrilleStockageCoffre.Length);
+                            for (int g = 0; g < lenC; g++)
+                                itemC.GrilleStockageCoffre[g] = grilleCoffre[g];
+                        }
+                    }
                 }
             }
         }
@@ -442,15 +513,16 @@ public partial class Joueur
         }
     }
 
-    private void SauvegarderBlocsChutantsMonde()
+    private void SauvegarderBlocsChutantsMonde(SceneTree tree)
     {
         try
         {
+            if (tree == null) return;
             string dossier = ObtenirCheminDossierSauvegardeMonde();
             Directory.CreateDirectory(dossier);
             string chemin = Path.Combine(dossier, "dropped_blocks.dat");
             var aSauver = new List<(byte id, Vector3 pos, Vector3 rot)>();
-            foreach (Node n in GetTree().GetNodesInGroup("PersistantsBlocChutant"))
+            foreach (Node n in tree.GetNodesInGroup("PersistantsBlocChutant"))
             {
                 if (n is not BlocChutant bc || !GodotObject.IsInstanceValid(bc) || !bc.IsInsideTree()) continue;
                 int id = bc.HasMeta("ID_Matiere") ? bc.GetMeta("ID_Matiere").AsInt32() : 0;
@@ -480,8 +552,11 @@ public partial class Joueur
             string chemin = Path.Combine(ObtenirCheminDossierSauvegardeMonde(), "dropped_blocks.dat");
             if (!File.Exists(chemin)) return;
 
-            foreach (Node n in GetTree().GetNodesInGroup("PersistantsBlocChutant"))
-                n.QueueFree();
+            if (IsInsideTree())
+            {
+                foreach (Node n in GetTree().GetNodesInGroup("PersistantsBlocChutant"))
+                    n.QueueFree();
+            }
 
             using var r = new BinaryReader(File.Open(chemin, FileMode.Open, System.IO.FileAccess.Read, FileShare.Read));
             int version = r.ReadInt32();

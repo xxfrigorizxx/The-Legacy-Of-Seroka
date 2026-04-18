@@ -62,7 +62,7 @@ public partial class Joueur
     /// <summary>Analyse la grille craft ; le détail des recettes est dans <see cref="Atlas_Matiere.EvaluerRecette"/>.</summary>
     public void VerifierRecettes()
     {
-        if (StockageRackBatonsOuvert)
+        if (StockageRackBatonsOuvert || StockageCoffreOuvert)
         {
             SlotResultatCraft = new SlotInventaire();
             return;
@@ -75,6 +75,8 @@ public partial class Joueur
     /// <summary>Vide la zone craft utilisée (4 cases en poche, 9 sur l’atelier) après prise du résultat.</summary>
     public void ConsommerIngredientsCraft()
     {
+        if (StockageCoffreOuvert)
+            return;
         SlotInventaire[] g = ObtenirGrilleCraftAffichee();
         if (g == null) return;
         int n = CraftGrille3x3AuTable ? 9 : 4;

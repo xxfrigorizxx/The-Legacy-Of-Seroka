@@ -30,6 +30,10 @@ public partial class GestionnaireFauneBoeufs : Node3D
 	[Export] public bool ValiderSolAutourDuPointSpawn = true;
 	[Export] public float RayonValidationSolSpawn = 1.2f;
 	[Export] public bool GarantirPremierTroupeau = true;
+	[Export(PropertyHint.Range, "8,256,1")] public int BudgetChunksEvaluesParCycle = 64;
+	[ExportGroup("Diagnostic performance")]
+	[Export] public bool ActiverProfilagePerfFaune = false;
+	[Export(PropertyHint.Range, "0.2,10,0.1")] public float IntervalleLogProfilageFauneSec = 2.0f;
 
 	private Gestionnaire_Monde _gestionnaireMonde;
 	private CharacterBody3D _joueur;
@@ -39,6 +43,8 @@ public partial class GestionnaireFauneBoeufs : Node3D
 	private float _cooldownVerification;
 	private bool _premierTroupeauForce;
 	private bool _fauneChargeeDepuisSauvegarde;
+	private int _curseurEvaluationChunks;
+	private float _cooldownDrainProfilage;
 	private const int VersionPersistanceFaune = 1;
 
 	public override void _Ready()
@@ -55,6 +61,8 @@ public partial class GestionnaireFauneBoeufs : Node3D
 		if (_gestionnaireMonde == null || _joueur == null) return;
 		if (!_gestionnaireMonde.EstSpawnPret()) return;
 		if (!_gestionnaireMonde.EstAlignementSpawnTermine()) return;
+		ulong debutFrameUs = ActiverProfilagePerfFaune ? PerfBudgetMonitor.Begin() : 0UL;
+		_cooldownDrainProfilage += (float)delta;
 		if (!_fauneChargeeDepuisSauvegarde)
 		{
 			ChargerFauneMonde();
@@ -62,9 +70,41 @@ public partial class GestionnaireFauneBoeufs : Node3D
 		}
 
 		_cooldownVerification -= (float)delta;
-		if (_cooldownVerification > 0f) return;
+		if (_cooldownVerification > 0f)
+		{
+			if (ActiverProfilagePerfFaune)
+				PerfBudgetMonitor.End("Faune/GestionnaireFrame", debutFrameUs);
+			return;
+		}
+		// GATE FPS STRICT : aucun nouveau spawn de troupeau si le streaming global est gelé (FPS < seuil).
+		// On ne touche PAS aux bovins existants, on empêche juste d'en ajouter qui feraient pire.
+		float fpsActuel = (float)Engine.GetFramesPerSecond();
+		if (fpsActuel > 1f && fpsActuel < 58f)
+		{
+			_cooldownVerification = 0.25f; // réessaie bientôt, pas de log ni spawn
+			if (ActiverProfilagePerfFaune)
+				PerfBudgetMonitor.End("Faune/GestionnaireFrame", debutFrameUs);
+			return;
+		}
 		_cooldownVerification = IntervalleVerificationSpawn;
+		ulong debutEvalUs = ActiverProfilagePerfFaune ? PerfBudgetMonitor.Begin() : 0UL;
 		EvaluerChunksEtSpawnerTroupeaux();
+		if (ActiverProfilagePerfFaune)
+		{
+			PerfBudgetMonitor.End("Faune/GestionnaireEvaluationChunks", debutEvalUs);
+			PerfBudgetMonitor.End("Faune/GestionnaireFrame", debutFrameUs);
+			if (_cooldownDrainProfilage >= Mathf.Max(0.2f, IntervalleLogProfilageFauneSec))
+			{
+				_cooldownDrainProfilage = 0f;
+				PerfBudgetMonitor.FlushSiEchu("Faune", IntervalleLogProfilageFauneSec);
+			}
+		}
+	}
+
+	public IReadOnlyList<BoeufSauvage> ObtenirBoeufsActifs()
+	{
+		_boeufs.RemoveAll(b => !IsInstanceValid(b) || !b.IsInsideTree());
+		return _boeufs;
 	}
 
 	private static string ObtenirCheminFichierFaune()
@@ -172,29 +212,42 @@ public partial class GestionnaireFauneBoeufs : Node3D
 		int rayon = Mathf.Max(1, RayonEvaluationChunksAutourJoueur);
 		if (_gestionnaireMonde.RenderDistance > 0)
 			rayon = Mathf.Min(rayon, Mathf.Max(1, _gestionnaireMonde.RenderDistance - 1));
+		int cote = rayon * 2 + 1;
+		int totalCases = Math.Max(1, cote * cote);
+		if (_curseurEvaluationChunks >= totalCases)
+			_curseurEvaluationChunks = 0;
+		int budget = Mathf.Clamp(BudgetChunksEvaluesParCycle, 8, 256);
 		Vector2I? chunkPlaineProche = null;
 
-		for (int dx = -rayon; dx <= rayon; dx++)
+		int evals = 0;
+		int troupeauxSpawnesCeTick = 0;
+		const int MaxTroupeauxSpawnesParTick = 1; // Anti-burst : un seul troupeau par évaluation évite les rafales au passage d'une grande plaine.
+		while (evals < budget)
 		{
-			for (int dz = -rayon; dz <= rayon; dz++)
-			{
-				Vector2I c = new Vector2I(chunkJoueur.X + dx, chunkJoueur.Y + dz);
-				if (_chunksEvaluesSpawnFaune.Contains(c))
-					continue;
-				if (!_gestionnaireMonde.ChunkEstCharge(c))
-					continue; // Le dé n'est pas lancé avant la génération/chargement du chunk.
+			int index = (_curseurEvaluationChunks + evals) % totalCases;
+			int dx = (index % cote) - rayon;
+			int dz = (index / cote) - rayon;
+			evals++;
+			Vector2I c = new Vector2I(chunkJoueur.X + dx, chunkJoueur.Y + dz);
+			if (_chunksEvaluesSpawnFaune.Contains(c))
+				continue;
+			if (!_gestionnaireMonde.ChunkEstCharge(c))
+				continue; // Le dé n'est pas lancé avant la génération/chargement du chunk.
 
-				_chunksEvaluesSpawnFaune.Add(c);
-				if (!ChunkSemblePlaineID1(c))
-					continue;
-				if (chunkPlaineProche == null)
-					chunkPlaineProche = c;
-				if (!TirageTroupeauReussi(c))
-					continue;
+			_chunksEvaluesSpawnFaune.Add(c);
+			if (!ChunkSemblePlaineID1(c))
+				continue;
+			if (chunkPlaineProche == null)
+				chunkPlaineProche = c;
+			if (!TirageTroupeauReussi(c))
+				continue;
+			if (troupeauxSpawnesCeTick >= MaxTroupeauxSpawnesParTick)
+				continue; // On reprendra au prochain tick (curseur avance), sans re-tirer ce chunk.
 
-				SpawnerTroupeauDansChunk(c);
-			}
+			SpawnerTroupeauDansChunk(c);
+			troupeauxSpawnesCeTick++;
 		}
+		_curseurEvaluationChunks = (_curseurEvaluationChunks + evals) % totalCases;
 
 		// Sécurité UX: éviter le cas "je cherche partout et je ne vois rien".
 		if (GarantirPremierTroupeau && !_premierTroupeauForce && _boeufs.Count == 0 && chunkPlaineProche.HasValue)

@@ -428,6 +428,11 @@ public static class Atlas_Matiere
             }
             return nom;
         }
+        if (id == Joueur.IdObjetCoffreBoisTier0)
+        {
+            string essence = slot.IndexBotanique switch { 0 => "Chêne", 1 => "Bouleau", 2 => "Pin", 3 => "Sapin", 4 => "Fromager", _ => "Bois" };
+            return $"Coffre en bois ({essence})";
+        }
         if (id == 100)
         {
             int clef = Joueur.ClefRegistreOutilForge(slot);
@@ -1203,6 +1208,41 @@ public static class Atlas_Matiere
                     NiveauFracture = corde.IndexBotanique,
                     DurabiliteOutilMax = dMax,
                     DurabiliteOutilActuelle = dMax
+                };
+            }
+
+            // Coffre en bois (113) 3×3 : (C)(B)(C) / (BL)(C)(BL) / (BL)(BL)(BL) — BL = demi-bûche longueur standard (30 morph 1 taille 1).
+            static bool EstDemiRondinLongueurStandardCoffre(SlotInventaire s) =>
+                !s.EstVide && s.ID == 30 && s.IndexMorphologique == 1 && s.IndexTaille == 1;
+            static bool MemeEssenceCinqDemiBuches(SlotInventaire a, SlotInventaire b, SlotInventaire c, SlotInventaire d, SlotInventaire e)
+            {
+                byte t = a.IndexBotanique;
+                return b.IndexBotanique == t && c.IndexBotanique == t && d.IndexBotanique == t && e.IndexBotanique == t;
+            }
+
+            bool patronCoffreBois = EstSlotLigatureOutilCraft(grille[0])
+                && EstSlotBatonCraft(grille[1])
+                && EstSlotLigatureOutilCraft(grille[2])
+                && EstDemiRondinLongueurStandardCoffre(grille[3])
+                && EstSlotLigatureOutilCraft(grille[4])
+                && EstDemiRondinLongueurStandardCoffre(grille[5])
+                && EstDemiRondinLongueurStandardCoffre(grille[6])
+                && EstDemiRondinLongueurStandardCoffre(grille[7])
+                && EstDemiRondinLongueurStandardCoffre(grille[8])
+                && MemeVarianteLigature(NormaliserLigatureOutil(grille[0]), NormaliserLigatureOutil(grille[2]))
+                && MemeVarianteLigature(NormaliserLigatureOutil(grille[0]), NormaliserLigatureOutil(grille[4]))
+                && MemeEssenceCinqDemiBuches(grille[3], grille[5], grille[6], grille[7], grille[8]);
+            if (patronCoffreBois)
+            {
+                return new SlotInventaire
+                {
+                    ID = Joueur.IdObjetCoffreBoisTier0,
+                    IndexBotanique = grille[3].IndexBotanique,
+                    IndexChimique = grille[1].IndexChimique,
+                    IndexMorphologique = grille[1].IndexMorphologique,
+                    IndexTaille = grille[1].IndexTaille,
+                    EstUnEclat = false,
+                    NiveauFracture = grille[1].NiveauFracture
                 };
             }
         }

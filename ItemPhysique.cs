@@ -22,6 +22,8 @@ public partial class ItemPhysique : RigidBody3D
 	public const int IdRocheMatiereMax = 49;
 	/// <summary>Atelier posé (200) : grille 3×3 du plan de travail, indépendante du craft 2×2 de l’inventaire (Q).</summary>
 	public SlotInventaire[] GrillePlanTravailAtelier = new SlotInventaire[9];
+	/// <summary>Coffre en bois posé (113) : 10 slots persistés avec l’objet (monde + sauvegarde).</summary>
+	public SlotInventaire[] GrilleStockageCoffre = new SlotInventaire[10];
 	/// <summary>Indice dans <see cref="TableGeologique"/> pour le silex (ID objet = <c>40 + IndexChimiqueSilex</c>).</summary>
 	public const int IndexChimiqueSilex = 5;
 	/// <summary>Roche créée par le joueur (pose/lancer) : mesh et collision déjà figés, ne pas les remplacer dans _Ready.</summary>
@@ -303,6 +305,19 @@ public partial class ItemPhysique : RigidBody3D
 			Mass = 1200f;
 			GravityScale = 0f;
 			ResistanceActuelle = 65f;
+			Scale = Vector3.One;
+			LinearVelocity = Vector3.Zero;
+			AngularVelocity = Vector3.Zero;
+			Sleeping = true;
+			Freeze = true;
+			FreezeMode = FreezeModeEnum.Static;
+			return;
+		}
+		if (ID_Objet == Joueur.IdObjetCoffreBoisTier0)
+		{
+			Mass = 42f;
+			GravityScale = 0f;
+			ResistanceActuelle = 38f;
 			Scale = Vector3.One;
 			LinearVelocity = Vector3.Zero;
 			AngularVelocity = Vector3.Zero;

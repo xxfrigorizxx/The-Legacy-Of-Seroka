@@ -206,9 +206,21 @@ public partial class Monde_Serveur : Node
 		return _poolSeedsArbres[espece, age - 1, variante];
 	}
 
+	// Fenêtre anti-doublon : empêche 3-4 "Râle d'Agonie" en cascade (save manuel + WMCloseRequest + _ExitTree parent + _ExitTree serveur).
+	private ulong _derniereSauvegardeMondeEntierTickMs;
+	private const ulong FenetreDedoublonageSauvegardeMs = 2000UL;
+
 	/// <summary>Sauvegarde d'urgence : sauvegarde tous les chunks chargés (robuste même si un drapeau EstModifie a été raté).</summary>
 	public void SauvegarderMondeEntier()
 	{
+		ulong maintenantMs = Godot.Time.GetTicksMsec();
+		if (_derniereSauvegardeMondeEntierTickMs != 0UL && maintenantMs - _derniereSauvegardeMondeEntierTickMs < FenetreDedoublonageSauvegardeMs)
+		{
+			// Déjà sauvegardé il y a moins de 2s → on ignore pour éviter les cascades en cascade sur shutdown.
+			return;
+		}
+		_derniereSauvegardeMondeEntierTickMs = maintenantMs;
+
 		GD.Print("ZERO-K : Lancement du Râle d'Agonie. Sauvegarde des Chunks modifiés...");
 		ForcerInstanciationArbresEnAttente();
 		int chunksSauves = 0;
@@ -1014,7 +1026,7 @@ public partial class Monde_Serveur : Node
 				id = rb.GetMeta("ID_Matiere").AsInt32();
 			if (!TryGetPositionMonde(rb, out Vector3 posRb)) continue;
 			float distCarre = posRb.DistanceSquaredTo(posJoueur);
-			bool structureFixe = id == 200 || id == Joueur.IdObjetRackBatons || id == Joueur.IdObjetRackBuches;
+			bool structureFixe = id == 200 || id == Joueur.IdObjetRackBatons || id == Joueur.IdObjetRackBuches || id == Joueur.IdObjetCoffreBoisTier0;
 			if (distCarre <= rayonCarre)
 			{
 				bool terrainPret = TerrainChargeAutourPosition(posRb);

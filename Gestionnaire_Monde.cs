@@ -10,17 +10,17 @@ public partial class Gestionnaire_Monde : Node3D
 	[Export] public int TailleChunk = 16;
 	[Export] public int HauteurMax = 720;  // Montagnes jusqu'à 700
 	[Export] public int SeedTerrain = 19847;
-	[Export] public int RenderDistance = 200;
-	[Export] public int RenderDistanceDetailChunks = 15;
-	[Export] public int RayonQualiteProcheChunks = 7;
-	[Export] public int RayonGazonVisibleChunks = 12;
-	[Export] public int RayonBuissonsVisibleChunks = 24;
+	[Export] public int RenderDistance = 14;
+	[Export] public int RenderDistanceDetailChunks = 10;
+	[Export] public int RayonQualiteProcheChunks = 5;
+	[Export] public int RayonGazonVisibleChunks = 9;
+	[Export] public int RayonBuissonsVisibleChunks = 16;
 	[Export] public bool ActiverHorizonLod = false;
 	[Export] public int RayonHorizonChunks = 72;
 	[Export] public float PasHorizonMetres = 20f;
 	[Export] public bool ActiverCullingCameraChunks = true;
 	[Export] public float AngleCullingCameraDeg = 135f;
-	[Export] public int MargeChunksToujoursVisibles = 12;
+	[Export] public int MargeChunksToujoursVisibles = 8;
 	/// <summary>Requêtes réseau / chargement par frame côté client. Monde gigantesque : 4 est trop lent pour que le sol et les collisions suivent la marche.</summary>
 	[Export] public int MaxChunksParFrame = 14;
 	[Export] public bool ForcerAlignementSolAuChargement = true;
@@ -33,6 +33,22 @@ public partial class Gestionnaire_Monde : Node3D
 	[Export] public bool ActiverAutosauvegarde = true;
 	[Export] public float IntervalleAutosauvegardeSecondes = 45f;
 	[Export] public int MaxChunksAutosauvegardeParCycle = 4;
+	[Export] public bool ExigerBootstrapClientStableAvantMasquerOverlay = true;
+	[Export(PropertyHint.Range, "0,120,1")] public float DureeMaxAttenteBootstrapClientSec = 18f;
+	[ExportGroup("Profil matériel auto")]
+	[Export] public bool ActiverProfilMaterielAuto = true;
+	[Export] public bool ForcerProfilGTX1060i710700F = false;
+	[ExportGroup("Warmup shaders")]
+	[Export] public bool ActiverWarmupShadersProgressif = true;
+	[Export(PropertyHint.Range, "1,8,1")] public int WarmupMateriauxParFrame = 1;
+	[Export(PropertyHint.Range, "0.02,1,0.01")] public float IntervalleWarmupShadersSec = 0.12f;
+	[ExportGroup("Stabilité runtime")]
+	[Export] public bool ActiverSurveillanceOrphans = true;
+	[Export(PropertyHint.Range, "0.2,10,0.1")] public float IntervalleSurveillanceOrphansSec = 2.0f;
+	[Export(PropertyHint.Range, "0.2,5,0.1")] public float IntervalleRefreshCacheDormanceSec = 0.8f;
+	[ExportGroup("Diagnostic performance")]
+	[Export] public bool ActiverProfilagePerfGestionnaire = false;
+	[Export(PropertyHint.Range, "0.2,10,0.1")] public float IntervalleLogProfilageSec = 2.0f;
 	[Export] public Material MaterielTerrain;
 	/// <summary>Matériau eau (océan). Créé automatiquement dans _Ready à partir de EauTriplanar.gdshader. Non exposé à l'éditeur.</summary>
 	public Material MaterielEau;
@@ -76,6 +92,18 @@ public partial class Gestionnaire_Monde : Node3D
 	private double _secondesDepuisAutosauvegarde;
 	private int _indexDormanceBlocsPoses;
 	private int _indexDormanceObjetsDyn;
+	private Vector3 _dernieresCoordsAffichees = new Vector3(float.NaN, float.NaN, float.NaN);
+	private float _cooldownDrainProfilage = 0f;
+	private readonly Dictionary<string, List<RigidBody3D>> _cacheRigidBodiesDormance = new Dictionary<string, List<RigidBody3D>>();
+	private float _cooldownRefreshCacheDormance;
+	private float _cooldownSurveillanceOrphans;
+	private int _dernierOrphanNodes = -1;
+	private readonly List<Material> _fileWarmupMateriaux = new List<Material>();
+	private int _indexWarmupMateriau;
+	private float _cooldownWarmupShaders;
+	private MeshInstance3D _meshWarmupShaders;
+	private string _nomCpuDetecte = "";
+	private string _nomGpuDetecte = "";
 
 	// Legacy
 	private List<Vector2I> _chunksACharger = new List<Vector2I>();
@@ -499,6 +527,8 @@ public partial class Gestionnaire_Monde : Node3D
 			matEau.SetShaderParameter("albedo_color", new Color(0.1f, 0.3f, 0.6f, 0.6f));
 			MaterielEau = matEau;
 		}
+		if (UseArchitectureReseau)
+			InitialiserWarmupShadersProgressif();
 
 		CallDeferred(nameof(RestaurerEtatPersistantMonde));
 	}
@@ -585,7 +615,7 @@ public partial class Gestionnaire_Monde : Node3D
 			if (_joueur != null)
 				GameState.Instance?.SauvegarderPositionJoueur(_joueur.GlobalPosition);
 			if (_joueur is Joueur j)
-				j.SauvegarderEtatPersistantMonde();
+				j.SauvegarderEtatPersistantMonde(GetTree());
 			if (UseArchitectureReseau)
 				_mondeServeur?.SauvegarderMondeEntier();
 			else
@@ -597,6 +627,10 @@ public partial class Gestionnaire_Monde : Node3D
 
 	public override void _ExitTree()
 	{
+		if (_meshWarmupShaders != null && GodotObject.IsInstanceValid(_meshWarmupShaders))
+			_meshWarmupShaders.QueueFree();
+		_meshWarmupShaders = null;
+		_fileWarmupMateriaux.Clear();
 		foreach (var kv in _effetsRemousParCorps)
 			if (kv.Value != null && GodotObject.IsInstanceValid(kv.Value))
 				kv.Value.QueueFree();
@@ -607,7 +641,7 @@ public partial class Gestionnaire_Monde : Node3D
 		if (_joueur != null && _joueur.IsInsideTree())
 			GameState.Instance?.SauvegarderPositionJoueur(_joueur.GlobalPosition);
 		if (_joueur is Joueur j)
-			j.SauvegarderEtatPersistantMonde();
+			j.SauvegarderEtatPersistantMonde(GetTree());
 		// RÈGLE ABSOLUE : sauvegarde des chunks modifiés AVANT destruction (parent _ExitTree avant enfants).
 		if (UseArchitectureReseau)
 			_mondeServeur?.SauvegarderMondeEntier();
@@ -616,6 +650,7 @@ public partial class Gestionnaire_Monde : Node3D
 			foreach (var kv in _chunks)
 				(kv.Value as Generateur_Voxel)?.Sauvegarder(kv.Key);
 		}
+		BoeufSauvage.ViderCachesBibliothequesExternesPourDechargementMonde();
 		base._ExitTree();
 	}
 
@@ -628,7 +663,7 @@ public partial class Gestionnaire_Monde : Node3D
 		if (_joueur != null)
 			GameState.Instance?.SauvegarderPositionJoueur(_joueur.GlobalPosition);
 		if (_joueur is Joueur j)
-			j.SauvegarderEtatPersistantMonde();
+			j.SauvegarderEtatPersistantMonde(GetTree());
 		if (UseArchitectureReseau)
 			_mondeServeur?.SauvegarderMondeEntier();
 		else
@@ -692,6 +727,7 @@ public partial class Gestionnaire_Monde : Node3D
 
 	private void DemarrerArchitectureReseau()
 	{
+		DetecterProfilMaterielEtAjuster();
 		_networkManager = new NetworkManager();
 		AddChild(_networkManager);
 		_networkManager.DemarrerHostSolo();
@@ -722,6 +758,7 @@ public partial class Gestionnaire_Monde : Node3D
 		_mondeClient.MargeChunksToujoursVisibles = MargeChunksToujoursVisibles;
 		_mondeClient.MaxChunksParFrame = MaxChunksParFrame;
 		_mondeClient.MaterielTerrain = MaterielTerrain ?? GD.Load<Material>("res://Manteau_Planetaire.tres");
+		ConfigurerProfilMondeClientSelonMateriel();
 		_mondeClient.Initialiser(
 			_joueur,
 			GetNode<GameState>("/root/GameState").SeedTerrainActuel,
@@ -1003,6 +1040,148 @@ public partial class Gestionnaire_Monde : Node3D
 		soleil.RpcId(peerId, nameof(Cycle_Solaire.DefinirDecalageHoraire), offset);
 	}
 
+	private void DetecterProfilMaterielEtAjuster()
+	{
+		if (!ActiverProfilMaterielAuto && !ForcerProfilGTX1060i710700F)
+			return;
+		_nomCpuDetecte = OS.GetProcessorName()?.ToLowerInvariant() ?? "";
+		try
+		{
+			_nomGpuDetecte = RenderingServer.GetVideoAdapterName().ToLowerInvariant();
+		}
+		catch
+		{
+			_nomGpuDetecte = "";
+		}
+		bool profilCible = ForcerProfilGTX1060i710700F
+			|| ((_nomCpuDetecte.Contains("i7-10700f") || _nomCpuDetecte.Contains("10700f"))
+				&& (_nomGpuDetecte.Contains("gtx 1060") || _nomGpuDetecte.Contains("1060")));
+		if (!profilCible)
+			return;
+		// Profil conservateur pour éviter les rafales CPU sur ce couple CPU/GPU.
+		MaxChunksParFrame = Mathf.Min(MaxChunksParFrame, 10);
+		BudgetDormanceObjetsParCycle = Mathf.Min(BudgetDormanceObjetsParCycle, 84);
+	}
+
+	private void ConfigurerProfilMondeClientSelonMateriel()
+	{
+		if (_mondeClient == null) return;
+		bool profilCible = ForcerProfilGTX1060i710700F
+			|| ((_nomCpuDetecte.Contains("10700f")) && (_nomGpuDetecte.Contains("1060")));
+		if (!profilCible)
+			return;
+		_mondeClient.FpsCibleAutoDiagnostic = 60;
+		_mondeClient.ModeSurvieFpsAgressif = true;
+		_mondeClient.SeuilFpsUrgenceForte = Mathf.Min(_mondeClient.SeuilFpsUrgenceForte, 45);
+		_mondeClient.SeuilFpsUrgenceCritique = Mathf.Min(_mondeClient.SeuilFpsUrgenceCritique, 33);
+		_mondeClient.SeuilFpsUrgenceExtreme = Mathf.Min(_mondeClient.SeuilFpsUrgenceExtreme, 26);
+		_mondeClient.SeuilFpsSortieUrgenceExtreme = Mathf.Max(_mondeClient.SeuilFpsSortieUrgenceExtreme, 56);
+		_mondeClient.MaxLancementsTravailleursParTick = Mathf.Min(_mondeClient.MaxLancementsTravailleursParTick, 1);
+		_mondeClient.BudgetFrameCibleMs = Mathf.Min(_mondeClient.BudgetFrameCibleMs, 16.2f);
+		_mondeClient.SeuilFpsGateStrict = Mathf.Min(_mondeClient.SeuilFpsGateStrict, 50f);
+		_mondeClient.SeuilFpsGateReprise = Mathf.Min(_mondeClient.SeuilFpsGateReprise, 57f);
+		_mondeClient.DureeStabiliteReprise = Mathf.Min(_mondeClient.DureeStabiliteReprise, 0.20f);
+		_mondeClient.DureeRampUpPostDegel = Mathf.Min(_mondeClient.DureeRampUpPostDegel, 0.55f);
+		_mondeClient.DureeMinEtatGeleSec = Mathf.Min(_mondeClient.DureeMinEtatGeleSec, 0.15f);
+		_mondeClient.DureeMinEtatOuvertSec = Mathf.Max(_mondeClient.DureeMinEtatOuvertSec, 0.45f);
+		_mondeClient.MaxChunksEvaluesCullingParPasse = Mathf.Min(_mondeClient.MaxChunksEvaluesCullingParPasse, 180);
+		_mondeClient.MaxBasculesCullingParPasse = Mathf.Min(_mondeClient.MaxBasculesCullingParPasse, 72);
+	}
+
+	private void InitialiserWarmupShadersProgressif()
+	{
+		if (!ActiverWarmupShadersProgressif || !UseArchitectureReseau)
+			return;
+		_fileWarmupMateriaux.Clear();
+		if (MaterielTerrain != null) _fileWarmupMateriaux.Add(MaterielTerrain);
+		if (MaterielEau != null) _fileWarmupMateriaux.Add(MaterielEau);
+		if (_fileWarmupMateriaux.Count == 0)
+			return;
+		if (_meshWarmupShaders == null || !GodotObject.IsInstanceValid(_meshWarmupShaders))
+		{
+			_meshWarmupShaders = new MeshInstance3D
+			{
+				Name = "WarmupShadersRuntime",
+				Mesh = new QuadMesh { Size = new Vector2(0.04f, 0.04f) },
+				CastShadow = GeometryInstance3D.ShadowCastingSetting.Off,
+				Visible = true
+			};
+			AddChild(_meshWarmupShaders);
+		}
+		_meshWarmupShaders.GlobalPosition = (_joueur?.GlobalPosition ?? Vector3.Zero) + new Vector3(0f, -0.4f, 0f);
+		_meshWarmupShaders.Scale = new Vector3(0.001f, 0.001f, 0.001f);
+		_indexWarmupMateriau = 0;
+		_cooldownWarmupShaders = 0f;
+	}
+
+	private void TraiterWarmupShadersProgressif(float dt)
+	{
+		if (!ActiverWarmupShadersProgressif || _fileWarmupMateriaux.Count == 0 || _meshWarmupShaders == null || !GodotObject.IsInstanceValid(_meshWarmupShaders))
+			return;
+		_cooldownWarmupShaders -= dt;
+		if (_cooldownWarmupShaders > 0f)
+			return;
+		_cooldownWarmupShaders = Mathf.Max(0.02f, IntervalleWarmupShadersSec);
+		int budget = Mathf.Clamp(WarmupMateriauxParFrame, 1, 8);
+		for (int i = 0; i < budget && _indexWarmupMateriau < _fileWarmupMateriaux.Count; i++)
+		{
+			Material mat = _fileWarmupMateriaux[_indexWarmupMateriau++];
+			if (mat == null) continue;
+			_meshWarmupShaders.MaterialOverride = mat;
+		}
+		if (_indexWarmupMateriau >= _fileWarmupMateriaux.Count)
+		{
+			_fileWarmupMateriaux.Clear();
+			if (_meshWarmupShaders != null && GodotObject.IsInstanceValid(_meshWarmupShaders))
+				_meshWarmupShaders.QueueFree();
+			_meshWarmupShaders = null;
+		}
+	}
+
+	private void RafraichirCacheDormanceGroupes(float dt, bool force = false)
+	{
+		if (!force)
+		{
+			_cooldownRefreshCacheDormance -= dt;
+			if (_cooldownRefreshCacheDormance > 0f)
+				return;
+		}
+		_cooldownRefreshCacheDormance = Mathf.Max(0.2f, IntervalleRefreshCacheDormanceSec);
+		void Remplir(string nomGroupe)
+		{
+			if (!_cacheRigidBodiesDormance.TryGetValue(nomGroupe, out List<RigidBody3D> liste))
+			{
+				liste = new List<RigidBody3D>(256);
+				_cacheRigidBodiesDormance[nomGroupe] = liste;
+			}
+			liste.Clear();
+			var noeuds = GetTree().GetNodesInGroup(nomGroupe);
+			for (int i = 0; i < noeuds.Count; i++)
+			{
+				if (noeuds[i] is RigidBody3D rb && rb.IsInsideTree() && GodotObject.IsInstanceValid(rb))
+					liste.Add(rb);
+			}
+		}
+		Remplir("BlocsPoses");
+		Remplir("ObjetsDormantsDynamiques");
+	}
+
+	private void SurveillerDeriveRuntime(float dt)
+	{
+		if (!ActiverSurveillanceOrphans)
+			return;
+		_cooldownSurveillanceOrphans -= dt;
+		if (_cooldownSurveillanceOrphans > 0f)
+			return;
+		_cooldownSurveillanceOrphans = Mathf.Max(0.2f, IntervalleSurveillanceOrphansSec);
+		int orphanNodes = (int)Performance.GetMonitor(Performance.Monitor.ObjectOrphanNodeCount);
+		if (_dernierOrphanNodes >= 0 && orphanNodes > _dernierOrphanNodes + 96)
+		{
+			GD.PrintErr($"ZERO-K PERF: hausse orphans détectée {_dernierOrphanNodes} -> {orphanNodes}. Vérifier créations temporaires non libérées.");
+		}
+		_dernierOrphanNodes = orphanNodes;
+	}
+
 	private void MettreAJourEtatCycleSolaire(bool chargementActif)
 	{
 		if (_chargementCycleSolaire == chargementActif) return;
@@ -1019,6 +1198,10 @@ public partial class Gestionnaire_Monde : Node3D
 
 	public override void _Process(double delta)
 	{
+		ulong debutProcessUs = ActiverProfilagePerfGestionnaire ? PerfBudgetMonitor.Begin() : 0UL;
+		_cooldownDrainProfilage += (float)delta;
+		TraiterWarmupShadersProgressif((float)delta);
+		SurveillerDeriveRuntime((float)delta);
 		MettreAJourEffetsRemousSuivis();
 		if (ActiverAutosauvegarde && IntervalleAutosauvegardeSecondes > 0f)
 		{
@@ -1042,11 +1225,11 @@ public partial class Gestionnaire_Monde : Node3D
 		bool spawnPretEtAligneActuel = spawnPretActuel && (!_spawnDoitEtreAligneAuSol || _spawnAligneAuSol);
 		Vector3 pointRefSpawn = ObtenirPointReferenceSpawn();
 		bool cardinauxPrets = ChunkEtVoisinsCardinauxPretsAuPoint(pointRefSpawn);
-		// Le cycle solaire ne doit être neutralisé que pendant le bootstrap initial (overlay visible),
-		// sinon un chunk cardinal temporairement absent peut laisser le ciel bloqué en mode nuit.
+		// Le cycle solaire ne doit être neutralisé que pendant le bootstrap strict du spawn.
+		// IMPORTANT: ne pas lier le ciel aux cardinaux, sinon le cycle peut rester figé alors que le joueur est déjà jouable.
 		bool chargementVisuelActif = _overlayChargement != null
 			&& _overlayChargement.Visible
-			&& (!spawnPretEtAligneActuel || !cardinauxPrets);
+			&& !spawnPretEtAligneActuel;
 		MettreAJourEtatCycleSolaire(chargementVisuelActif);
 
 		// Masquer l'overlay quand le sol minimal sous les pieds est prêt, ou après timeout (évite chargement infini si file / grille trop large).
@@ -1073,6 +1256,16 @@ public partial class Gestionnaire_Monde : Node3D
 			}
 			if (spawnPretEtAligne || _secondesOverlayChargement >= 90.0)
 			{
+				bool bootstrapClientStable = !UseArchitectureReseau
+					|| _mondeClient == null
+					|| _mondeClient.BootstrapInitialStabilise()
+					|| !ExigerBootstrapClientStableAvantMasquerOverlay
+					|| _secondesOverlayChargement >= Math.Max(0.0f, DureeMaxAttenteBootstrapClientSec);
+				if (!bootstrapClientStable)
+				{
+					// On garde l’overlay un peu plus longtemps pour préchauffer collision/files et lisser les premières secondes de déplacement.
+					goto FinBlocOverlay;
+				}
 				if (!spawnPretEtAligne && _secondesOverlayChargement >= 90.0)
 					GD.PrintErr("ZERO-K : Timeout chargement monde (>90 s) — overlay masqué. Vérifiez réseau / Monde_Client si le sol manque.");
 				if (_spawnDoitEtreAligneAuSol && !_spawnAligneAuSol)
@@ -1080,12 +1273,21 @@ public partial class Gestionnaire_Monde : Node3D
 				_overlayChargement.Visible = false;
 			}
 		}
+FinBlocOverlay:
 
 		// Mise à jour des coordonnées affichées en haut à droite
 		if (_labelCoords != null && _joueur != null && _joueur.IsInsideTree())
 		{
 			Vector3 p = _joueur.GlobalPosition;
-			_labelCoords.Text = $"X: {p.X:F1}  Y: {p.Y:F1}  Z: {p.Z:F1}";
+			Vector3 pArrondi = new Vector3(
+				Mathf.Round(p.X * 10f) * 0.1f,
+				Mathf.Round(p.Y * 10f) * 0.1f,
+				Mathf.Round(p.Z * 10f) * 0.1f);
+			if (pArrondi != _dernieresCoordsAffichees)
+			{
+				_dernieresCoordsAffichees = pArrondi;
+				_labelCoords.Text = $"X: {pArrondi.X:F1}  Y: {pArrondi.Y:F1}  Z: {pArrondi.Z:F1}";
+			}
 		}
 
 		if (UseArchitectureReseau)
@@ -1094,9 +1296,21 @@ public partial class Gestionnaire_Monde : Node3D
 			if (_secondesDormanceObjets >= 0.4)
 			{
 				_secondesDormanceObjets = 0;
-				MettreAJourDormanceObjetsPoses();
+				ulong debutDormanceUs = ActiverProfilagePerfGestionnaire ? PerfBudgetMonitor.Begin() : 0UL;
+				MettreAJourDormanceObjetsPoses((float)delta);
+				if (ActiverProfilagePerfGestionnaire)
+					PerfBudgetMonitor.End("GestionnaireMonde/DormanceObjets", debutDormanceUs);
 			}
 			// Monde_Client gère son propre _Process
+			if (ActiverProfilagePerfGestionnaire)
+			{
+				PerfBudgetMonitor.End("GestionnaireMonde/Process", debutProcessUs);
+				if (_cooldownDrainProfilage >= Mathf.Max(0.2f, IntervalleLogProfilageSec))
+				{
+					_cooldownDrainProfilage = 0f;
+					PerfBudgetMonitor.FlushSiEchu("GestionnaireMonde", IntervalleLogProfilageSec);
+				}
+			}
 			return;
 		}
 
@@ -1176,6 +1390,15 @@ public partial class Gestionnaire_Monde : Node3D
 				}
 			}
 		}
+		if (ActiverProfilagePerfGestionnaire)
+		{
+			PerfBudgetMonitor.End("GestionnaireMonde/Process", debutProcessUs);
+			if (_cooldownDrainProfilage >= Mathf.Max(0.2f, IntervalleLogProfilageSec))
+			{
+				_cooldownDrainProfilage = 0f;
+				PerfBudgetMonitor.FlushSiEchu("GestionnaireMonde", IntervalleLogProfilageSec);
+			}
+		}
 	}
 
 	/// <summary>
@@ -1184,10 +1407,11 @@ public partial class Gestionnaire_Monde : Node3D
 	/// </summary>
 	private void ExecuterAutosauvegardeProgressive()
 	{
+		ulong debutAutosaveUs = ActiverProfilagePerfGestionnaire ? PerfBudgetMonitor.Begin() : 0UL;
 		if (_joueur != null)
 			GameState.Instance?.SauvegarderPositionJoueur(_joueur.GlobalPosition);
 		if (_joueur is Joueur j)
-			j.SauvegarderEtatPersistantMonde();
+			j.SauvegarderEtatPersistantMonde(GetTree());
 
 		if (UseArchitectureReseau)
 		{
@@ -1196,11 +1420,14 @@ public partial class Gestionnaire_Monde : Node3D
 			if (n > 0)
 				GD.Print($"ZERO-K : Autosauvegarde progressive ({n} chunk(s)).");
 		}
+		if (ActiverProfilagePerfGestionnaire)
+			PerfBudgetMonitor.End("GestionnaireMonde/Autosave", debutAutosaveUs);
 	}
 
-	private void MettreAJourDormanceObjetsPoses()
+	private void MettreAJourDormanceObjetsPoses(float dt)
 	{
 		if (_joueur == null) return;
+		RafraichirCacheDormanceGroupes(dt);
 		Vector2I chunkJoueur = WorldToChunkCoord(_joueur.GlobalPosition, TailleChunk);
 		int rayon = RayonDormanceObjetsChunks;
 		bool useGardeTerrain = UseArchitectureReseau && _mondeClient != null;
@@ -1215,7 +1442,12 @@ public partial class Gestionnaire_Monde : Node3D
 
 	private void TraiterDormanceGroupe(string nomGroupe, ref int indexCurseur, int budget, Vector2I chunkJoueur, int rayon, bool useGardeTerrain, int rayonSecuriteTerrain, bool ignorerRacks)
 	{
-		var noeuds = GetTree().GetNodesInGroup(nomGroupe);
+		if (!_cacheRigidBodiesDormance.TryGetValue(nomGroupe, out List<RigidBody3D> noeuds))
+		{
+			RafraichirCacheDormanceGroupes(0f, force: true);
+			if (!_cacheRigidBodiesDormance.TryGetValue(nomGroupe, out noeuds))
+				return;
+		}
 		int total = noeuds.Count;
 		if (total == 0) { indexCurseur = 0; return; }
 		if (indexCurseur >= total) indexCurseur = 0;
@@ -1223,9 +1455,17 @@ public partial class Gestionnaire_Monde : Node3D
 		for (int i = 0; i < iterations; i++)
 		{
 			if (indexCurseur >= total) indexCurseur = 0;
-			Node n = noeuds[indexCurseur++];
-			if (n is not RigidBody3D rb || !rb.IsInsideTree()) continue;
-			if (ignorerRacks && rb is ItemPhysique ip && (ip.ID_Objet == 200 || ip.ID_Objet == Joueur.IdObjetRackBatons || ip.ID_Objet == Joueur.IdObjetRackBuches))
+			RigidBody3D rb = noeuds[indexCurseur++];
+			if (rb == null || !GodotObject.IsInstanceValid(rb) || !rb.IsInsideTree())
+			{
+				int idxSuppr = Mathf.Clamp(indexCurseur - 1, 0, noeuds.Count - 1);
+				if (idxSuppr >= 0 && idxSuppr < noeuds.Count) noeuds.RemoveAt(idxSuppr);
+				total = noeuds.Count;
+				indexCurseur = Mathf.Clamp(indexCurseur - 1, 0, Math.Max(0, total));
+				if (total == 0) { indexCurseur = 0; return; }
+				continue;
+			}
+			if (ignorerRacks && rb is ItemPhysique ip && (ip.ID_Objet == 200 || ip.ID_Objet == Joueur.IdObjetRackBatons || ip.ID_Objet == Joueur.IdObjetRackBuches || ip.ID_Objet == Joueur.IdObjetCoffreBoisTier0))
 				continue;
 			AppliquerDormanceRigidBody(rb, chunkJoueur, rayon, useGardeTerrain, rayonSecuriteTerrain);
 		}

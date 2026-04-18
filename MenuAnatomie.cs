@@ -48,6 +48,8 @@ public partial class MenuAnatomie : Control
 
 	private const string CheminGrilleSac = "MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleSac";
 	private const string CheminGrilleCeintureStockage = "MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/GrilleCeintureStockage";
+	private const string CheminCadreCoffreBois = "MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/CadreCoffreBois";
+	private const string CheminGrilleCoffreBois = "MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/CadreCoffreBois/GrilleCoffreBois";
 	private const string CheminMainGauche = "MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/LigneMainsCeinture/MainGaucheSlot";
 	private const string CheminMainDroite = "MarginPrincipal/VBoxPrincipal/CorpsHBox/ZoneDroite/LigneMainsCeinture/MainDroiteSlot";
 	private const string CheminEquipementCorpsSlot = "MarginPrincipal/VBoxPrincipal/CorpsHBox/GrilleEquipCorps/EquipementCorpsSlot";
@@ -63,7 +65,11 @@ public partial class MenuAnatomie : Control
 	private bool _clicsSlotResultatCraftConnecte;
 	private bool _clicsGrilleSacConnectes;
 	private bool _clicsGrilleCeintureStockageConnectes;
+	private bool _clicsGrilleCoffreConnectes;
 	private bool _barreOngletsJeuConfiguree;
+	private SubViewportContainer[] _vpCoffre;
+	private MeshInstance3D[] _meshPreviewCoffre;
+	private Label[] _lblCoffre;
 
 	private const string CheminBarreOnglets = "MarginPrincipal/VBoxPrincipal/BarreOnglets";
 	private const string CheminVBoxPrincipal = "MarginPrincipal/VBoxPrincipal";
@@ -109,6 +115,43 @@ public partial class MenuAnatomie : Control
 	private SubViewport _svApercuJoueurCorps;
 	private Camera3D _cameraApercuJoueurCorps;
 
+	/// <summary>Évite <c>SynchroniserPreviewSlotMenu</c> quand le slot n’a pas changé (même rendu).</summary>
+	private ulong _empreinteMainGLast;
+	private ulong _empreinteMainDLast;
+	private ulong _empreinteCeintureLast;
+	private ulong _empreinteSacLast;
+	private ulong[] _empreinteCraftLast;
+	private ulong[] _empreinteCoffreLast;
+	private ulong _empreinteResultatCraftLast;
+	private float _accumulateurInfobulleInventaire;
+	private const float IntervalleInfobulleInventaireSec = 0.05f;
+	private int _compteurFrameMenuProcess;
+
+	private static ulong EmpreinteSlotPourPreviewMenu(in SlotInventaire s)
+	{
+		if (s.EstVide) return 0UL;
+		var hc = new HashCode();
+		hc.Add(s.ID);
+		hc.Add(s.IndexMorphologique);
+		hc.Add(s.IndexChimique);
+		hc.Add(s.IndexTaille);
+		hc.Add(s.NiveauFracture);
+		hc.Add(s.EstUnEclat);
+		hc.Add(s.IndexBotanique);
+		hc.Add(s.Quantite);
+		hc.Add(s.GenomeAssemblage ?? "");
+		hc.Add(s.CleConteneur ?? "");
+		hc.Add(Mathf.RoundToInt(s.DurabiliteOutilActuelle * 1000f));
+		hc.Add(Mathf.RoundToInt(s.DurabiliteOutilMax * 1000f));
+		hc.Add(s.IndexTailleLameRoche);
+		hc.Add(s.ScaleEclat.X);
+		hc.Add(s.ScaleEclat.Y);
+		hc.Add(s.ScaleEclat.Z);
+		if (s.EstUnEclat && s.MeshEclat != null && GodotObject.IsInstanceValid(s.MeshEclat))
+			hc.Add(s.MeshEclat.GetInstanceId());
+		return unchecked((ulong)(uint)hc.ToHashCode());
+	}
+
 	private void ResoudreReferencesSlotsMains()
 	{
 		if (MainGaucheSlot == null || !GodotObject.IsInstanceValid(MainGaucheSlot))
@@ -145,6 +188,30 @@ public partial class MenuAnatomie : Control
 	{
 		var g = GetNodeOrNull<GridContainer>(CheminGrilleCeintureStockage);
 		return g ?? FindChild("GrilleCeintureStockage", true, false) as GridContainer;
+	}
+
+	private Panel ObtenirCadreCoffreBois()
+	{
+		return GetNodeOrNull<Panel>(CheminCadreCoffreBois) ?? FindChild("CadreCoffreBois", true, false) as Panel;
+	}
+
+	private GridContainer ObtenirGrilleCoffreBois()
+	{
+		var g = GetNodeOrNull<GridContainer>(CheminGrilleCoffreBois);
+		return g ?? FindChild("GrilleCoffreBois", true, false) as GridContainer;
+	}
+
+	private void MettreAJourVisibiliteLigneCraftVersusCoffre()
+	{
+		if (_joueurRef == null) return;
+		ResoudreGrilleAssemblage();
+		Panel cadreCoffre = ObtenirCadreCoffreBois();
+		Control ligneCraft = GrilleAssemblage?.GetParent()?.GetParent() as Control;
+		bool coffre = _joueurRef.StockageCoffreOuvert;
+		if (cadreCoffre != null)
+			cadreCoffre.Visible = coffre;
+		if (ligneCraft != null)
+			ligneCraft.Visible = !coffre;
 	}
 
 	private Panel CreerCaseStockageSupplementaire(GridContainer grille, int idx)
@@ -654,6 +721,18 @@ public partial class MenuAnatomie : Control
 				}
 			}
 		}
+		if (!_clicsGrilleCoffreConnectes && ObtenirGrilleCoffreBois() is GridContainer grilleCoffre)
+		{
+			_clicsGrilleCoffreConnectes = true;
+			grilleCoffre.MouseFilter = Control.MouseFilterEnum.Ignore;
+			int nC = grilleCoffre.GetChildCount();
+			for (int i = 0; i < nC; i++)
+			{
+				int idx = i;
+				if (grilleCoffre.GetChild(i) is Panel cp)
+					Branche(cp, e => TraiterClicInventaire(e, 9, idx));
+			}
+		}
 		AssurerCapaciteGrillesStockage();
 	}
 
@@ -730,6 +809,12 @@ public partial class MenuAnatomie : Control
 			int capCeinture = Joueur.ObtenirCapaciteCeintureStockage(_joueurRef.EquipementCeinture);
 			if (!_joueurRef.ACeintureSacochesEquipe() || craftIdx < 0 || craftIdx >= capCeinture) return;
 			InteragirCurseurAvecSlot(ref _joueurRef.RefSlotCeintureStockage(craftIdx), clicGauche, clicDroit, slotCeintureStockage: true, indexSlotCeinture: craftIdx);
+		}
+		else if (mode == 9 && craftIdx >= 0)
+		{
+			if (!_joueurRef.StockageCoffreOuvert || craftIdx < 0 || craftIdx > 9) return;
+			InteragirCurseurAvecSlot(ref _joueurRef.RefSlotCoffreStockage(craftIdx), clicGauche, clicDroit, slotCoffreStockage: true);
+			_joueurRef.VerifierRecettes();
 		}
 		else
 			return;
@@ -843,19 +928,26 @@ public partial class MenuAnatomie : Control
 		return max;
 	}
 
-	private void InteragirCurseurAvecSlot(ref SlotInventaire slot, bool clicGauche, bool clicDroit, bool slotSacStockage = false, bool slotCeintureStockage = false, int indexSlotCeinture = -1)
+	private void InteragirCurseurAvecSlot(ref SlotInventaire slot, bool clicGauche, bool clicDroit, bool slotSacStockage = false, bool slotCeintureStockage = false, int indexSlotCeinture = -1, bool slotCoffreStockage = false)
 	{
 		if (clicGauche)
 		{
-			InteractionClicGauche(ref slot, slotSacStockage, slotCeintureStockage, indexSlotCeinture);
+			InteractionClicGauche(ref slot, slotSacStockage, slotCeintureStockage, indexSlotCeinture, slotCoffreStockage);
 			return;
 		}
 		if (clicDroit)
-			InteractionClicDroit(ref slot, slotSacStockage, slotCeintureStockage, indexSlotCeinture);
+			InteractionClicDroit(ref slot, slotSacStockage, slotCeintureStockage, indexSlotCeinture, slotCoffreStockage);
 	}
 
-	private void InteractionClicGauche(ref SlotInventaire slot, bool slotSacStockage, bool slotCeintureStockage, int indexSlotCeinture)
+	private void InteractionClicGauche(ref SlotInventaire slot, bool slotSacStockage, bool slotCeintureStockage, int indexSlotCeinture, bool slotCoffreStockage = false)
 	{
+		if (slotCoffreStockage && !_curseurMenu.EstVide && Joueur.EstObjetInterditDansCoffre(_curseurMenu))
+		{
+			if (slot.EstVide)
+				return;
+			if (!PeutEmpiler(slot, _curseurMenu, ObtenirPileMaxContexte(slot, slotSacStockage, slotCeintureStockage, indexSlotCeinture)))
+				return;
+		}
 		if (_curseurMenu.EstVide)
 		{
 			_curseurMenu = slot;
@@ -886,6 +978,8 @@ public partial class MenuAnatomie : Control
 				return;
 			}
 		}
+		if (slotCoffreStockage && Joueur.EstObjetInterditDansCoffre(_curseurMenu))
+			return;
 		var a = _curseurMenu;
 		_curseurMenu = slot;
 		slot = a;
@@ -893,7 +987,7 @@ public partial class MenuAnatomie : Control
 		slot.Quantite = Joueur.ObtenirQuantiteSlot(slot);
 	}
 
-	private void InteractionClicDroit(ref SlotInventaire slot, bool slotSacStockage, bool slotCeintureStockage, int indexSlotCeinture)
+	private void InteractionClicDroit(ref SlotInventaire slot, bool slotSacStockage, bool slotCeintureStockage, int indexSlotCeinture, bool slotCoffreStockage = false)
 	{
 		if (_curseurMenu.EstVide)
 		{
@@ -909,6 +1003,8 @@ public partial class MenuAnatomie : Control
 		}
 		if (slot.EstVide)
 		{
+			if (slotCoffreStockage && Joueur.EstObjetInterditDansCoffre(_curseurMenu))
+				return;
 			slot = CopierSlotUnitaire(_curseurMenu);
 			int qSrc = Joueur.ObtenirQuantiteSlot(_curseurMenu) - 1;
 			if (qSrc <= 0) _curseurMenu = new SlotInventaire();
@@ -978,10 +1074,22 @@ public partial class MenuAnatomie : Control
 		}
 		else
 		{
-			var g = _joueurRef.ObtenirGrilleCraftAffichee();
 			bool place = false;
+			if (_joueurRef.StockageCoffreOuvert && _joueurRef.CoffreOuvert != null && GodotObject.IsInstanceValid(_joueurRef.CoffreOuvert)
+				&& !Joueur.EstObjetInterditDansCoffre(_curseurMenu))
+			{
+				for (int i = 0; i < 10; i++)
+				{
+					ref SlotInventaire sc = ref _joueurRef.RefSlotCoffreStockage(i);
+					if (!sc.EstVide) continue;
+					sc = _curseurMenu;
+					place = true;
+					break;
+				}
+			}
+			var g = _joueurRef.ObtenirGrilleCraftAffichee();
 			int maxI = _joueurRef.CraftGrille3x3AuTable ? 9 : 4;
-			if (g != null)
+			if (!place && g != null)
 			{
 				for (int i = 0; i < maxI && i < g.Length; i++)
 				{
@@ -1016,11 +1124,16 @@ public partial class MenuAnatomie : Control
 			_vpCraft = null;
 			_meshPreviewCraft = null;
 			_lblCraft = null;
+			_empreinteCraftLast = null;
 			_clicsCraftConnectes = false;
 			CallDeferred(nameof(ConnecterClicsInventaire));
 		}
 		if (_vpCraft != null && nChild > 0 && _vpCraft[0] != null && GodotObject.IsInstanceValid(_vpCraft[0]))
+		{
+			if (_empreinteCraftLast == null || _empreinteCraftLast.Length != nChild)
+				_empreinteCraftLast = new ulong[nChild];
 			return;
+		}
 		_meshPreviewCraft = new MeshInstance3D[nChild];
 		_vpCraft = new SubViewportContainer[nChild];
 		_lblCraft = new Label[nChild];
@@ -1029,6 +1142,84 @@ public partial class MenuAnatomie : Control
 			if (GrilleAssemblage.GetChild(i) is not Panel p) continue;
 			_meshPreviewCraft[i] = CreerViewportPreviewDansSlot(p, $"VpCraft{i}", out _vpCraft[i]);
 			_lblCraft[i] = TrouverOuCreerLabel(p, " ");
+		}
+		_empreinteCraftLast = new ulong[nChild];
+	}
+
+	private void AssurerPreviewsCoffre()
+	{
+		if (Engine.IsEditorHint()) return;
+		if (ObtenirGrilleCoffreBois() is not GridContainer grille || grille == null) return;
+		int nChild = grille.GetChildCount();
+		if (_vpCoffre != null && _vpCoffre.Length != nChild)
+		{
+			_vpCoffre = null;
+			_meshPreviewCoffre = null;
+			_lblCoffre = null;
+			_empreinteCoffreLast = null;
+			_clicsGrilleCoffreConnectes = false;
+			CallDeferred(nameof(ConnecterClicsInventaire));
+		}
+		if (_vpCoffre != null && nChild > 0 && _vpCoffre[0] != null && GodotObject.IsInstanceValid(_vpCoffre[0]))
+		{
+			if (_empreinteCoffreLast == null || _empreinteCoffreLast.Length != nChild)
+				_empreinteCoffreLast = new ulong[nChild];
+			return;
+		}
+		_meshPreviewCoffre = new MeshInstance3D[nChild];
+		_vpCoffre = new SubViewportContainer[nChild];
+		_lblCoffre = new Label[nChild];
+		for (int i = 0; i < nChild; i++)
+		{
+			if (grille.GetChild(i) is not Panel p) continue;
+			_meshPreviewCoffre[i] = CreerViewportPreviewDansSlot(p, $"VpCoffre{i}", out _vpCoffre[i]);
+			_lblCoffre[i] = TrouverOuCreerLabel(p, " ");
+		}
+		_empreinteCoffreLast = new ulong[nChild];
+	}
+
+	private void RafraichirCellulesCoffre()
+	{
+		if (_joueurRef == null || !_joueurRef.StockageCoffreOuvert) return;
+		if (ObtenirGrilleCoffreBois() is not GridContainer grille || grille == null) return;
+		AssurerPreviewsCoffre();
+		for (int i = 0; i < 10 && i < grille.GetChildCount(); i++)
+		{
+			ref SlotInventaire s = ref _joueurRef.RefSlotCoffreStockage(i);
+			bool vis = _joueurRef.InventaireSlotAunVisuel3D(s);
+			bool vpOk = _vpCoffre != null && i < _vpCoffre.Length && _vpCoffre[i] != null && GodotObject.IsInstanceValid(_vpCoffre[i]);
+			if (vpOk)
+			{
+				_vpCoffre[i].Visible = vis;
+				if (_meshPreviewCoffre != null && i < _meshPreviewCoffre.Length && _meshPreviewCoffre[i] != null)
+				{
+					if (vis)
+					{
+						ulong em = EmpreinteSlotPourPreviewMenu(s);
+						if (_empreinteCoffreLast == null || i >= _empreinteCoffreLast.Length || em != _empreinteCoffreLast[i])
+						{
+							_joueurRef.SynchroniserPreviewSlotMenu(_meshPreviewCoffre[i], s);
+							if (_empreinteCoffreLast != null && i < _empreinteCoffreLast.Length)
+								_empreinteCoffreLast[i] = em;
+						}
+					}
+					else
+					{
+						if (_empreinteCoffreLast != null && i < _empreinteCoffreLast.Length)
+							_empreinteCoffreLast[i] = 0UL;
+						_meshPreviewCoffre[i].Mesh = null;
+						_meshPreviewCoffre[i].MaterialOverride = null;
+					}
+				}
+			}
+			if (_lblCoffre != null && i < _lblCoffre.Length && _lblCoffre[i] != null)
+			{
+				string nom = Atlas_Matiere.ObtenirNomObjet(s);
+				_lblCoffre[i].Text = string.IsNullOrEmpty(nom) ? " " : nom;
+				_lblCoffre[i].Visible = !vis || !vpOk;
+			}
+			if (grille.GetChild(i) is Panel panelCase)
+				RafraichirQuantiteSlot(panelCase, s);
 		}
 	}
 
@@ -1120,8 +1311,18 @@ public partial class MenuAnatomie : Control
 	{
 		if (Engine.IsEditorHint() || !EstOuvert || _ecranBarreCourant != ModeEcranBarreMenu.Inventaire)
 			return;
-		MettreAJourInfobulleSourisInventaire();
-		MettreAJourCameraApercuJoueurCorps((float)delta);
+		_accumulateurInfobulleInventaire += (float)delta;
+		if (_accumulateurInfobulleInventaire >= IntervalleInfobulleInventaireSec)
+		{
+			_accumulateurInfobulleInventaire = 0f;
+			MettreAJourInfobulleSourisInventaire();
+		}
+		else
+			RepositionnerInfobulleSlotSourisSiVisible();
+
+		_compteurFrameMenuProcess++;
+		if ((_compteurFrameMenuProcess & 1) == 0)
+			MettreAJourCameraApercuJoueurCorps((float)delta);
 		if (_conteneurFlottantCurseur != null && _conteneurFlottantCurseur.Visible)
 		{
 			Vector2 demi = _conteneurFlottantCurseur.Size * 0.5f;
@@ -1214,7 +1415,7 @@ public partial class MenuAnatomie : Control
 			slot = _joueurRef.SlotResultatCraft;
 			return true;
 		}
-		if (GrilleAssemblage != null && GodotObject.IsInstanceValid(GrilleAssemblage) && GrilleAssemblage.IsAncestorOf(h))
+		if (!_joueurRef.StockageCoffreOuvert && GrilleAssemblage != null && GodotObject.IsInstanceValid(GrilleAssemblage) && GrilleAssemblage.IsAncestorOf(h))
 		{
 			for (Control cur = h; cur != null; cur = cur.GetParent() as Control)
 			{
@@ -1261,6 +1462,19 @@ public partial class MenuAnatomie : Control
 				}
 			}
 		}
+		if (ObtenirGrilleCoffreBois() is GridContainer grilleCoffre && GodotObject.IsInstanceValid(grilleCoffre) && grilleCoffre.IsAncestorOf(h))
+		{
+			for (Control cur = h; cur != null; cur = cur.GetParent() as Control)
+			{
+				if (cur.GetParent() == grilleCoffre && cur is Panel)
+				{
+					int idx = cur.GetIndex();
+					if (!_joueurRef.StockageCoffreOuvert || idx < 0 || idx > 9) break;
+					slot = _joueurRef.RefSlotCoffreStockage(idx);
+					return true;
+				}
+			}
+		}
 		return false;
 	}
 
@@ -1301,49 +1515,80 @@ public partial class MenuAnatomie : Control
 		_panneauInfobulleSlot.Visible = true;
 	}
 
+	private void RepositionnerInfobulleSlotSourisSiVisible()
+	{
+		if (_panneauInfobulleSlot == null || !_panneauInfobulleSlot.Visible)
+			return;
+		Vector2 posSouris = GetGlobalMousePosition();
+		Rect2 vr = GetViewport().GetVisibleRect();
+		Vector2 p = posSouris + new Vector2(14f, 18f);
+		if (p.X + _panneauInfobulleSlot.Size.X > vr.Position.X + vr.Size.X)
+			p.X = posSouris.X - _panneauInfobulleSlot.Size.X - 10f;
+		if (p.Y + _panneauInfobulleSlot.Size.Y > vr.Position.Y + vr.Size.Y)
+			p.Y = posSouris.Y - _panneauInfobulleSlot.Size.Y - 10f;
+		_panneauInfobulleSlot.GlobalPosition = p;
+	}
+
 	private void RafraichirCellulesCraft()
 	{
 		if (_joueurRef == null || GrilleAssemblage == null) return;
-		AssurerPreviewsCraft();
-		_joueurRef.VerifierRecettes();
-		var gCraft = _joueurRef.ObtenirGrilleCraftAffichee();
-		int nActives = _joueurRef.CraftGrille3x3AuTable ? 9 : 4;
-		for (int i = 0; i < 9; i++)
+		if (_joueurRef.StockageCoffreOuvert)
+			RafraichirCellulesCoffre();
+		else
 		{
-			SlotInventaire s = (gCraft != null && i < nActives && i < gCraft.Length) ? gCraft[i] : default;
-			bool vis = _joueurRef.InventaireSlotAunVisuel3D(s);
-			bool vpOk = _vpCraft != null && i < _vpCraft.Length && _vpCraft[i] != null && GodotObject.IsInstanceValid(_vpCraft[i]);
-			if (vpOk)
+			AssurerPreviewsCraft();
+			_joueurRef.VerifierRecettes();
+			var gCraft = _joueurRef.ObtenirGrilleCraftAffichee();
+			int nActives = _joueurRef.CraftGrille3x3AuTable ? 9 : 4;
+			for (int i = 0; i < 9; i++)
 			{
-				_vpCraft[i].Visible = vis;
-				if (_meshPreviewCraft != null && i < _meshPreviewCraft.Length && _meshPreviewCraft[i] != null)
+				SlotInventaire s = (gCraft != null && i < nActives && i < gCraft.Length) ? gCraft[i] : default;
+				bool vis = _joueurRef.InventaireSlotAunVisuel3D(s);
+				bool vpOk = _vpCraft != null && i < _vpCraft.Length && _vpCraft[i] != null && GodotObject.IsInstanceValid(_vpCraft[i]);
+				if (vpOk)
 				{
-					if (vis)
-						_joueurRef.SynchroniserPreviewSlotMenu(_meshPreviewCraft[i], s);
-					else
+					_vpCraft[i].Visible = vis;
+					if (_meshPreviewCraft != null && i < _meshPreviewCraft.Length && _meshPreviewCraft[i] != null)
 					{
-						_meshPreviewCraft[i].Mesh = null;
-						_meshPreviewCraft[i].MaterialOverride = null;
+						if (vis)
+						{
+							ulong em = EmpreinteSlotPourPreviewMenu(s);
+							if (_empreinteCraftLast == null || i >= _empreinteCraftLast.Length || em != _empreinteCraftLast[i])
+							{
+								_joueurRef.SynchroniserPreviewSlotMenu(_meshPreviewCraft[i], s);
+								if (_empreinteCraftLast != null && i < _empreinteCraftLast.Length)
+									_empreinteCraftLast[i] = em;
+							}
+						}
+						else
+						{
+							if (_empreinteCraftLast != null && i < _empreinteCraftLast.Length)
+								_empreinteCraftLast[i] = 0UL;
+							_meshPreviewCraft[i].Mesh = null;
+							_meshPreviewCraft[i].MaterialOverride = null;
+						}
 					}
 				}
+				if (_lblCraft != null && i < _lblCraft.Length && _lblCraft[i] != null)
+				{
+					string nom = Atlas_Matiere.ObtenirNomObjet(s);
+					_lblCraft[i].Text = string.IsNullOrEmpty(nom) ? " " : nom;
+					_lblCraft[i].Visible = !vis || !vpOk;
+				}
+				if (GrilleAssemblage.GetChild(i) is Panel panelCase)
+					RafraichirQuantiteSlot(panelCase, s);
 			}
-			if (_lblCraft != null && i < _lblCraft.Length && _lblCraft[i] != null)
-			{
-				string nom = Atlas_Matiere.ObtenirNomObjet(s);
-				_lblCraft[i].Text = string.IsNullOrEmpty(nom) ? " " : nom;
-				_lblCraft[i].Visible = !vis || !vpOk;
-			}
-			if (GrilleAssemblage.GetChild(i) is Panel panelCase)
-				RafraichirQuantiteSlot(panelCase, s);
 		}
 
 		ResoudreSlotResultatCraft();
 		if (SlotResultatCraft != null)
 		{
 			bool modeRack = _joueurRef.StockageRackBatonsOuvert;
-			SlotResultatCraft.Visible = !modeRack;
-			if (modeRack)
+			bool modeCoffre = _joueurRef.StockageCoffreOuvert;
+			SlotResultatCraft.Visible = !modeRack && !modeCoffre;
+			if (modeRack || modeCoffre)
 			{
+				_empreinteResultatCraftLast = 0UL;
 				if (_meshPreviewResultatCraft != null)
 				{
 					_meshPreviewResultatCraft.Mesh = null;
@@ -1368,9 +1613,17 @@ public partial class MenuAnatomie : Control
 			{
 				_vpResultatCraft.Visible = visRes;
 				if (visRes && _meshPreviewResultatCraft != null)
-					_joueurRef.SynchroniserPreviewSlotMenu(_meshPreviewResultatCraft, sRes);
+				{
+					ulong emRes = EmpreinteSlotPourPreviewMenu(sRes);
+					if (emRes != _empreinteResultatCraftLast)
+					{
+						_joueurRef.SynchroniserPreviewSlotMenu(_meshPreviewResultatCraft, sRes);
+						_empreinteResultatCraftLast = emRes;
+					}
+				}
 				else if (_meshPreviewResultatCraft != null)
 				{
+					_empreinteResultatCraftLast = 0UL;
 					_meshPreviewResultatCraft.Mesh = null;
 					_meshPreviewResultatCraft.MaterialOverride = null;
 				}
@@ -1438,7 +1691,12 @@ public partial class MenuAnatomie : Control
 			}
 		}
 
-		if (_joueurRef.StockageRackBatonsOuvert)
+		if (_joueurRef.StockageCoffreOuvert)
+		{
+			_lblModeRack.Text = "Stockage Coffre en bois  [10 emplacements]";
+			_lblModeRack.Visible = true;
+		}
+		else if (_joueurRef.StockageRackBatonsOuvert)
 		{
 			int total = _joueurRef.CompterQuantiteRackOuvert();
 			int cap = _joueurRef.ObtenirCapaciteRackOuvert();
@@ -1914,6 +2172,8 @@ public partial class MenuAnatomie : Control
 				_joueurRef.AtelierPlanTravailOuvert = null;
 				_joueurRef.StockageRackBatonsOuvert = false;
 				_joueurRef.RackBatonsOuvert = null;
+				_joueurRef.StockageCoffreOuvert = false;
+				_joueurRef.CoffreOuvert = null;
 			}
 		}
 
@@ -1940,6 +2200,7 @@ public partial class MenuAnatomie : Control
 	public void RafraichirMenu()
 	{
 		if (_joueurRef == null) return;
+		MettreAJourVisibiliteLigneCraftVersusCoffre();
 		RafraichirPanneauSanteCorps();
 		ResoudreReferencesSlotsMains();
 		if (_lblMainGauche == null) _lblMainGauche = TrouverOuCreerLabel(MainGaucheSlot, "Main G\n[Vide]");
@@ -1955,7 +2216,14 @@ public partial class MenuAnatomie : Control
 		{
 			_vpMenuGauche.Visible = visG;
 			if (_meshPreviewMenuG != null)
-				_joueurRef.SynchroniserPreviewSlotMenu(_meshPreviewMenuG, _joueurRef.MainGauche);
+			{
+				ulong emG = EmpreinteSlotPourPreviewMenu(_joueurRef.MainGauche);
+				if (emG != _empreinteMainGLast)
+				{
+					_empreinteMainGLast = emG;
+					_joueurRef.SynchroniserPreviewSlotMenu(_meshPreviewMenuG, _joueurRef.MainGauche);
+				}
+			}
 		}
 		if (_lblMainGauche != null)
 		{
@@ -1971,7 +2239,14 @@ public partial class MenuAnatomie : Control
 		{
 			_vpMenuDroite.Visible = visD;
 			if (_meshPreviewMenuD != null)
-				_joueurRef.SynchroniserPreviewSlotMenu(_meshPreviewMenuD, _joueurRef.MainDroite);
+			{
+				ulong emD = EmpreinteSlotPourPreviewMenu(_joueurRef.MainDroite);
+				if (emD != _empreinteMainDLast)
+				{
+					_empreinteMainDLast = emD;
+					_joueurRef.SynchroniserPreviewSlotMenu(_meshPreviewMenuD, _joueurRef.MainDroite);
+				}
+			}
 		}
 		if (_lblMainDroite != null)
 		{
@@ -1994,9 +2269,17 @@ public partial class MenuAnatomie : Control
 			{
 				_vpMenuCeinture.Visible = visC;
 				if (visC)
-					_joueurRef.SynchroniserPreviewSlotMenu(_meshPreviewMenuCeinture, eqC);
+				{
+					ulong emC = EmpreinteSlotPourPreviewMenu(eqC);
+					if (emC != _empreinteCeintureLast)
+					{
+						_empreinteCeintureLast = emC;
+						_joueurRef.SynchroniserPreviewSlotMenu(_meshPreviewMenuCeinture, eqC);
+					}
+				}
 				else
 				{
+					_empreinteCeintureLast = 0UL;
 					_meshPreviewMenuCeinture.Mesh = null;
 					_meshPreviewMenuCeinture.MaterialOverride = null;
 				}
@@ -2019,9 +2302,17 @@ public partial class MenuAnatomie : Control
 			{
 				_vpMenuSacEquip.Visible = visS;
 				if (visS)
-					_joueurRef.SynchroniserPreviewSlotMenu(_meshPreviewMenuSacEquip, eqS);
+				{
+					ulong emS = EmpreinteSlotPourPreviewMenu(eqS);
+					if (emS != _empreinteSacLast)
+					{
+						_empreinteSacLast = emS;
+						_joueurRef.SynchroniserPreviewSlotMenu(_meshPreviewMenuSacEquip, eqS);
+					}
+				}
 				else
 				{
+					_empreinteSacLast = 0UL;
 					_meshPreviewMenuSacEquip.Mesh = null;
 					_meshPreviewMenuSacEquip.MaterialOverride = null;
 				}

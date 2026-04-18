@@ -581,7 +581,9 @@ public partial class Chunk_Client : Node3D
 				return;
 			}
 			Vector3 posObs = (GetParent() as Monde_Client)?.ObtenirPositionObservation() ?? GlobalPosition;
-			float rayonCarre = (RAYON_GAZON_CHUNKS * TailleChunk) * (RAYON_GAZON_CHUNKS * TailleChunk);
+			// On utilise le rayon public configurable (RayonVisibiliteGazonChunks) au lieu d'un const serré : permet de voir l'herbe loin.
+			int rayonChunksGazon = Mathf.Max(1, RayonVisibiliteGazonChunks);
+			float rayonCarre = (rayonChunksGazon * TailleChunk) * (rayonChunksGazon * TailleChunk);
 			var gazonFiltre = new List<(Transform3D t, Color c)>();
 			foreach (var item in payload.Gazon)
 			{
@@ -716,7 +718,9 @@ public partial class Chunk_Client : Node3D
 		var vides = new List<Transform3D>();
 		var gazonInstances = new List<(Transform3D t, Color c)>();
 		Vector3 posObs = (GetParent() as Monde_Client)?.ObtenirPositionObservation() ?? chunkOrigin;
-		float rayonCarre = (RAYON_GAZON_CHUNKS * TailleChunk) * (RAYON_GAZON_CHUNKS * TailleChunk);
+		// Utilise le rayon public configurable pour que l'herbe reste visible jusqu'à la distance paramétrée.
+		int rayonChunksGazon = Mathf.Max(1, RayonVisibiliteGazonChunks);
+		float rayonCarre = (rayonChunksGazon * TailleChunk) * (rayonChunksGazon * TailleChunk);
 
 		foreach (var kv in inventaire)
 		{

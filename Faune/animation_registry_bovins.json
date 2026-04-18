@@ -26,7 +26,9 @@
 	  "idle_c",
 	  "idle_01",
 	  "idle_02",
-      "idle_03"
+	  "idle_03",
+	  "idle_04",
+	  "idle_05"
 	],
 	"walk": [
 	  "Marche",
@@ -84,15 +86,42 @@
 	  "gallop_loop",
 	  "chase",
 	  "charge",
-	  "attack",
-	  "headbutt",
-	  "kick",
-	  "jump",
-	  "jump_toidle",
 	  "escape",
 	  "flee",
 	  "panic_run",
       "rush"
+	],
+	"jump": [
+	  "jump",
+	  "jump_loop",
+	  "jump_in_place",
+	  "jump_up",
+	  "hop",
+	  "leap",
+	  "bound"
+	],
+	"gallop_jump": [
+	  "gallop_jump",
+	  "gallopjump",
+	  "run_jump",
+	  "sprint_jump"
+	],
+	"attack_kick": [
+	  "attack_kick",
+	  "attack kick",
+	  "kick_back",
+	  "kick_rear",
+	  "rear_kick",
+	  "back_kick",
+	  "cow_kick"
+	],
+	"attack_head": [
+	  "headbutt",
+	  "attack headbutt",
+	  "attack_head",
+	  "attack_headbutt",
+	  "ram",
+	  "coup_de_tete"
 	],
 	"graze": [
 	  "Broutage",
@@ -103,6 +132,7 @@
 	  "eat",
 	  "eat_loop",
 	  "eat_grass",
+	  "eating",
 	  "chew",
 	  "chewing",
 	  "browse",
