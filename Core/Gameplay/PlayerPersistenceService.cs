@@ -6,7 +6,7 @@ using System.Text.Json;
 
 public partial class Joueur
 {
-    private const int VersionPersistenceJoueur = 3;
+    private const int VersionPersistenceJoueur = 5;
     private const int VersionPersistenceObjetsPoses = 4;
     private const int VersionPersistenceProgression = 2;
     private bool _etatPersistantCharge;
@@ -214,6 +214,7 @@ public partial class Joueur
             AjouterFutureStateSiAbsent("Force", 0UL);
             AjouterFutureStateSiAbsent("Dextiriter", 0UL);
             AjouterFutureStateSiAbsent("Metaboliste", 0UL);
+            AjouterFutureStateSiAbsent("Intelligence", 0UL);
             AjouterMetierSiAbsent("Bucheron", 0UL);
             AjouterMetierSiAbsent("Traisage", 0UL);
         }
@@ -251,6 +252,10 @@ public partial class Joueur
                 for (int i = 0; i < n; i++)
                     EcrireSlot(w, kv.Value[i]);
             }
+            string[] craftsDecouverts = ExporterCraftsDecouverts();
+            w.Write(craftsDecouverts.Length);
+            for (int i = 0; i < craftsDecouverts.Length; i++)
+                w.Write(craftsDecouverts[i] ?? "");
         }
         catch (Exception ex)
         {
@@ -291,6 +296,28 @@ public partial class Joueur
                     if (!string.IsNullOrEmpty(cle))
                         _memoireStockageSacs[cle] = slots;
                 }
+            }
+            if (version >= 5)
+            {
+                int nCrafts = Mathf.Max(0, r.ReadInt32());
+                var clesCrafts = new string[nCrafts];
+                for (int i = 0; i < nCrafts; i++)
+                    clesCrafts[i] = r.ReadString();
+                ImporterCraftsDecouverts(clesCrafts);
+            }
+            else if (version >= 4)
+            {
+                int nCrafts = Mathf.Max(0, r.ReadInt32());
+                ImporterCraftsDecouverts(Array.Empty<string>());
+                for (int i = 0; i < nCrafts; i++)
+                {
+                    int idLegacy = r.ReadInt32();
+                    DebloquerCraft(idLegacy);
+                }
+            }
+            else
+            {
+                ImporterCraftsDecouverts(Array.Empty<string>());
             }
             ChargerStockageDepuisSacEquipe();
             ChargerStockageDepuisCeintureSacochesEquipe();

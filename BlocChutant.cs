@@ -126,18 +126,79 @@ public partial class BlocChutant : RigidBody3D
 	}
 
 	/// <summary>Crée un BlocChutant feuillage (même visuel que les feuilles d'arbre). Utiliser quand on arrache le feuillage d'un arbre.</summary>
-	public static BlocChutant CreerFeuillageArrache(Vector3 positionMonde, Material matFeuilles)
+	public static BlocChutant CreerFeuillageArrache(Vector3 positionMonde, Material matFeuilles, Mesh meshFeuillageSource = null)
 	{
 		var bloc = new BlocChutant();
 		bloc.SetMeta("ID_Matiere", (int)ID_FEUILLE_ARRACHEE);
-		bloc._ConstruireVisuelFeuillage(matFeuilles);
+		bloc._ConstruireVisuelFeuillage(matFeuilles, meshFeuillageSource);
 		return bloc;
 	}
 
-	private void _ConstruireVisuelFeuillage(Material matFeuilles)
+	private static bool EssayerExtraireTeinteMoyenneFeuillage(Mesh mesh, out Color teinteMoyenne)
+	{
+		teinteMoyenne = Colors.Black;
+		if (mesh is not ArrayMesh arrayMesh || arrayMesh.GetSurfaceCount() <= 0)
+			return false;
+
+		Color somme = Colors.Black;
+		int echantillons = 0;
+		for (int s = 0; s < arrayMesh.GetSurfaceCount(); s++)
+		{
+			var mdt = new MeshDataTool();
+			if (mdt.CreateFromSurface(arrayMesh, s) != Error.Ok)
+				continue;
+			int nbVerts = mdt.GetVertexCount();
+			for (int i = 0; i < nbVerts; i++)
+			{
+				Color c = mdt.GetVertexColor(i);
+				if (c.A <= 0f)
+					continue;
+				somme += new Color(c.R, c.G, c.B, 1f);
+				echantillons++;
+			}
+		}
+
+		if (echantillons <= 0)
+			return false;
+
+		float inv = 1f / echantillons;
+		teinteMoyenne = new Color(somme.R * inv, somme.G * inv, somme.B * inv, 1f);
+		return true;
+	}
+
+	private static bool EstBlancApprox(Color c)
+	{
+		return Mathf.IsEqualApprox(c.R, 1f)
+			&& Mathf.IsEqualApprox(c.G, 1f)
+			&& Mathf.IsEqualApprox(c.B, 1f);
+	}
+
+	private void _ConstruireVisuelFeuillage(Material matFeuilles, Mesh meshFeuillageSource = null)
 	{
 		// Petit cluster de feuilles (quads ovales) — même style que le feuillage d'arbre, pas des brins d'herbe.
-		Material mat = matFeuilles != null ? (Material)matFeuilles.Duplicate() : new StandardMaterial3D { AlbedoColor = new Color(0.2f, 0.55f, 0.15f), Roughness = 0.95f, Metallic = 0f };
+		Color teinteFallback = new Color(0.2f, 0.55f, 0.15f);
+		if (EssayerExtraireTeinteMoyenneFeuillage(meshFeuillageSource, out Color teinteSource))
+			teinteFallback = teinteSource;
+
+		Material mat;
+		if (matFeuilles is StandardMaterial3D matStd)
+		{
+			var matStdClone = (StandardMaterial3D)matStd.Duplicate();
+			bool dependCouleurVertex = matStdClone.VertexColorUseAsAlbedo;
+			if (dependCouleurVertex)
+				matStdClone.VertexColorUseAsAlbedo = false;
+			if (dependCouleurVertex || (matStdClone.AlbedoTexture == null && EstBlancApprox(matStdClone.AlbedoColor)))
+				matStdClone.AlbedoColor = teinteFallback;
+			mat = matStdClone;
+		}
+		else if (matFeuilles != null)
+		{
+			mat = (Material)matFeuilles.Duplicate();
+		}
+		else
+		{
+			mat = new StandardMaterial3D { AlbedoColor = teinteFallback, Roughness = 0.95f, Metallic = 0f };
+		}
 		float l = 0.18f;
 		float w = 0.12f;
 		for (int i = 0; i < 3; i++)

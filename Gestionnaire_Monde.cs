@@ -59,6 +59,10 @@ public partial class Gestionnaire_Monde : Node3D
 	/// <summary>Si true, utilise Monde_Serveur + Monde_Client (Solo/MMORPG). Si false, legacy Generateur_Voxel.</summary>
 	[Export] public bool UseArchitectureReseau = true;
 
+	/// <summary>Si true : au lancement on ignore <c>user://options_graphics.cfg</c> et on garde les [Export] de la scène (sinon le fichier réécrit tout et l’inspecteur semble « ne rien faire »).</summary>
+	[ExportGroup("Options graphiques (fichier)")]
+	[Export] public bool IgnorerFichierOptionsGraphiquesAuDemarrage = false;
+
 	// Files pour le mode legacy (Generateur_Voxel)
 	private ConcurrentQueue<System.Action> _misesAJourMainThread = new ConcurrentQueue<System.Action>();
 	public ConcurrentQueue<System.Action> _misesAJourUrgentes = new ConcurrentQueue<System.Action>();
@@ -444,6 +448,8 @@ public partial class Gestionnaire_Monde : Node3D
 		DirAccess.MakeDirRecursiveAbsolute("user://chunks");
 		_joueur = GetParent().GetNode<CharacterBody3D>("Joueur");
 		Chunk_Client.EchelleGazon = EchelleGazon;
+		_optionsGraphiquesDefautProjet = CapturerOptionsGraphiquesCourantes(PresetGraphique.Personnalise);
+		ChargerOptionsGraphiquesAuDemarrage();
 
 		// Affichage des coordonnées en haut au centre
 		var canvas = new CanvasLayer { Layer = 10 };
@@ -584,10 +590,274 @@ public partial class Gestionnaire_Monde : Node3D
 			j.ChargerEtatPersistantMonde();
 	}
 
+	private void ChargerOptionsGraphiquesAuDemarrage()
+	{
+		var defaut = (_optionsGraphiquesDefautProjet ?? CapturerOptionsGraphiquesCourantes(PresetGraphique.Personnalise)).Clone();
+		if (IgnorerFichierOptionsGraphiquesAuDemarrage)
+		{
+			_optionsGraphiquesChargeesUtilisateur = false;
+			AppliquerOptionsGraphiques(defaut, sauvegarder: false, synchroniserUi: false);
+			return;
+		}
+		_optionsGraphiquesChargeesUtilisateur = FileAccess.FileExists("user://options_graphics.cfg");
+		GraphicsOptionsData chargees = GraphicsOptionsService.ChargerOuDefaut(defaut);
+		AppliquerOptionsGraphiques(chargees, sauvegarder: false, synchroniserUi: false);
+	}
+
+	private GraphicsOptionsData CapturerOptionsGraphiquesCourantes(PresetGraphique preset)
+	{
+		return GraphicsOptionsService.Normaliser(new GraphicsOptionsData
+		{
+			Preset = preset,
+			RenderDistance = RenderDistance,
+			RenderDistanceDetailChunks = RenderDistanceDetailChunks,
+			RayonQualiteProcheChunks = RayonQualiteProcheChunks,
+			RayonGazonVisibleChunks = RayonGazonVisibleChunks,
+			RayonBuissonsVisibleChunks = RayonBuissonsVisibleChunks,
+			ActiverHorizonLod = ActiverHorizonLod,
+			RayonHorizonChunks = RayonHorizonChunks,
+			PasHorizonMetres = PasHorizonMetres,
+			ActiverCullingCameraChunks = ActiverCullingCameraChunks,
+			AngleCullingCameraDeg = AngleCullingCameraDeg,
+			MargeChunksToujoursVisibles = MargeChunksToujoursVisibles,
+			MaxChunksParFrame = MaxChunksParFrame,
+			LODTextureEtapes = _mondeClient?.LODTextureEtapes ?? 12,
+			ProfilLodCinematiqueUltraSmooth = _mondeClient?.ProfilLodCinematiqueUltraSmooth ?? true,
+			ModeSurvieFpsAgressif = _mondeClient?.ModeSurvieFpsAgressif ?? true,
+			FpsCibleAutoDiagnostic = _mondeClient?.FpsCibleAutoDiagnostic ?? 60,
+			SeuilFpsUrgenceForte = _mondeClient?.SeuilFpsUrgenceForte ?? 42,
+			SeuilFpsUrgenceCritique = _mondeClient?.SeuilFpsUrgenceCritique ?? 30,
+			SeuilFpsUrgenceExtreme = _mondeClient?.SeuilFpsUrgenceExtreme ?? 24,
+			SeuilFpsSortieUrgenceExtreme = _mondeClient?.SeuilFpsSortieUrgenceExtreme ?? 56
+		});
+	}
+
+	private void RestaurerParametresMondeClientNonExposesUtilisateur(bool modeProtectionFps)
+	{
+		if (_mondeClient == null)
+			return;
+		// On rétablit ces paramètres même après un ancien profil matériel.
+		_mondeClient.MaxLancementsTravailleursParTick = modeProtectionFps ? 2 : 6;
+		_mondeClient.BudgetFrameCibleMs = modeProtectionFps ? 16.2f : 22f;
+		_mondeClient.SeuilFpsGateStrict = modeProtectionFps ? 50f : 30f;
+		_mondeClient.SeuilFpsGateReprise = modeProtectionFps ? 57f : 36f;
+		_mondeClient.DureeStabiliteReprise = modeProtectionFps ? 0.20f : 0.12f;
+		_mondeClient.DureeRampUpPostDegel = modeProtectionFps ? 0.55f : 0.18f;
+		_mondeClient.DureeMinEtatGeleSec = modeProtectionFps ? 0.15f : 0.08f;
+		_mondeClient.DureeMinEtatOuvertSec = modeProtectionFps ? 0.45f : 0.10f;
+		_mondeClient.MaxChunksEvaluesCullingParPasse = modeProtectionFps ? 240 : 900;
+		_mondeClient.MaxBasculesCullingParPasse = modeProtectionFps ? 96 : 300;
+	}
+
+	private void AppliquerOptionsGraphiques(GraphicsOptionsData options, bool sauvegarder, bool synchroniserUi, bool prioriteChargementStreamApresReglageManuel = false)
+	{
+		GraphicsOptionsData o = GraphicsOptionsService.Normaliser(options?.Clone() ?? new GraphicsOptionsData());
+		int ancienRenderDistance = RenderDistance;
+		RenderDistance = o.RenderDistance;
+		RenderDistanceDetailChunks = o.RenderDistanceDetailChunks;
+		RayonQualiteProcheChunks = o.RayonQualiteProcheChunks;
+		RayonGazonVisibleChunks = o.RayonGazonVisibleChunks;
+		RayonBuissonsVisibleChunks = o.RayonBuissonsVisibleChunks;
+		ActiverHorizonLod = o.ActiverHorizonLod;
+		RayonHorizonChunks = o.RayonHorizonChunks;
+		PasHorizonMetres = o.PasHorizonMetres;
+		ActiverCullingCameraChunks = o.ActiverCullingCameraChunks;
+		AngleCullingCameraDeg = o.AngleCullingCameraDeg;
+		MargeChunksToujoursVisibles = o.MargeChunksToujoursVisibles;
+		MaxChunksParFrame = o.MaxChunksParFrame;
+
+		if (_mondeServeur != null)
+		{
+			_mondeServeur.RenderDistance = RenderDistance;
+			bool modeProtectionFps = o.ModeSurvieFpsAgressif;
+			if (modeProtectionFps)
+			{
+				_mondeServeur.MultiplicateurCharge = Mathf.Clamp(Mathf.RoundToInt(RenderDistance / 18f), 1, 3);
+				_mondeServeur.MaxDemandesChunksParTick = Mathf.Clamp(Mathf.RoundToInt(RenderDistance / 12f), 2, 10);
+				_mondeServeur.MaxIntegrationsWorkersParTick = Mathf.Clamp(Mathf.RoundToInt(RenderDistance / 18f), 2, 6);
+				_mondeServeur.MaxChunksEnvoiParTick = Mathf.Clamp(Mathf.RoundToInt(RenderDistance / 8f), 8, 20);
+			}
+			else
+			{
+				// Priorité joueur : laisse les grosses distances pousser réellement le streaming.
+				_mondeServeur.MultiplicateurCharge = Mathf.Clamp(Mathf.RoundToInt(RenderDistance / 10f), 2, 8);
+				_mondeServeur.MaxDemandesChunksParTick = Mathf.Clamp(Mathf.RoundToInt(RenderDistance / 2.5f), 8, 48);
+				_mondeServeur.MaxIntegrationsWorkersParTick = Mathf.Clamp(Mathf.RoundToInt(RenderDistance / 6f), 4, 16);
+				_mondeServeur.MaxChunksEnvoiParTick = Mathf.Clamp(Mathf.RoundToInt(RenderDistance / 1.5f), 12, 80);
+			}
+		}
+
+		if (_mondeClient != null)
+		{
+			_mondeClient.RenderDistance = RenderDistance;
+			_mondeClient.RenderDistanceDetailChunks = RenderDistanceDetailChunks;
+			_mondeClient.RayonQualiteMaxChunks = RayonQualiteProcheChunks;
+			_mondeClient.RayonGazonVisibleChunks = RayonGazonVisibleChunks;
+			_mondeClient.RayonBuissonsVisibleChunks = RayonBuissonsVisibleChunks;
+			_mondeClient.ActiverHorizonLod = ActiverHorizonLod;
+			_mondeClient.RayonHorizonChunks = RayonHorizonChunks;
+			_mondeClient.PasHorizonMetres = PasHorizonMetres;
+			_mondeClient.ActiverCullingCameraChunks = ActiverCullingCameraChunks;
+			_mondeClient.AngleCullingCameraDeg = AngleCullingCameraDeg;
+			_mondeClient.MargeChunksToujoursVisibles = MargeChunksToujoursVisibles;
+			_mondeClient.MaxChunksParFrame = MaxChunksParFrame;
+			_mondeClient.LODTextureEtapes = o.LODTextureEtapes;
+			_mondeClient.ProfilLodCinematiqueUltraSmooth = o.ProfilLodCinematiqueUltraSmooth;
+			_mondeClient.ModeSurvieFpsAgressif = o.ModeSurvieFpsAgressif;
+			_mondeClient.FpsCibleAutoDiagnostic = o.FpsCibleAutoDiagnostic;
+			_mondeClient.SeuilFpsUrgenceForte = o.SeuilFpsUrgenceForte;
+			_mondeClient.SeuilFpsUrgenceCritique = o.SeuilFpsUrgenceCritique;
+			_mondeClient.SeuilFpsUrgenceExtreme = o.SeuilFpsUrgenceExtreme;
+			_mondeClient.SeuilFpsSortieUrgenceExtreme = o.SeuilFpsSortieUrgenceExtreme;
+			_mondeClient.MaxAjoutsRadarParPasse = o.ModeSurvieFpsAgressif
+				? Mathf.Clamp(480 + RenderDistance * 8, 520, 2000)
+				: Mathf.Clamp(1200 + RenderDistance * 40, 1600, 8000);
+			RestaurerParametresMondeClientNonExposesUtilisateur(o.ModeSurvieFpsAgressif);
+			_mondeClient.ReappliquerReglagesGraphiquesRuntime();
+			_mondeClient.ForcerModeStreamingUtilisateur(o.ModeSurvieFpsAgressif);
+			_mondeClient.ForcerRafraichissementStreamingGraphique(microReload: true);
+			if (_joueur != null && RenderDistance > ancienRenderDistance)
+			{
+				Vector2I chunkActuel = WorldToChunkCoord(_joueur.GlobalPosition, TailleChunk);
+				_mondeClient.ReserverChunkSpawnPrioritaire(chunkActuel);
+			}
+			if (prioriteChargementStreamApresReglageManuel)
+				_mondeClient.SignalerGraceStreamingApresReglageManuel();
+		}
+
+		var cycleSolaire = GetParent()?.GetNodeOrNull<Cycle_Solaire>("CycleSolaire");
+		cycleSolaire?.ConfigurerDistanceBrouillardProgressive(RenderDistance, TailleChunk, 2);
+
+		// Mode legacy : pas de Monde_Client — il faut rafraîchir la grille de chunks sinon RenderDistance ne bouge jamais tant qu’on ne change pas de chunk.
+		if (!UseArchitectureReseau)
+			ActualiserVisibiliteEtTriChunksLegacy();
+
+		_optionsGraphiquesActuelles = o.Clone();
+		if (synchroniserUi)
+			SynchroniserPanelGraphiqueDepuisOptions(_optionsGraphiquesActuelles);
+		if (sauvegarder)
+		{
+			GraphicsOptionsService.Sauvegarder(_optionsGraphiquesActuelles);
+			_optionsGraphiquesChargeesUtilisateur = true;
+		}
+	}
+
+	private void LancerAutoHybrideGraphique()
+	{
+		ForcerControleUtilisateurSurGraphismes();
+		MettreAJourInfosMaterielDetecte();
+		GraphicsOptionsData baseOptions = CapturerOptionsGraphiquesCourantes(PresetGraphique.Personnalise);
+		GraphicsOptionsData seed = GraphicsOptionsService.GenererBaseAutoMateriel(_nomCpuDetecte, _nomGpuDetecte, baseOptions);
+		AppliquerOptionsGraphiques(seed, sauvegarder: true, synchroniserUi: true);
+		_autoHybrideActif = true;
+		_timerSessionAutoHybride = 0f;
+		_timerAjustementAutoHybride = 0f;
+		_fpsMinSessionAutoHybride = float.MaxValue;
+		if (_labelAutoHybride != null)
+			_labelAutoHybride.Text = "Auto hybride: analyse en cours...";
+	}
+
+	private void TraiterAutoHybrideGraphique(float dt)
+	{
+		if (!_autoHybrideActif || _mondeClient == null)
+			return;
+		if (_pauseVisible)
+			return;
+
+		_timerSessionAutoHybride += dt;
+		_timerAjustementAutoHybride += dt;
+		float fpsMoyen = _mondeClient.LireFpsMoyenAutoDiagnostic();
+		_fpsMinSessionAutoHybride = Mathf.Min(_fpsMinSessionAutoHybride, fpsMoyen);
+
+		const float intervalleAjustement = 4f;
+		const float dureeSession = 18f;
+		if (_timerAjustementAutoHybride >= intervalleAjustement)
+		{
+			_timerAjustementAutoHybride = 0f;
+			GraphicsOptionsData ajuste = GraphicsOptionsService.AjusterSelonFps(
+				CapturerOptionsGraphiquesCourantes(PresetGraphique.Personnalise),
+				fpsMoyen,
+				_fpsMinSessionAutoHybride);
+			AppliquerOptionsGraphiques(ajuste, sauvegarder: true, synchroniserUi: true);
+		}
+
+		if (_timerSessionAutoHybride >= dureeSession)
+		{
+			_autoHybrideActif = false;
+			if (_labelAutoHybride != null)
+				_labelAutoHybride.Text = $"Auto hybride termine (FPS moyen {fpsMoyen:0}).";
+		}
+	}
+
+	private void MettreAJourInfosMaterielDetecte()
+	{
+		_nomCpuDetecte = OS.GetProcessorName()?.ToLowerInvariant() ?? "";
+		try
+		{
+			_nomGpuDetecte = RenderingServer.GetVideoAdapterName().ToLowerInvariant();
+		}
+		catch
+		{
+			_nomGpuDetecte = "";
+		}
+	}
+
+	private void RafraichirIndicateurModeEditionGraphique()
+	{
+		if (_labelModeEditionGraphique == null)
+			return;
+		if (_editionGraphiqueEnDirect)
+			_labelModeEditionGraphique.Text = "Mode: LIVE (application en direct)";
+		else if (_pauseVisible)
+			_labelModeEditionGraphique.Text = "Mode: PAUSE";
+		else
+			_labelModeEditionGraphique.Text = "Mode: JEU";
+	}
+
+	private void ForcerMicroReloadGraphiqueMaintenant()
+	{
+		if (_mondeClient == null)
+			return;
+		_mondeClient.ForcerRafraichissementStreamingGraphique(microReload: true);
+		if (_joueur != null)
+		{
+			Vector2I chunkActuel = WorldToChunkCoord(_joueur.GlobalPosition, TailleChunk);
+			_mondeClient.ReserverChunkSpawnPrioritaire(chunkActuel);
+		}
+		ForcerCycleSolaireActif();
+	}
+
+	private void ForcerControleUtilisateurSurGraphismes()
+	{
+		_verrouProfilMaterielUtilisateur = true;
+		_optionsGraphiquesChargeesUtilisateur = true;
+		ActiverProfilMaterielAuto = false;
+		ForcerProfilGTX1060i710700F = false;
+	}
+
+	private void ForcerCycleSolaireActif()
+	{
+		var cycle = GetParent()?.GetNodeOrNull<Cycle_Solaire>("CycleSolaire");
+		cycle?.DefinirChargementMondeActif(false);
+	}
+
 	public override void _Input(InputEvent @event)
 	{
 		if (!@event.IsActionPressed("ui_cancel"))
 			return;
+		if (_pauseVisible && _panelGraphismes != null && _panelGraphismes.Visible)
+		{
+			_panelGraphismes.Visible = false;
+			_editionGraphiqueEnDirect = false;
+			ForcerCycleSolaireActif();
+			RafraichirIndicateurModeEditionGraphique();
+			if (_panelPause != null)
+				_panelPause.Visible = true;
+			GetTree().Paused = true;
+			Input.MouseMode = Input.MouseModeEnum.Visible;
+			GetViewport().SetInputAsHandled();
+			return;
+		}
 		if (_joueur is Joueur jo && jo.FermerUIJoueurSiOuverte())
 		{
 			GetViewport().SetInputAsHandled();
@@ -604,6 +874,8 @@ public partial class Gestionnaire_Monde : Node3D
 		if (_pauseVisible) return;
 		_pauseVisible = true;
 		_panelPause.Visible = true;
+		if (_panelGraphismes != null)
+			_panelGraphismes.Visible = false;
 		GetTree().Paused = true;
 		Input.MouseMode = Input.MouseModeEnum.Visible;
 	}
@@ -655,7 +927,47 @@ public partial class Gestionnaire_Monde : Node3D
 	}
 
 	private Panel _panelPause;
+	private Panel _panelGraphismes;
 	private bool _pauseVisible;
+	private OptionButton _optionPresetGraphique;
+	private HSlider _sliderRenderDistance;
+	private Label _labelRenderDistanceValeur;
+	private HSlider _sliderRayonQualiteProche;
+	private Label _labelRayonQualiteProcheValeur;
+	private HSlider _sliderDetailChunks;
+	private Label _labelDetailChunksValeur;
+	private HSlider _sliderRayonGazon;
+	private Label _labelRayonGazonValeur;
+	private HSlider _sliderRayonBuissons;
+	private Label _labelRayonBuissonsValeur;
+	private HSlider _sliderRayonHorizon;
+	private Label _labelRayonHorizonValeur;
+	private HSlider _sliderPasHorizon;
+	private Label _labelPasHorizonValeur;
+	private HSlider _sliderAngleCulling;
+	private Label _labelAngleCullingValeur;
+	private HSlider _sliderMargeToujoursVisible;
+	private Label _labelMargeToujoursVisibleValeur;
+	private HSlider _sliderMaxChunksFrame;
+	private Label _labelMaxChunksFrameValeur;
+	private HSlider _sliderLodEtapes;
+	private Label _labelLodEtapesValeur;
+	private CheckBox _checkActiverHorizon;
+	private CheckBox _checkActiverCulling;
+	private CheckBox _checkLodUltraSmooth;
+	private CheckBox _checkModeSurvieAgressif;
+	private Label _labelModeEditionGraphique;
+	private Label _labelAutoHybride;
+	private GraphicsOptionsData _optionsGraphiquesActuelles;
+	private GraphicsOptionsData _optionsGraphiquesDefautProjet;
+	private bool _optionsGraphiquesChargeesUtilisateur;
+	private bool _synchronisationUiGraphiqueEnCours;
+	private bool _editionGraphiqueEnDirect;
+	private bool _verrouProfilMaterielUtilisateur;
+	private bool _autoHybrideActif;
+	private float _timerSessionAutoHybride;
+	private float _timerAjustementAutoHybride;
+	private float _fpsMinSessionAutoHybride = float.MaxValue;
 
 	/// <summary>Même logique que le bouton Sauvegarder du menu pause et de l’inventaire (position + monde / chunks).</summary>
 	public void SauvegarderManuelDepuisMenu()
@@ -701,6 +1013,23 @@ public partial class Gestionnaire_Monde : Node3D
 		var btnSave = new Button { Text = "Sauvegarder" };
 		btnSave.Pressed += SauvegarderManuelDepuisMenu;
 		vbox.AddChild(btnSave);
+		var btnGraphismes = new Button { Text = "Graphismes" };
+		btnGraphismes.Pressed += () =>
+		{
+			if (_panelGraphismes != null)
+			{
+				SynchroniserPanelGraphiqueDepuisOptions(CapturerOptionsGraphiquesCourantes(_optionsGraphiquesActuelles?.Preset ?? PresetGraphique.Personnalise));
+				_panelGraphismes.Visible = true;
+				_editionGraphiqueEnDirect = true;
+				ForcerCycleSolaireActif();
+				RafraichirIndicateurModeEditionGraphique();
+				// Edition en direct : on laisse le monde tourner pendant les ajustements.
+				_panelPause.Visible = false;
+				GetTree().Paused = false;
+				Input.MouseMode = Input.MouseModeEnum.Visible;
+			}
+		};
+		vbox.AddChild(btnGraphismes);
 		var btnMenu = new Button { Text = "Menu principal" };
 		btnMenu.Pressed += () =>
 		{
@@ -713,7 +1042,335 @@ public partial class Gestionnaire_Monde : Node3D
 		btnQuit.Pressed += () => GetTree().Quit();
 		vbox.AddChild(btnQuit);
 		layer.AddChild(_panelPause);
+		CreerPanelGraphismes(layer);
 		_panelPause.Visible = false;
+	}
+
+	private (HSlider slider, Label valeur) CreerLigneSlider(Control parent, string texte, float min, float max, float pas)
+	{
+		var ligne = new HBoxContainer();
+		ligne.AddThemeConstantOverride("separation", 8);
+		parent.AddChild(ligne);
+		var label = new Label
+		{
+			Text = texte,
+			CustomMinimumSize = new Vector2(230, 0),
+			SizeFlagsHorizontal = Control.SizeFlags.Fill
+		};
+		ligne.AddChild(label);
+		var slider = new HSlider
+		{
+			MinValue = min,
+			MaxValue = max,
+			Step = pas,
+			SizeFlagsHorizontal = Control.SizeFlags.ExpandFill
+		};
+		var btnMoins = new Button { Text = "-", CustomMinimumSize = new Vector2(28, 0) };
+		btnMoins.Pressed += () => slider.Value = Mathf.Max(slider.MinValue, slider.Value - slider.Step);
+		ligne.AddChild(btnMoins);
+		ligne.AddChild(slider);
+		var btnPlus = new Button { Text = "+", CustomMinimumSize = new Vector2(28, 0) };
+		btnPlus.Pressed += () => slider.Value = Mathf.Min(slider.MaxValue, slider.Value + slider.Step);
+		ligne.AddChild(btnPlus);
+		var valeur = new Label
+		{
+			Text = "-",
+			HorizontalAlignment = HorizontalAlignment.Right,
+			CustomMinimumSize = new Vector2(70, 0)
+		};
+		ligne.AddChild(valeur);
+		return (slider, valeur);
+	}
+
+	private void CreerPanelGraphismes(CanvasLayer layer)
+	{
+		_panelGraphismes = new Panel
+		{
+			Visible = false
+		};
+		_panelGraphismes.SetAnchorsPreset(Control.LayoutPreset.Center);
+		_panelGraphismes.OffsetLeft = -360;
+		_panelGraphismes.OffsetTop = -270;
+		_panelGraphismes.OffsetRight = 360;
+		_panelGraphismes.OffsetBottom = 270;
+
+		var marge = new MarginContainer();
+		marge.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+		marge.AddThemeConstantOverride("margin_left", 16);
+		marge.AddThemeConstantOverride("margin_top", 16);
+		marge.AddThemeConstantOverride("margin_right", 16);
+		marge.AddThemeConstantOverride("margin_bottom", 16);
+		_panelGraphismes.AddChild(marge);
+
+		var racine = new VBoxContainer();
+		racine.AddThemeConstantOverride("separation", 8);
+		marge.AddChild(racine);
+
+		racine.AddChild(new Label
+		{
+			Text = "Reglages graphiques avances",
+			HorizontalAlignment = HorizontalAlignment.Center
+		});
+
+		_optionPresetGraphique = new OptionButton();
+		_optionPresetGraphique.AddItem("Faible", (int)PresetGraphique.Faible);
+		_optionPresetGraphique.AddItem("Moyen", (int)PresetGraphique.Moyen);
+		_optionPresetGraphique.AddItem("Eleve", (int)PresetGraphique.Eleve);
+		_optionPresetGraphique.AddItem("Ultra", (int)PresetGraphique.Ultra);
+		_optionPresetGraphique.AddItem("Personnalise", (int)PresetGraphique.Personnalise);
+		_optionPresetGraphique.ItemSelected += (_) => AppliquerPresetDepuisUI();
+		racine.AddChild(_optionPresetGraphique);
+
+		var scroll = new ScrollContainer
+		{
+			SizeFlagsVertical = Control.SizeFlags.ExpandFill
+		};
+		racine.AddChild(scroll);
+
+		var contenu = new VBoxContainer();
+		contenu.AddThemeConstantOverride("separation", 5);
+		scroll.AddChild(contenu);
+
+		(_sliderRenderDistance, _labelRenderDistanceValeur) = CreerLigneSlider(contenu, "Distance de rendu (chunks)", 6, 64, 1);
+		(_sliderRayonQualiteProche, _labelRayonQualiteProcheValeur) = CreerLigneSlider(contenu, "Qualite proche chunks", 1, 24, 1);
+		(_sliderDetailChunks, _labelDetailChunksValeur) = CreerLigneSlider(contenu, "Distance detail (chunks)", 6, 64, 1);
+		(_sliderRayonGazon, _labelRayonGazonValeur) = CreerLigneSlider(contenu, "Visibilite gazon", 1, 24, 1);
+		(_sliderRayonBuissons, _labelRayonBuissonsValeur) = CreerLigneSlider(contenu, "Visibilite buissons", 2, 32, 1);
+		(_sliderRayonHorizon, _labelRayonHorizonValeur) = CreerLigneSlider(contenu, "Rayon horizon LOD", 24, 240, 1);
+		(_sliderPasHorizon, _labelPasHorizonValeur) = CreerLigneSlider(contenu, "Pas horizon (metres)", 12, 80, 1);
+		(_sliderAngleCulling, _labelAngleCullingValeur) = CreerLigneSlider(contenu, "Angle culling camera", 80, 175, 1);
+		(_sliderMargeToujoursVisible, _labelMargeToujoursVisibleValeur) = CreerLigneSlider(contenu, "Marge toujours visible", 1, 32, 1);
+		(_sliderMaxChunksFrame, _labelMaxChunksFrameValeur) = CreerLigneSlider(contenu, "Max chunks / frame", 2, 40, 1);
+		(_sliderLodEtapes, _labelLodEtapesValeur) = CreerLigneSlider(contenu, "Etapes LOD texture", 8, 24, 1);
+
+		_checkActiverHorizon = new CheckBox { Text = "Activer horizon lointain simplifie" };
+		_checkActiverCulling = new CheckBox { Text = "Activer culling camera des chunks" };
+		_checkLodUltraSmooth = new CheckBox { Text = "LOD texture ultra smooth" };
+		_checkModeSurvieAgressif = new CheckBox
+		{
+			Text = "Sauver les FPS (auto; décoche pour respecter Max chunks / frame)"
+		};
+		contenu.AddChild(_checkActiverHorizon);
+		contenu.AddChild(_checkActiverCulling);
+		contenu.AddChild(_checkLodUltraSmooth);
+		contenu.AddChild(_checkModeSurvieAgressif);
+
+		_sliderRenderDistance.ValueChanged += (_) =>
+		{
+			_sliderDetailChunks.MaxValue = _sliderRenderDistance.Value;
+			if (_sliderDetailChunks.Value > _sliderDetailChunks.MaxValue)
+				_sliderDetailChunks.Value = _sliderDetailChunks.MaxValue;
+		};
+
+		_sliderRenderDistance.ValueChanged += (_) => _labelRenderDistanceValeur.Text = $"{_sliderRenderDistance.Value:0}";
+		_sliderRayonQualiteProche.ValueChanged += (_) => _labelRayonQualiteProcheValeur.Text = $"{_sliderRayonQualiteProche.Value:0}";
+		_sliderDetailChunks.ValueChanged += (_) => _labelDetailChunksValeur.Text = $"{_sliderDetailChunks.Value:0}";
+		_sliderRayonGazon.ValueChanged += (_) => _labelRayonGazonValeur.Text = $"{_sliderRayonGazon.Value:0}";
+		_sliderRayonBuissons.ValueChanged += (_) => _labelRayonBuissonsValeur.Text = $"{_sliderRayonBuissons.Value:0}";
+		_sliderRayonHorizon.ValueChanged += (_) => _labelRayonHorizonValeur.Text = $"{_sliderRayonHorizon.Value:0}";
+		_sliderPasHorizon.ValueChanged += (_) => _labelPasHorizonValeur.Text = $"{_sliderPasHorizon.Value:0}m";
+		_sliderAngleCulling.ValueChanged += (_) => _labelAngleCullingValeur.Text = $"{_sliderAngleCulling.Value:0}deg";
+		_sliderMargeToujoursVisible.ValueChanged += (_) => _labelMargeToujoursVisibleValeur.Text = $"{_sliderMargeToujoursVisible.Value:0}";
+		_sliderMaxChunksFrame.ValueChanged += (_) => _labelMaxChunksFrameValeur.Text = $"{_sliderMaxChunksFrame.Value:0}";
+		_sliderLodEtapes.ValueChanged += (_) => _labelLodEtapesValeur.Text = $"{_sliderLodEtapes.Value:0}";
+		_sliderRenderDistance.ValueChanged += (_) => SurControleGraphiqueModifie();
+		_sliderRayonQualiteProche.ValueChanged += (_) => SurControleGraphiqueModifie();
+		_sliderDetailChunks.ValueChanged += (_) => SurControleGraphiqueModifie();
+		_sliderRayonGazon.ValueChanged += (_) => SurControleGraphiqueModifie();
+		_sliderRayonBuissons.ValueChanged += (_) => SurControleGraphiqueModifie();
+		_sliderRayonHorizon.ValueChanged += (_) => SurControleGraphiqueModifie();
+		_sliderPasHorizon.ValueChanged += (_) => SurControleGraphiqueModifie();
+		_sliderAngleCulling.ValueChanged += (_) => SurControleGraphiqueModifie();
+		_sliderMargeToujoursVisible.ValueChanged += (_) => SurControleGraphiqueModifie();
+		_sliderMaxChunksFrame.ValueChanged += (_) => SurControleGraphiqueModifie();
+		_sliderLodEtapes.ValueChanged += (_) => SurControleGraphiqueModifie();
+		_checkActiverHorizon.Toggled += (_) => SurControleGraphiqueModifie();
+		_checkActiverCulling.Toggled += (_) => SurControleGraphiqueModifie();
+		_checkLodUltraSmooth.Toggled += (_) => SurControleGraphiqueModifie();
+		_checkModeSurvieAgressif.Toggled += (_) => SurControleGraphiqueModifie();
+
+		_labelModeEditionGraphique = new Label { Text = "Mode: PAUSE" };
+		_labelAutoHybride = new Label { Text = "Auto hybride inactif." };
+		racine.AddChild(_labelModeEditionGraphique);
+		racine.AddChild(_labelAutoHybride);
+
+		var boutons = new HBoxContainer();
+		boutons.AddThemeConstantOverride("separation", 8);
+		var btnAuto = new Button { Text = "Auto hybride" };
+		btnAuto.Pressed += LancerAutoHybrideGraphique;
+		var btnAppliquer = new Button { Text = "Appliquer" };
+		btnAppliquer.Pressed += () =>
+		{
+			_autoHybrideActif = false;
+			ForcerControleUtilisateurSurGraphismes();
+			GraphicsOptionsData lus = LireOptionsDepuisPanel();
+			AppliquerOptionsGraphiques(lus, sauvegarder: true, synchroniserUi: true, prioriteChargementStreamApresReglageManuel: true);
+			_labelAutoHybride.Text = "Reglages appliques.";
+		};
+		var btnAppliquerMicroReload = new Button { Text = "Appliquer + micro reload" };
+		btnAppliquerMicroReload.Pressed += () =>
+		{
+			_autoHybrideActif = false;
+			ForcerControleUtilisateurSurGraphismes();
+			GraphicsOptionsData lus = LireOptionsDepuisPanel();
+			AppliquerOptionsGraphiques(lus, sauvegarder: true, synchroniserUi: true, prioriteChargementStreamApresReglageManuel: true);
+			ForcerMicroReloadGraphiqueMaintenant();
+			_labelAutoHybride.Text = "Reglages appliques + micro reload force.";
+		};
+		var btnReset = new Button { Text = "Reset (Moyen)" };
+		btnReset.Pressed += () =>
+		{
+			ForcerControleUtilisateurSurGraphismes();
+			GraphicsOptionsData preset = GraphicsOptionsService.ConstruirePreset(PresetGraphique.Moyen, CapturerOptionsGraphiquesCourantes(PresetGraphique.Moyen));
+			AppliquerOptionsGraphiques(preset, sauvegarder: true, synchroniserUi: true, prioriteChargementStreamApresReglageManuel: true);
+			_labelAutoHybride.Text = "Preset moyen applique.";
+		};
+		var btnResetComplet = new Button { Text = "Reset complet (defaut projet)" };
+		btnResetComplet.Pressed += () =>
+		{
+			ForcerControleUtilisateurSurGraphismes();
+			GraphicsOptionsData defautProjet = (_optionsGraphiquesDefautProjet ?? CapturerOptionsGraphiquesCourantes(PresetGraphique.Personnalise)).Clone();
+			defautProjet.Preset = PresetGraphique.Personnalise;
+			AppliquerOptionsGraphiques(defautProjet, sauvegarder: true, synchroniserUi: true, prioriteChargementStreamApresReglageManuel: true);
+			ForcerMicroReloadGraphiqueMaintenant();
+			_labelAutoHybride.Text = "Reset complet applique (defaut projet).";
+		};
+		var btnFermer = new Button { Text = "Fermer" };
+		btnFermer.Pressed += () =>
+		{
+			_panelGraphismes.Visible = false;
+			_editionGraphiqueEnDirect = false;
+			ForcerCycleSolaireActif();
+			RafraichirIndicateurModeEditionGraphique();
+			if (_panelPause != null)
+				_panelPause.Visible = true;
+			GetTree().Paused = true;
+			Input.MouseMode = Input.MouseModeEnum.Visible;
+		};
+		boutons.AddChild(btnAuto);
+		boutons.AddChild(btnAppliquer);
+		boutons.AddChild(btnAppliquerMicroReload);
+		boutons.AddChild(btnReset);
+		boutons.AddChild(btnResetComplet);
+		boutons.AddChild(btnFermer);
+		racine.AddChild(boutons);
+
+		layer.AddChild(_panelGraphismes);
+		SynchroniserPanelGraphiqueDepuisOptions(CapturerOptionsGraphiquesCourantes(_optionsGraphiquesActuelles?.Preset ?? PresetGraphique.Personnalise));
+		RafraichirIndicateurModeEditionGraphique();
+	}
+
+	private void AppliquerPresetDepuisUI()
+	{
+		if (_synchronisationUiGraphiqueEnCours)
+			return;
+		if (_optionPresetGraphique == null || _optionPresetGraphique.Selected < 0)
+			return;
+		PresetGraphique preset = (PresetGraphique)_optionPresetGraphique.GetItemId(_optionPresetGraphique.Selected);
+		if (preset == PresetGraphique.Personnalise)
+			return;
+		ForcerControleUtilisateurSurGraphismes();
+		GraphicsOptionsData baseOptions = CapturerOptionsGraphiquesCourantes(preset);
+		GraphicsOptionsData p = GraphicsOptionsService.ConstruirePreset(preset, baseOptions);
+		AppliquerOptionsGraphiques(p, sauvegarder: false, synchroniserUi: true);
+		if (_mondeClient != null)
+			_mondeClient.SignalerGraceStreamingApresReglageManuel();
+		if (_labelAutoHybride != null)
+			_labelAutoHybride.Text = $"Preset {preset} previsualise. Clique Appliquer pour sauvegarder.";
+	}
+
+	private void SurControleGraphiqueModifie()
+	{
+		if (_synchronisationUiGraphiqueEnCours)
+			return;
+		ForcerControleUtilisateurSurGraphismes();
+		ForcerCycleSolaireActif();
+		GraphicsOptionsData previsualisation = LireOptionsDepuisPanel();
+		AppliquerOptionsGraphiques(previsualisation, sauvegarder: false, synchroniserUi: false);
+		if (_mondeClient != null && _editionGraphiqueEnDirect)
+			_mondeClient.SignalerGraceStreamingApresReglageManuel();
+		if (_optionPresetGraphique != null)
+		{
+			int idx = _optionPresetGraphique.GetItemIndex((int)PresetGraphique.Personnalise);
+			if (idx >= 0)
+				_optionPresetGraphique.Select(idx);
+		}
+		if (_labelAutoHybride != null)
+			_labelAutoHybride.Text = "Previsualisation active (non sauvegardee).";
+	}
+
+	private GraphicsOptionsData LireOptionsDepuisPanel()
+	{
+		return GraphicsOptionsService.Normaliser(new GraphicsOptionsData
+		{
+			Preset = PresetGraphique.Personnalise,
+			RenderDistance = Mathf.RoundToInt((float)_sliderRenderDistance.Value),
+			RenderDistanceDetailChunks = Mathf.RoundToInt((float)_sliderDetailChunks.Value),
+			RayonQualiteProcheChunks = Mathf.RoundToInt((float)_sliderRayonQualiteProche.Value),
+			RayonGazonVisibleChunks = Mathf.RoundToInt((float)_sliderRayonGazon.Value),
+			RayonBuissonsVisibleChunks = Mathf.RoundToInt((float)_sliderRayonBuissons.Value),
+			ActiverHorizonLod = _checkActiverHorizon.ButtonPressed,
+			RayonHorizonChunks = Mathf.RoundToInt((float)_sliderRayonHorizon.Value),
+			PasHorizonMetres = (float)_sliderPasHorizon.Value,
+			ActiverCullingCameraChunks = _checkActiverCulling.ButtonPressed,
+			AngleCullingCameraDeg = (float)_sliderAngleCulling.Value,
+			MargeChunksToujoursVisibles = Mathf.RoundToInt((float)_sliderMargeToujoursVisible.Value),
+			MaxChunksParFrame = Mathf.RoundToInt((float)_sliderMaxChunksFrame.Value),
+			LODTextureEtapes = Mathf.RoundToInt((float)_sliderLodEtapes.Value),
+			ProfilLodCinematiqueUltraSmooth = _checkLodUltraSmooth.ButtonPressed,
+			ModeSurvieFpsAgressif = _checkModeSurvieAgressif.ButtonPressed,
+			FpsCibleAutoDiagnostic = _optionsGraphiquesActuelles?.FpsCibleAutoDiagnostic ?? 60,
+			SeuilFpsUrgenceForte = _optionsGraphiquesActuelles?.SeuilFpsUrgenceForte ?? 42,
+			SeuilFpsUrgenceCritique = _optionsGraphiquesActuelles?.SeuilFpsUrgenceCritique ?? 30,
+			SeuilFpsUrgenceExtreme = _optionsGraphiquesActuelles?.SeuilFpsUrgenceExtreme ?? 24,
+			SeuilFpsSortieUrgenceExtreme = _optionsGraphiquesActuelles?.SeuilFpsSortieUrgenceExtreme ?? 56
+		});
+	}
+
+	private void SynchroniserPanelGraphiqueDepuisOptions(GraphicsOptionsData options)
+	{
+		if (_panelGraphismes == null)
+			return;
+		GraphicsOptionsData o = GraphicsOptionsService.Normaliser(options?.Clone() ?? CapturerOptionsGraphiquesCourantes(PresetGraphique.Personnalise));
+		_synchronisationUiGraphiqueEnCours = true;
+		if (_optionPresetGraphique != null)
+		{
+			int idx = _optionPresetGraphique.GetItemIndex((int)o.Preset);
+			int idxSel = idx >= 0 ? idx : _optionPresetGraphique.GetItemIndex((int)PresetGraphique.Personnalise);
+			// Select() émet ItemSelected (souvent en différé) : sans blocage, AppliquerPresetDepuisUI réécrit tout le monde avec le preset et annule les curseurs.
+			_optionPresetGraphique.SetBlockSignals(true);
+			_optionPresetGraphique.Select(idxSel);
+			_optionPresetGraphique.SetBlockSignals(false);
+		}
+		_sliderRenderDistance.SetValueNoSignal(o.RenderDistance);
+		_sliderRayonQualiteProche.SetValueNoSignal(o.RayonQualiteProcheChunks);
+		_sliderDetailChunks.MaxValue = o.RenderDistance;
+		_sliderDetailChunks.SetValueNoSignal(Mathf.Clamp(o.RenderDistanceDetailChunks, 6, o.RenderDistance));
+		_sliderRayonGazon.SetValueNoSignal(o.RayonGazonVisibleChunks);
+		_sliderRayonBuissons.SetValueNoSignal(o.RayonBuissonsVisibleChunks);
+		_sliderRayonHorizon.SetValueNoSignal(o.RayonHorizonChunks);
+		_sliderPasHorizon.SetValueNoSignal(o.PasHorizonMetres);
+		_sliderAngleCulling.SetValueNoSignal(o.AngleCullingCameraDeg);
+		_sliderMargeToujoursVisible.SetValueNoSignal(o.MargeChunksToujoursVisibles);
+		_sliderMaxChunksFrame.SetValueNoSignal(o.MaxChunksParFrame);
+		_sliderLodEtapes.SetValueNoSignal(o.LODTextureEtapes);
+		_checkActiverHorizon.ButtonPressed = o.ActiverHorizonLod;
+		_checkActiverCulling.ButtonPressed = o.ActiverCullingCameraChunks;
+		_checkLodUltraSmooth.ButtonPressed = o.ProfilLodCinematiqueUltraSmooth;
+		_checkModeSurvieAgressif.ButtonPressed = o.ModeSurvieFpsAgressif;
+
+		_labelRenderDistanceValeur.Text = $"{o.RenderDistance}";
+		_labelRayonQualiteProcheValeur.Text = $"{o.RayonQualiteProcheChunks}";
+		_labelDetailChunksValeur.Text = $"{o.RenderDistanceDetailChunks}";
+		_labelRayonGazonValeur.Text = $"{o.RayonGazonVisibleChunks}";
+		_labelRayonBuissonsValeur.Text = $"{o.RayonBuissonsVisibleChunks}";
+		_labelRayonHorizonValeur.Text = $"{o.RayonHorizonChunks}";
+		_labelPasHorizonValeur.Text = $"{o.PasHorizonMetres:0}m";
+		_labelAngleCullingValeur.Text = $"{o.AngleCullingCameraDeg:0}deg";
+		_labelMargeToujoursVisibleValeur.Text = $"{o.MargeChunksToujoursVisibles}";
+		_labelMaxChunksFrameValeur.Text = $"{o.MaxChunksParFrame}";
+		_labelLodEtapesValeur.Text = $"{o.LODTextureEtapes}";
+		_synchronisationUiGraphiqueEnCours = false;
 	}
 
 	private void ToggleMenuPause()
@@ -721,6 +1378,12 @@ public partial class Gestionnaire_Monde : Node3D
 		if (_panelPause == null) CreerMenuPause();
 		_pauseVisible = !_pauseVisible;
 		_panelPause.Visible = _pauseVisible;
+		if (!_pauseVisible && _panelGraphismes != null)
+		{
+			_panelGraphismes.Visible = false;
+			_editionGraphiqueEnDirect = false;
+		}
+		RafraichirIndicateurModeEditionGraphique();
 		GetTree().Paused = _pauseVisible;
 		Input.MouseMode = _pauseVisible ? Input.MouseModeEnum.Visible : Input.MouseModeEnum.Captured;
 	}
@@ -766,6 +1429,7 @@ public partial class Gestionnaire_Monde : Node3D
 			(pointImpact, rayon, forceDegats) => _mondeServeur.AppliquerDestructionGlobale(pointImpact, rayon, forceDegats),
 			(pointImpact, normale, rayon, idMatiere) => _mondeServeur.AppliquerCreationGlobale(pointImpact, normale, rayon, idMatiere)
 		);
+		AppliquerOptionsGraphiques(CapturerOptionsGraphiquesCourantes(_optionsGraphiquesActuelles?.Preset ?? PresetGraphique.Personnalise), sauvegarder: false, synchroniserUi: false);
 
 		var nodeArbres = new Node3D { Name = "Arbres" };
 		AddChild(nodeArbres);
@@ -1042,17 +1706,13 @@ public partial class Gestionnaire_Monde : Node3D
 
 	private void DetecterProfilMaterielEtAjuster()
 	{
+		if (_verrouProfilMaterielUtilisateur)
+			return;
 		if (!ActiverProfilMaterielAuto && !ForcerProfilGTX1060i710700F)
 			return;
-		_nomCpuDetecte = OS.GetProcessorName()?.ToLowerInvariant() ?? "";
-		try
-		{
-			_nomGpuDetecte = RenderingServer.GetVideoAdapterName().ToLowerInvariant();
-		}
-		catch
-		{
-			_nomGpuDetecte = "";
-		}
+		MettreAJourInfosMaterielDetecte();
+		if (_optionsGraphiquesChargeesUtilisateur)
+			return;
 		bool profilCible = ForcerProfilGTX1060i710700F
 			|| ((_nomCpuDetecte.Contains("i7-10700f") || _nomCpuDetecte.Contains("10700f"))
 				&& (_nomGpuDetecte.Contains("gtx 1060") || _nomGpuDetecte.Contains("1060")));
@@ -1066,6 +1726,8 @@ public partial class Gestionnaire_Monde : Node3D
 	private void ConfigurerProfilMondeClientSelonMateriel()
 	{
 		if (_mondeClient == null) return;
+		if (_verrouProfilMaterielUtilisateur) return;
+		if (_optionsGraphiquesChargeesUtilisateur) return;
 		bool profilCible = ForcerProfilGTX1060i710700F
 			|| ((_nomCpuDetecte.Contains("10700f")) && (_nomGpuDetecte.Contains("1060")));
 		if (!profilCible)
@@ -1202,6 +1864,7 @@ public partial class Gestionnaire_Monde : Node3D
 		_cooldownDrainProfilage += (float)delta;
 		TraiterWarmupShadersProgressif((float)delta);
 		SurveillerDeriveRuntime((float)delta);
+		TraiterAutoHybrideGraphique((float)delta);
 		MettreAJourEffetsRemousSuivis();
 		if (ActiverAutosauvegarde && IntervalleAutosauvegardeSecondes > 0f)
 		{

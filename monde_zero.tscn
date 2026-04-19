@@ -47,7 +47,6 @@ adjustment_contrast = 1.25
 
 [node name="Gestionnaire_Monde" type="Node3D" parent="." unique_id=2015054098]
 script = ExtResource("3_monde")
-RayonQualiteProcheChunks = 4
 RayonGazonVisibleChunks = 8
 MaterielTerrain = ExtResource("14_manteau")
 

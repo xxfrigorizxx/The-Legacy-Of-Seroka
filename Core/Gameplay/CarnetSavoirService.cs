@@ -88,6 +88,8 @@ public partial class Joueur
 
         if (_pagesCarnetSavoir.Count == 0)
             InitialiserPagesCarnetParDefaut();
+        else
+            AssurerTroisPremieresPagesGuideCarnet();
 
         _indexPageCarnetSavoir = Mathf.Clamp(_indexPageCarnetSavoir, 0, Mathf.Max(0, _pagesCarnetSavoir.Count - 1));
         RafraichirContenuUiCarnet();
@@ -141,14 +143,37 @@ public partial class Joueur
     private void InitialiserPagesCarnetParDefaut()
     {
         _pagesCarnetSavoir.Clear();
-        _pagesCarnetSavoir.Add(ObtenirContenuPageInitialeCarnet1());
-        _pagesCarnetSavoir.Add(ObtenirContenuPageInitialeCarnet2());
         _indexPageCarnetSavoir = 0;
+        AssurerTroisPremieresPagesGuideCarnet();
+    }
+
+    /// <summary>Les 3 premières pages sont toujours le guide (avertissement + initiation + survie). Le reste sert aux notes.</summary>
+    private void AssurerTroisPremieresPagesGuideCarnet()
+    {
+        while (_pagesCarnetSavoir.Count < 3)
+            _pagesCarnetSavoir.Add("");
+        _pagesCarnetSavoir[0] = ObtenirContenuPageBienvenueSquelette();
+        _pagesCarnetSavoir[1] = ObtenirContenuPageInitialeCarnet1();
+        _pagesCarnetSavoir[2] = ObtenirContenuPageInitialeCarnet2();
+        _indexPageCarnetSavoir = Mathf.Clamp(_indexPageCarnetSavoir, 0, Mathf.Max(0, _pagesCarnetSavoir.Count - 1));
+    }
+
+    /// <summary>Première page : voix du squelette (boîte noire), ton froid mais lisible.</summary>
+    private static string ObtenirContenuPageBienvenueSquelette()
+    {
+        return "Bienvenue dans ce monde.\n\n" +
+            "Tu n'étais pas prévu ici. Rien ne t'a été promis : ni aide, ni repère, ni garantie. " +
+            "Ce que tu crois comprendre n'est peut-être qu'une ombre du réel.\n\n" +
+            "Écoute ce que ton corps te dit, observe, et suppose que tout peut te nuire " +
+            "tant que tu n'as pas vérifié le contraire.\n\n" +
+            "— Le squelette (carnet du savoir)";
     }
 
     private static string ObtenirContenuPageInitialeCarnet1()
     {
         return "Carnet du savoir - Initiation\n\n" +
+            "Les 3 premieres pages sont le guide du monde (tu ne peux pas les modifier).\n" +
+            "Utilise « + Ajouter page » pour creer des feuilles libres : notes, schemas, decouvertes.\n\n" +
             "Controles de base:\n" +
             "- Z : ouvrir/fermer le carnet du savoir (si equipe dans le slot carnet)\n" +
             "- Q : ouvrir/fermer l'inventaire et l'anatomie\n" +
@@ -174,8 +199,7 @@ public partial class Joueur
     }
 
     /// <summary>
-    /// Migration douce: certains anciens saves du carnet ont page 1 vide.
-    /// On restaure les pages d'initiation uniquement si tout le carnet est vide.
+    /// Carnet vide : guide par defaut. Sinon : impose toujours les 3 premieres pages du guide, conserve la suite pour les notes.
     /// </summary>
     private void CorrigerPagesInitialesCarnetSiNecessaire()
     {
@@ -201,18 +225,7 @@ public partial class Joueur
             return;
         }
 
-        // Sécurise au moins 2 pages pour conserver la navigation attendue.
-        if (_pagesCarnetSavoir.Count == 1)
-            _pagesCarnetSavoir.Add(string.Empty);
-
-        // Répare les saves où les premières pages ont été initialisées vides.
-        bool page1Vide = string.IsNullOrWhiteSpace(_pagesCarnetSavoir[0]);
-        bool page2Vide = string.IsNullOrWhiteSpace(_pagesCarnetSavoir[1]);
-        if (page1Vide && page2Vide)
-        {
-            _pagesCarnetSavoir[0] = ObtenirContenuPageInitialeCarnet1();
-            _pagesCarnetSavoir[1] = ObtenirContenuPageInitialeCarnet2();
-        }
+        AssurerTroisPremieresPagesGuideCarnet();
     }
 
     private void ConstruireUiCarnetSavoirSiNecessaire()
@@ -274,7 +287,7 @@ public partial class Joueur
             SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
             SizeFlagsVertical = Control.SizeFlags.ExpandFill
         };
-        _zoneTexteCarnetSavoir.TextChanged += SynchroniserPageCouranteCarnetDepuisUi;
+        _zoneTexteCarnetSavoir.TextChanged += OnTexteCarnetSavoirModifieParJoueur;
         colonne.AddChild(_zoneTexteCarnetSavoir);
 
         var barreActions = new HBoxContainer();
@@ -305,6 +318,11 @@ public partial class Joueur
         barreActions.AddChild(boutonFermer);
     }
 
+    private void OnTexteCarnetSavoirModifieParJoueur()
+    {
+        SynchroniserPageCouranteCarnetDepuisUi();
+    }
+
     private void SynchroniserPageCouranteCarnetDepuisUi()
     {
         if (_zoneTexteCarnetSavoir == null || !GodotObject.IsInstanceValid(_zoneTexteCarnetSavoir))
@@ -312,6 +330,9 @@ public partial class Joueur
         if (_pagesCarnetSavoir.Count == 0)
             _pagesCarnetSavoir.Add("");
         _indexPageCarnetSavoir = Mathf.Clamp(_indexPageCarnetSavoir, 0, _pagesCarnetSavoir.Count - 1);
+        // Pages 1 a 3 : texte du guide impose (non editable) — pas de sync depuis le TextEdit.
+        if (_indexPageCarnetSavoir < 3)
+            return;
         _pagesCarnetSavoir[_indexPageCarnetSavoir] = _zoneTexteCarnetSavoir.Text ?? "";
     }
 
@@ -332,24 +353,26 @@ public partial class Joueur
     private void AjouterPageCarnet()
     {
         SynchroniserPageCouranteCarnetDepuisUi();
-        _pagesCarnetSavoir.Insert(_indexPageCarnetSavoir + 1, "");
-        _indexPageCarnetSavoir++;
+        AssurerTroisPremieresPagesGuideCarnet();
+        // Ne jamais inserer entre les 3 pages du guide : les notes viennent apres.
+        int insertion = Mathf.Max(_indexPageCarnetSavoir + 1, 3);
+        insertion = Mathf.Min(insertion, _pagesCarnetSavoir.Count);
+        _pagesCarnetSavoir.Insert(insertion, "");
+        _indexPageCarnetSavoir = insertion;
         RafraichirContenuUiCarnet();
     }
 
     private void SupprimerPageCouranteCarnet()
     {
-        if (_pagesCarnetSavoir.Count <= 1)
-        {
-            _pagesCarnetSavoir[0] = "";
-            _indexPageCarnetSavoir = 0;
-            RafraichirContenuUiCarnet();
+        if (_indexPageCarnetSavoir < 3)
             return;
-        }
+        if (_pagesCarnetSavoir.Count <= 3)
+            return;
 
         SynchroniserPageCouranteCarnetDepuisUi();
         _pagesCarnetSavoir.RemoveAt(_indexPageCarnetSavoir);
         _indexPageCarnetSavoir = Mathf.Clamp(_indexPageCarnetSavoir, 0, _pagesCarnetSavoir.Count - 1);
+        AssurerTroisPremieresPagesGuideCarnet();
         RafraichirContenuUiCarnet();
     }
 
@@ -361,7 +384,11 @@ public partial class Joueur
             _pagesCarnetSavoir.Add("");
 
         _indexPageCarnetSavoir = Mathf.Clamp(_indexPageCarnetSavoir, 0, _pagesCarnetSavoir.Count - 1);
+        // Éviter TextChanged pendant l'assignation programmatique (sinon page 0 pouvait être écrasée vide).
+        _zoneTexteCarnetSavoir.TextChanged -= OnTexteCarnetSavoirModifieParJoueur;
         _zoneTexteCarnetSavoir.Text = _pagesCarnetSavoir[_indexPageCarnetSavoir] ?? "";
+        _zoneTexteCarnetSavoir.Editable = _indexPageCarnetSavoir >= 3;
+        _zoneTexteCarnetSavoir.TextChanged += OnTexteCarnetSavoirModifieParJoueur;
         if (_labelPageCarnetSavoir != null && GodotObject.IsInstanceValid(_labelPageCarnetSavoir))
             _labelPageCarnetSavoir.Text = $"Page {_indexPageCarnetSavoir + 1}/{_pagesCarnetSavoir.Count}";
     }

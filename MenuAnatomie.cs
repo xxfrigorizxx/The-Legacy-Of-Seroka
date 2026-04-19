@@ -71,6 +71,7 @@ public partial class MenuAnatomie : Control
 	private bool _clicsGrilleSacConnectes;
 	private bool _clicsGrilleCeintureStockageConnectes;
 	private bool _clicsGrilleCoffreConnectes;
+	private bool _clicsGrilleAnalyseurConnectes;
 	private bool _barreOngletsJeuConfiguree;
 	private SubViewportContainer[] _vpCoffre;
 	private MeshInstance3D[] _meshPreviewCoffre;
@@ -84,6 +85,7 @@ public partial class MenuAnatomie : Control
 	private enum ModeEcranBarreMenu
 	{
 		Inventaire,
+		Analyseur,
 		SauvegarderQuitter
 	}
 
@@ -91,9 +93,18 @@ public partial class MenuAnatomie : Control
 	private Panel _ongletInventaireBarre;
 	private Panel _ongletFutureStateBarre;
 	private Panel _ongletMetierBarre;
+	private Panel _ongletAnalyseurBarre;
 	private Panel _ongletQuitterBarre;
 	private HBoxContainer _corpsHBoxRef;
 	private Panel _panneauSauvegarderQuitter;
+	private Panel _panneauAnalyseur;
+	private GridContainer _grilleAnalyseur;
+	private Label _lblAnalyseurMessage;
+	private Button _btnAnalyser;
+	private Panel[] _slotsAnalyseur;
+	private Label[] _lblAnalyseur;
+	private SubViewportContainer[] _vpAnalyseur;
+	private MeshInstance3D[] _meshPreviewAnalyseur;
 
 	private Panel _conteneurFlottantCurseur;
 	private SubViewportContainer _vpCurseurSouris;
@@ -127,6 +138,7 @@ public partial class MenuAnatomie : Control
 	private ulong _empreinteSacLast;
 	private ulong[] _empreinteCraftLast;
 	private ulong[] _empreinteCoffreLast;
+	private ulong[] _empreinteAnalyseurLast;
 	private ulong _empreinteResultatCraftLast;
 	private float _accumulateurInfobulleInventaire;
 	private const float IntervalleInfobulleInventaireSec = 0.05f;
@@ -750,6 +762,18 @@ public partial class MenuAnatomie : Control
 					Branche(cp, e => TraiterClicInventaire(e, 9, idx));
 			}
 		}
+		AssurerPanneauAnalyseur();
+		if (!_clicsGrilleAnalyseurConnectes && _slotsAnalyseur != null && _slotsAnalyseur.Length > 0)
+		{
+			_clicsGrilleAnalyseurConnectes = true;
+			for (int i = 0; i < _slotsAnalyseur.Length; i++)
+			{
+				int idx = i;
+				Panel cp = _slotsAnalyseur[i];
+				if (cp == null) continue;
+				Branche(cp, e => TraiterClicInventaire(e, 10, idx));
+			}
+		}
 		AssurerCapaciteGrillesStockage();
 	}
 
@@ -837,6 +861,12 @@ public partial class MenuAnatomie : Control
 			if (!_joueurRef.StockageCoffreOuvert || craftIdx < 0 || craftIdx > 9) return;
 			InteragirCurseurAvecSlot(ref _joueurRef.RefSlotCoffreStockage(craftIdx), clicGauche, clicDroit, slotCoffreStockage: true);
 			_joueurRef.VerifierRecettes();
+		}
+		else if (mode == 10 && craftIdx >= 0)
+		{
+			if (_joueurRef.GrilleAnalyseurManuel == null || craftIdx >= _joueurRef.GrilleAnalyseurManuel.Length)
+				return;
+			InteragirCurseurAvecSlot(ref _joueurRef.GrilleAnalyseurManuel[craftIdx], clicGauche, clicDroit);
 		}
 		else
 			return;
@@ -1859,6 +1889,18 @@ public partial class MenuAnatomie : Control
 				}
 				pan.GuiInput += _OnOngletMetierBarre;
 			}
+			else if (nom == "Onglet3")
+			{
+				_ongletAnalyseurBarre = pan;
+				pan.Visible = true;
+				pan.MouseFilter = Control.MouseFilterEnum.Stop;
+				if (pan.GetNodeOrNull<Label>("Label") is Label lAna)
+				{
+					lAna.Text = "Analyseur";
+					lAna.MouseFilter = Control.MouseFilterEnum.Ignore;
+				}
+				pan.GuiInput += _OnOngletAnalyseurBarre;
+			}
 			else if (nom == "Onglet11")
 			{
 				_ongletQuitterBarre = pan;
@@ -1934,16 +1976,214 @@ public partial class MenuAnatomie : Control
 		vbox.AddChild(_panneauSauvegarderQuitter);
 	}
 
+	private void AssurerPanneauAnalyseur()
+	{
+		if (Engine.IsEditorHint()) return;
+		var vbox = GetNodeOrNull<VBoxContainer>(CheminVBoxPrincipal) ?? FindChild("VBoxPrincipal", true, false) as VBoxContainer;
+		if (vbox == null) return;
+		if (_panneauAnalyseur != null) return;
+
+		_panneauAnalyseur = new Panel
+		{
+			Name = "PanneauAnalyseurManuel",
+			Visible = false,
+			MouseFilter = Control.MouseFilterEnum.Stop
+		};
+		_panneauAnalyseur.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+		_panneauAnalyseur.SizeFlagsVertical = Control.SizeFlags.ShrinkBegin;
+		_panneauAnalyseur.CustomMinimumSize = new Vector2(0f, 220f);
+
+		var centre = new CenterContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
+		centre.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+		centre.OffsetLeft = centre.OffsetTop = 8;
+		centre.OffsetRight = centre.OffsetBottom = -8;
+		_panneauAnalyseur.AddChild(centre);
+
+		var col = new VBoxContainer
+		{
+			MouseFilter = Control.MouseFilterEnum.Ignore,
+			CustomMinimumSize = new Vector2(560f, 360f)
+		};
+		col.AddThemeConstantOverride("separation", 12);
+		centre.AddChild(col);
+
+		var titre = new Label
+		{
+			Text = "Analyseur manuel",
+			HorizontalAlignment = HorizontalAlignment.Center,
+			MouseFilter = Control.MouseFilterEnum.Ignore
+		};
+		titre.AddThemeFontSizeOverride("font_size", 20);
+		col.AddChild(titre);
+
+		var aide = new Label
+		{
+			Text = "Depose des objets. L'analyse consomme ce que tu as mis.",
+			HorizontalAlignment = HorizontalAlignment.Center,
+			AutowrapMode = TextServer.AutowrapMode.WordSmart,
+			MouseFilter = Control.MouseFilterEnum.Ignore
+		};
+		aide.AddThemeFontSizeOverride("font_size", 13);
+		col.AddChild(aide);
+
+		_grilleAnalyseur = new GridContainer
+		{
+			Name = "GrilleAnalyseur",
+			Columns = Joueur.CapaciteAnalyseurManuel,
+			MouseFilter = Control.MouseFilterEnum.Ignore
+		};
+		_grilleAnalyseur.AddThemeConstantOverride("h_separation", 12);
+		_grilleAnalyseur.AddThemeConstantOverride("v_separation", 12);
+		col.AddChild(_grilleAnalyseur);
+
+		_slotsAnalyseur = new Panel[Joueur.CapaciteAnalyseurManuel];
+		for (int i = 0; i < Joueur.CapaciteAnalyseurManuel; i++)
+		{
+			var slot = new Panel
+			{
+				Name = $"AnalyseurSlot{i}",
+				CustomMinimumSize = new Vector2(96f, 96f),
+				MouseFilter = Control.MouseFilterEnum.Stop
+			};
+			_grilleAnalyseur.AddChild(slot);
+			_slotsAnalyseur[i] = slot;
+		}
+
+		_btnAnalyser = new Button
+		{
+			Name = "BtnAnalyser",
+			Text = "Analyser",
+			CustomMinimumSize = new Vector2(220f, 40f)
+		};
+		_btnAnalyser.Pressed += () =>
+		{
+			if (_joueurRef == null) return;
+			_joueurRef.EssayerAnalyserCrafts(out string msgAnalyse);
+			if (_lblAnalyseurMessage != null)
+				_lblAnalyseurMessage.Text = string.IsNullOrEmpty(msgAnalyse) ? _joueurRef.MessageAnalyseurManuel : msgAnalyse;
+			GetViewport()?.SetInputAsHandled();
+			_joueurRef.RafraichirHUD();
+			RafraichirMenu();
+		};
+		col.AddChild(_btnAnalyser);
+
+		_lblAnalyseurMessage = new Label
+		{
+			Name = "AnalyseurMessage",
+			Text = "Depose des objets puis clique sur Analyser.",
+			AutowrapMode = TextServer.AutowrapMode.WordSmart,
+			HorizontalAlignment = HorizontalAlignment.Center,
+			VerticalAlignment = VerticalAlignment.Top,
+			MouseFilter = Control.MouseFilterEnum.Ignore,
+			CustomMinimumSize = new Vector2(560f, 80f)
+		};
+		_lblAnalyseurMessage.AddThemeFontSizeOverride("font_size", 13);
+		_lblAnalyseurMessage.AddThemeColorOverride("font_outline_color", Colors.Black);
+		_lblAnalyseurMessage.AddThemeConstantOverride("outline_size", 2);
+		col.AddChild(_lblAnalyseurMessage);
+
+		vbox.AddChild(_panneauAnalyseur);
+	}
+
+	private void AssurerPreviewsAnalyseur()
+	{
+		if (Engine.IsEditorHint()) return;
+		if (_slotsAnalyseur == null || _slotsAnalyseur.Length == 0)
+			return;
+		if (_vpAnalyseur != null && _vpAnalyseur.Length == _slotsAnalyseur.Length && _vpAnalyseur[0] != null && GodotObject.IsInstanceValid(_vpAnalyseur[0]))
+		{
+			if (_empreinteAnalyseurLast == null || _empreinteAnalyseurLast.Length != _slotsAnalyseur.Length)
+				_empreinteAnalyseurLast = new ulong[_slotsAnalyseur.Length];
+			return;
+		}
+		_vpAnalyseur = new SubViewportContainer[_slotsAnalyseur.Length];
+		_meshPreviewAnalyseur = new MeshInstance3D[_slotsAnalyseur.Length];
+		_lblAnalyseur = new Label[_slotsAnalyseur.Length];
+		for (int i = 0; i < _slotsAnalyseur.Length; i++)
+		{
+			if (_slotsAnalyseur[i] == null) continue;
+			_meshPreviewAnalyseur[i] = CreerViewportPreviewDansSlot(_slotsAnalyseur[i], $"VpAnalyseur{i}", out _vpAnalyseur[i]);
+			_lblAnalyseur[i] = TrouverOuCreerLabel(_slotsAnalyseur[i], " ");
+		}
+		_empreinteAnalyseurLast = new ulong[_slotsAnalyseur.Length];
+	}
+
+	private void RafraichirPanneauAnalyseur()
+	{
+		if (_joueurRef == null) return;
+		AssurerPanneauAnalyseur();
+		AssurerPreviewsAnalyseur();
+		if (_lblAnalyseurMessage != null)
+			_lblAnalyseurMessage.Text = string.IsNullOrEmpty(_joueurRef.MessageAnalyseurManuel)
+				? "Depose des objets puis clique sur Analyser."
+				: _joueurRef.MessageAnalyseurManuel;
+		if (_slotsAnalyseur == null) return;
+		for (int i = 0; i < _slotsAnalyseur.Length; i++)
+		{
+			Panel panel = _slotsAnalyseur[i];
+			if (panel == null) continue;
+			SlotInventaire s = i < _joueurRef.GrilleAnalyseurManuel.Length ? _joueurRef.GrilleAnalyseurManuel[i] : default;
+			bool vis = _joueurRef.InventaireSlotAunVisuel3D(s);
+			bool vpOk = _vpAnalyseur != null && i < _vpAnalyseur.Length && _vpAnalyseur[i] != null && GodotObject.IsInstanceValid(_vpAnalyseur[i]);
+			if (vpOk)
+			{
+				_vpAnalyseur[i].Visible = vis;
+				if (vis && _meshPreviewAnalyseur != null && i < _meshPreviewAnalyseur.Length && _meshPreviewAnalyseur[i] != null)
+				{
+					ulong em = EmpreinteSlotPourPreviewMenu(s);
+					if (_empreinteAnalyseurLast == null || i >= _empreinteAnalyseurLast.Length || em != _empreinteAnalyseurLast[i])
+					{
+						_joueurRef.SynchroniserPreviewSlotMenu(_meshPreviewAnalyseur[i], s);
+						if (_empreinteAnalyseurLast != null && i < _empreinteAnalyseurLast.Length)
+							_empreinteAnalyseurLast[i] = em;
+					}
+				}
+				else if (_meshPreviewAnalyseur != null && i < _meshPreviewAnalyseur.Length && _meshPreviewAnalyseur[i] != null)
+				{
+					_meshPreviewAnalyseur[i].Mesh = null;
+					_meshPreviewAnalyseur[i].MaterialOverride = null;
+					if (_empreinteAnalyseurLast != null && i < _empreinteAnalyseurLast.Length)
+						_empreinteAnalyseurLast[i] = 0UL;
+				}
+			}
+			if (_lblAnalyseur != null && i < _lblAnalyseur.Length && _lblAnalyseur[i] != null)
+			{
+				string nom = Atlas_Matiere.ObtenirNomObjet(s);
+				_lblAnalyseur[i].Text = string.IsNullOrEmpty(nom) ? " " : nom;
+				_lblAnalyseur[i].Visible = !vis || !vpOk;
+			}
+			RafraichirQuantiteSlot(panel, s);
+		}
+	}
+
+	private void RestituerGrilleAnalyseurAvantFermeture()
+	{
+		if (_joueurRef == null || _joueurRef.GrilleAnalyseurManuel == null) return;
+		for (int i = 0; i < _joueurRef.GrilleAnalyseurManuel.Length; i++)
+		{
+			SlotInventaire s = _joueurRef.GrilleAnalyseurManuel[i];
+			if (s.EstVide) continue;
+			if (!_joueurRef.EssayerRangerSlotInventaireOuStockage(ref s) && !s.EstVide)
+				_joueurRef.DeposerSlotAuSolDepuisMenu(s);
+			_joueurRef.GrilleAnalyseurManuel[i] = new SlotInventaire();
+		}
+	}
+
 	private void AppliquerEcranBarre(ModeEcranBarreMenu mode)
 	{
 		if (Engine.IsEditorHint()) return;
 		_ecranBarreCourant = mode;
 		AssurerPanneauSauvegarderQuitter();
+		AssurerPanneauAnalyseur();
 		if (_corpsHBoxRef != null)
-			_corpsHBoxRef.Visible = mode == ModeEcranBarreMenu.Inventaire;
+			_corpsHBoxRef.Visible = mode == ModeEcranBarreMenu.Inventaire || mode == ModeEcranBarreMenu.Analyseur;
+		if (_panneauAnalyseur != null)
+			_panneauAnalyseur.Visible = mode == ModeEcranBarreMenu.Analyseur;
 		if (_panneauSauvegarderQuitter != null)
 			_panneauSauvegarderQuitter.Visible = mode == ModeEcranBarreMenu.SauvegarderQuitter;
 		MettreAJourStyleOngletsBarre();
+		if (mode == ModeEcranBarreMenu.Analyseur)
+			RafraichirPanneauAnalyseur();
 		RafraichirAffichageCurseurSouris();
 	}
 
@@ -1957,6 +2197,8 @@ public partial class MenuAnatomie : Control
 			_ongletFutureStateBarre.Modulate = inactif;
 		if (_ongletMetierBarre != null)
 			_ongletMetierBarre.Modulate = inactif;
+		if (_ongletAnalyseurBarre != null)
+			_ongletAnalyseurBarre.Modulate = _ecranBarreCourant == ModeEcranBarreMenu.Analyseur ? actif : inactif;
 		if (_ongletQuitterBarre != null)
 			_ongletQuitterBarre.Modulate = _ecranBarreCourant == ModeEcranBarreMenu.SauvegarderQuitter ? actif : inactif;
 	}
@@ -1991,6 +2233,14 @@ public partial class MenuAnatomie : Control
 			return;
 		GetViewport()?.SetInputAsHandled();
 		_joueurRef?.OuvrirMetiersDepuisMenu();
+	}
+
+	private void _OnOngletAnalyseurBarre(InputEvent e)
+	{
+		if (e is not InputEventMouseButton mb || !mb.Pressed || mb.ButtonIndex != MouseButton.Left)
+			return;
+		GetViewport()?.SetInputAsHandled();
+		AppliquerEcranBarre(ModeEcranBarreMenu.Analyseur);
 	}
 
 	public void ForcerOngletInventaire()
@@ -2209,6 +2459,7 @@ public partial class MenuAnatomie : Control
 		if (!EstOuvert)
 		{
 			ResoudreCurseurAvantFermeture();
+			RestituerGrilleAnalyseurAvantFermeture();
 			if (_joueurRef != null)
 			{
 				_joueurRef.CraftGrille3x3AuTable = false;
@@ -2397,6 +2648,8 @@ public partial class MenuAnatomie : Control
 
 		AppliquerDispositionGrilleCraft();
 		MettreAJourEnteteModeRack();
+		if (_ecranBarreCourant == ModeEcranBarreMenu.Analyseur)
+			RafraichirPanneauAnalyseur();
 		if (_joueurRef.StockageRackBatonsOuvert && _joueurRef.RackBatonsOuvert != null && GodotObject.IsInstanceValid(_joueurRef.RackBatonsOuvert))
 		{
 			if (_joueurRef.RackBatonsOuvert.ID_Objet == Joueur.IdObjetRackBatons)

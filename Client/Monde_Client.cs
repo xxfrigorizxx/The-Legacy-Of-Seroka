@@ -185,10 +185,10 @@ public partial class Monde_Client : Node3D
 	private float _timerRafraichissementRadarImmobile = 0f;
 	private Vector3 _derniereDirectionRadar = Vector3.Forward;
 	private const int EpaisseurAnneauRadar = 3;
-	private const int MaxAjoutsRadarParPasse = 520;
+	[Export] public int MaxAjoutsRadarParPasse = 520;
 	private float _fpsMoyenneAuto = 60f;
 	private float _ratioChargeAuto = 1f;
-	private int _maxAjoutsRadarParPasseDyn = MaxAjoutsRadarParPasse;
+	private int _maxAjoutsRadarParPasseDyn = 520;
 	private int _maxRequetesDyn = 12;
 	private int _maxTravailleursDyn = 8;
 	private int _maxTransitionsDormanceDyn = 64;
@@ -198,6 +198,10 @@ public partial class Monde_Client : Node3D
 	private float _facteurMouvementAuto = 1f;
 	private float _timerFreinSpike = 0f;
 	private int _niveauUrgencePerf = 0; // 0=normal, 1=forte, 2=critique
+
+	/// <summary>Après « Appliquer » dans le panneau graphismes : évite que les plafonds d’urgence FPS annulent la distance de rendu choisie (ex. 30 chunks) tout en gardant une montée progressive du radar.</summary>
+	private float _timerGraceStreamingReglageUtilisateur;
+	private const float DureeGraceStreamingReglageUtilisateurSec = 75f;
 	private float _cooldownServicesLointains = 0f;
 	private Vector2I _obsChunkDormance = new Vector2I(-99999, -99999);
 	private float _timerDormance = 0f;
@@ -268,6 +272,16 @@ public partial class Monde_Client : Node3D
 	{
 		int minRadar = Mathf.Max(RayonDormancePhysique + 2, RayonInitialRequetesChunks);
 		int cible = RayonChargementChunksActif();
+		// Hors mode « Sauver les FPS », pas de fenêtre progressive imposée par le moteur : alignement direct sur la distance utilisateur.
+		if (!ModeSurvieFpsAgressif)
+			return Mathf.Max(minRadar, cible);
+		// Réglage manuel validé : on ne réduit plus la cible du radar à ~dormance+3 sous urgence (sinon 30 chunks demandés ne chargent jamais).
+		if (_timerGraceStreamingReglageUtilisateur > 0f)
+		{
+			int margeManuel = 10;
+			int progressifManuel = Mathf.Max(minRadar, _rayonRequetesActuel + margeManuel);
+			return Mathf.Clamp(progressifManuel, minRadar, cible);
+		}
 		int margeProgressive = _niveauUrgencePerf >= 3 ? 1 : (_niveauUrgencePerf >= 2 ? 2 : (_niveauUrgencePerf == 1 ? 4 : 6));
 		int progressif = Mathf.Max(minRadar, _rayonRequetesActuel + margeProgressive);
 		if (_niveauUrgencePerf >= 3)
@@ -300,6 +314,128 @@ public partial class Monde_Client : Node3D
 		_ = detailMetres; // garde explicite la base physique (chunks->mètres) pour future extension.
 	}
 
+	public void ReappliquerReglagesGraphiquesRuntime()
+	{
+		Chunk_Client.RayonQualiteMaxChunks = Mathf.Max(1, RayonQualiteMaxChunks);
+		Chunk_Client.RayonVisibiliteGazonChunks = Mathf.Max(1, RayonGazonVisibleChunks);
+		Chunk_Client.RayonVisibiliteBuissonsChunks = Mathf.Max(2, RayonBuissonsVisibleChunks);
+		AppliquerParametresLodTextureTerrain();
+		if (ActiverHorizonLod)
+		{
+			// InitialiserHorizonLointain() ne fait rien si le mesh existe déjà : sans recréation, PasHorizon / RayonHorizon ne changent jamais en jeu.
+			if (_horizonLodMesh != null && GodotObject.IsInstanceValid(_horizonLodMesh))
+			{
+				if (_horizonLodMesh.IsInsideTree())
+					RemoveChild(_horizonLodMesh);
+				_horizonLodMesh.QueueFree();
+				_horizonLodMesh = null;
+			}
+			_centreHorizonCell = new Vector2I(int.MinValue, int.MinValue);
+			_timerMajHorizon = 0f;
+			Callable.From(InitialiserHorizonLointain).CallDeferred();
+		}
+		else if (_horizonLodMesh != null && GodotObject.IsInstanceValid(_horizonLodMesh))
+		{
+			_horizonLodMesh.QueueFree();
+			_horizonLodMesh = null;
+			_centreHorizonCell = new Vector2I(int.MinValue, int.MinValue);
+		}
+
+		Vector2I centre = ObtenirCoordonneesChunkJoueur();
+		ReplanifierFloreAutourJoueur(centre);
+
+		// Si le culling est désactivé, il faut forcer la visibilité des chunks déjà cachés.
+		if (!ActiverCullingCameraChunks)
+		{
+			foreach (var kv in _chunksData)
+			{
+				ChunkData data = kv.Value;
+				if (data == null) continue;
+				data.CullingVisible = true;
+				if (data.VisualInstanceRID.IsValid)
+					RenderingServer.Singleton.InstanceSetVisible(data.VisualInstanceRID, true);
+				if (data.WaterInstanceRID.IsValid)
+					RenderingServer.Singleton.InstanceSetVisible(data.WaterInstanceRID, true);
+				if (data._nodeFlore is Node3D flore)
+					flore.Visible = true;
+			}
+		}
+		else
+		{
+			// Réévalue vite la visibilité après changement d'angle/marge.
+			_timerCullingCamera = 0f;
+		}
+	}
+
+	public void ForcerModeStreamingUtilisateur(bool activerProtectionsFps)
+	{
+		ModeAutoDiagnosticAdaptatif = activerProtectionsFps;
+		ActiverGateFpsStrict = activerProtectionsFps;
+		ActiverAntiSpikeFrameTime = activerProtectionsFps;
+		if (!activerProtectionsFps)
+		{
+			_ratioChargeAuto = 1f;
+			_facteurMouvementAuto = 1f;
+			_niveauUrgencePerf = 0;
+			_timerFreinSpike = 0f;
+			_gateStreamingGele = false;
+			_tempsDepuisDegel = DureeRampUpPostDegel + 1f;
+			_tempsEtatGate = DureeMinEtatOuvertSec + 1f;
+			int minRayon = Mathf.Max(RayonDormancePhysique + 1, RayonInitialRequetesChunks);
+			int cible = Mathf.Max(minRayon, RayonChargementChunksActif());
+			_rayonRequetesActuel = Mathf.Clamp(Mathf.Max(_rayonRequetesActuel, cible - 1), minRayon, cible);
+		}
+
+		Vector3 posObs = ObtenirPositionObservation();
+		_cooldownRebuildRadar = 0f;
+		_rebuildRadarEnAttente = false;
+		if (!_radarEnCours)
+			ActualiserVisibiliteEtTriChunks(posObs);
+	}
+
+	/// <summary>À appeler quand le joueur valide explicitement les graphismes (bouton Appliquer) : laisse converger vers RenderDistance sans plafonds d’urgence immédiats.</summary>
+	public void SignalerGraceStreamingApresReglageManuel()
+	{
+		_timerGraceStreamingReglageUtilisateur = DureeGraceStreamingReglageUtilisateurSec;
+		_gateStreamingGele = false;
+		_tempsFpsStableHaut = 0f;
+		_tempsDepuisDegel = DureeRampUpPostDegel + 1f;
+		_tempsEtatGate = DureeMinEtatOuvertSec + 1f;
+	}
+
+	public void ForcerRafraichissementStreamingGraphique(bool microReload)
+	{
+		Vector3 positionObservation = ObtenirPositionObservation();
+		Camera3D cameraActive = ObtenirCameraObservation();
+		Vector3 directionObservation = cameraActive != null
+			? (-cameraActive.GlobalTransform.Basis.Z).Normalized()
+			: (_joueur != null ? (-_joueur.GlobalTransform.Basis.Z).Normalized() : Vector3.Forward);
+
+		int minRayon = Mathf.Max(RayonDormancePhysique + 1, RayonInitialRequetesChunks);
+		int cible = Mathf.Max(minRayon, RayonChargementChunksActif());
+		_rayonRequetesActuel = Mathf.Clamp(Mathf.Max(_rayonRequetesActuel, cible - 1), minRayon, cible);
+		_timerExpansionRequetes = 0f;
+		_timerProgressionForceeRayon = 0f;
+		_timerRafraichissementRadarImmobile = 0f;
+		_tempsDepuisNettoyage = IntervalleNettoyageChunks;
+		_cooldownRebuildRadar = 0f;
+
+		if (microReload)
+			NettoyerChunksObsoles(positionObservation, directionObservation);
+		else
+			PurgerChunksObsolètesDeLaFile(positionObservation);
+
+		_rebuildRadarEnAttente = false;
+		if (!_radarEnCours)
+			ActualiserVisibiliteEtTriChunks(positionObservation);
+		else
+			DemanderRafraichissementRadar(positionObservation, 0.01f);
+	}
+
+	public float LireFpsMoyenAutoDiagnostic() => _fpsMoyenneAuto;
+
+	public int LireNiveauUrgencePerformance() => _niveauUrgencePerf;
+
 	public void Initialiser(CharacterBody3D joueur, int seed, Action<Vector2I> enregistrerDemandeChunk,
 		Action<Vector3, float, float> demanderDestruction, Action<Vector3, Vector3, float, int> demanderCreation)
 	{
@@ -327,6 +463,8 @@ public partial class Monde_Client : Node3D
 	private int AppliquerGateEtRampUp(int budgetActuel, bool doitGarantirProcheJoueur, int minSortieGel = 1)
 	{
 		if (doitGarantirProcheJoueur) return budgetActuel;
+		// Grâce post-panneau graphismes : sinon le gate peut bloquer tout (0 requête chunk) malgré un RenderDistance élevé.
+		if (_timerGraceStreamingReglageUtilisateur > 0f) return budgetActuel;
 		if (!ActiverGateFpsStrict) return budgetActuel;
 		if (_gateStreamingGele) return 0;
 		if (_tempsDepuisDegel < DureeRampUpPostDegel)
@@ -407,7 +545,8 @@ public partial class Monde_Client : Node3D
 		}
 
 		// === Gate FPS strict : gèle tout nouveau chargement tant que FPS < 60 (hystérésis). ===
-		if (ActiverGateFpsStrict)
+		// Pendant la grâce « Appliquer » graphismes, on n’entre pas ici : le else force dégel (sinon aucun chunk ne part).
+		if (ActiverGateFpsStrict && _timerGraceStreamingReglageUtilisateur <= 0f)
 		{
 			float fpsInstant = fps > 1f ? fps : _fpsMoyenneAuto;
 			// Utilise à la fois FPS instantané et moyen pour une réaction rapide sans bruit.
@@ -903,9 +1042,12 @@ public partial class Monde_Client : Node3D
 		}
 		int backlogCharge = CompterBacklog();
 		float facteurAntiSpikeBacklog = 1f;
-		if (backlogCharge > SeuilBacklogHaut) facteurAntiSpikeBacklog *= 0.82f;
-		if (backlogCharge > SeuilBacklogHaut + 28) facteurAntiSpikeBacklog *= 0.72f;
-		if (backlogCharge > SeuilBacklogHaut + 64) facteurAntiSpikeBacklog *= 0.62f;
+		if (ModeSurvieFpsAgressif)
+		{
+			if (backlogCharge > SeuilBacklogHaut) facteurAntiSpikeBacklog *= 0.82f;
+			if (backlogCharge > SeuilBacklogHaut + 28) facteurAntiSpikeBacklog *= 0.72f;
+			if (backlogCharge > SeuilBacklogHaut + 64) facteurAntiSpikeBacklog *= 0.62f;
+		}
 		bool urgencePerfExtreme = niveauUrgence >= 3;
 		bool urgencePerfCritique = niveauUrgence >= 2;
 		bool urgencePerfForte = niveauUrgence >= 1;
@@ -1209,8 +1351,9 @@ public partial class Monde_Client : Node3D
 		bool chunkObservationChange = chunkObservationActuel != _obsChunkDormance;
 		_obsChunkDormance = chunkObservationActuel;
 		AjusterFenetreRequetes(dt);
-		float fpsServicesRef = Mathf.Clamp(_fpsMoyenneAuto, 20f, 120f);
-		float tFpsServices = Mathf.Clamp((fpsServicesRef - 45f) / 20f, 0f, 1f); // 45 FPS -> 0, 65 FPS -> 1
+		float tFpsServices = ModeSurvieFpsAgressif
+			? Mathf.Clamp((Mathf.Clamp(_fpsMoyenneAuto, 20f, 120f) - 45f) / 20f, 0f, 1f) // 45 FPS -> 0, 65 FPS -> 1
+			: 1f;
 		float intervalleServicesLointainsDyn = Mathf.Lerp(0.14f, 0.03f, tFpsServices);
 		if (_niveauUrgencePerf >= 2) intervalleServicesLointainsDyn *= 1.30f;
 		else if (_niveauUrgencePerf == 1) intervalleServicesLointainsDyn *= 1.12f;
@@ -1240,7 +1383,7 @@ public partial class Monde_Client : Node3D
 			if (ActiverProfilagePerfMondeClient)
 				PerfBudgetMonitor.End("MondeClient/Dormance", debutDormanceUs);
 			float facteurDormance = _niveauUrgencePerf >= 2 ? 1.7f : (_niveauUrgencePerf == 1 ? 1.35f : 1f);
-			if (_fpsMoyenneAuto < 56f) facteurDormance *= 1.2f;
+			if (ModeSurvieFpsAgressif && _fpsMoyenneAuto < 56f) facteurDormance *= 1.2f;
 			_timerDormance = Mathf.Clamp(IntervalleDormanceSec * facteurDormance, 0.02f, 0.34f);
 		}
 
@@ -1249,13 +1392,17 @@ public partial class Monde_Client : Node3D
 			_ancienChunkJoueur = chunkObservationActuel;
 			// Replanifie les flores des chunks proches : sinon l'herbe générée quand le joueur était loin reste vide/pauvre.
 			ReplanifierFloreAutourJoueur(chunkObservationActuel);
-			float fpsReference = Mathf.Clamp(_fpsMoyenneAuto, 20f, 120f);
-			float facteurPressionPerf = Mathf.Clamp(60f / fpsReference, 1f, 3.2f);
-			if (urgencePerfExtreme)
-				facteurPressionPerf = Mathf.Max(facteurPressionPerf, 4.5f);
+			float facteurPressionPerf = 1f;
+			if (ModeSurvieFpsAgressif)
+			{
+				float fpsReference = Mathf.Clamp(_fpsMoyenneAuto, 20f, 120f);
+				facteurPressionPerf = Mathf.Clamp(60f / fpsReference, 1f, 3.2f);
+				if (urgencePerfExtreme)
+					facteurPressionPerf = Mathf.Max(facteurPressionPerf, 4.5f);
+			}
 			float cooldownRadar = Mathf.Clamp(
 				Mathf.Max(0.03f, IntervalleMinRebuildRadarSec)
-				* (backlogCharge >= SeuilBacklogBas ? 1.6f : 1f)
+				* (ModeSurvieFpsAgressif && backlogCharge >= SeuilBacklogBas ? 1.6f : 1f)
 				* (prioriteJoueur ? 1.25f : 1f)
 				* facteurPressionPerf,
 				Mathf.Max(0.03f, IntervalleMinRebuildRadarSec),
@@ -1272,7 +1419,9 @@ public partial class Monde_Client : Node3D
 			bool rotationImportante = dot < 0.86f;
 			if (!urgencePerfExtreme && (_timerRafraichissementRadarImmobile <= 0f || rotationImportante) && !_radarEnCours)
 			{
-				float facteurPressionPerf = Mathf.Clamp(60f / Mathf.Max(20f, _fpsMoyenneAuto), 1f, 3.2f);
+				float facteurPressionPerf = ModeSurvieFpsAgressif
+					? Mathf.Clamp(60f / Mathf.Max(20f, _fpsMoyenneAuto), 1f, 3.2f)
+					: 1f;
 				float cooldownRadar = Mathf.Clamp(
 					Mathf.Max(0.03f, IntervalleMinRebuildRadarSec)
 					* (rotationImportante ? 0.7f : 1.2f)
@@ -1360,15 +1509,22 @@ public partial class Monde_Client : Node3D
 		bool chunkPiedsManquant = !_chunksData.ContainsKey(chunkPieds);
 		int backlog = CompterBacklog();
 		int nbRequetes = chunkPiedsManquant ? Mathf.Min(_maxRequetesDyn * 2, 20) : _maxRequetesDyn;
-		if (backlog >= SeuilBacklogHaut) nbRequetes = Mathf.Max(1, nbRequetes / 3);
-		else if (backlog >= SeuilBacklogBas) nbRequetes = Mathf.Max(1, nbRequetes / 2);
+		if (ModeSurvieFpsAgressif)
+		{
+			if (backlog >= SeuilBacklogHaut) nbRequetes = Mathf.Max(1, nbRequetes / 3);
+			else if (backlog >= SeuilBacklogBas) nbRequetes = Mathf.Max(1, nbRequetes / 2);
+		}
 		// Les coupures d'urgence ne s'appliquent pas si le sol proche joueur n'est pas prêt (anti-chute dans le vide).
-		if (urgencePerfExtreme && !doitGarantirProcheJoueur)
-			nbRequetes = chunkPiedsManquant ? 2 : 1;
-		else if (urgencePerfCritique && !doitGarantirProcheJoueur)
-			nbRequetes = Mathf.Min(nbRequetes, chunkPiedsManquant ? 3 : 1);
-		if (frameChargeeStreaming && !doitGarantirProcheJoueur)
-			nbRequetes = Mathf.Min(nbRequetes, chunkPiedsManquant ? 2 : 1);
+		// Sous grâce « Appliquer » graphismes : on ne force pas 1 requête/frame sinon la distance 30 chunks met une éternité.
+		if (_timerGraceStreamingReglageUtilisateur <= 0f)
+		{
+			if (urgencePerfExtreme && !doitGarantirProcheJoueur)
+				nbRequetes = chunkPiedsManquant ? 2 : 1;
+			else if (urgencePerfCritique && !doitGarantirProcheJoueur)
+				nbRequetes = Mathf.Min(nbRequetes, chunkPiedsManquant ? 3 : 1);
+			if (ModeSurvieFpsAgressif && frameChargeeStreaming && !doitGarantirProcheJoueur)
+				nbRequetes = Mathf.Min(nbRequetes, chunkPiedsManquant ? 2 : 1);
+		}
 		// Plancher dur : en situation de risque de chute, garantir au moins 4 requêtes par frame.
 		if (doitGarantirProcheJoueur)
 			nbRequetes = Mathf.Max(nbRequetes, 4);
@@ -1470,11 +1626,14 @@ public partial class Monde_Client : Node3D
 
 		float frequenceBase = Mathf.Max(0.4f, FrequenceMajHorizonSec);
 		float facteurHorizon = 1f;
-		if (_fpsMoyenneAuto < 58f) facteurHorizon = 1.35f;
-		if (_fpsMoyenneAuto < 52f) facteurHorizon = 1.85f;
-		if (_niveauUrgencePerf >= 2) facteurHorizon = Mathf.Max(facteurHorizon, 2.25f);
-		else if (_niveauUrgencePerf == 1) facteurHorizon = Mathf.Max(facteurHorizon, 1.5f);
-		if (_timerFreinSpike > 0f) facteurHorizon *= 1.28f;
+		if (ModeSurvieFpsAgressif)
+		{
+			if (_fpsMoyenneAuto < 58f) facteurHorizon = 1.35f;
+			if (_fpsMoyenneAuto < 52f) facteurHorizon = 1.85f;
+			if (_niveauUrgencePerf >= 2) facteurHorizon = Mathf.Max(facteurHorizon, 2.25f);
+			else if (_niveauUrgencePerf == 1) facteurHorizon = Mathf.Max(facteurHorizon, 1.5f);
+			if (_timerFreinSpike > 0f) facteurHorizon *= 1.28f;
+		}
 		_timerMajHorizon = Mathf.Clamp(frequenceBase * facteurHorizon, 0.4f, 3.2f);
 		_centreHorizonCell = celluleActuelle;
 
@@ -1581,12 +1740,15 @@ public partial class Monde_Client : Node3D
 		int basculesRestantes = Mathf.Max(8, _maxBasculesCullingDyn);
 		int chunksAEvaluerBase = Mathf.Clamp(MaxChunksEvaluesCullingParPasse, 32, 4000);
 		float facteurCulling = Mathf.Lerp(0.5f, 1f, _ratioChargeAuto);
-		if (_niveauUrgencePerf >= 2) facteurCulling *= 0.55f;
-		else if (_niveauUrgencePerf == 1) facteurCulling *= 0.78f;
-		if (_fpsMoyenneAuto < 56f) facteurCulling *= 0.82f;
-		if (_timerFreinSpike > 0f) facteurCulling *= 0.70f;
+		if (ModeSurvieFpsAgressif)
+		{
+			if (_niveauUrgencePerf >= 2) facteurCulling *= 0.55f;
+			else if (_niveauUrgencePerf == 1) facteurCulling *= 0.78f;
+			if (_fpsMoyenneAuto < 56f) facteurCulling *= 0.82f;
+			if (_timerFreinSpike > 0f) facteurCulling *= 0.70f;
+		}
 		int chunksAEvaluer = Mathf.Clamp(Mathf.RoundToInt(chunksAEvaluerBase * facteurCulling), 24, chunksAEvaluerBase);
-		if (_fpsMoyenneAuto < 55f)
+		if (ModeSurvieFpsAgressif && _fpsMoyenneAuto < 55f)
 			basculesRestantes = Mathf.Max(6, Mathf.RoundToInt(basculesRestantes * 0.75f));
 
 		float cosHalf = Mathf.Cos(Mathf.DegToRad(Mathf.Clamp(AngleCullingCameraDeg, 80f, 175f) * 0.5f));
@@ -1726,9 +1888,18 @@ public partial class Monde_Client : Node3D
 
 	private void AjusterFenetreRequetes(float dt)
 	{
+		if (_timerGraceStreamingReglageUtilisateur > 0f)
+			_timerGraceStreamingReglageUtilisateur = Mathf.Max(0f, _timerGraceStreamingReglageUtilisateur - dt);
 		int rayonDetail = RayonChargementChunksActif();
-		if (_rayonRequetesActuel <= 0) _rayonRequetesActuel = Mathf.Max(RayonDormancePhysique + 1, RayonInitialRequetesChunks);
-		_rayonRequetesActuel = Mathf.Clamp(_rayonRequetesActuel, Mathf.Max(RayonDormancePhysique + 1, RayonInitialRequetesChunks), rayonDetail);
+		int minRayonRequetes = Mathf.Max(RayonDormancePhysique + 1, RayonInitialRequetesChunks);
+		// Hors « Sauver les FPS » : pas de réduction automatique du rayon ni throttling par backlog sur cette fenêtre.
+		if (!ModeSurvieFpsAgressif)
+		{
+			_rayonRequetesActuel = Mathf.Clamp(rayonDetail, minRayonRequetes, rayonDetail);
+			return;
+		}
+		if (_rayonRequetesActuel <= 0) _rayonRequetesActuel = minRayonRequetes;
+		_rayonRequetesActuel = Mathf.Clamp(_rayonRequetesActuel, minRayonRequetes, rayonDetail);
 
 		int backlog = CompterBacklog();
 		_timerExpansionRequetes -= dt;
@@ -1742,28 +1913,33 @@ public partial class Monde_Client : Node3D
 		{
 			int gap = Mathf.Max(0, rayonDetail - _rayonRequetesActuel);
 			int pas = gap > 40 ? 2 : 1;
+			if (_timerGraceStreamingReglageUtilisateur > 0f)
+				pas = Mathf.Max(pas, Mathf.Clamp(gap / 6, 2, 5));
 			_rayonRequetesActuel = Mathf.Min(rayonDetail, _rayonRequetesActuel + pas);
 			_timerExpansionRequetes = Mathf.Max(0.1f, IntervalleExpansionRequetesSec);
 		}
-		if (_niveauUrgencePerf >= 3)
+		if (_timerGraceStreamingReglageUtilisateur <= 0f)
 		{
-			int capUrgence = Mathf.Max(RayonDormancePhysique + 1, RayonInitialRequetesChunks);
-			_rayonRequetesActuel = Mathf.Min(_rayonRequetesActuel, capUrgence);
-			_timerExpansionRequetes = Mathf.Max(_timerExpansionRequetes, 0.32f);
-			_timerProgressionForceeRayon = Mathf.Max(_timerProgressionForceeRayon, 0.60f);
-		}
-		else if (_niveauUrgencePerf >= 2)
-		{
-			int capUrgence = Mathf.Max(RayonDormancePhysique + 2, RayonInitialRequetesChunks);
-			_rayonRequetesActuel = Mathf.Min(_rayonRequetesActuel, capUrgence);
-			_timerExpansionRequetes = Mathf.Max(_timerExpansionRequetes, 0.25f);
-			_timerProgressionForceeRayon = Mathf.Max(_timerProgressionForceeRayon, 0.45f);
-		}
-		else if (_niveauUrgencePerf == 1)
-		{
-			int capUrgence = Mathf.Max(RayonDormancePhysique + 4, RayonInitialRequetesChunks);
-			_rayonRequetesActuel = Mathf.Min(_rayonRequetesActuel, capUrgence);
-			_timerExpansionRequetes = Mathf.Max(_timerExpansionRequetes, 0.16f);
+			if (_niveauUrgencePerf >= 3)
+			{
+				int capUrgence = Mathf.Max(RayonDormancePhysique + 1, RayonInitialRequetesChunks);
+				_rayonRequetesActuel = Mathf.Min(_rayonRequetesActuel, capUrgence);
+				_timerExpansionRequetes = Mathf.Max(_timerExpansionRequetes, 0.32f);
+				_timerProgressionForceeRayon = Mathf.Max(_timerProgressionForceeRayon, 0.60f);
+			}
+			else if (_niveauUrgencePerf >= 2)
+			{
+				int capUrgence = Mathf.Max(RayonDormancePhysique + 2, RayonInitialRequetesChunks);
+				_rayonRequetesActuel = Mathf.Min(_rayonRequetesActuel, capUrgence);
+				_timerExpansionRequetes = Mathf.Max(_timerExpansionRequetes, 0.25f);
+				_timerProgressionForceeRayon = Mathf.Max(_timerProgressionForceeRayon, 0.45f);
+			}
+			else if (_niveauUrgencePerf == 1)
+			{
+				int capUrgence = Mathf.Max(RayonDormancePhysique + 4, RayonInitialRequetesChunks);
+				_rayonRequetesActuel = Mathf.Min(_rayonRequetesActuel, capUrgence);
+				_timerExpansionRequetes = Mathf.Max(_timerExpansionRequetes, 0.16f);
+			}
 		}
 
 		// Même sous charge, le rayon avance lentement pour éviter un "blocage complet" du chargement lointain.
@@ -2234,7 +2410,7 @@ public partial class Monde_Client : Node3D
 			return;
 		}
 		int rayonRadar = RayonRadarPreparationActif();
-		int cap = Mathf.Clamp((2 * rayonRadar + 1) * (2 * rayonRadar + 1), 256, 10000);
+		int cap = Mathf.Clamp((2 * rayonRadar + 1) * (2 * rayonRadar + 1), 256, 65536);
 		int n = Mathf.Min(cap, nouvelleListeTriee.Count);
 		_chunksACharger.Clear();
 		if (_chunksACharger.Capacity < n)
@@ -2361,7 +2537,7 @@ public partial class Monde_Client : Node3D
 			maxEvaluations = Mathf.Max(limite * 2, 56);
 		else if (_niveauUrgencePerf == 1)
 			maxEvaluations = Mathf.Max(limite * 3, 72);
-		if (_fpsMoyenneAuto < 55f)
+		if (ModeSurvieFpsAgressif && _fpsMoyenneAuto < 55f)
 			maxEvaluations = Mathf.Max(48, Mathf.RoundToInt(maxEvaluations * 0.75f));
 		while (evaluations < maxEvaluations && transitions < limite && total > 0)
 		{

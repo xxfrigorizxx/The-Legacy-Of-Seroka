@@ -403,13 +403,15 @@ public partial class Joueur : CharacterBody3D
     {
         ["Force"] = 0UL,
         ["Dextiriter"] = 0UL,
-        ["Metaboliste"] = 0UL
+        ["Metaboliste"] = 0UL,
+        ["Intelligence"] = 0UL
     };
     private readonly Dictionary<string, UInt128> _futureStateXp = new(StringComparer.OrdinalIgnoreCase)
     {
         ["Force"] = 0UL,
         ["Dextiriter"] = 0UL,
-        ["Metaboliste"] = 0UL
+        ["Metaboliste"] = 0UL,
+        ["Intelligence"] = 0UL
     };
     private readonly Dictionary<string, ulong> _metiers = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -2307,6 +2309,14 @@ public partial class Joueur : CharacterBody3D
     {
         if (_menuFutureState != null && _menuFutureState.EstOuvert)
         {
+            if (@event is InputEventKey ekTfuture && ekTfuture.Pressed && !ekTfuture.Echo
+                && (ekTfuture.Keycode == Key.T || ekTfuture.PhysicalKeycode == Key.T)
+                && !ekTfuture.CtrlPressed && !ekTfuture.MetaPressed && !ekTfuture.AltPressed
+                && EssayerOuvrirChatDepuisToucheT(@event))
+            {
+                GetViewport().SetInputAsHandled();
+                return;
+            }
             if (@event.IsActionPressed("ui_cancel")
                 || (@event is InputEventKey ekEsc && ekEsc.Pressed && !ekEsc.Echo && ekEsc.Keycode == Key.Escape)
                 || EstToggleFutureState(@event))
@@ -2347,7 +2357,8 @@ public partial class Joueur : CharacterBody3D
 
         if (ChatInGameOuvert())
         {
-            if (@event.IsActionPressed("ui_cancel"))
+            if (@event.IsActionPressed("ui_cancel")
+                || (@event is InputEventKey ekChatEsc && ekChatEsc.Pressed && !ekChatEsc.Echo && ekChatEsc.Keycode == Key.Escape))
             {
                 FermerChatInGame();
                 GetViewport().SetInputAsHandled();
@@ -2377,6 +2388,14 @@ public partial class Joueur : CharacterBody3D
         }
         if (CarnetSavoirOuvert())
         {
+            if (@event is InputEventKey ekTcarnet && ekTcarnet.Pressed && !ekTcarnet.Echo
+                && (ekTcarnet.Keycode == Key.T || ekTcarnet.PhysicalKeycode == Key.T)
+                && !ekTcarnet.CtrlPressed && !ekTcarnet.MetaPressed && !ekTcarnet.AltPressed
+                && EssayerOuvrirChatDepuisToucheT(@event))
+            {
+                GetViewport().SetInputAsHandled();
+                return;
+            }
             if (@event.IsActionPressed("ui_cancel"))
             {
                 FermerCarnetSavoirUI();
@@ -2387,6 +2406,14 @@ public partial class Joueur : CharacterBody3D
 
         if (_menuAnatomie != null && _menuAnatomie.EstOuvert)
         {
+            if (@event is InputEventKey ekTinv && ekTinv.Pressed && !ekTinv.Echo
+                && (ekTinv.Keycode == Key.T || ekTinv.PhysicalKeycode == Key.T)
+                && !ekTinv.CtrlPressed && !ekTinv.MetaPressed && !ekTinv.AltPressed
+                && EssayerOuvrirChatDepuisToucheT(@event))
+            {
+                GetViewport().SetInputAsHandled();
+                return;
+            }
             // Ã‰chap / ui_cancel : fermer lâ€™UI et revenir en jeu immÃ©diatement.
             if (@event.IsActionPressed("ui_cancel") ||
                 (@event is InputEventKey ekEsc && ekEsc.Pressed && !ekEsc.Echo && ekEsc.Keycode == Key.Escape))
@@ -2780,6 +2807,15 @@ public partial class Joueur : CharacterBody3D
         if (string.IsNullOrWhiteSpace(nomStat))
             return 0UL;
         return _futureStates.TryGetValue(nomStat, out ulong niveau) ? niveau : 0UL;
+    }
+
+    /// <summary>Probabilite de reussite de l'analyseur manuel (base 50 % + 0,01 % par niveau d'Intelligence).</summary>
+    public float ObtenirChanceReussiteAnalyseManuelle()
+    {
+        const float chanceBase = 0.5f;
+        const float bonusParNiveau = 0.0001f;
+        ulong n = ObtenirNiveauFutureState("Intelligence");
+        return Mathf.Clamp(chanceBase + n * bonusParNiveau, 0f, 1f);
     }
 
     public UInt128 ObtenirXpFutureState(string nomStat)

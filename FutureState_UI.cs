@@ -102,6 +102,18 @@ public partial class FutureState_UI : CanvasLayer
                     ligneMetaboliste.AddThemeColorOverride("font_color", new Color(0.80f, 0.90f, 0.98f));
                     _listeStats.AddChild(ligneMetaboliste);
                 }
+                else if (string.Equals(kv.Key, "Intelligence", System.StringComparison.OrdinalIgnoreCase))
+                {
+                    float chancePct = _joueur.ObtenirChanceReussiteAnalyseManuelle() * 100f;
+                    var ligneIntelligence = new Label
+                    {
+                        Text = $"  Chance de reussite analyse manuelle: {chancePct:F2}% (50% + 0,01% par niveau)",
+                        HorizontalAlignment = HorizontalAlignment.Left
+                    };
+                    ligneIntelligence.AddThemeFontSizeOverride("font_size", 16);
+                    ligneIntelligence.AddThemeColorOverride("font_color", new Color(0.88f, 0.86f, 1f));
+                    _listeStats.AddChild(ligneIntelligence);
+                }
             }
         }
         else

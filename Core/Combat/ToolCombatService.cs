@@ -1366,7 +1366,8 @@ public partial class Joueur
             Node feuillage = rbCible.GetNodeOrNull("Feuillage");
             if (feuillage != null)
             {
-                Material matFeuilles = (feuillage as MeshInstance3D)?.MaterialOverride?.Duplicate() as Material;
+				Mesh meshFeuillage = (feuillage as MeshInstance3D)?.Mesh;
+				Material matFeuilles = (feuillage as MeshInstance3D)?.MaterialOverride?.Duplicate() as Material;
                 feuillage.QueueFree();
                 JouerSonEtEffetCoupeArbre(pointImpact);
                 GD.Print("ZERO-K : Feuillage arraché du cadavre végétal.");
@@ -1374,7 +1375,7 @@ public partial class Joueur
                 Vector3 baseFeuillage = CalculerPointAuDessusSol(rbCible.GlobalPosition.Lerp(pointImpact, 0.5f) + Vector3.Up * 1.2f, 0.42f);
                 for (int i = 0; i < quantite; i++)
                 {
-                    var bloc = BlocChutant.CreerFeuillageArrache(baseFeuillage, matFeuilles);
+					var bloc = BlocChutant.CreerFeuillageArrache(baseFeuillage, matFeuilles, meshFeuillage);
                     GetTree().CurrentScene.AddChild(bloc);
                     bloc.GlobalPosition = baseFeuillage + new Vector3(((float)GD.Randf() - 0.5f) * 0.65f, (float)i * 0.06f + 0.12f, ((float)GD.Randf() - 0.5f) * 0.65f);
                 }

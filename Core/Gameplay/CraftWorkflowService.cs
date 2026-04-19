@@ -69,7 +69,10 @@ public partial class Joueur
         }
         SlotInventaire[] g = ObtenirGrilleCraftAffichee();
         if (g == null) return;
-        SlotResultatCraft = Atlas_Matiere.EvaluerRecette(g, CraftGrille3x3AuTable);
+        SlotInventaire resultat = Atlas_Matiere.EvaluerRecette(g, CraftGrille3x3AuTable);
+        if (!resultat.EstVide && !EstCraftDebloque(resultat))
+            resultat = new SlotInventaire();
+        SlotResultatCraft = resultat;
     }
 
     /// <summary>Vide la zone craft utilisée (4 cases en poche, 9 sur l’atelier) après prise du résultat.</summary>

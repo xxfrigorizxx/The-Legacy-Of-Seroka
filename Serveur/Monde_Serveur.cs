@@ -61,12 +61,12 @@ public partial class Monde_Serveur : Node
 	[Export] public bool ModeEssencesPartoutTemporaire = false;
 	[Export] public float RatioJungleModeTest = 0.35f;
 	/// <summary>Budget anti micro-freeze : limite de chunks workers intégrés par frame.</summary>
-	private const int MaxIntegrationsWorkersParTick = 2;
+	[Export] public int MaxIntegrationsWorkersParTick = 2;
 	/// <summary>Budget anti micro-freeze : limite de demandes chunks traitées par frame.</summary>
-	private const int MaxDemandesChunksParTick = 2;
+	[Export] public int MaxDemandesChunksParTick = 2;
 	/// <summary>Budget anti micro-freeze : limite de chargements disque synchrones par frame.</summary>
 	private const int MaxChargesDisqueParTick = 1;
-	private const int MaxChunksEnvoiParTick = 8;
+	[Export] public int MaxChunksEnvoiParTick = 8;
 	private bool _modificationEnCours;
 	private readonly object _verrouGeneration = new object();
 	private ConcurrentQueue<(Vector2I coord, Chunk_Serveur chunk, DonneesChunk donnees)> _chunksGeneres = new ConcurrentQueue<(Vector2I, Chunk_Serveur, DonneesChunk)>();
