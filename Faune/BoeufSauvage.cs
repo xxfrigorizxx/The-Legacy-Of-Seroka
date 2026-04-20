@@ -173,7 +173,7 @@ public partial class BoeufSauvage : CharacterBody3D
 	[Export(PropertyHint.Range, "0.05,1,0.01")] public float IntervalleRecalculDirectionNage = 0.25f;
 	[ExportGroup("Vie")]
 	[Export] public bool AfficherVieAuDessusBovin = false;
-	[Export] public float VieMax = 100f;
+	[Export] public float VieMax = 50f;
 	[Export(PropertyHint.Range, "0.001,0.2,0.001")] public float RegenViePourcentageParCycle = 0.01f;
 	[Export(PropertyHint.Range, "30,7200,1")] public float IntervalleRegenVieSecondes = 900f; // 15 minutes
 	[Export(PropertyHint.Range, "0.1,30,0.1")] public float DegatsVieParSecondeFaimNulle = 2.0f;
@@ -267,8 +267,8 @@ public partial class BoeufSauvage : CharacterBody3D
 	private float _faimMaxActuelle = 100f;
 	private float _staminaCourante = 100f;
 	private float _staminaMaxActuelle = 100f;
-	private float _vieCourante = 100f;
-	private float _vieMaxActuelle = 100f;
+	private float _vieCourante = 50f;
+	private float _vieMaxActuelle = 50f;
 	private float _tempsMort;
 	private float _ageSecondes;
 	private float _experience;
@@ -284,7 +284,11 @@ public partial class BoeufSauvage : CharacterBody3D
 	private float _cooldownCohesionAnimation;
 	private float _cohesionAnimationCache = 0f;
 	private bool _dansEau;
+	/// <summary>Aligné sur le joueur : remontée uniquement si « nage vers le haut » (rive / profondeur), pas dès qu’il reste du stamina.</summary>
+	private bool _eauIntentionRemonter;
 	private Vector3 _directionNageEau = Vector3.Zero;
+	/// <summary>Fenêtre courte après un saut stratégique réel pour autoriser l’anim saut (évite micro-rebonds).</summary>
+	private float _fenetreAnimSautStrategique;
 	private CollisionShape3D _hitboxTete;
 	private CollisionShape3D _hitboxVentre;
 	private readonly Dictionary<ulong, double> _horodatageDernierDegatParSource = new();
@@ -1269,6 +1273,7 @@ public partial class BoeufSauvage : CharacterBody3D
 				PerfBudgetMonitor.End("Faune/BovinFrame", debutFrameUs);
 			return;
 		}
+		_fenetreAnimSautStrategique = Mathf.Max(0f, _fenetreAnimSautStrategique - dt);
 		MettreAJourFlashDegatsVisuel(dt);
 
 		MettreAJourAgeEtEvolution(dt);
@@ -1388,8 +1393,8 @@ public partial class BoeufSauvage : CharacterBody3D
 		float vy = Velocity.Y;
 		if (_dansEau)
 		{
-			bool nageActive = _staminaCourante > 0.35f;
-			AppliquerPhysiqueNatation(dt, ref vHoriz, ref vy, nageActive);
+			bool staminaNageOk = _staminaCourante > 0.35f;
+			AppliquerPhysiqueNatation(dt, ref vHoriz, ref vy, staminaNageOk, _eauIntentionRemonter);
 		}
 		else
 		{
@@ -1413,6 +1418,7 @@ public partial class BoeufSauvage : CharacterBody3D
 			}
 			_cooldownSautStrategique = Mathf.Max(0.1f, CooldownSautStrategique);
 			_positionDernierSaut = GlobalPosition;
+			_fenetreAnimSautStrategique = 0.38f;
 		}
 
 		Velocity = new Vector3(vHoriz.X, vy, vHoriz.Z);
@@ -1731,6 +1737,9 @@ public partial class BoeufSauvage : CharacterBody3D
 	{
 		if (!_dansEau || _gestionnaire == null)
 			return directionActuelle;
+		float surfaceEau = _gestionnaire.ObtenirNiveauSurfaceEau();
+		_eauIntentionRemonter = GlobalPosition.Y < surfaceEau - 0.55f;
+
 		_cooldownDirectionNage -= dt;
 		if (_cooldownDirectionNage > 0f && _directionNageEau.LengthSquared() > 0.001f)
 			return _directionNageEau;
@@ -1739,6 +1748,7 @@ public partial class BoeufSauvage : CharacterBody3D
 		// Instinct bovin: chercher d'abord une rive sèche avant de conserver une nage aléatoire.
 		if (TrouverDirectionSortieEau(directionActuelle, out Vector3 sortie))
 		{
+			_eauIntentionRemonter = true;
 			_directionNageEau = sortie;
 			return _directionNageEau;
 		}
@@ -1754,16 +1764,18 @@ public partial class BoeufSauvage : CharacterBody3D
 		return _directionNageEau;
 	}
 
-	private void AppliquerPhysiqueNatation(float dt, ref Vector3 vHoriz, ref float vy, bool nageActive)
+	/// <param name="nageHorizontaleOk">Stamina suffisante pour nager en horizontal (comme avant).</param>
+	/// <param name="remonteActive">Équivalent joueur « saut maintenu » : intention de remonter (rive / profondeur).</param>
+	private void AppliquerPhysiqueNatation(float dt, ref Vector3 vHoriz, ref float vy, bool nageHorizontaleOk, bool remonteActive)
 	{
 		float surface = _gestionnaire != null ? _gestionnaire.ObtenirNiveauSurfaceEau() : (NiveauSurfaceEauReference + 0.35f);
 		bool sousSurface = GlobalPosition.Y < surface;
 		bool peutNager = _staminaCourante > 0.35f;
-		bool nageEffective = nageActive && peutNager;
+		bool nageHorizEffective = nageHorizontaleOk && peutNager;
+		bool remonteEffective = remonteActive && peutNager && sousSurface;
 
-		if (nageEffective)
+		if (nageHorizEffective)
 		{
-			// Nage active: remonter, mais avec un rythme "tranquille" (pas de torpille).
 			EssayerDepenserStamina(CoutStaminaNageParSeconde * dt);
 			float maxNage = VitesseNageHorizontale * (VitesseStatActuelle / Mathf.Max(0.1f, VitesseBase));
 			if (vHoriz.Length() > maxNage)
@@ -1774,27 +1786,34 @@ public partial class BoeufSauvage : CharacterBody3D
 			vHoriz *= Mathf.Clamp(1f - 1.6f * dt, 0f, 1f);
 		}
 
-		if (nageEffective && sousSurface)
+		// Aligné sur Joueur._PhysicsProcess (eau) : remontée seulement si effort « vers le haut » ; sinon gravité atténuée sous l’eau.
+		if (remonteEffective)
 		{
-			float profondeur = Mathf.Clamp((surface - GlobalPosition.Y) / 3.2f, 0f, 1f);
-			float cibleVy = VitesseRemonteeNage * 0.88f + profondeur * 0.34f;
+			// Même principe que <c>sautMaintenu</c> chez le joueur (cible surface + 0,12 m).
 			EssayerDepenserStamina(CoutStaminaMaintienSurfaceParSeconde * dt);
-			vy = Mathf.MoveToward(vy, cibleVy, (PousseeRemonteeEau + 1.9f) * dt);
+			float cibleY = surface + 0.12f;
+			float erreurY = cibleY - GlobalPosition.Y;
+			float vYCible = Mathf.Clamp(erreurY * 5.2f, -1.65f, 3.2f);
+			vy = Mathf.MoveToward(vy, vYCible, 9.2f * dt);
 		}
-		else
+		else if (sousSurface && !IsOnFloor())
 		{
-			float cibleDescente = sousSurface ? -Mathf.Max(0.12f, VitesseDescenteSansNage * 1.12f) : -0.16f;
-			vy = Mathf.MoveToward(vy, cibleDescente, (GraviteDansEau + 0.9f) * dt);
+			vy += GetGravity().Y * (0.32f * dt);
+		}
+		else if (!sousSurface)
+		{
+			vy = Mathf.MoveToward(vy, -0.16f, (GraviteDansEau + 0.9f) * dt);
 		}
 
-		if (!nageEffective)
-			vy -= GraviteDansEau * 0.35f * dt;
+		if (remonteEffective)
+		{
+			// Stabilisation légère si remontée active (évite yoyo).
+			float cibleSurface = surface - 0.50f;
+			float erreurSurface = cibleSurface - GlobalPosition.Y;
+			float correctionSurface = Mathf.Clamp(erreurSurface * 0.45f, -0.35f, 0.45f);
+			vy = Mathf.MoveToward(vy, vy + correctionSurface, 2.2f * dt);
+		}
 
-		// Stabilisation douce proche de la surface (évite l'effet "yoyo" vertical).
-		float cibleSurface = surface - 0.50f;
-		float erreurSurface = cibleSurface - GlobalPosition.Y;
-		float correctionSurface = Mathf.Clamp(erreurSurface * (nageEffective ? 1.10f : 0.50f), -0.65f, 0.80f);
-		vy = Mathf.MoveToward(vy, vy + correctionSurface, (nageEffective ? 2.8f : 1.2f) * dt);
 		vy = Mathf.Clamp(vy, -2.1f, 2.35f);
 	}
 
@@ -2492,7 +2511,23 @@ public partial class BoeufSauvage : CharacterBody3D
 			_joueur.Velocity = v;
 		}
 		_cooldownImpactChargeJoueur = Mathf.Max(0.05f, CooldownImpactChargeJoueur);
-		DeclencherAnimationAttaqueChargeVersJoueur();
+		if (ContactChargeCrediblePourAnimation(dir))
+			DeclencherAnimationAttaqueChargeVersJoueur();
+	}
+
+	/// <summary>Évite ruade / coup de tête animés sans vraie approche (contact crédible).</summary>
+	private bool ContactChargeCrediblePourAnimation(Vector3 dirVersJoueurHoriz)
+	{
+		dirVersJoueurHoriz.Y = 0f;
+		float dist = dirVersJoueurHoriz.Length();
+		if (dist < 0.0001f)
+			return true;
+		Vector3 versJ = dirVersJoueurHoriz / dist;
+		Vector3 vH = new Vector3(Velocity.X, 0f, Velocity.Z);
+		float approche = vH.Dot(versJ);
+		if (dist <= 1.15f)
+			return true;
+		return dist <= 1.82f && approche >= 0.55f;
 	}
 
 	/// <summary>Joue <see cref="_clipAttaqueKick"/> (cible derriere / sur le flanc arriere) ou <see cref="_clipAttaqueTete"/> (cible devant).</summary>
@@ -2983,10 +3018,16 @@ public partial class BoeufSauvage : CharacterBody3D
 		_tempsMort = DureeCadavreAvantSuppression * (ConstitutionActuelle / Mathf.Max(0.1f, ConstitutionBase));
 		Velocity = Vector3.Zero;
 		EmitSignal(SignalName.EvolutionEvenement, "mort_faim", 1f, _niveau, _ageSecondes / 3600f);
-		if (_playbackEtatFaune != null && _machineAPorteMort)
+		if (!string.IsNullOrEmpty(_clipMort) && _animationPlayer != null && _animationPlayer.HasAnimation(_clipMort))
+		{
+			if (_animationTreeFaune != null)
+				_animationTreeFaune.Active = false;
+			_animationPlayer.Play(ObtenirStringNameAnimation(_clipMort), 0.12f);
+		}
+		else if (_playbackEtatFaune != null && _machineAPorteMort)
 			_playbackEtatFaune.Travel(NomNoeudMortString);
 		else if (!string.IsNullOrEmpty(_clipMort) && _animationPlayer != null)
-			_animationPlayer.Play(_clipMort, 0.12f);
+			_animationPlayer.Play(ObtenirStringNameAnimation(_clipMort), 0.12f);
 	}
 
 	private void GererMort(float dt)
@@ -3947,7 +3988,8 @@ public partial class BoeufSauvage : CharacterBody3D
 		float vitesseFuiteActuelle = VitesseFuite * MultiplicateurNiveau * (VitesseStatActuelle / Mathf.Max(0.1f, VitesseBase));
 		float seuilIdle = 0.12f;
 		float seuilMarche = 0.25f;
-		bool sautAscendant = !_dansEau && !IsOnFloor() && Velocity.Y > 0.10f;
+		bool sautAscendant = !_dansEau && !IsOnFloor()
+			&& (_fenetreAnimSautStrategique > 0f || Velocity.Y > 0.42f);
 		bool sprintAnime = (_etat == EtatBoeuf.Fuite || _etat == EtatBoeuf.Charge) && SprintAutoriseParStamina();
 		bool clipsSautDedies = _machineAPorteSaut || _machineAPorteSautGalop;
 

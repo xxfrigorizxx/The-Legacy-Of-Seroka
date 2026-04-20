@@ -206,21 +206,28 @@ public partial class Joueur
 		}
 	};
 
+	/// <summary>Légende des symboles + lignes du patron (grille craft), pour l’analyseur et le fil squelette.</summary>
+	private static string FormaterTexteSchemaRecette(RecetteAnalysable recette)
+	{
+		if (recette == null) return "";
+		var blocs = new List<string>(4);
+		if (recette.LegendeSymboles != null && recette.LegendeSymboles.Length > 0)
+			blocs.Add("Symboles : " + string.Join(", ", recette.LegendeSymboles));
+		if (recette.PatronCraft != null && recette.PatronCraft.Length > 0)
+			blocs.Add("Disposition (parentheses vides = case libre) :\n" + string.Join("\n", recette.PatronCraft));
+		return string.Join("\n", blocs);
+	}
+
 	private static string FormaterMessageDecouverte(RecetteAnalysable recette)
 	{
 		string titre = string.IsNullOrWhiteSpace(recette?.Titre) ? "Craft inconnu" : recette.Titre;
-		string legende = "";
-		if (recette?.LegendeSymboles != null && recette.LegendeSymboles.Length > 0)
-			legende = string.Join(", ", recette.LegendeSymboles);
-		string patron = "";
-		if (recette?.PatronCraft != null && recette.PatronCraft.Length > 0)
-			patron = string.Join("\n", recette.PatronCraft);
-		if (string.IsNullOrWhiteSpace(legende) || string.IsNullOrWhiteSpace(patron))
+		string schema = FormaterTexteSchemaRecette(recette);
+		if (string.IsNullOrWhiteSpace(schema))
 		{
 			GD.PrintErr($"ZERO-K : Recette analyseur incomplète (clé={recette?.CleCraft ?? "?"}).");
 			return $"Vous avez decouvert: {titre}. Le schema de craft est en preparation.";
 		}
-		return $"Vous avez decouvert: {titre}\nLe craft est: {legende}\nLe craft est\n{patron}";
+		return $"Vous avez decouvert: {titre}\n{schema}";
 	}
 
 	private static string CleCraftDepuisResultat(in SlotInventaire resultat)
@@ -387,7 +394,11 @@ public partial class Joueur
 		message = FormaterMessageDecouverte(choisie) + " (+1 XP Intelligence).";
 		MessageAnalyseurManuel = message;
 		string titreCourt = string.IsNullOrWhiteSpace(choisie.Titre) ? "nouvelle formule" : choisie.Titre;
-		AlerteSqueletteBoiteNoire($"Analyseur : reussite — tu decouvres « {titreCourt} » (+1 XP Intelligence). Ouvre le menu Q pour le schema detaille.");
+		string schemaChat = FormaterTexteSchemaRecette(choisie);
+		if (string.IsNullOrEmpty(schemaChat))
+			AlerteSqueletteBoiteNoire($"Analyseur : reussite — tu decouvres « {titreCourt} » (+1 XP Intelligence). Ouvre le menu Q pour plus de details.");
+		else
+			AlerteSqueletteBoiteNoire($"Analyseur : reussite — « {titreCourt} » (+1 XP Intelligence).\n{schemaChat}");
 		return true;
 	}
 

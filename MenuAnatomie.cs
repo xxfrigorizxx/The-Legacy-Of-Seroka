@@ -1342,7 +1342,9 @@ public partial class MenuAnatomie : Control
 	{
 		if (Engine.IsEditorHint() || _joueurRef == null) return;
 		AssurerApercuFlottantCurseur();
-		bool montre = EstOuvert && !_curseurMenu.EstVide && _ecranBarreCourant == ModeEcranBarreMenu.Inventaire;
+		bool ecranAvecCurseurFlottant = _ecranBarreCourant == ModeEcranBarreMenu.Inventaire
+			|| _ecranBarreCourant == ModeEcranBarreMenu.Analyseur;
+		bool montre = EstOuvert && !_curseurMenu.EstVide && ecranAvecCurseurFlottant;
 		_conteneurFlottantCurseur.Visible = montre;
 		if (!montre) return;
 
@@ -1376,20 +1378,29 @@ public partial class MenuAnatomie : Control
 
 	public override void _Process(double delta)
 	{
-		if (Engine.IsEditorHint() || !EstOuvert || _ecranBarreCourant != ModeEcranBarreMenu.Inventaire)
+		if (Engine.IsEditorHint() || !EstOuvert)
 			return;
-		_accumulateurInfobulleInventaire += (float)delta;
-		if (_accumulateurInfobulleInventaire >= IntervalleInfobulleInventaireSec)
-		{
-			_accumulateurInfobulleInventaire = 0f;
-			MettreAJourInfobulleSourisInventaire();
-		}
-		else
-			RepositionnerInfobulleSlotSourisSiVisible();
+		bool ecranInventaire = _ecranBarreCourant == ModeEcranBarreMenu.Inventaire;
+		bool ecranAnalyseur = _ecranBarreCourant == ModeEcranBarreMenu.Analyseur;
+		if (!ecranInventaire && !ecranAnalyseur)
+			return;
 
-		_compteurFrameMenuProcess++;
-		if ((_compteurFrameMenuProcess & 1) == 0)
-			MettreAJourCameraApercuJoueurCorps((float)delta);
+		if (ecranInventaire)
+		{
+			_accumulateurInfobulleInventaire += (float)delta;
+			if (_accumulateurInfobulleInventaire >= IntervalleInfobulleInventaireSec)
+			{
+				_accumulateurInfobulleInventaire = 0f;
+				MettreAJourInfobulleSourisInventaire();
+			}
+			else
+				RepositionnerInfobulleSlotSourisSiVisible();
+
+			_compteurFrameMenuProcess++;
+			if ((_compteurFrameMenuProcess & 1) == 0)
+				MettreAJourCameraApercuJoueurCorps((float)delta);
+		}
+
 		if (_conteneurFlottantCurseur != null && _conteneurFlottantCurseur.Visible)
 		{
 			Vector2 demi = _conteneurFlottantCurseur.Size * 0.5f;

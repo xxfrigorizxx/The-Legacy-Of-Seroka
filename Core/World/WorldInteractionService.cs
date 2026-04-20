@@ -267,6 +267,11 @@ public partial class Joueur
                 return;
             }
             var item = objetTouche as ItemPhysique ?? (objetTouche as Node)?.GetParent() as ItemPhysique ?? (objetTouche as Node)?.GetNodeOrNull<ItemPhysique>("ItemPhysique");
+            byte indexBotaniqueRamasse = LSystem_Botanique.IndexChene;
+            if (item != null && (item.ID_Objet == 30 || item.ID_Objet == 32 || item.ID_Objet == 106 || item.ID_Objet == IdObjetPellePierreTier0 || item.ID_Objet == IdObjetPiochePierreTier0 || item.ID_Objet == IdObjetLancePierreTier0 || item.ID_Objet == IdObjetFauxPierreTier0 || item.ID_Objet == IdObjetPochetteTier0 || item.ID_Objet == IdObjetSacTier0 || item.ID_Objet == IdObjetCeinturePoches || item.ID_Objet == IdObjetCeintureSacoches || item.ID_Objet == IdObjetRackBatons || item.ID_Objet == IdObjetRackBuches || item.ID_Objet == IdObjetCoffreBoisTier0))
+                indexBotaniqueRamasse = item.IndexBotanique;
+            else if ((id == BlocChutant.ID_BRANCHE || id == BlocChutant.ID_BOIS) && objetTouche.HasMeta("IndexBotanique"))
+                indexBotaniqueRamasse = (byte)Mathf.Clamp(objetTouche.GetMeta("IndexBotanique").AsInt32(), 0, 255);
             nouveauSlot = new SlotInventaire
             {
                 ID = id,
@@ -287,9 +292,7 @@ public partial class Joueur
                 ScaleEclat = item != null && (item.ID_Objet == 30 || item.ID_Objet == 32)
                     ? ScaleEclatBoisAuRamassage(item)
                     : (item != null ? item.Scale : Vector3.One),
-                IndexBotanique = item != null && (item.ID_Objet == 30 || item.ID_Objet == 32 || item.ID_Objet == 106 || item.ID_Objet == IdObjetPellePierreTier0 || item.ID_Objet == IdObjetPiochePierreTier0 || item.ID_Objet == IdObjetLancePierreTier0 || item.ID_Objet == IdObjetFauxPierreTier0 || item.ID_Objet == IdObjetPochetteTier0 || item.ID_Objet == IdObjetSacTier0 || item.ID_Objet == IdObjetCeinturePoches || item.ID_Objet == IdObjetCeintureSacoches || item.ID_Objet == IdObjetRackBatons || item.ID_Objet == IdObjetRackBuches || item.ID_Objet == IdObjetCoffreBoisTier0)
-                    ? item.IndexBotanique
-                    : LSystem_Botanique.IndexChene,
+                IndexBotanique = indexBotaniqueRamasse,
                 GenomeAssemblage = LireGenomeSurItemPhysique(item),
                 CleConteneur = (item != null && item.HasMeta("CleConteneur")) ? item.GetMeta("CleConteneur").AsString() : ""
             };
@@ -302,7 +305,17 @@ public partial class Joueur
             if (objetTouche is BlocChutant)
             {
                 int id = objetTouche.HasMeta("ID_Matiere") ? (int)objetTouche.GetMeta("ID_Matiere").AsInt32() : 1;
-                nouveauSlot = new SlotInventaire { ID = id, IndexMorphologique = 0, IndexChimique = 0 };
+                byte idxBot = LSystem_Botanique.IndexChene;
+                if (objetTouche.HasMeta("IndexBotanique"))
+                    idxBot = (byte)Mathf.Clamp(objetTouche.GetMeta("IndexBotanique").AsInt32(), 0, 255);
+                bool boisChute = id == BlocChutant.ID_BRANCHE || id == BlocChutant.ID_BOIS;
+                nouveauSlot = new SlotInventaire
+                {
+                    ID = id,
+                    IndexMorphologique = 0,
+                    IndexChimique = 0,
+                    IndexBotanique = boisChute ? idxBot : LSystem_Botanique.IndexChene
+                };
             }
             else
             {

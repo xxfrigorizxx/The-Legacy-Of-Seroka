@@ -22,7 +22,8 @@ public partial class ArbreVivant : StaticBody3D
 	public static float ResistanceMaxPourAge(int ageEnJours)
 	{
 		ageEnJours = Mathf.Max(1, ageEnJours);
-		return 50f * ageEnJours + 3.5f * ageEnJours * ageEnJours;
+		// Quadratique adoucie (avant 3.5f) : moins de « mur » sur arbres matures.
+		return 50f * ageEnJours + 2.5f * ageEnJours * ageEnJours;
 	}
 	/// <summary>Graine pour variabilité des angles/longueurs (évite arbres identiques).</summary>
 	public uint Seed = 12345;
@@ -547,7 +548,7 @@ public partial class ArbreVivant : StaticBody3D
 		// Jeunes arbres (tier 1–2) : seuil plus bas pour outils taillés / mains nues. Vieux : un peu plus d’inertie requise.
 		float seuilRuptureBotanique = AgeEnJours <= 2
 			? (20f + AgeEnJours * 12f)
-			: (30f + AgeEnJours * 15f + 0.4f * AgeEnJours * AgeEnJours);
+			: (30f + AgeEnJours * 15f + 0.32f * AgeEnJours * AgeEnJours);
 		seuilRuptureBotanique *= facteurEssence;
 		if (AgeEnJours <= 2)
 		{
@@ -573,6 +574,8 @@ public partial class ArbreVivant : StaticBody3D
 		float rayonAxe = hNormTronc < 1f / 3f ? 0.52f : (hNormTronc < 2f / 3f ? 0.46f : 0.40f);
 		bool estLeTronc = hitLocal.Y <= hTronc * 1.05f && distAxis < rayonAxe;
 		float epaisseurEstimee = estLeTronc ? epaisseurTronc : 0.05f;
+		// Branches : seuil plus bas que le fût (roche plate / hachette peu alignée).
+		float seuilPourCoup = seuilRuptureBotanique * (estLeTronc ? 1f : 0.72f);
 
 		// Hachette bien orientée : même si l'impact est faible, le tronc prend toujours des copeaux (progression garantie).
 		if (hachettePrimitive106 && estLeTronc && forceImpact < seuilRuptureBotanique)
@@ -588,14 +591,14 @@ public partial class ArbreVivant : StaticBody3D
 			return 1;
 		}
 
-		if (forceImpact < seuilRuptureBotanique)
+		if (forceImpact < seuilPourCoup)
 			return 0;
 
-		// Roc / lame très épaisse : pas de taille fine sur tronc mature — sauf vraie hachette (tranchant + masse).
-		if (!hachettePrimitive106 && AgeEnJours >= 3 && epaisseurLame > 0.05f)
+		// Roc / lame très épaisse : pas de taille fine sur tronc mature — sauf hachette bien orientée (ne s’applique pas aux branches).
+		if (estLeTronc && !hachettePrimitive106 && AgeEnJours >= 3 && epaisseurLame > 0.05f)
 			return 0;
 
-		if (!hachettePrimitive106 && epaisseurEstimee > epaisseurLame * 4.0f && epaisseurLame > 0.04f)
+		if (estLeTronc && !hachettePrimitive106 && epaisseurEstimee > epaisseurLame * 4.0f && epaisseurLame > 0.04f)
 			return 0;
 
 		if (estLeTronc)
@@ -660,6 +663,9 @@ public partial class ArbreVivant : StaticBody3D
 
 		MeshInstance3D boisCopy = new MeshInstance3D { Name = "Bois", Mesh = _visuelBois.Mesh, MaterialOverride = _visuelBois.MaterialOverride };
 		MeshInstance3D feuillesCopy = new MeshInstance3D { Name = "Feuillage", Mesh = _visuelFeuillage.Mesh, MaterialOverride = _visuelFeuillage.MaterialOverride };
+		// Secours : si la méta du RigidBody est perdue (sérialisation, edge cases), l’ébranchage lit encore l’essence sur « Bois ».
+		boisCopy.SetMeta("IndexBotanique", (int)IndexBotanique);
+		feuillesCopy.SetMeta("IndexBotanique", (int)IndexBotanique);
 		cadavre.AddChild(boisCopy);
 		cadavre.AddChild(feuillesCopy);
 
@@ -739,33 +745,13 @@ public partial class ArbreVivant : StaticBody3D
 
 	private void DeclencherChuteBranche(Vector3 pointImpact, Vector3 directionFrappe)
 	{
-		RigidBody3D brancheMorte = new RigidBody3D { Name = "BrancheMorte" };
-		float volBr = Mathf.Pi * 0.05f * 0.05f * 0.8f;
-		brancheMorte.Mass = Mathf.Max(0.2f, volBr * 500f);
-		brancheMorte.ContinuousCd = true;
-		brancheMorte.CollisionLayer = 1;
-		brancheMorte.CollisionMask = 1;
-		brancheMorte.PhysicsMaterialOverride = new PhysicsMaterial { Friction = 0.78f, Bounce = 0.14f };
-		brancheMorte.LinearDampMode = RigidBody3D.DampMode.Replace;
-		brancheMorte.LinearDamp = 0.08f;
-		brancheMorte.AngularDampMode = RigidBody3D.DampMode.Replace;
-		brancheMorte.AngularDamp = 0.35f;
-
-		brancheMorte.AddChild(new MeshInstance3D
-		{
-			Mesh = new CylinderMesh { TopRadius = 0.04f, BottomRadius = 0.05f, Height = 0.8f },
-			MaterialOverride = _visuelBois.MaterialOverride,
-			Rotation = new Vector3(Mathf.Pi * 0.5f, 0, 0)
-		});
-		brancheMorte.AddChild(new CollisionShape3D
-		{
-			Shape = new CylinderShape3D { Radius = 0.05f, Height = 0.8f },
-			Rotation = new Vector3(Mathf.Pi * 0.5f, 0, 0)
-		});
-
-		GetParent().AddChild(brancheMorte);
-		brancheMorte.GlobalPosition = CalculerPositionSpawnBranche(pointImpact, directionFrappe);
-		brancheMorte.ApplyCentralImpulse(directionFrappe * 5f);
+		Material matEssence = ObtenirMaterielBoisTriplanar(IndexBotanique);
+		var bloc = BlocChutant.Creer(pointImpact, BlocChutant.ID_BRANCHE, matEssence);
+		bloc.SetMeta("IndexBotanique", (int)IndexBotanique);
+		GetParent().AddChild(bloc);
+		bloc.GlobalPosition = CalculerPositionSpawnBranche(pointImpact, directionFrappe);
+		Vector3 imp = directionFrappe.LengthSquared() > 1e-6f ? directionFrappe.Normalized() * 5f : Vector3.Up * 2f;
+		bloc.ApplyCentralImpulse(imp);
 	}
 
 	private static float Hash(uint seed, int salt)

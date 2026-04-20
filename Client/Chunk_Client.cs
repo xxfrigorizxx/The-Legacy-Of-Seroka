@@ -336,7 +336,9 @@ public partial class Chunk_Client : Node3D
 
 		if (dormant)
 		{
-			Visible = false;
+			// Ne pas masquer le mesh : la dormance coupe seulement la physique (cf. docstring).
+			// Visible = false gelait tout le monde à ~5×5 chunks (RAYON_CHUNK_ACTIF_CHUNKS=2), ignorant RenderDistance.
+			Visible = true;
 			ProcessMode = ProcessModeEnum.Disabled;
 			if (_sectionsPhysiques != null)
 			{
@@ -596,6 +598,26 @@ public partial class Chunk_Client : Node3D
 		catch (ObjectDisposedException) { /* Chunk déjà supprimé */ }
 	}
 
+	/// <summary>
+	/// Ordre Godot : <see cref="MultiMesh.TransformFormat"/> → <see cref="MultiMesh.UseColors"/> → <see cref="MultiMesh.InstanceCount"/>
+	/// (allocation des tampons), puis <see cref="MultiMesh.Mesh"/> (prototype), puis remplissage. Évite des incohérences GLES/Vulkan
+	/// sur le canal couleur (crash type index == count dans le moteur).
+	/// </summary>
+	private static void ConfigurerMultiMeshGazonAvecInstances(MultiMesh mm, Mesh meshGazon, List<(Transform3D t, Color c)> instances)
+	{
+		if (mm == null || meshGazon == null || instances == null) return;
+		int n = instances.Count;
+		mm.TransformFormat = MultiMesh.TransformFormatEnum.Transform3D;
+		mm.UseColors = true;
+		mm.InstanceCount = n;
+		mm.Mesh = meshGazon;
+		for (int i = 0; i < n; i++)
+		{
+			mm.SetInstanceTransform(i, instances[i].t);
+			mm.SetInstanceColor(i, instances[i].c);
+		}
+	}
+
 	private void RemplirMultiMeshGazon(List<(Transform3D t, Color c)> gazonInstances)
 	{
 		if (gazonInstances == null || gazonInstances.Count == 0)
@@ -613,16 +635,7 @@ public partial class Chunk_Client : Node3D
 		Mesh meshGazon = _cacheMeshGazon;
 
 		var mm = new MultiMesh();
-		mm.TransformFormat = MultiMesh.TransformFormatEnum.Transform3D;
-		mm.UseColors = true; // Le Shader a besoin du canal couleur
-		mm.Mesh = meshGazon;
-		mm.InstanceCount = gazonInstances.Count;
-
-		for (int i = 0; i < gazonInstances.Count; i++)
-		{
-			mm.SetInstanceTransform(i, gazonInstances[i].t);
-			mm.SetInstanceColor(i, gazonInstances[i].c);
-		}
+		ConfigurerMultiMeshGazonAvecInstances(mm, meshGazon, gazonInstances);
 
 		_mmGazon.Multimesh = mm;
 		_mmGazon.MaterialOverride = ObtenirMaterielGazonSymbiotique();
@@ -639,8 +652,8 @@ public partial class Chunk_Client : Node3D
 		{
 			var mm = new MultiMesh();
 			mm.TransformFormat = MultiMesh.TransformFormatEnum.Transform3D;
-			mm.Mesh = meshPlein;
 			mm.InstanceCount = pleins.Count;
+			mm.Mesh = meshPlein;
 			for (int i = 0; i < pleins.Count; i++) mm.SetInstanceTransform(i, pleins[i]);
 			_mmBuissonPlein.Multimesh = mm;
 			_mmBuissonPlein.MaterialOverride = matBuisson;
@@ -652,8 +665,8 @@ public partial class Chunk_Client : Node3D
 		{
 			var mm = new MultiMesh();
 			mm.TransformFormat = MultiMesh.TransformFormatEnum.Transform3D;
-			mm.Mesh = meshVide;
 			mm.InstanceCount = vides.Count;
+			mm.Mesh = meshVide;
 			for (int i = 0; i < vides.Count; i++) mm.SetInstanceTransform(i, vides[i]);
 			_mmBuissonVide.Multimesh = mm;
 			_mmBuissonVide.MaterialOverride = matBuisson;
@@ -1983,8 +1996,8 @@ private static bool EstCorpsAuSol(PhysicsBody3D body)
 		}
 		var mm = new MultiMesh();
 		mm.TransformFormat = MultiMesh.TransformFormatEnum.Transform3D;
-		mm.Mesh = mesh;
 		mm.InstanceCount = transforms.Count;
+		mm.Mesh = mesh;
 		for (int i = 0; i < transforms.Count; i++)
 			mm.SetInstanceTransform(i, transforms[i]);
 		mmi.Multimesh = mm;
@@ -2103,15 +2116,7 @@ private static bool EstCorpsAuSol(PhysicsBody3D body)
 	private static MultiMesh CreerMultiMeshGazon(List<(Transform3D t, Color c)> instances, Mesh meshGazon)
 	{
 		var mm = new MultiMesh();
-		mm.TransformFormat = MultiMesh.TransformFormatEnum.Transform3D;
-		mm.UseColors = true;
-		mm.Mesh = meshGazon;
-		mm.InstanceCount = instances.Count;
-		for (int i = 0; i < instances.Count; i++)
-		{
-			mm.SetInstanceTransform(i, instances[i].t);
-			mm.SetInstanceColor(i, instances[i].c);
-		}
+		ConfigurerMultiMeshGazonAvecInstances(mm, meshGazon, instances);
 		return mm;
 	}
 

@@ -639,8 +639,9 @@ public partial class Gestionnaire_Monde : Node3D
 		// On rétablit ces paramètres même après un ancien profil matériel.
 		_mondeClient.MaxLancementsTravailleursParTick = modeProtectionFps ? 2 : 6;
 		_mondeClient.BudgetFrameCibleMs = modeProtectionFps ? 16.2f : 22f;
-		_mondeClient.SeuilFpsGateStrict = modeProtectionFps ? 50f : 30f;
-		_mondeClient.SeuilFpsGateReprise = modeProtectionFps ? 57f : 36f;
+		// 50 FPS de gel était trop agressif (beaucoup de configs restent 45–55) ; hors survie : gate désactivé via ForcerModeStreaming.
+		_mondeClient.SeuilFpsGateStrict = modeProtectionFps ? 40f : 28f;
+		_mondeClient.SeuilFpsGateReprise = modeProtectionFps ? 52f : 34f;
 		_mondeClient.DureeStabiliteReprise = modeProtectionFps ? 0.20f : 0.12f;
 		_mondeClient.DureeRampUpPostDegel = modeProtectionFps ? 0.55f : 0.18f;
 		_mondeClient.DureeMinEtatGeleSec = modeProtectionFps ? 0.15f : 0.08f;
@@ -712,18 +713,25 @@ public partial class Gestionnaire_Monde : Node3D
 			_mondeClient.MaxAjoutsRadarParPasse = o.ModeSurvieFpsAgressif
 				? Mathf.Clamp(480 + RenderDistance * 8, 520, 2000)
 				: Mathf.Clamp(1200 + RenderDistance * 40, 1600, 8000);
+			// D’abord aligner gate / diagnostic / rayon requêtes sur le choix utilisateur, puis réglages dérivés et horizon.
+			// Avant : Reappliquer puis Forcer → une frame pouvait laisser le gel actif alors que « Sauver les FPS » était décoché.
+			_mondeClient.ForcerModeStreamingUtilisateur(o.ModeSurvieFpsAgressif);
 			RestaurerParametresMondeClientNonExposesUtilisateur(o.ModeSurvieFpsAgressif);
 			_mondeClient.ReappliquerReglagesGraphiquesRuntime();
-			_mondeClient.ForcerModeStreamingUtilisateur(o.ModeSurvieFpsAgressif);
 			_mondeClient.ForcerRafraichissementStreamingGraphique(microReload: true);
 			if (_joueur != null && RenderDistance > ancienRenderDistance)
 			{
 				Vector2I chunkActuel = WorldToChunkCoord(_joueur.GlobalPosition, TailleChunk);
 				_mondeClient.ReserverChunkSpawnPrioritaire(chunkActuel);
+				_mondeClient.ImpulserConvergenceVersRenderDistance();
 			}
-			if (prioriteChargementStreamApresReglageManuel)
+			// Décocher « Sauver les FPS » : grâce streaming pour débloquer tout de suite la distance mesurée (même sans bouton Appliquer dédié).
+			if (!o.ModeSurvieFpsAgressif || prioriteChargementStreamApresReglageManuel)
 				_mondeClient.SignalerGraceStreamingApresReglageManuel();
 		}
+
+		if (_joueur is Joueur joueurHumain)
+			joueurHumain.ConfigurerFarClipPourRenderDistance(RenderDistance, TailleChunk);
 
 		var cycleSolaire = GetParent()?.GetNodeOrNull<Cycle_Solaire>("CycleSolaire");
 		cycleSolaire?.ConfigurerDistanceBrouillardProgressive(RenderDistance, TailleChunk, 2);
@@ -1148,7 +1156,7 @@ public partial class Gestionnaire_Monde : Node3D
 		_checkLodUltraSmooth = new CheckBox { Text = "LOD texture ultra smooth" };
 		_checkModeSurvieAgressif = new CheckBox
 		{
-			Text = "Sauver les FPS (auto; décoche pour respecter Max chunks / frame)"
+			Text = "Sauver les FPS (gel streaming + plafonds; décoche = distance de rendu pleine, gate FPS désactivé)"
 		};
 		contenu.AddChild(_checkActiverHorizon);
 		contenu.AddChild(_checkActiverCulling);
@@ -1287,7 +1295,8 @@ public partial class Gestionnaire_Monde : Node3D
 		ForcerCycleSolaireActif();
 		GraphicsOptionsData previsualisation = LireOptionsDepuisPanel();
 		AppliquerOptionsGraphiques(previsualisation, sauvegarder: false, synchroniserUi: false);
-		if (_mondeClient != null && _editionGraphiqueEnDirect)
+		// Même hors mode LIVE : sans grâce streaming, ModeSurvieFpsAgressif plafonnait le radar et la distance de rendu « ne marchait pas ».
+		if (_mondeClient != null)
 			_mondeClient.SignalerGraceStreamingApresReglageManuel();
 		if (_optionPresetGraphique != null)
 		{
@@ -1683,7 +1692,8 @@ public partial class Gestionnaire_Monde : Node3D
 			Vector3 cibleMontee = centre + new Vector3(Mathf.Cos(angle) * rayon * 0.55f, montee, Mathf.Sin(angle) * rayon * 0.55f);
 			Vector3 cibleDescente = centre + new Vector3(Mathf.Cos(angle) * rayon, rng.RandfRange(0.0f, 0.03f), Mathf.Sin(angle) * rayon);
 
-			var tw = CreateTween();
+			// Tween rattaché à la goutte : évite tweens orphelins sous Gestionnaire_Monde si la scène change avant la fin.
+			var tw = goutte.CreateTween();
 			tw.TweenProperty(goutte, "global_position", cibleMontee, dureeMontee).SetTrans(Tween.TransitionType.Quad).SetEase(Tween.EaseType.Out);
 			tw.TweenProperty(goutte, "global_position", cibleDescente, dureeDescente).SetTrans(Tween.TransitionType.Quad).SetEase(Tween.EaseType.In);
 			tw.Parallel().TweenProperty(goutte, "scale", Vector3.Zero, dureeMontee + dureeDescente).SetTrans(Tween.TransitionType.Quad).SetEase(Tween.EaseType.In);
@@ -1704,6 +1714,16 @@ public partial class Gestionnaire_Monde : Node3D
 		soleil.RpcId(peerId, nameof(Cycle_Solaire.DefinirDecalageHoraire), offset);
 	}
 
+	/// <summary>Évite <c>Contains("1060")</c> qui peut matcher d’autres GPU (ex. chaînes contenant « 1060 » hors GTX 1060).</summary>
+	private static bool GpuSembleEtreGeforceGtx1060(string nomGpuLower)
+	{
+		if (string.IsNullOrEmpty(nomGpuLower)) return false;
+		return nomGpuLower.Contains("gtx 1060")
+			|| nomGpuLower.Contains("geforce gtx 1060")
+			|| nomGpuLower.Contains("1060 3gb")
+			|| nomGpuLower.Contains("1060 6gb");
+	}
+
 	private void DetecterProfilMaterielEtAjuster()
 	{
 		if (_verrouProfilMaterielUtilisateur)
@@ -1715,7 +1735,7 @@ public partial class Gestionnaire_Monde : Node3D
 			return;
 		bool profilCible = ForcerProfilGTX1060i710700F
 			|| ((_nomCpuDetecte.Contains("i7-10700f") || _nomCpuDetecte.Contains("10700f"))
-				&& (_nomGpuDetecte.Contains("gtx 1060") || _nomGpuDetecte.Contains("1060")));
+				&& GpuSembleEtreGeforceGtx1060(_nomGpuDetecte));
 		if (!profilCible)
 			return;
 		// Profil conservateur pour éviter les rafales CPU sur ce couple CPU/GPU.
@@ -1729,7 +1749,7 @@ public partial class Gestionnaire_Monde : Node3D
 		if (_verrouProfilMaterielUtilisateur) return;
 		if (_optionsGraphiquesChargeesUtilisateur) return;
 		bool profilCible = ForcerProfilGTX1060i710700F
-			|| ((_nomCpuDetecte.Contains("10700f")) && (_nomGpuDetecte.Contains("1060")));
+			|| ((_nomCpuDetecte.Contains("10700f")) && GpuSembleEtreGeforceGtx1060(_nomGpuDetecte));
 		if (!profilCible)
 			return;
 		_mondeClient.FpsCibleAutoDiagnostic = 60;
@@ -1740,8 +1760,8 @@ public partial class Gestionnaire_Monde : Node3D
 		_mondeClient.SeuilFpsSortieUrgenceExtreme = Mathf.Max(_mondeClient.SeuilFpsSortieUrgenceExtreme, 56);
 		_mondeClient.MaxLancementsTravailleursParTick = Mathf.Min(_mondeClient.MaxLancementsTravailleursParTick, 1);
 		_mondeClient.BudgetFrameCibleMs = Mathf.Min(_mondeClient.BudgetFrameCibleMs, 16.2f);
-		_mondeClient.SeuilFpsGateStrict = Mathf.Min(_mondeClient.SeuilFpsGateStrict, 50f);
-		_mondeClient.SeuilFpsGateReprise = Mathf.Min(_mondeClient.SeuilFpsGateReprise, 57f);
+		_mondeClient.SeuilFpsGateStrict = Mathf.Min(_mondeClient.SeuilFpsGateStrict, 40f);
+		_mondeClient.SeuilFpsGateReprise = Mathf.Min(_mondeClient.SeuilFpsGateReprise, 52f);
 		_mondeClient.DureeStabiliteReprise = Mathf.Min(_mondeClient.DureeStabiliteReprise, 0.20f);
 		_mondeClient.DureeRampUpPostDegel = Mathf.Min(_mondeClient.DureeRampUpPostDegel, 0.55f);
 		_mondeClient.DureeMinEtatGeleSec = Mathf.Min(_mondeClient.DureeMinEtatGeleSec, 0.15f);

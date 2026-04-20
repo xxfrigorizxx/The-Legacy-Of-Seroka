@@ -498,6 +498,22 @@ public static class Atlas_Matiere
             string fente = slot.IndexMorphologique switch { 0 => "", 1 => " (Fendue en 2)", 2 => " (Fendue en 4)", 3 => " (Fendue en 8)", _ => " (Éclat)" };
             return $"{longueur}{fente} de {essence}";
         }
+        // Même ID pour branches tombées (arbre, cadavre, buisson) : l’essence vient d’IndexBotanique / meta sur BlocChutant.
+        if (id == BlocChutant.ID_BRANCHE)
+        {
+            string essence = slot.IndexBotanique switch
+            {
+                0 => "Chêne",
+                1 => "Bouleau",
+                2 => "Pin",
+                3 => "Sapin",
+                4 => "Fromager",
+                5 => "Chêne mort",
+                6 => "Bouleau mort",
+                _ => "bois"
+            };
+            return $"Branche brute ({essence})";
+        }
         if (id == 32)
         {
             if (slot.IndexChimique == 1 && slot.IndexMorphologique == 4)
@@ -580,7 +596,6 @@ public static class Atlas_Matiere
             9 => "Terre gelée",
             10 => "Buisson plein",
             11 => "Buisson vide",
-            31 => "Branche de buisson",
             34 => "Feuillage",
             999 => "Végétation",
             _ => $"Objet #{id}"

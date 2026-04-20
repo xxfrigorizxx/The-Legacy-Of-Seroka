@@ -717,6 +717,16 @@ public partial class Joueur : CharacterBody3D
         _rayonTps.AddException(this);
     }
 
+    /// <summary>Aligne le plan de coupe lointain sur la distance de rendu (chunks × taille) pour limiter le vide au bord du monde chargé.</summary>
+    public void ConfigurerFarClipPourRenderDistance(int renderDistanceChunks, int tailleChunk)
+    {
+        float far = Mathf.Clamp(renderDistanceChunks * tailleChunk * 1.35f, 800f, 12000f);
+        if (_cameraFps != null)
+            _cameraFps.Far = far;
+        if (_cameraTps != null)
+            _cameraTps.Far = far;
+    }
+
     private int TrouverOsParMotifs(Skeleton3D sk, params string[][] motifs)
     {
         if (sk == null) return -1;
@@ -1690,7 +1700,7 @@ public partial class Joueur : CharacterBody3D
         _ikBrasDroitFps.Influence = _ikBlendMainDroite;
     }
 
-    private void MettreAJourAnimationHumain(float dt, Vector3 vitesse, Vector2 entreeWasd, bool auSolPourAnim, bool sprintActif)
+    private void MettreAJourAnimationHumain(float dt, Vector3 vitesse, Vector2 entreeWasd, bool auSolPourAnim, bool sprintActif, bool dansEau)
     {
         if (_rigHumain == null || !GodotObject.IsInstanceValid(_rigHumain)) return;
         if (_animationHumain == null || _fallbackAnimProcedural)
@@ -1715,20 +1725,28 @@ public partial class Joueur : CharacterBody3D
 
             if (_animationTreeContientSaut)
             {
-                if (noeud == NomEtatSautLocomotion)
+                if (dansEau && noeud == NomEtatSautLocomotion)
                 {
-                    if (auSolPourAnim || vitesse.Y <= 0.04f)
-                    {
-                        _playbackLocomotion.Travel(NomEtatDeplacementBlendString);
-                        _dernierEtatLocomotionTree = NomEtatDeplacementBlend;
-                    }
+                    _playbackLocomotion.Travel(NomEtatDeplacementBlendString);
+                    _dernierEtatLocomotionTree = NomEtatDeplacementBlend;
                 }
-                else if (noeud == NomEtatDeplacementBlend || noeudVide)
+                else if (!dansEau)
                 {
-                    if (!auSolPourAnim && etaitAuSol && vitesse.Y > 0.08f)
+                    if (noeud == NomEtatSautLocomotion)
                     {
-                        _playbackLocomotion.Travel(NomEtatSautLocomotionString);
-                        _dernierEtatLocomotionTree = NomEtatSautLocomotion;
+                        if (auSolPourAnim || vitesse.Y <= 0.04f)
+                        {
+                            _playbackLocomotion.Travel(NomEtatDeplacementBlendString);
+                            _dernierEtatLocomotionTree = NomEtatDeplacementBlend;
+                        }
+                    }
+                    else if (noeud == NomEtatDeplacementBlend || noeudVide)
+                    {
+                        if (!auSolPourAnim && etaitAuSol && vitesse.Y > 0.08f)
+                        {
+                            _playbackLocomotion.Travel(NomEtatSautLocomotionString);
+                            _dernierEtatLocomotionTree = NomEtatSautLocomotion;
+                        }
                     }
                 }
             }
@@ -3590,7 +3608,8 @@ public partial class Joueur : CharacterBody3D
             Vector3 directionFrappe = -_rayon.GetCollisionNormal();
             if (directionFrappe.LengthSquared() < 0.1f)
                 directionFrappe = -_camera.GlobalTransform.Basis.Z.Normalized();
-            int resultatCoupe = arbre.SubirDegats(pointImpact, directionFrappe, degatsArbre, epaisseurLame, main.ID == 106);
+            bool hachetteBonneOrientation = main.ID == 106 && EstFrappeHachette106AvecLaLame(pointImpact, directionFrappe);
+            int resultatCoupe = arbre.SubirDegats(pointImpact, directionFrappe, degatsArbre, epaisseurLame, hachetteBonneOrientation);
             if (resultatCoupe == 0) return;
             if (resultatCoupe == 2)
                 AjouterXpMetier("Bucheron", 1UL);
@@ -4354,8 +4373,17 @@ public partial class Joueur : CharacterBody3D
         }
         else if (id == 10 || id == 11 || id == BlocChutant.ID_BRANCHE)
         {
-            var mat = new StandardMaterial3D { AlbedoColor = new Color(0.38f, 0.46f, 0.2f), Roughness = 0.92f, Metallic = 0f };
-            corps = BlocChutant.Creer(pointDeChute, (byte)id, mat);
+            if (id == BlocChutant.ID_BRANCHE)
+            {
+                Material matEssence = ArbreVivant.ObtenirMaterielBoisTriplanar(mainActive.IndexBotanique);
+                corps = BlocChutant.Creer(pointDeChute, (byte)id, matEssence);
+                corps.SetMeta("IndexBotanique", (int)mainActive.IndexBotanique);
+            }
+            else
+            {
+                var mat = new StandardMaterial3D { AlbedoColor = new Color(0.38f, 0.46f, 0.2f), Roughness = 0.92f, Metallic = 0f };
+                corps = BlocChutant.Creer(pointDeChute, (byte)id, mat);
+            }
         }
         else if (id == IdObjetBaie)
         {
@@ -4768,6 +4796,9 @@ public partial class Joueur : CharacterBody3D
                 // On conserve seulement une gravité atténuée sous l'eau.
                 velocity += GetGravity() * (0.32f * dt);
             }
+
+            // Évite vitesses verticales extrêmes (nage + bord d’eau + clip) qui peuvent faire planter le moteur physique.
+            velocity.Y = Mathf.Clamp(velocity.Y, -4.5f, 4.5f);
         }
         else if (!IsOnFloor())
         {
@@ -4814,7 +4845,7 @@ public partial class Joueur : CharacterBody3D
             velocity.Z = Mathf.MoveToward(velocity.Z, 0, vitesseMouvement);
         }
 
-        MettreAJourAnimationHumain(dt, velocity, inputDir, auSolPourAnim, sprintActif);
+        MettreAJourAnimationHumain(dt, velocity, inputDir, auSolPourAnim, sprintActif, estDansEau);
         MettreAJourObjetTenueTps();
 
         Velocity = velocity;

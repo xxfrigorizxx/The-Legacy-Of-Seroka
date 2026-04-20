@@ -166,7 +166,7 @@ public static class GraphicsOptionsService
 				p.RayonQualiteProcheChunks = 5;
 				p.RayonGazonVisibleChunks = 8;
 				p.RayonBuissonsVisibleChunks = 12;
-				p.ActiverHorizonLod = false;
+				p.ActiverHorizonLod = true;
 				p.RayonHorizonChunks = 64;
 				p.PasHorizonMetres = 28f;
 				p.ActiverCullingCameraChunks = true;
@@ -230,6 +230,9 @@ public static class GraphicsOptionsService
 				p.Preset = PresetGraphique.Personnalise;
 				break;
 		}
+		// À distance de rendu élevée, l’horizon LOD évite le vide noir pendant le streaming (Faible reste souvent sous 18 chunks).
+		if (p.RenderDistance >= 18)
+			p.ActiverHorizonLod = true;
 		return Normaliser(p);
 	}
 

@@ -46,6 +46,37 @@ public partial class Joueur
         return idMatiere == 2;
     }
 
+    /// <summary>Roche matière plate, ovale ou en pointe : même convention que l’entaille d’<see cref="ArbreVivant"/> vivant.</summary>
+    private static bool EstRocheTranchantePourBois(SlotInventaire slot)
+    {
+        return !slot.EstVide && ItemPhysique.EstIdRocheMatiere(slot.ID)
+            && (slot.IndexMorphologique == 1 || slot.IndexMorphologique == 2 || slot.IndexMorphologique == 3);
+    }
+
+    /// <summary>
+    /// Cadavre d'arbre : l'essence est normalement sur le <see cref="RigidBody3D"/> ; si la méta a été perdue,
+    /// on la relit sur l'enfant « Bois » (copié à la chute depuis <see cref="ArbreVivant"/>).
+    /// </summary>
+    private static byte LireIndexBotaniqueBoisSurRigid(RigidBody3D rb)
+    {
+        if (rb == null) return LSystem_Botanique.IndexChene;
+        if (rb.HasMeta("IndexBotanique"))
+            return (byte)Mathf.Clamp(rb.GetMeta("IndexBotanique").AsInt32(), 0, 255);
+        var bois = rb.GetNodeOrNull<MeshInstance3D>("Bois");
+        if (bois != null && bois.HasMeta("IndexBotanique"))
+            return (byte)Mathf.Clamp(bois.GetMeta("IndexBotanique").AsInt32(), 0, 255);
+        return LSystem_Botanique.IndexChene;
+    }
+
+    /// <summary>Répare la méta sur le corps si elle manque encore (anciens cadavres) mais que « Bois » la porte.</summary>
+    private static void ReparerMetaIndexBotaniqueSurCadavreSiPossible(RigidBody3D cadavre)
+    {
+        if (cadavre == null || cadavre.HasMeta("IndexBotanique")) return;
+        var bois = cadavre.GetNodeOrNull<MeshInstance3D>("Bois");
+        if (bois != null && bois.HasMeta("IndexBotanique"))
+            cadavre.SetMeta("IndexBotanique", bois.GetMeta("IndexBotanique"));
+    }
+
     private void ReinitialiserMinageMainNueProgression()
     {
         _progressionMinageMainNue = 0f;
@@ -1272,21 +1303,9 @@ public partial class Joueur
             {
                 JouerSonEtEffetCoupeArbre(pointImpact);
                 bool brancheMorte = arbre.IndexBotanique == LSystem_Botanique.IndexCheneMort || arbre.IndexBotanique == LSystem_Botanique.IndexBouleauMort;
-                var slotBatonStandard = new SlotInventaire
-                {
-                    ID = 32,
-                    IndexBotanique = (byte)Mathf.Clamp(arbre.IndexBotanique, 0, 255),
-                    IndexMorphologique = 0,
-                    IndexTaille = 1,
-                    ScaleEclat = Vector3.One
-                };
-                Vector3 posBaton = CalculerPointAuDessusSol(pointImpact + directionFrappe * 0.2f + Vector3.Up * 0.8f, 0.2f);
-                Node3D baton = CreerBlocPose(posBaton, slotBatonStandard);
-                if (baton is RigidBody3D rbBaton)
-                    rbBaton.ApplyCentralImpulse(directionFrappe.Normalized() * 1.8f + Vector3.Up * 0.8f);
                 GD.Print(brancheMorte
-                    ? "ZERO-K : Branche morte amputée -> bâton mort au sol."
-                    : "ZERO-K : Branche amputée -> bâton standard au sol.");
+                    ? "ZERO-K : Branche morte amputée — branche au sol (essence conservée)."
+                    : "ZERO-K : Branche amputée — branche au sol (essence conservée).");
             }
 
             if (mainActive.ID == 106 && resultatCoupe > 0)
@@ -1355,10 +1374,13 @@ public partial class Joueur
 
         if (rbCible.Name.ToString().Contains("ArbreMort"))
         {
+            ReparerMetaIndexBotaniqueSurCadavreSiPossible(rbCible);
             var main = MainGaucheEstActive ? MainGauche : MainDroite;
+            bool fauxSurCadavre = main.ID == IdObjetFauxPierreTier0 && EstFrappeFaux112AvecLaLame(pointImpact, directionFrappe);
             bool outilTranchantPourArbre = main.ID == 106
                 || main.EstUnEclat
-                || (ItemPhysique.EstIdRocheMatiere(main.ID) && (main.IndexMorphologique == 1 || main.IndexMorphologique == 3));
+                || EstRocheTranchantePourBois(main)
+                || fauxSurCadavre;
             if (!outilTranchantPourArbre)
                 return;
 
@@ -1386,11 +1408,11 @@ public partial class Joueur
             int branchesRestantes = rbCible.HasMeta("BranchesRestantes") ? (int)rbCible.GetMeta("BranchesRestantes").AsInt32() : 0;
             // Migration/standardisation: anciens cadavres peuvent avoir des valeurs absurdes (incoupables ou spam bâtons).
             branchesRestantes = Mathf.Clamp(branchesRestantes, 0, 10);
-            byte essenceBois = rbCible.HasMeta("IndexBotanique")
-                ? (byte)Mathf.Clamp(rbCible.GetMeta("IndexBotanique").AsInt32(), 0, 255)
-                : LSystem_Botanique.IndexChene;
+            byte essenceBois = LireIndexBotaniqueBoisSurRigid(rbCible);
+            // Faux : bâtonnage / petit bois « brut » — pas la même essence que le fût (évite bâton = essence du cadavre).
+            byte essenceBrancheAuSol = main.ID == IdObjetFauxPierreTier0 ? LSystem_Botanique.IndexChene : essenceBois;
 
-            // Étape 2 : ébranchage (bâtons 32) avant débitage du tronc
+            // Étape 2 : ébranchage (BlocChutant branche, essence) avant débitage du tronc
             if (branchesRestantes > 0)
             {
                 JouerSonEtEffetCoupeArbre(pointImpact);
@@ -1400,25 +1422,21 @@ public partial class Joueur
                 GD.Print(brancheMorte
                     ? $"ZERO-K : Branche morte amputée. Restes morts : {branchesRestantes}"
                     : $"ZERO-K : Branche amputée. Reste : {branchesRestantes}");
-                var slotBaton = new SlotInventaire
-                {
-                    ID = 32,
-                    IndexBotanique = essenceBois,
-                    IndexMorphologique = 0,
-                    IndexTaille = 1,
-                    ScaleEclat = Vector3.One
-                };
-                // Surélève le spawn du bâton pour éviter le clip sous le sol
-                Node3D baton = CreerBlocPose(pointImpact + directionFrappe * 0.2f + Vector3.Up * 0.8f, slotBaton);
-                if (baton is RigidBody3D rbBaton)
-                    rbBaton.ApplyCentralImpulse(directionFrappe * 3f);
+                Material matEssence = ArbreVivant.ObtenirMaterielBoisTriplanar(essenceBrancheAuSol);
+                var blocBr = BlocChutant.Creer(pointImpact, BlocChutant.ID_BRANCHE, matEssence);
+                blocBr.SetMeta("IndexBotanique", (int)essenceBrancheAuSol);
+                GetTree().CurrentScene.AddChild(blocBr);
+                Vector3 posBr = CalculerPointAuDessusSol(pointImpact + directionFrappe * 0.2f + Vector3.Up * 0.8f, 0.22f);
+                blocBr.GlobalPosition = posBr;
+                Vector3 imp = directionFrappe.LengthSquared() > 1e-6f ? directionFrappe.Normalized() * 3f : Vector3.Up * 2f;
+                blocBr.ApplyCentralImpulse(imp);
                 return;
             }
 
             // ÉTAPE 3 : LIBÉRATION DU TRONC BRUT UNIQUE
             bool peutLibererTronc = main.ID == 106
                 || main.EstUnEclat
-                || (ItemPhysique.EstIdRocheMatiere(main.ID) && (main.IndexMorphologique == 1 || main.IndexMorphologique == 3));
+                || EstRocheTranchantePourBois(main);
             if (!peutLibererTronc)
             {
                 AlerteSqueletteBoiteNoire("Il faut un tranchant: roche plate ou en pointe, eclat ou hachette.");
@@ -1456,18 +1474,19 @@ public partial class Joueur
         if (rbCible.Name.ToString().Contains("BrancheMorte"))
         {
             var mainB = MainGaucheEstActive ? MainGauche : MainDroite;
+            bool fauxSurBrancheMorte = mainB.ID == IdObjetFauxPierreTier0 && EstFrappeFaux112AvecLaLame(pointImpact, directionFrappe);
             bool outilTranchantPourArbre = mainB.ID == 106
                 || mainB.EstUnEclat
-                || (ItemPhysique.EstIdRocheMatiere(mainB.ID) && (mainB.IndexMorphologique == 1 || mainB.IndexMorphologique == 3));
+                || EstRocheTranchantePourBois(mainB)
+                || fauxSurBrancheMorte;
             if (!outilTranchantPourArbre) return;
             JouerSonEtEffetCoupeArbre(pointImpact);
-            byte essenceBranche = rbCible.HasMeta("IndexBotanique")
-                ? (byte)Mathf.Clamp(rbCible.GetMeta("IndexBotanique").AsInt32(), 0, 255)
-                : LSystem_Botanique.IndexChene;
+            byte essenceBranche = LireIndexBotaniqueBoisSurRigid(rbCible);
+            byte essenceBaton = mainB.ID == IdObjetFauxPierreTier0 ? LSystem_Botanique.IndexChene : essenceBranche;
             var slotBatonStandard = new SlotInventaire
             {
                 ID = 32,
-                IndexBotanique = essenceBranche,
+                IndexBotanique = essenceBaton,
                 IndexMorphologique = 0,
                 IndexTaille = 1,
                 ScaleEclat = Vector3.One
@@ -1494,19 +1513,15 @@ public partial class Joueur
 
         if (item.ID_Objet == 30 || item.ID_Objet == 32)
         {
-            bool rochePlatePourFendage = ItemPhysique.EstIdRocheMatiere(mainActive.ID) && mainActive.IndexMorphologique == 1;
-            bool outilFendageBois = mainActive.ID == 106 || rochePlatePourFendage;
-            // Post-abattage (bois au sol) : hachette ou roche plate.
-            if (!outilFendageBois)
+            // Post-abattage : tronc/bûche/bâton au sol — uniquement hachette (la roche plate sert aux jeunes arbres vivants, pas au débitage).
+            if (mainActive.ID != 106)
             {
-                AlerteSqueletteBoiteNoire("Il faut une hachette (ID 106) ou une roche plate pour standardiser/fendre le bois au sol.");
+                AlerteSqueletteBoiteNoire("Il faut une hachette pour standardiser ou fendre le bois au sol.");
                 rbCible.ApplyCentralImpulse(dirFrappeObj * impulsionFrappe);
                 return;
             }
-            bool coupeNette = mainActive.ID == 106
-                ? EstFrappeHachette106AvecLaLame(pointImpact, directionFrappe)
-                : true;
-            if (!coupeNette && mainActive.ID == 106)
+            bool coupeNette = EstFrappeHachette106AvecLaLame(pointImpact, directionFrappe);
+            if (!coupeNette)
             {
                 // Tolérance gameplay: avec la hachette on peut continuer à travailler le bois, mais plus lentement.
                 AlerteSqueletteBoiteNoire("Coup manche/plat: la coupe progresse, mais plus lentement.");
@@ -1515,8 +1530,7 @@ public partial class Joueur
 
             Vector3 axeBois = rbCible.GlobalTransform.Basis.Z.Normalized();
             float alignement = Mathf.Abs(directionFrappe.Normalized().Dot(axeBois));
-            if (mainActive.ID == 106)
-                AppliquerUsureOutilMainActive(2.5f);
+            AppliquerUsureOutilMainActive(2.5f);
 
             if (alignement < 0.5f)
             {
@@ -1559,8 +1573,7 @@ public partial class Joueur
                         ? "ZERO-K : Vous partagez le bâton en quarts (longueur)."
                         : "ZERO-K : Vous coupez le bâton en deux (demi-longueur).";
                     GD.Print(msg);
-                    if (rochePlatePourFendage)
-                        AjouterXpFutureState("Force", 1UL);
+                    AjouterXpFutureState("Force", 1UL);
                     rbCible.QueueFree();
                     return;
                 }
@@ -1704,8 +1717,7 @@ public partial class Joueur
                 if (b1 != null) b1.GlobalRotation = rbCible.GlobalRotation;
                 if (b2 != null) b2.GlobalRotation = rbCible.GlobalRotation;
             }
-            if (rochePlatePourFendage)
-                AjouterXpFutureState("Force", 1UL);
+            AjouterXpFutureState("Force", 1UL);
             rbCible.QueueFree();
             return;
         }

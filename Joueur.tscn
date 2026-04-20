@@ -1,7 +1,7 @@
 [gd_scene format=3 uid="uid://c3xvor615sane"]
 
 [ext_resource type="Script" uid="uid://bd888g1yguo4a" path="res://Joueur.cs" id="1_joueur"]
-[ext_resource type="PackedScene" uid="uid://rht2h3qy68qn" path="res://Modeles/Entites/Humain/humain.glb" id="2_humain"]
+[ext_resource type="PackedScene" uid="uid://dlquxl81cgs3s" path="res://Modeles/Entites/Humain/humain.glb" id="2_humain"]
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape_jambe"]
 radius = 0.075
@@ -24,7 +24,6 @@ height = 1.65
 
 [node name="Joueur" type="CharacterBody3D" unique_id=510261729]
 script = ExtResource("1_joueur")
-ForcerBasCollisionLocalPourAlignementPieds = nan
 
 [node name="HitboxJambeG" type="CollisionShape3D" parent="." unique_id=1020862906]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.11, -0.44, 0)

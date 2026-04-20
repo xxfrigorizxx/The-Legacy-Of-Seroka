@@ -112,11 +112,17 @@ public partial class BlocChutant : RigidBody3D
 	/// <summary>Feuillage arraché (même mesh visuel que les feuilles d'arbre, pas de l'herbe).</summary>
 	public const byte ID_FEUILLE_ARRACHEE = 34;
 
+	/// <summary>Méta sur ID 31 : branche issue d'un buisson (coupée courte / fine), pas d'un arbre.</summary>
+	public const string MetaBrancheTailléeBuisson = "BrancheTailléeBuisson";
+
 	/// <summary>Crée un BlocChutant. Le parent doit l'ajouter à la scène, puis définir GlobalPosition immédiatement après.</summary>
-	public static BlocChutant Creer(Vector3 positionMonde, byte idMateriau, Material matTerrain)
+	/// <param name="brancheTailléeBuisson">Si true et <see cref="ID_BRANCHE"/> : mesh court (récolte buisson). Sinon : branche d'arbre (longue).</param>
+	public static BlocChutant Creer(Vector3 positionMonde, byte idMateriau, Material matTerrain, bool brancheTailléeBuisson = false)
 	{
 		var bloc = new BlocChutant();
 		bloc.SetMeta("ID_Matiere", (int)idMateriau);
+		if (idMateriau == ID_BRANCHE && brancheTailléeBuisson)
+			bloc.SetMeta(MetaBrancheTailléeBuisson, true);
 		if (idMateriau == ID_FEUILLE_ARRACHEE)
 			bloc._ConstruireVisuelFeuillage(null);
 		else
@@ -223,12 +229,16 @@ public partial class BlocChutant : RigidBody3D
 			case ID_BRANCHE:
 				{
 					bool estBranche = idMateriau == ID_BRANCHE;
-					// Branche de buisson: version au sol plus fine et plus courte (~x3 plus petite).
-					float rayon = estBranche ? 0.0267f : 0.2f;
-					float hauteur = estBranche ? 0.2f : 0.5f;
+					// Branche d'arbre : cylindre long. Branche de buisson uniquement : courte / fine (coupée sur la longueur max).
+					bool tailléeBuisson = estBranche && HasMeta(MetaBrancheTailléeBuisson) && GetMeta(MetaBrancheTailléeBuisson).AsBool();
+					float rayon = estBranche ? (tailléeBuisson ? 0.0267f : 0.08f) : 0.2f;
+					float hauteur = estBranche ? (tailléeBuisson ? 0.2f : 0.6f) : 0.5f;
 					meshInstance.Mesh = _ConstruireMeshCylindre(rayon, hauteur);
-					// Même rendu que l’item en main: teinte stable sans texture bruitée floue.
-					meshInstance.MaterialOverride = new StandardMaterial3D { AlbedoColor = new Color(0.52f, 0.32f, 0.14f), Roughness = 0.9f, Metallic = 0.02f };
+					// Branche d’arbre : matériau essence si fourni (triplanar), sinon teinte bûche neutre.
+					if (estBranche && matTerrain != null)
+						meshInstance.MaterialOverride = (Material)matTerrain.Duplicate();
+					else
+						meshInstance.MaterialOverride = new StandardMaterial3D { AlbedoColor = new Color(0.52f, 0.32f, 0.14f), Roughness = 0.9f, Metallic = 0.02f };
 					meshInstance.Rotation = new Vector3(Mathf.Pi * 0.5f, 0, 0); // Cylindre couché (bûche)
 				}
 				break;
@@ -287,8 +297,9 @@ public partial class BlocChutant : RigidBody3D
 		}
 		else if (estBois)
 		{
-			float r = idMateriau == ID_BRANCHE ? 0.0334f : 0.25f;
-			float h = idMateriau == ID_BRANCHE ? 0.233f : 0.55f;
+			bool brancheTailléeBuisson = idMateriau == ID_BRANCHE && HasMeta(MetaBrancheTailléeBuisson) && GetMeta(MetaBrancheTailléeBuisson).AsBool();
+			float r = idMateriau == ID_BRANCHE ? (brancheTailléeBuisson ? 0.0334f : 0.1f) : 0.25f;
+			float h = idMateriau == ID_BRANCHE ? (brancheTailléeBuisson ? 0.233f : 0.7f) : 0.55f;
 			collision.Shape = new CylinderShape3D { Radius = r, Height = h };
 			collision.Position = new Vector3(0, 0, 0);
 			collision.Rotation = new Vector3(Mathf.Pi * 0.5f, 0, 0);

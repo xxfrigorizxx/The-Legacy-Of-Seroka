@@ -64,7 +64,7 @@ public partial class Chunk_Serveur : RefCounted
 	/// <summary>Registre d'arbres L-System : racine (position base) → (stade 0-3, seed). Croissance 1 stade/jour.</summary>
 	public Dictionary<Vector3I, DonneesArbre> InventaireArbres { get; } = new Dictionary<Vector3I, DonneesArbre>();
 
-	private Action<Vector3, byte> _callbackBlocChutant;
+	private Action<Vector3, byte, bool> _callbackBlocChutant;
 	private Func<Vector2I, bool> _chunkEstCharge;
 	private Action<Vector3> _reveillerEau;
 	private Action<Vector3I, byte> _onVoxelModifie;
@@ -82,7 +82,7 @@ public partial class Chunk_Serveur : RefCounted
 	public void SetOnFlorePurgée(Action<Vector2I, Dictionary<Vector3I, byte>> callback) => _onFlorePurgée = callback;
 
 	public Chunk_Serveur(int chunkOffsetX, int chunkOffsetZ, int tailleChunk, int hauteurMax, int seed,
-		Action<Vector3, byte> callbackBlocChutant, Func<Vector2I, bool> chunkEstCharge, Action<Vector3> reveillerEau)
+		Action<Vector3, byte, bool> callbackBlocChutant, Func<Vector2I, bool> chunkEstCharge, Action<Vector3> reveillerEau)
 	{
 		ChunkOffsetX = chunkOffsetX;
 		ChunkOffsetZ = chunkOffsetZ;
@@ -900,7 +900,7 @@ public partial class Chunk_Serveur : RefCounted
 			{
 				Vector3 posSpawn = new Vector3(mort.X + 0.5f, mort.Y + 0.5f, mort.Z + 0.5f);
 				byte idItem = typeFlore == FloreTypeGazon ? (byte)15 : (byte)(EstBuissonPlein(typeFlore) ? ID_ITEM_BUISSON_PLEIN : ID_ITEM_BUISSON_VIDE);
-				_callbackBlocChutant?.Invoke(posSpawn, idItem);
+				_callbackBlocChutant?.Invoke(posSpawn, idItem, false);
 			}
 			InventaireFlore.Remove(mort);
 		}
@@ -958,7 +958,7 @@ private void FaireTomberBaiesAuSolSiPlein(Vector3I posFlore, byte typeFlore, int
 	for (int i = 0; i < q; i++)
 	{
 		Vector3 offset = new Vector3(rng.RandfRange(-0.22f, 0.22f), rng.RandfRange(0.02f, 0.14f), rng.RandfRange(-0.22f, 0.22f));
-		_callbackBlocChutant?.Invoke(basePos + offset, ID_ITEM_BAIE);
+		_callbackBlocChutant?.Invoke(basePos + offset, ID_ITEM_BAIE, false);
 	}
 }
 
@@ -1013,14 +1013,14 @@ public bool RecolterBuisson(Vector3 pointImpactGlobal, float rayon, byte modeRec
 	{
 		case 0: // Hachette: coupe de branche, le buisson plein devient buisson vide.
 			FaireTomberBaiesAuSolSiPlein(posFlore, typeFlore);
-			_callbackBlocChutant?.Invoke(posSpawn + new Vector3(0f, 0.08f, 0f), ID_ITEM_BRANCHE_BUISSON);
+			_callbackBlocChutant?.Invoke(posSpawn + new Vector3(0f, 0.08f, 0f), ID_ITEM_BRANCHE_BUISSON, true);
 			if (EstBuissonPlein(typeFlore)) InventaireFlore[posFlore] = TypeBuissonSansBaies(typeFlore);
 			else InventaireFlore.Remove(posFlore);
 			break;
 
 		case 1: // Dague maintenue: coupe après 3s -> 1 branche + 1 baie (si buisson plein), sans drop buisson.
 			FaireTomberBaiesAuSolSiPlein(posFlore, typeFlore, 1);
-			_callbackBlocChutant?.Invoke(posSpawn + new Vector3(0f, 0.08f, 0f), ID_ITEM_BRANCHE_BUISSON);
+			_callbackBlocChutant?.Invoke(posSpawn + new Vector3(0f, 0.08f, 0f), ID_ITEM_BRANCHE_BUISSON, true);
 			InventaireFlore.Remove(posFlore);
 			break;
 
@@ -1028,7 +1028,7 @@ public bool RecolterBuisson(Vector3 pointImpactGlobal, float rayon, byte modeRec
 			FaireTomberBaiesAuSolSiPlein(posFlore, typeFlore);
 			InventaireFlore.Remove(posFlore);
 			// Pelle: on récupère la plante "sans baies"; les baies d'un buisson plein tombent déjà au sol juste au-dessus.
-			_callbackBlocChutant?.Invoke(posSpawn + new Vector3(0f, 0.06f, 0f), ID_ITEM_BUISSON_VIDE);
+			_callbackBlocChutant?.Invoke(posSpawn + new Vector3(0f, 0.06f, 0f), ID_ITEM_BUISSON_VIDE, false);
 			break;
 
 		default:
@@ -1096,7 +1096,7 @@ public bool RecolterBaiesBuisson(Vector3 pointImpactGlobal, float rayon, out int
 			Vector3 posSpawn = new Vector3(kv.Key.X + 0.5f, kv.Key.Y + 0.5f, kv.Key.Z + 0.5f);
 			// Gazon (0) lâche la Fibre (15). Buissons (1,2) : 10, 11.
 			byte idItem = kv.Value == FloreTypeGazon ? (byte)15 : (byte)(EstBuissonPlein(kv.Value) ? ID_ITEM_BUISSON_PLEIN : ID_ITEM_BUISSON_VIDE);
-			_callbackBlocChutant?.Invoke(posSpawn, idItem);
+			_callbackBlocChutant?.Invoke(posSpawn, idItem, false);
 		}
 		if (floreDetruite.Count > 0)
 			_onFlorePurgée?.Invoke(new Vector2I(ChunkOffsetX, ChunkOffsetZ), new Dictionary<Vector3I, byte>(InventaireFlore));
@@ -1259,7 +1259,7 @@ public bool RecolterBaiesBuisson(Vector3 pointImpactGlobal, float rayon, out int
 		}
 
 		_reveillerEau?.Invoke(PositionMonde + new Vector3(xu, yu, zu));
-		_callbackBlocChutant?.Invoke(PositionMonde + new Vector3(xu + 0.5f, yu + 0.5f, zu + 0.5f), mat);
+		_callbackBlocChutant?.Invoke(PositionMonde + new Vector3(xu + 0.5f, yu + 0.5f, zu + 0.5f), mat, false);
 
 		AuditerGraviteFlore();
 		VerifierStabilite(new Vector3I(xu, yu, zu));
@@ -1430,7 +1430,7 @@ public bool RecolterBaiesBuisson(Vector3 pointImpactGlobal, float rayon, out int
 			if (creerLoot)
 			{
 				Vector3 posSpawn = new Vector3(kv.Key.X + 0.5f, kv.Key.Y + 0.5f, kv.Key.Z + 0.5f);
-				_callbackBlocChutant?.Invoke(posSpawn, 15);
+				_callbackBlocChutant?.Invoke(posSpawn, 15, false);
 			}
 		}
 		_onFlorePurgée?.Invoke(new Vector2I(ChunkOffsetX, ChunkOffsetZ), new Dictionary<Vector3I, byte>(InventaireFlore));

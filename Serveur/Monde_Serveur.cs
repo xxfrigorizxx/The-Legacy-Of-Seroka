@@ -341,7 +341,12 @@ public partial class Monde_Serveur : Node
 				float distCarree = DistanceCarreeAuJoueur(chunkCible, posObservation);
 				float rayonMaxCarre = (RenderDistance + 1) * (RenderDistance + 1);
 				if (distCarree > rayonMaxCarre)
+				{
+					// Même logique que le client : ExtraireChunkLePlusProche a retiré l’entrée — la remettre en file
+					// sinon la demande disparaît à jamais (trou / monde qui n’atteint jamais RenderDistance).
+					_chunksEnAttenteEnvoi.Add(chunkCible);
 					continue;
+				}
 
 				if (_chunks.TryGetValue(chunkCible, out var existant))
 				{
@@ -754,7 +759,7 @@ public partial class Monde_Serveur : Node
 	{
 		var chunk = new Chunk_Serveur(
 			coord.X, coord.Y, TailleChunk, HauteurMax, SeedTerrain,
-			(pos, mat) => { SpawnBlocChutant(pos, mat); },
+			(pos, mat, brancheTailléeBuisson) => { SpawnBlocChutant(pos, mat, brancheTailléeBuisson); },
 			ChunkEstCharge,
 			ReveillerEauAdjacente
 		);
@@ -763,11 +768,11 @@ public partial class Monde_Serveur : Node
 		return chunk;
 	}
 
-	private void SpawnBlocChutant(Vector3 pos, byte mat)
+	private void SpawnBlocChutant(Vector3 pos, byte mat, bool brancheTailléeBuisson = false)
 	{
 		if (_parentPourBlocsChutants == null) return;
 		var matTerrain = MaterielTerrain ?? GD.Load<Material>("res://Manteau_Planetaire.tres");
-		var bloc = BlocChutant.Creer(pos, mat, matTerrain);
+		var bloc = BlocChutant.Creer(pos, mat, matTerrain, brancheTailléeBuisson);
 		_parentPourBlocsChutants.AddChild(bloc);
 		// Fibres (fauchage) : léger décalage vers le haut pour éviter d’être coincées dans le sol / la collision.
 		Vector3 posPose = mat == 15 ? pos + new Vector3(0f, 0.12f, 0f) : pos;
