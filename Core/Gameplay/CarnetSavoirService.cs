@@ -252,6 +252,17 @@ public partial class Joueur
         _panneauCarnetSavoir.OffsetTop = -310f;
         _panneauCarnetSavoir.OffsetRight = 460f;
         _panneauCarnetSavoir.OffsetBottom = 310f;
+        var stylePanneau = new StyleBoxFlat
+        {
+            BgColor = new Color(0.97f, 0.97f, 0.96f),
+            BorderColor = new Color(0.72f, 0.70f, 0.66f),
+            CornerRadiusTopLeft = 6,
+            CornerRadiusTopRight = 6,
+            CornerRadiusBottomRight = 6,
+            CornerRadiusBottomLeft = 6
+        };
+        stylePanneau.SetBorderWidthAll(1);
+        _panneauCarnetSavoir.AddThemeStyleboxOverride("panel", stylePanneau);
         _layerCarnetSavoir.AddChild(_panneauCarnetSavoir);
 
         var marge = new MarginContainer();
@@ -275,10 +286,12 @@ public partial class Joueur
         var titre = new Label { Text = "Carnet du savoir" };
         titre.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
         titre.AddThemeFontSizeOverride("font_size", 24);
+        titre.AddThemeColorOverride("font_color", new Color(0.08f, 0.08f, 0.09f));
         entete.AddChild(titre);
 
         _labelPageCarnetSavoir = new Label { Text = "Page 1/1", HorizontalAlignment = HorizontalAlignment.Right };
         _labelPageCarnetSavoir.CustomMinimumSize = new Vector2(140f, 0f);
+        _labelPageCarnetSavoir.AddThemeColorOverride("font_color", new Color(0.12f, 0.12f, 0.14f));
         entete.AddChild(_labelPageCarnetSavoir);
 
         _zoneTexteCarnetSavoir = new TextEdit
@@ -287,6 +300,25 @@ public partial class Joueur
             SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
             SizeFlagsVertical = Control.SizeFlags.ExpandFill
         };
+        // Rendu « cahier » : pages blanches, écriture noire (y compris pages guide en lecture seule).
+        _zoneTexteCarnetSavoir.AddThemeColorOverride("background_color", Colors.White);
+        _zoneTexteCarnetSavoir.AddThemeColorOverride("font_color", new Color(0.06f, 0.06f, 0.07f));
+        _zoneTexteCarnetSavoir.AddThemeColorOverride("font_readonly_color", new Color(0.1f, 0.1f, 0.11f));
+        _zoneTexteCarnetSavoir.AddThemeColorOverride("caret_color", Colors.Black);
+        _zoneTexteCarnetSavoir.AddThemeColorOverride("selection_color", new Color(0.55f, 0.78f, 1f, 0.45f));
+        _zoneTexteCarnetSavoir.AddThemeConstantOverride("line_spacing", 4);
+        var styleBordTexte = new StyleBoxFlat
+        {
+            BgColor = Colors.White,
+            BorderColor = new Color(0.82f, 0.80f, 0.76f),
+            CornerRadiusTopLeft = 4,
+            CornerRadiusTopRight = 4,
+            CornerRadiusBottomRight = 4,
+            CornerRadiusBottomLeft = 4
+        };
+        styleBordTexte.SetBorderWidthAll(1);
+        _zoneTexteCarnetSavoir.AddThemeStyleboxOverride("normal", styleBordTexte);
+        _zoneTexteCarnetSavoir.AddThemeStyleboxOverride("read_only", styleBordTexte);
         _zoneTexteCarnetSavoir.TextChanged += OnTexteCarnetSavoirModifieParJoueur;
         colonne.AddChild(_zoneTexteCarnetSavoir);
 

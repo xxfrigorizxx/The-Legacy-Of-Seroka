@@ -661,16 +661,26 @@ public partial class ArbreVivant : StaticBody3D
 		cadavre.LinearDampMode = RigidBody3D.DampMode.Replace;
 		cadavre.LinearDamp = 1.0f;
 
-		MeshInstance3D boisCopy = new MeshInstance3D { Name = "Bois", Mesh = _visuelBois.Mesh, MaterialOverride = _visuelBois.MaterialOverride };
-		MeshInstance3D feuillesCopy = new MeshInstance3D { Name = "Feuillage", Mesh = _visuelFeuillage.Mesh, MaterialOverride = _visuelFeuillage.MaterialOverride };
+		// Dupliquer mesh + matériaux : ne pas partager les ressources avec l’ArbreVivant — au QueueFree() du vivant,
+		// le mesh partagé peut être invalidé → cadavre « invisible » mais hitbox présente (fantôme), puis étapes coupe HS.
+		Mesh meshBoisCad = _visuelBois.Mesh != null ? (Mesh)_visuelBois.Mesh.Duplicate(true) : null;
+		Material matBoisCad = _visuelBois.MaterialOverride?.Duplicate(true) as Material;
+		Mesh meshFeuCad = _visuelFeuillage.Mesh != null ? (Mesh)_visuelFeuillage.Mesh.Duplicate(true) : null;
+		Material matFeuCad = _visuelFeuillage.MaterialOverride?.Duplicate(true) as Material;
+
+		var boisCopy = new MeshInstance3D { Name = "Bois", Mesh = meshBoisCad, MaterialOverride = matBoisCad };
 		// Secours : si la méta du RigidBody est perdue (sérialisation, edge cases), l’ébranchage lit encore l’essence sur « Bois ».
 		boisCopy.SetMeta("IndexBotanique", (int)IndexBotanique);
-		feuillesCopy.SetMeta("IndexBotanique", (int)IndexBotanique);
 		cadavre.AddChild(boisCopy);
-		cadavre.AddChild(feuillesCopy);
+		if (meshFeuCad != null)
+		{
+			var feuillesCopy = new MeshInstance3D { Name = "Feuillage", Mesh = meshFeuCad, MaterialOverride = matFeuCad };
+			feuillesCopy.SetMeta("IndexBotanique", (int)IndexBotanique);
+			cadavre.AddChild(feuillesCopy);
+		}
 
 		CollisionShape3D hitboxCopy = new CollisionShape3D();
-		Mesh meshArbre = _visuelBois.Mesh;
+		Mesh meshArbre = meshBoisCad;
 
 		if (AgeEnJours > 10)
 		{
@@ -1137,10 +1147,20 @@ public partial class ArbreVivant : StaticBody3D
 		_visuelFeuillage.Mesh = stFeuilles.Commit();
 		_visuelFeuillage.MaterialOverride = ObtenirMaterielFeuilles(IndexBotanique);
 
-		// FIX CRITIQUE : Hitbox exacte pour permettre de marcher sous les branches et viser le tronc.
-		_hitbox.Shape = meshBois != null && meshBois.GetFaces().Length > 0
-			? meshBois.CreateTrimeshShape()
-			: new BoxShape3D { Size = Vector3.One };
+		// LOD > 0 : le mesh bois est simplifié — si on régénère la hitbox dessus, le raycast tape surtout le fût
+		// et SubirDegats classe tout en « tronc » (roche plate ne peut plus ébrancher). On garde la collision LOD0.
+		if (lodNiveau == 0)
+		{
+			_hitbox.Shape = meshBois != null && meshBois.GetFaces().Length > 0
+				? meshBois.CreateTrimeshShape()
+				: new BoxShape3D { Size = Vector3.One };
+		}
+		else if (_hitbox.Shape == null)
+		{
+			_hitbox.Shape = meshBois != null && meshBois.GetFaces().Length > 0
+				? meshBois.CreateTrimeshShape()
+				: new BoxShape3D { Size = Vector3.One };
+		}
 	}
 
 	/// <summary>Segment cylindrique avec conicité (rayonStart → rayonEnd) pour transition douce, sans saut.</summary>

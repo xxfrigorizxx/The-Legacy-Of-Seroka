@@ -340,7 +340,7 @@ public partial class ItemPhysique : RigidBody3D
 			int ch = Mathf.Clamp(IndexChimique, 0, TableGeologique.Length - 1);
 			if (EstIdRocheMatiere(ID_Objet))
 				visuel.MaterialOverride = CreerMaterielProcedural(EstMatiereSilexParIdObjet(ID_Objet), ch);
-			else if (ID_Objet == 30 || ID_Objet == 32)
+			else if (ID_Objet == 30 || ID_Objet == 32 || ID_Objet == BlocChutant.ID_BRANCHE)
 				visuel.MaterialOverride = ID_Objet == 32 && IndexChimique == 1 && IndexBotanique == LSystem_Botanique.IndexChene
 					? ArbreVivant.ObtenirMaterielBoisTriplanarBatonChenEPale()
 					: ArbreVivant.ObtenirMaterielBoisTriplanar(IndexBotanique);
@@ -418,8 +418,8 @@ public partial class ItemPhysique : RigidBody3D
 			AppliquerPhysiqueLance111(this);
 			return;
 		}
-		// Bûche (30) et Bâton (32) : propriétés depuis le profil botanique (chêne, pin, …) pour bien spécifier l'essence.
-		if (ID_Objet == 30 || ID_Objet == 32)
+		// Bûche (30), bâton (32) et branche (31) : propriétés depuis le profil botanique (chêne, pin, …) pour masse / flottaison.
+		if (ID_Objet == 30 || ID_Objet == 32 || ID_Objet == BlocChutant.ID_BRANCHE)
 		{
 			ProfilBotanique p = LSystem_Botanique.ObtenirProfil(IndexBotanique);
 			// Bois vert / cellulosique : un peu moins dense que l’eau (1000) pour flotter crédiblement une fois sec/humide jeu.
@@ -453,6 +453,7 @@ public partial class ItemPhysique : RigidBody3D
 			}
 			else
 			{
+				// Bâton (32) ou branche (31) : même ordre de grandeur de résistance relative au volume.
 				volRef = Mathf.Pi * 0.02f * 0.02f * 0.5f;
 				ResistanceActuelle = p.ResistanceHache * 0.015f * Mathf.Clamp(Mathf.Pow(vol / volRef, 0.35f), 0.2f, 2.5f);
 			}
@@ -587,7 +588,7 @@ public partial class ItemPhysique : RigidBody3D
 			return;
 		}
 
-		if (ID_Objet != 30 && ID_Objet != 32) return;
+		if (ID_Objet != 30 && ID_Objet != 32 && ID_Objet != BlocChutant.ID_BRANCHE) return;
 		ProfilBotanique profil = LSystem_Botanique.ObtenirProfil(IndexBotanique);
 		if (profil.MasseDensite >= 1f) return;
 
@@ -601,6 +602,11 @@ public partial class ItemPhysique : RigidBody3D
 
 		float rayonEff = ID_Objet == 30 ? 0.12f : 0.02f;
 		float longueurEff = ID_Objet == 30 ? 0.6f : 0.5f;
+		if (ID_Objet == BlocChutant.ID_BRANCHE)
+		{
+			rayonEff = 0.04f;
+			longueurEff = 0.55f;
+		}
 		foreach (Node c in GetChildren())
 		{
 			if (c is MeshInstance3D mi && mi.Mesh is CylinderMesh cy)
@@ -651,7 +657,7 @@ public partial class ItemPhysique : RigidBody3D
 	{
 		if (EstMatiereSilexParIdObjet(ID_Objet)) return 80f;
 		if (EstIdRocheMatiere(ID_Objet)) return 50f;
-		if (ID_Objet == 30 || ID_Objet == 32) return 40f; // Bois mort durci
+		if (ID_Objet == 30 || ID_Objet == 32 || ID_Objet == BlocChutant.ID_BRANCHE) return 40f; // Bois mort durci
 		return 10f; // Matières souples ou organiques
 	}
 
@@ -670,7 +676,7 @@ public partial class ItemPhysique : RigidBody3D
 			degats *= 0.060f;
 			capPourcent = 0.26f;
 		}
-		else if (ID_Objet == 30 || ID_Objet == 32)
+		else if (ID_Objet == 30 || ID_Objet == 32 || ID_Objet == BlocChutant.ID_BRANCHE)
 		{
 			degats *= 0.080f;
 			capPourcent = 0.34f;

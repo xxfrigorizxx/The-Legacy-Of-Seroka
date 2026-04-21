@@ -3048,7 +3048,18 @@ public partial class Joueur : CharacterBody3D
 
     private static float ObtenirMasseUnitaireBoisInventaireKg(SlotInventaire slot)
     {
-        CalculerDimensionsBoisPose(slot.ID, slot.IndexMorphologique, slot.IndexTaille, out float baseRadius, out float baseLength, out float w, out float h);
+        int idPourDim = slot.ID;
+        if (slot.ID == BlocChutant.ID_BRANCHE)
+        {
+            if (slot.IndexMorphologique == 1)
+            {
+                const float rBuisson = 0.0267f;
+                const float lenBuisson = 0.2f;
+                return Mathf.Max(0.05f, Mathf.Pi * rBuisson * rBuisson * lenBuisson * 520f);
+            }
+            idPourDim = 32;
+        }
+        CalculerDimensionsBoisPose(idPourDim, slot.IndexMorphologique, slot.IndexTaille, out float baseRadius, out float baseLength, out float w, out float h);
         float longueur = baseLength;
         if (slot.ScaleEclat.Z > 0.01f)
             longueur *= slot.ScaleEclat.Z;
@@ -3064,7 +3075,7 @@ public partial class Joueur : CharacterBody3D
             return 0f;
         if (ItemPhysique.EstIdRocheMatiere(slot.ID))
             return ObtenirMasseUnitaireRocheInventaireKg(slot.IndexTaille);
-        if (slot.ID == 30 || slot.ID == 32)
+        if (slot.ID == 30 || slot.ID == 32 || slot.ID == BlocChutant.ID_BRANCHE)
             return ObtenirMasseUnitaireBoisInventaireKg(slot);
         return ObtenirMasseUnitaireSimpleParIdKg(slot.ID);
     }
@@ -3377,7 +3388,17 @@ public partial class Joueur : CharacterBody3D
         }
         else if (id == 10) return Chunk_Client.ObtenirMeshBuissonProcedural(true);
         else if (id == 11) return Chunk_Client.ObtenirMeshBuissonProcedural(false);
-        else if (id == BlocChutant.ID_BRANCHE) return new CylinderMesh { TopRadius = 0.08f, BottomRadius = 0.08f, Height = 0.6f, RadialSegments = 10, Rings = 1 };
+        else if (id == BlocChutant.ID_BRANCHE)
+        {
+            if (indexMorpho == 1)
+            {
+                const float rr = 0.0267f;
+                const float hh = 0.2f;
+                return new CylinderMesh { TopRadius = rr, BottomRadius = rr, Height = hh, RadialSegments = 10, Rings = 1 };
+            }
+            CalculerDimensionsBoisPose(32, indexMorpho, indexTaille, out float br, out float bl, out _, out _);
+            return GenererMeshBoisFendu(br, bl, indexMorpho);
+        }
         else if (id == 15 || id == 16) return new CapsuleMesh { Radius = 0.009f, Height = 0.34f };
         else if (id == 17) return new CapsuleMesh { Radius = 0.009f, Height = 0.38f };
         else if (id == 20) return null; // GLB res://Modeles/materials/traisagre_corde_tier0.glb via InstancierModeleCordeTier0Gazon
@@ -3446,7 +3467,7 @@ public partial class Joueur : CharacterBody3D
             visuel.MaterialOverride = Atlas_Matiere.ObtenirMaterielCorde(matA, matB, niveauAspect);
             return;
         }
-        if (idObjet == 30 || idObjet == 32)
+        if (idObjet == 30 || idObjet == 32 || (idObjet == BlocChutant.ID_BRANCHE && indexMorphologique != 1))
         {
             visuel.MaterialOverride = idObjet == 32 && indexChimique == 1 && indexBotanique == LSystem_Botanique.IndexChene
                 ? ArbreVivant.ObtenirMaterielBoisTriplanarBatonChenEPale()
@@ -3460,7 +3481,7 @@ public partial class Joueur : CharacterBody3D
         }
         if (idObjet == BlocChutant.ID_BRANCHE)
         {
-            visuel.MaterialOverride = new StandardMaterial3D { AlbedoColor = new Color(0.52f, 0.32f, 0.14f), Roughness = 0.9f, Metallic = 0.02f };
+            visuel.MaterialOverride = ArbreVivant.ObtenirMaterielBoisTriplanar(indexBotanique);
             return;
         }
         if (idObjet == 34) { visuel.MaterialOverride = new StandardMaterial3D { AlbedoColor = new Color(0.2f, 0.55f, 0.15f), Roughness = 0.95f, Metallic = 0f }; return; }
@@ -4376,7 +4397,8 @@ public partial class Joueur : CharacterBody3D
             if (id == BlocChutant.ID_BRANCHE)
             {
                 Material matEssence = ArbreVivant.ObtenirMaterielBoisTriplanar(mainActive.IndexBotanique);
-                corps = BlocChutant.Creer(pointDeChute, (byte)id, matEssence);
+                bool tailléeBuisson = mainActive.IndexMorphologique == 1;
+                corps = BlocChutant.Creer(pointDeChute, (byte)id, matEssence, tailléeBuisson);
                 corps.SetMeta("IndexBotanique", (int)mainActive.IndexBotanique);
             }
             else

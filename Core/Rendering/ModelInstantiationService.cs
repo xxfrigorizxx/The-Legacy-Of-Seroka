@@ -594,52 +594,100 @@ public partial class Joueur
         parent.AddChild(modele);
     }
 
-    /// <summary>Carnet du savoir : modèle procédural simple avec couverture texturée temporaire.</summary>
+    /// <summary>Carnet du savoir : GLB <c>Modeles/Equipable/Carnet_Du_Savoir.glb</c> ; repli procédural si absent.</summary>
     public static void InstancierModeleCarnetSavoir(Node3D parent, SlotInventaire slot, float tailleMaxMetres = 0.42f, bool ancrerBaseAuSol = false)
     {
-        var modele = new Node3D { Name = "ModeleArme" };
+        const string cheminGlb = "res://Modeles/Equipable/Carnet_Du_Savoir.glb";
+        PackedScene scene = GD.Load<PackedScene>(cheminGlb);
+        Node3D modele;
 
-        var couverture = new MeshInstance3D
+        if (scene != null)
         {
-            Name = "Couverture",
-            Mesh = new BoxMesh { Size = new Vector3(0.34f, 0.045f, 0.46f) },
-            Position = new Vector3(0f, 0.028f, 0f)
-        };
-        var matCouv = new StandardMaterial3D
-        {
-            AlbedoColor = new Color(0.34f, 0.21f, 0.12f),
-            Roughness = 0.82f,
-            Metallic = 0.02f
-        };
-        couverture.MaterialOverride = matCouv;
-        modele.AddChild(couverture);
+            Node racine = scene.Instantiate();
+            if (racine is Node3D nd)
+                modele = nd;
+            else
+            {
+                modele = new Node3D();
+                modele.AddChild(racine);
+            }
+            modele.Name = "ModeleArme";
 
-        var pages = new MeshInstance3D
-        {
-            Name = "Pages",
-            Mesh = new BoxMesh { Size = new Vector3(0.30f, 0.032f, 0.42f) },
-            Position = new Vector3(0f, 0.03f, 0f)
-        };
-        pages.MaterialOverride = new StandardMaterial3D
-        {
-            AlbedoColor = new Color(0.88f, 0.84f, 0.74f),
-            Roughness = 0.94f,
-            Metallic = 0f
-        };
-        modele.AddChild(pages);
+            // GLB Tripo : nœuds « papier » / « cuir » (suffixes éditeur possibles).
+            var matPapier = new StandardMaterial3D
+            {
+                AlbedoColor = new Color(0.97f, 0.97f, 0.98f),
+                Roughness = 0.95f,
+                Metallic = 0f
+            };
+            var matCuir = new StandardMaterial3D
+            {
+                AlbedoColor = new Color(0.36f, 0.22f, 0.13f),
+                Roughness = 0.78f,
+                Metallic = 0.04f
+            };
 
-        var tranche = new MeshInstance3D
+            void AppliquerMateriauxCarnetGlb(Node n)
+            {
+                if (n is MeshInstance3D mi)
+                {
+                    string nom = mi.Name.ToString().ToLowerInvariant();
+                    if (nom.Contains("papier"))
+                        mi.MaterialOverride = matPapier;
+                    else if (nom.Contains("cuir"))
+                        mi.MaterialOverride = matCuir;
+                }
+                foreach (Node c in n.GetChildren())
+                    AppliquerMateriauxCarnetGlb(c);
+            }
+
+            AppliquerMateriauxCarnetGlb(modele);
+        }
+        else
         {
-            Name = "Tranche",
-            Mesh = new BoxMesh { Size = new Vector3(0.02f, 0.046f, 0.46f) },
-            Position = new Vector3(-0.16f, 0.028f, 0f)
-        };
-        tranche.MaterialOverride = new StandardMaterial3D
-        {
-            AlbedoColor = new Color(0.24f, 0.16f, 0.11f),
-            Roughness = 0.78f
-        };
-        modele.AddChild(tranche);
+            modele = new Node3D { Name = "ModeleArme" };
+
+            var couverture = new MeshInstance3D
+            {
+                Name = "Couverture",
+                Mesh = new BoxMesh { Size = new Vector3(0.34f, 0.045f, 0.46f) },
+                Position = new Vector3(0f, 0.028f, 0f)
+            };
+            couverture.MaterialOverride = new StandardMaterial3D
+            {
+                AlbedoColor = new Color(0.34f, 0.21f, 0.12f),
+                Roughness = 0.82f,
+                Metallic = 0.02f
+            };
+            modele.AddChild(couverture);
+
+            var pages = new MeshInstance3D
+            {
+                Name = "Pages",
+                Mesh = new BoxMesh { Size = new Vector3(0.30f, 0.032f, 0.42f) },
+                Position = new Vector3(0f, 0.03f, 0f)
+            };
+            pages.MaterialOverride = new StandardMaterial3D
+            {
+                AlbedoColor = new Color(0.98f, 0.98f, 0.99f),
+                Roughness = 0.96f,
+                Metallic = 0f
+            };
+            modele.AddChild(pages);
+
+            var tranche = new MeshInstance3D
+            {
+                Name = "Tranche",
+                Mesh = new BoxMesh { Size = new Vector3(0.02f, 0.046f, 0.46f) },
+                Position = new Vector3(-0.16f, 0.028f, 0f)
+            };
+            tranche.MaterialOverride = new StandardMaterial3D
+            {
+                AlbedoColor = new Color(0.24f, 0.16f, 0.11f),
+                Roughness = 0.78f
+            };
+            modele.AddChild(tranche);
+        }
 
         if (ancrerBaseAuSol)
             NormaliserEchelleTableAtelierAuSol(modele, tailleMaxMetres);

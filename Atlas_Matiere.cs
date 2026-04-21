@@ -620,7 +620,7 @@ public static class Atlas_Matiere
         if (ingredients.Count == 0)
             return new SlotInventaire();
 
-        // Une seule branche (bâton 32 brut) dans la grille → bâton façonné de la même essence : mêmes taille / morph / ScaleEclat, teinte façonnée (IndexChimique = 1).
+        // Un seul ingrédient : bâton brut (32, chim. 0) ou branche (31) → bâton façonné (32, chim. 1), même essence (IndexBotanique) pour solidité / crafts (rack, outils).
         if (ingredients.Count == 1)
         {
             var br = ingredients[0];
@@ -634,6 +634,21 @@ public static class Atlas_Matiere
                     IndexMorphologique = br.IndexMorphologique,
                     IndexTaille = br.IndexTaille,
                     ScaleEclat = br.ScaleEclat,
+                    EstUnEclat = false,
+                    MeshEclat = null,
+                    NiveauFracture = 0
+                };
+            }
+            if (br.ID == BlocChutant.ID_BRANCHE)
+            {
+                return new SlotInventaire
+                {
+                    ID = 32,
+                    IndexBotanique = br.IndexBotanique,
+                    IndexChimique = 1,
+                    IndexMorphologique = 0,
+                    IndexTaille = 0,
+                    ScaleEclat = Vector3.One,
                     EstUnEclat = false,
                     MeshEclat = null,
                     NiveauFracture = 0
@@ -744,6 +759,8 @@ public static class Atlas_Matiere
         }
         static bool EstSlotTissuCraft(SlotInventaire s) => !s.EstVide && s.ID == 21;
         static bool EstSlotBatonCraft(SlotInventaire s) => !s.EstVide && s.ID == 32;
+        /// <summary>Manche de hachette primitive : bâton brut (32) ou branche (31), même essence <see cref="SlotInventaire.IndexBotanique"/>.</summary>
+        static bool EstSlotMancheHachettePrimitive(SlotInventaire s) => !s.EstVide && (s.ID == 32 || s.ID == BlocChutant.ID_BRANCHE);
         // B1 = bûche standard (taille 1) fendue en 4 (morph 2). La longueur « standard » est surtout dans IndexTaille, pas ScaleEclat.
         static bool EstSlotBucheQuartB1RackCraft(SlotInventaire s)
         {
@@ -823,60 +840,110 @@ public static class Atlas_Matiere
                 }
             }
 
-            // RECETTE ATELIER : Rack à bâtons (109), sans position imposée.
-            // Règle : exactement 3 bâtons (32) + 2 ligatures (corde 20 ou liane 16), tout le reste vide.
-            int nbOccupes = 0;
-            int nbBatons = 0;
-            int nbLigatures = 0;
-            bool toutesLigaturesLiane = true;
-            bool toutesLigaturesHerbeSolide = true;
-            int nfRack = 0;
-            byte essenceBoisRack = LSystem_Botanique.IndexChene;
-            bool essenceBoisDefinie = false;
-            SlotInventaire refLigatureRack = default;
-            for (int i = 0; i < 9; i++)
+            // RECETTE ATELIER : Rack à bâtons (109), patron strict type « U » ligaturé (comme en jeu) + symétries.
+            // Base : ligne haute vide ; milieu L-B-L ; bas B-·-B (corde/liane 20|16, bâtons façonnés 32).
+            static void Tourner90HoraireRoles(int[] a)
             {
-                SlotInventaire s = grille[i];
-                if (s.EstVide) continue;
-                nbOccupes++;
-                nfRack = Mathf.Max(nfRack, s.NiveauFracture);
-                if (EstSlotBatonCraft(s))
+                int[] b = new int[9];
+                for (int r = 0; r < 3; r++)
                 {
-                    nbBatons++;
-                    if (!essenceBoisDefinie)
-                    {
-                        essenceBoisRack = s.IndexBotanique;
-                        essenceBoisDefinie = true;
-                    }
-                    continue;
+                    for (int c = 0; c < 3; c++)
+                        b[c * 3 + (2 - r)] = a[r * 3 + c];
                 }
-                if (EstSlotCordeOuLianeCraft(s))
-                {
-                    nbLigatures++;
-                    if (refLigatureRack.EstVide) refLigatureRack = s;
-                    if (s.ID != 16) toutesLigaturesLiane = false;
-                    if (!EstSlotCordeHerbeSolideCraft(s)) toutesLigaturesHerbeSolide = false;
-                    continue;
-                }
-                nbOccupes = 99;
-                break;
+                for (int i = 0; i < 9; i++) a[i] = b[i];
             }
-            if (nbOccupes == 5 && nbBatons == 3 && nbLigatures == 2)
+
+            static void MiroirHorizontalRoles(int[] a)
             {
+                for (int r = 0; r < 3; r++)
+                {
+                    int i0 = r * 3;
+                    (a[i0], a[i0 + 2]) = (a[i0 + 2], a[i0]);
+                }
+            }
+
+            static bool CorrespondPatronRackBatonsRoles(SlotInventaire[] g, int[] roles,
+                out SlotInventaire slotRack)
+            {
+                slotRack = new SlotInventaire();
+                SlotInventaire refBaton = default;
+                SlotInventaire lig0 = default;
+                SlotInventaire lig1 = default;
+                int nbL = 0;
+                int nfRack = 0;
+                for (int i = 0; i < 9; i++)
+                {
+                    int att = roles[i];
+                    SlotInventaire s = g[i];
+                    if (att == 0)
+                    {
+                        if (!s.EstVide)
+                            return false;
+                        continue;
+                    }
+                    if (s.EstVide)
+                        return false;
+                    nfRack = Mathf.Max(nfRack, s.NiveauFracture);
+                    if (att == 2)
+                    {
+                        if (!EstSlotBatonCraft(s))
+                            return false;
+                        if (refBaton.EstVide)
+                            refBaton = s;
+                        else if (!Joueur.SontEmpilables(refBaton, s))
+                            return false;
+                        continue;
+                    }
+                    if (att == 1)
+                    {
+                        if (!EstSlotCordeOuLianeCraft(s))
+                            return false;
+                        if (nbL == 0) lig0 = s;
+                        else lig1 = s;
+                        nbL++;
+                        continue;
+                    }
+                    return false;
+                }
+                if (nbL != 2 || refBaton.EstVide)
+                    return false;
+                if (!MemeVarianteLigature(lig0, lig1))
+                    return false;
+                bool toutesLigaturesLiane = lig0.ID == 16 && lig1.ID == 16;
+                bool toutesLigaturesHerbeSolide = EstSlotCordeHerbeSolideCraft(lig0) && EstSlotCordeHerbeSolideCraft(lig1);
                 byte tagVariante = toutesLigaturesLiane ? Joueur.TagVarianteLiane
                     : (toutesLigaturesHerbeSolide ? Joueur.TagVarianteHerbeSolide : LSystem_Botanique.IndexChene);
-                return new SlotInventaire
+                slotRack = new SlotInventaire
                 {
                     ID = Joueur.IdObjetRackBatons,
-                    IndexChimique = refLigatureRack.EstVide ? 0 : refLigatureRack.IndexChimique,
-                    IndexMorphologique = refLigatureRack.EstVide ? 0 : refLigatureRack.IndexMorphologique,
-                    // IMPORTANT : essence du bois du rack = essence des bâtons utilisés (visuel cohérent).
-                    IndexBotanique = essenceBoisDefinie ? essenceBoisRack : LSystem_Botanique.IndexChene,
+                    IndexChimique = lig0.IndexChimique,
+                    IndexMorphologique = lig0.IndexMorphologique,
+                    IndexBotanique = refBaton.IndexBotanique,
                     NiveauFracture = nfRack,
-                    // Tag ligature stocké séparément pour ne pas écraser l'essence bois.
                     GenomeAssemblage = $"RACKL:{tagVariante}",
                     EstUnEclat = false
                 };
+                return true;
+            }
+
+            {
+                // 0 = vide, 1 = ligature, 2 = bâton — même forme que la grille atelier (indices 0..8 ligne par ligne).
+                int[] baseRack = { 0, 0, 0, 1, 2, 1, 2, 0, 2 };
+                var vu = new HashSet<string>();
+                var travail = new int[9];
+                for (int m = 0; m < 2; m++)
+                {
+                    for (int i = 0; i < 9; i++) travail[i] = baseRack[i];
+                    if (m == 1)
+                        MiroirHorizontalRoles(travail);
+                    for (int rot = 0; rot < 4; rot++)
+                    {
+                        string cle = string.Join(",", travail);
+                        if (vu.Add(cle) && CorrespondPatronRackBatonsRoles(grille, travail, out SlotInventaire sr))
+                            return sr;
+                        Tourner90HoraireRoles(travail);
+                    }
+                }
             }
 
             bool blocGauche = EstSlotCordeOuLianeCraft(grille[0]) && EstSlotCordeOuLianeCraft(grille[1]) && EstSlotCordeOuLianeCraft(grille[3]) && EstSlotCordeOuLianeCraft(grille[4]) && EstSlotCordeOuLianeCraft(grille[6]) && EstSlotCordeOuLianeCraft(grille[7])
@@ -1046,9 +1113,9 @@ public static class Atlas_Matiere
             };
         }
 
-        if (EstSlotRochePlateCraft(c0) && EstSlotLigatureOutilCraft(c1) && c2.EstVide && EstSlotBatonCraft(c3))
+        if (EstSlotRochePlateCraft(c0) && EstSlotLigatureOutilCraft(c1) && c2.EstVide && EstSlotMancheHachettePrimitive(c3))
             return ConstruireHachette106(c0, NormaliserLigatureOutil(c1), c3);
-        if (EstSlotLigatureOutilCraft(c0) && EstSlotRochePlateCraft(c1) && EstSlotBatonCraft(c2) && c3.EstVide)
+        if (EstSlotLigatureOutilCraft(c0) && EstSlotRochePlateCraft(c1) && EstSlotMancheHachettePrimitive(c2) && c3.EstVide)
             return ConstruireHachette106(c1, NormaliserLigatureOutil(c0), c2);
 
         // Pelle pierre tier0 (107) : colonne verticale en 3x3 atelier [1]=bâton façonné (toute essence), [4]=ficelle, [7]=petite roche ovale.

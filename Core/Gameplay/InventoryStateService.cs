@@ -15,7 +15,7 @@ public partial class Joueur
     {
         if (s.EstVide) return 0;
         if (s.ID == Joueur.IdObjetBaie) return 20;
-        if (s.ID == 30 || s.ID == 32) return 30;
+        if (s.ID == 30 || s.ID == 32 || s.ID == BlocChutant.ID_BRANCHE) return 30;
         if (s.ID is 15 or 16 or 17 or 20 or 21) return 15;
         if (ItemPhysique.EstIdRocheMatiere(s.ID) && s.IndexTaille <= 1) return 5;
         return 1;

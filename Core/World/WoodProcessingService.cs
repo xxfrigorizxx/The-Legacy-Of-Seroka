@@ -10,7 +10,7 @@ public partial class Joueur
     /// <summary>Fente longitudinale (0–3) sur l’objet posé ; les anciennes valeurs hors plage sont ramenées à 0.</summary>
     private static int MorphologieBoisDepuisItem(ItemPhysique item)
     {
-        if (item == null || (item.ID_Objet != 30 && item.ID_Objet != 32)) return 0;
+        if (item == null || (item.ID_Objet != 30 && item.ID_Objet != 32 && item.ID_Objet != BlocChutant.ID_BRANCHE)) return 0;
         int m = item.IndexCacheMemoire;
         return m >= 0 && m <= 3 ? m : 0;
     }
@@ -18,7 +18,7 @@ public partial class Joueur
     /// <summary>Longueur inventaire (ScaleEclat.Z) : meta prioritaire, sinon déduit du mesh local (évite tronc → standard si meta perdu).</summary>
     private static Vector3 ScaleEclatBoisAuRamassage(ItemPhysique item)
     {
-        if (item == null || (item.ID_Objet != 30 && item.ID_Objet != 32))
+        if (item == null || (item.ID_Objet != 30 && item.ID_Objet != 32 && item.ID_Objet != BlocChutant.ID_BRANCHE))
             return Vector3.One;
         if (item.HasMeta("ScaleLongueurBois"))
             return new Vector3(1, 1, (float)item.GetMeta("ScaleLongueurBois").AsSingle());
@@ -34,7 +34,7 @@ public partial class Joueur
         return Vector3.One;
     }
 
-    private static void CalculerDimensionsBoisPose(int idObjet, int indexMorphologique, int indexTaille, out float baseRadius, out float baseLength, out float w, out float h)
+    public static void CalculerDimensionsBoisPose(int idObjet, int indexMorphologique, int indexTaille, out float baseRadius, out float baseLength, out float w, out float h)
     {
         int f = Mathf.Clamp(indexMorphologique, 0, 3);
         int t = Mathf.Clamp(indexTaille, 0, 3);

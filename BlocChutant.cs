@@ -229,17 +229,35 @@ public partial class BlocChutant : RigidBody3D
 			case ID_BRANCHE:
 				{
 					bool estBranche = idMateriau == ID_BRANCHE;
-					// Branche d'arbre : cylindre long. Branche de buisson uniquement : courte / fine (coupée sur la longueur max).
+					// Branche d'arbre : même silhouette procédurale qu'un bâton (32). Buisson : petit cylindre.
 					bool tailléeBuisson = estBranche && HasMeta(MetaBrancheTailléeBuisson) && GetMeta(MetaBrancheTailléeBuisson).AsBool();
-					float rayon = estBranche ? (tailléeBuisson ? 0.0267f : 0.08f) : 0.2f;
-					float hauteur = estBranche ? (tailléeBuisson ? 0.2f : 0.6f) : 0.5f;
-					meshInstance.Mesh = _ConstruireMeshCylindre(rayon, hauteur);
-					// Branche d’arbre : matériau essence si fourni (triplanar), sinon teinte bûche neutre.
-					if (estBranche && matTerrain != null)
-						meshInstance.MaterialOverride = (Material)matTerrain.Duplicate();
+					if (estBranche && tailléeBuisson)
+					{
+						float rayon = 0.0267f;
+						float hauteur = 0.2f;
+						meshInstance.Mesh = _ConstruireMeshCylindre(rayon, hauteur);
+						if (matTerrain != null)
+							meshInstance.MaterialOverride = (Material)matTerrain.Duplicate();
+						else
+							meshInstance.MaterialOverride = new StandardMaterial3D { AlbedoColor = new Color(0.52f, 0.32f, 0.14f), Roughness = 0.9f, Metallic = 0.02f };
+					}
+					else if (estBranche)
+					{
+						Joueur.CalculerDimensionsBoisPose(32, 0, 2, out float br, out float bl, out _, out _);
+						meshInstance.Mesh = Joueur.GenererMeshBoisFendu(br, bl, 0);
+						if (matTerrain != null)
+							meshInstance.MaterialOverride = (Material)matTerrain.Duplicate();
+						else
+							meshInstance.MaterialOverride = new StandardMaterial3D { AlbedoColor = new Color(0.52f, 0.32f, 0.14f), Roughness = 0.9f, Metallic = 0.02f };
+					}
 					else
+					{
+						float rayon = 0.2f;
+						float hauteur = 0.5f;
+						meshInstance.Mesh = _ConstruireMeshCylindre(rayon, hauteur);
 						meshInstance.MaterialOverride = new StandardMaterial3D { AlbedoColor = new Color(0.52f, 0.32f, 0.14f), Roughness = 0.9f, Metallic = 0.02f };
-					meshInstance.Rotation = new Vector3(Mathf.Pi * 0.5f, 0, 0); // Cylindre couché (bûche)
+					}
+					meshInstance.Rotation = new Vector3(Mathf.Pi * 0.5f, 0, 0);
 				}
 				break;
 			case ID_BUISSON_PLEIN:
@@ -298,8 +316,22 @@ public partial class BlocChutant : RigidBody3D
 		else if (estBois)
 		{
 			bool brancheTailléeBuisson = idMateriau == ID_BRANCHE && HasMeta(MetaBrancheTailléeBuisson) && GetMeta(MetaBrancheTailléeBuisson).AsBool();
-			float r = idMateriau == ID_BRANCHE ? (brancheTailléeBuisson ? 0.0334f : 0.1f) : 0.25f;
-			float h = idMateriau == ID_BRANCHE ? (brancheTailléeBuisson ? 0.233f : 0.7f) : 0.55f;
+			float r;
+			float h;
+			if (idMateriau == ID_BRANCHE && !brancheTailléeBuisson)
+			{
+				Joueur.CalculerDimensionsBoisPose(32, 0, 2, out r, out h, out _, out _);
+			}
+			else if (idMateriau == ID_BRANCHE)
+			{
+				r = 0.0334f;
+				h = 0.233f;
+			}
+			else
+			{
+				r = 0.25f;
+				h = 0.55f;
+			}
 			collision.Shape = new CylinderShape3D { Radius = r, Height = h };
 			collision.Position = new Vector3(0, 0, 0);
 			collision.Rotation = new Vector3(Mathf.Pi * 0.5f, 0, 0);

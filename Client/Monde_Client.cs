@@ -810,6 +810,24 @@ public partial class Monde_Client : Node3D
 			terrainOffset += count;
 		}
 
+		if (terrainOffset != totalTerrainVertices)
+		{
+			GD.PrintErr($"ZERO-K : fusion terrain incohérente offset={terrainOffset} attendu={totalTerrainVertices} chunk ({data.Coordonnees.X},{data.Coordonnees.Y}).");
+			Array.Resize(ref terrainVertices, terrainOffset);
+			Array.Resize(ref terrainNormals, terrainOffset);
+			Array.Resize(ref terrainColors, terrainOffset);
+		}
+		int nSommetsTerrain = terrainVertices.Length;
+		int resteTri = nSommetsTerrain % 3;
+		if (resteTri != 0)
+		{
+			int nv = nSommetsTerrain - resteTri;
+			GD.PrintErr($"ZERO-K : sommets terrain non multiple de 3 (n={nSommetsTerrain}), troncature de {resteTri} — chunk ({data.Coordonnees.X},{data.Coordonnees.Y}).");
+			Array.Resize(ref terrainVertices, nv);
+			Array.Resize(ref terrainNormals, nv);
+			Array.Resize(ref terrainColors, nv);
+		}
+
 		var terrainArrays = new Godot.Collections.Array();
 		terrainArrays.Resize((int)Mesh.ArrayType.Max);
 		terrainArrays[(int)Mesh.ArrayType.Vertex] = terrainVertices;

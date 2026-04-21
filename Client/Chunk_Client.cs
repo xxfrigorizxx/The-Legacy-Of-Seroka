@@ -599,23 +599,141 @@ public partial class Chunk_Client : Node3D
 	}
 
 	/// <summary>
-	/// Ordre Godot : <see cref="MultiMesh.TransformFormat"/> → <see cref="MultiMesh.UseColors"/> → <see cref="MultiMesh.InstanceCount"/>
-	/// (allocation des tampons), puis <see cref="MultiMesh.Mesh"/> (prototype), puis remplissage. Évite des incohérences GLES/Vulkan
-	/// sur le canal couleur (crash type index == count dans le moteur).
+	/// Le moteur attend des listes de sommets multiples de 3 ; un reste peut provoquer un plantage natif (PagedArray / tampons triangle).
+	/// </summary>
+	private static void TronquerSommetsSiResteNonTriplet(List<Vector3> sommets, List<Vector3> normales, List<Color> couleurs)
+	{
+		if (sommets == null || sommets.Count == 0) return;
+		int r = sommets.Count % 3;
+		if (r == 0) return;
+		int n = sommets.Count - r;
+		GD.PrintErr($"ZERO-K : troncature {r} sommet(s) hors triplet terrain (était {sommets.Count}).");
+		sommets.RemoveRange(n, r);
+		if (normales != null && normales.Count >= n + r) normales.RemoveRange(n, r);
+		if (couleurs != null && couleurs.Count >= n + r) couleurs.RemoveRange(n, r);
+	}
+
+	private static void TronquerEauSiResteNonTriplet(List<Vector3> sommets, List<Vector3> normales)
+	{
+		if (sommets == null || sommets.Count == 0) return;
+		int r = sommets.Count % 3;
+		if (r == 0) return;
+		int n = sommets.Count - r;
+		GD.PrintErr($"ZERO-K : troncature {r} sommet(s) hors triplet eau (était {sommets.Count}).");
+		sommets.RemoveRange(n, r);
+		if (normales != null && normales.Count >= n + r) normales.RemoveRange(n, r);
+	}
+
+	/// <summary>Godot exige une AABB explicite pour le culling spatial des instances ; une AABB vide peut déstabiliser le rendu instancié.</summary>
+	private static Aabb CalculerAabbFusionneMultimesh(Mesh meshPrototype, IReadOnlyList<Transform3D> transforms)
+	{
+		if (meshPrototype == null || transforms == null || transforms.Count == 0)
+			return new Aabb(Vector3.Zero, new Vector3(1f, 0.25f, 1f));
+		Aabb local = meshPrototype.GetAabb();
+		if (local.Size.LengthSquared() < 1e-16f)
+			return new Aabb(Vector3.Zero, new Vector3(1f, 0.25f, 1f));
+		Vector3 p0 = local.Position;
+		Vector3 s = local.Size;
+		Span<Vector3> corners = stackalloc Vector3[8];
+		corners[0] = p0;
+		corners[1] = p0 + new Vector3(s.X, 0f, 0f);
+		corners[2] = p0 + new Vector3(0f, s.Y, 0f);
+		corners[3] = p0 + new Vector3(0f, 0f, s.Z);
+		corners[4] = p0 + new Vector3(s.X, s.Y, 0f);
+		corners[5] = p0 + new Vector3(s.X, 0f, s.Z);
+		corners[6] = p0 + new Vector3(0f, s.Y, s.Z);
+		corners[7] = p0 + s;
+		bool first = true;
+		Aabb merged = default;
+		for (int i = 0; i < transforms.Count; i++)
+		{
+			Transform3D t = transforms[i];
+			for (int c = 0; c < 8; c++)
+			{
+				Vector3 wp = t * corners[c];
+				if (first)
+				{
+					merged = new Aabb(wp, Vector3.Zero);
+					first = false;
+				}
+				else
+					merged = merged.Expand(wp);
+			}
+		}
+		return merged.Grow(0.04f);
+	}
+
+	private static Aabb CalculerAabbFusionneMultimeshGazon(Mesh meshPrototype, List<(Transform3D t, Color c)> instances)
+	{
+		if (meshPrototype == null || instances == null || instances.Count == 0)
+			return new Aabb(Vector3.Zero, new Vector3(1f, 0.25f, 1f));
+		Aabb local = meshPrototype.GetAabb();
+		if (local.Size.LengthSquared() < 1e-16f)
+			return new Aabb(Vector3.Zero, new Vector3(1f, 0.25f, 1f));
+		Vector3 p0 = local.Position;
+		Vector3 s = local.Size;
+		Span<Vector3> corners = stackalloc Vector3[8];
+		corners[0] = p0;
+		corners[1] = p0 + new Vector3(s.X, 0f, 0f);
+		corners[2] = p0 + new Vector3(0f, s.Y, 0f);
+		corners[3] = p0 + new Vector3(0f, 0f, s.Z);
+		corners[4] = p0 + new Vector3(s.X, s.Y, 0f);
+		corners[5] = p0 + new Vector3(s.X, 0f, s.Z);
+		corners[6] = p0 + new Vector3(0f, s.Y, s.Z);
+		corners[7] = p0 + s;
+		bool first = true;
+		Aabb merged = default;
+		for (int i = 0; i < instances.Count; i++)
+		{
+			Transform3D t = instances[i].t;
+			for (int c = 0; c < 8; c++)
+			{
+				Vector3 wp = t * corners[c];
+				if (first)
+				{
+					merged = new Aabb(wp, Vector3.Zero);
+					first = false;
+				}
+				else
+					merged = merged.Expand(wp);
+			}
+		}
+		return merged.Grow(0.04f);
+	}
+
+	/// <summary>
+	/// Ordre Godot : <see cref="MultiMesh.TransformFormat"/> → <see cref="MultiMesh.UseColors"/> → <see cref="MultiMesh.Mesh"/> → <see cref="MultiMesh.InstanceCount"/>
+	/// (voir doc <c>instance_count</c> : les drapeaux/format ne s’appliquent plus après allocation ; <c>mesh</c> avant le count évite tampons désalignés / crash <c>paged_array</c> index==count).
 	/// </summary>
 	private static void ConfigurerMultiMeshGazonAvecInstances(MultiMesh mm, Mesh meshGazon, List<(Transform3D t, Color c)> instances)
 	{
 		if (mm == null || meshGazon == null || instances == null) return;
 		int n = instances.Count;
+		if (n <= 0) return;
 		mm.TransformFormat = MultiMesh.TransformFormatEnum.Transform3D;
 		mm.UseColors = true;
-		mm.InstanceCount = n;
 		mm.Mesh = meshGazon;
+		mm.InstanceCount = n;
 		for (int i = 0; i < n; i++)
 		{
 			mm.SetInstanceTransform(i, instances[i].t);
 			mm.SetInstanceColor(i, instances[i].c);
 		}
+		mm.CustomAabb = CalculerAabbFusionneMultimeshGazon(meshGazon, instances);
+	}
+
+	/// <summary>Buissons : pas de couleur par instance — même séquence sûre que le gazon (sans canal couleur).</summary>
+	private static void ConfigurerMultiMeshBuissonAvecTransforms(MultiMesh mm, Mesh meshBuisson, IReadOnlyList<Transform3D> transforms)
+	{
+		if (mm == null || meshBuisson == null || transforms == null) return;
+		int n = transforms.Count;
+		if (n <= 0) return;
+		mm.TransformFormat = MultiMesh.TransformFormatEnum.Transform3D;
+		mm.UseColors = false;
+		mm.Mesh = meshBuisson;
+		mm.InstanceCount = n;
+		for (int i = 0; i < n; i++)
+			mm.SetInstanceTransform(i, transforms[i]);
 	}
 
 	private void RemplirMultiMeshGazon(List<(Transform3D t, Color c)> gazonInstances)
@@ -636,6 +754,11 @@ public partial class Chunk_Client : Node3D
 
 		var mm = new MultiMesh();
 		ConfigurerMultiMeshGazonAvecInstances(mm, meshGazon, gazonInstances);
+		if (mm.InstanceCount <= 0)
+		{
+			_mmGazon.Multimesh = null;
+			return;
+		}
 
 		_mmGazon.Multimesh = mm;
 		_mmGazon.MaterialOverride = ObtenirMaterielGazonSymbiotique();
@@ -651,10 +774,8 @@ public partial class Chunk_Client : Node3D
 		if (meshPlein != null && pleins != null && pleins.Count > 0)
 		{
 			var mm = new MultiMesh();
-			mm.TransformFormat = MultiMesh.TransformFormatEnum.Transform3D;
-			mm.InstanceCount = pleins.Count;
-			mm.Mesh = meshPlein;
-			for (int i = 0; i < pleins.Count; i++) mm.SetInstanceTransform(i, pleins[i]);
+			ConfigurerMultiMeshBuissonAvecTransforms(mm, meshPlein, pleins);
+			mm.CustomAabb = CalculerAabbFusionneMultimesh(meshPlein, pleins);
 			_mmBuissonPlein.Multimesh = mm;
 			_mmBuissonPlein.MaterialOverride = matBuisson;
 			_mmBuissonPlein.Visible = true;
@@ -664,10 +785,8 @@ public partial class Chunk_Client : Node3D
 		if (meshVide != null && vides != null && vides.Count > 0)
 		{
 			var mm = new MultiMesh();
-			mm.TransformFormat = MultiMesh.TransformFormatEnum.Transform3D;
-			mm.InstanceCount = vides.Count;
-			mm.Mesh = meshVide;
-			for (int i = 0; i < vides.Count; i++) mm.SetInstanceTransform(i, vides[i]);
+			ConfigurerMultiMeshBuissonAvecTransforms(mm, meshVide, vides);
+			mm.CustomAabb = CalculerAabbFusionneMultimesh(meshVide, vides);
 			_mmBuissonVide.Multimesh = mm;
 			_mmBuissonVide.MaterialOverride = matBuisson;
 			_mmBuissonVide.Visible = true;
@@ -1890,6 +2009,8 @@ private static bool EstCorpsAuSol(PhysicsBody3D body)
 			if (bufferEau != null) ArrayPool<float>.Shared.Return(bufferEau);
 		}
 
+		TronquerSommetsSiResteNonTriplet(vertsT, normsT, colsT);
+		if (vertsE != null) TronquerEauSiResteNonTriplet(vertsE, normsE);
 		return new SectionPayload
 		{
 			SommetsVisuels = vertsT.ToArray(),
@@ -1995,11 +2116,8 @@ private static bool EstCorpsAuSol(PhysicsBody3D body)
 			return;
 		}
 		var mm = new MultiMesh();
-		mm.TransformFormat = MultiMesh.TransformFormatEnum.Transform3D;
-		mm.InstanceCount = transforms.Count;
-		mm.Mesh = mesh;
-		for (int i = 0; i < transforms.Count; i++)
-			mm.SetInstanceTransform(i, transforms[i]);
+		ConfigurerMultiMeshBuissonAvecTransforms(mm, mesh, transforms);
+		mm.CustomAabb = CalculerAabbFusionneMultimesh(mesh, transforms);
 		mmi.Multimesh = mm;
 		mmi.MaterialOverride = mat;
 		mmi.Visible = true;
@@ -2418,6 +2536,8 @@ private static bool EstCorpsAuSol(PhysicsBody3D body)
 			if (bufferEau != null) ArrayPool<float>.Shared.Return(bufferEau);
 		}
 
+		TronquerSommetsSiResteNonTriplet(vertsT, normsT, colsT);
+		if (vertsE != null) TronquerEauSiResteNonTriplet(vertsE, normsE);
 		return new SectionPayload
 		{
 			SommetsVisuels = vertsT.ToArray(),

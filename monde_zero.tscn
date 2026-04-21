@@ -1,7 +1,7 @@
 [gd_scene format=3 uid="uid://f4uwoekbjbr8"]
 
+[ext_resource type="Script" uid="uid://c1iuia40evd4j" path="res://Gestionnaire_Monde.cs" id="1_gestionnaire_monde"]
 [ext_resource type="PackedScene" uid="uid://c3xvor615sane" path="res://Joueur.tscn" id="2_joueur_scene"]
-[ext_resource type="Script" uid="uid://c1iuia40evd4j" path="res://Gestionnaire_Monde.cs" id="3_monde"]
 [ext_resource type="Script" uid="uid://cg8j1ht1501eq" path="res://ForgeLivreTerrain.cs" id="3_qcpdu"]
 [ext_resource type="Texture2D" uid="uid://b5lioau6ob7wl" path="res://textures/terrain/00_vide.jpg" id="4_k5uh1"]
 [ext_resource type="Texture2D" uid="uid://cya6l85shm2lx" path="res://textures/terrain/01_herbe.jpg" id="5_7pjmi"]
@@ -13,7 +13,6 @@
 [ext_resource type="Texture2D" uid="uid://c7l8crvuq085v" path="res://textures/terrain/07_boue.png" id="11_8g5cw"]
 [ext_resource type="Texture2D" uid="uid://rdjuys2m8odv" path="res://textures/terrain/08_argile.jpg" id="12_ipouq"]
 [ext_resource type="Texture2D" uid="uid://b3nc1q5d227vl" path="res://textures/terrain/09_glace.png" id="13_4vd4l"]
-[ext_resource type="Material" uid="uid://d0kcri8yqfqre" path="res://Manteau_Planetaire.tres" id="14_manteau"]
 [ext_resource type="Script" uid="uid://nvpc4cn6efp6" path="res://Cycle_Solaire.cs" id="15_soleil"]
 [ext_resource type="Script" uid="uid://60vm8wpy8dsn" path="res://Faune/GestionnaireFauneBoeufs.cs" id="16_faune"]
 [ext_resource type="PackedScene" uid="uid://esraits5520a" path="res://Scenes/Faune/VacheSauvage.tscn" id="17_boeuf_scene"]
@@ -45,55 +44,9 @@ adjustment_contrast = 1.25
 
 [node name="Monde_Zero" type="Node3D" unique_id=1323649165]
 
-[node name="Gestionnaire_Monde" type="Node3D" parent="." unique_id=2015054098]
-script = ExtResource("3_monde")
-RayonGazonVisibleChunks = 8
+[node name="Gestionnaire_Monde" type="Node3D" parent="." unique_id=1912975737]
+script = ExtResource("1_gestionnaire_monde")
 FuseauHoraireHeures = -10.0
-MaterielTerrain = ExtResource("14_manteau")
-
-[node name="HUD_Inventaire" type="CanvasLayer" parent="Gestionnaire_Monde" unique_id=1861864172]
-
-[node name="Conteneur_Ancrage" type="MarginContainer" parent="Gestionnaire_Monde/HUD_Inventaire" unique_id=264852567]
-anchors_preset = 7
-anchor_left = 0.5
-anchor_top = 1.0
-anchor_right = 0.5
-anchor_bottom = 1.0
-offset_left = -69.0
-offset_top = -84.0
-offset_right = 69.0
-offset_bottom = -20.0
-grow_horizontal = 2
-grow_vertical = 0
-theme_override_constants/margin_bottom = 20
-
-[node name="Boite_Slots" type="HBoxContainer" parent="Gestionnaire_Monde/HUD_Inventaire/Conteneur_Ancrage" unique_id=723286568]
-layout_mode = 2
-theme_override_constants/separation = 10
-alignment = 1
-
-[node name="Slot_Main_Gauche" type="Panel" parent="Gestionnaire_Monde/HUD_Inventaire/Conteneur_Ancrage/Boite_Slots" unique_id=970788211]
-custom_minimum_size = Vector2(64, 64)
-layout_mode = 2
-
-[node name="Slot_Main_Droite" type="Panel" parent="Gestionnaire_Monde/HUD_Inventaire/Conteneur_Ancrage/Boite_Slots" unique_id=602911561]
-custom_minimum_size = Vector2(64, 64)
-layout_mode = 2
-
-[node name="HUD_Carnet" type="CanvasLayer" parent="Gestionnaire_Monde" unique_id=790482658]
-
-[node name="Slot_Carnet_Savoir" type="Panel" parent="Gestionnaire_Monde/HUD_Carnet" unique_id=721194378]
-anchors_preset = 3
-anchor_left = 1.0
-anchor_top = 1.0
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = -128.0
-offset_top = -112.0
-offset_right = -56.0
-offset_bottom = -40.0
-grow_horizontal = 0
-grow_vertical = 0
 
 [node name="Joueur" parent="." unique_id=1690833917 instance=ExtResource("2_joueur_scene")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 8, 125, -8)

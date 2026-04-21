@@ -1384,25 +1384,28 @@ public partial class Joueur
             if (!outilTranchantPourArbre)
                 return;
 
-            // Étape 1 : arrachage du feuillage (une action par frappe)
+            // Étape 1 : arrachage du feuillage (une action par frappe) — uniquement si le mesh existe (sinon enchaîner branches / tronc).
             Node feuillage = rbCible.GetNodeOrNull("Feuillage");
-            if (feuillage != null)
+            if (feuillage is MeshInstance3D miFeu && miFeu.Mesh != null)
             {
-				Mesh meshFeuillage = (feuillage as MeshInstance3D)?.Mesh;
-				Material matFeuilles = (feuillage as MeshInstance3D)?.MaterialOverride?.Duplicate() as Material;
-                feuillage.QueueFree();
+                Mesh meshFeuillage = miFeu.Mesh;
+                Material matFeuilles = miFeu.MaterialOverride?.Duplicate() as Material;
+                miFeu.QueueFree();
                 JouerSonEtEffetCoupeArbre(pointImpact);
                 GD.Print("ZERO-K : Feuillage arraché du cadavre végétal.");
                 int quantite = 3 + (int)(rbCible.Mass / 100f);
                 Vector3 baseFeuillage = CalculerPointAuDessusSol(rbCible.GlobalPosition.Lerp(pointImpact, 0.5f) + Vector3.Up * 1.2f, 0.42f);
                 for (int i = 0; i < quantite; i++)
                 {
-					var bloc = BlocChutant.CreerFeuillageArrache(baseFeuillage, matFeuilles, meshFeuillage);
+                    var bloc = BlocChutant.CreerFeuillageArrache(baseFeuillage, matFeuilles, meshFeuillage);
                     GetTree().CurrentScene.AddChild(bloc);
                     bloc.GlobalPosition = baseFeuillage + new Vector3(((float)GD.Randf() - 0.5f) * 0.65f, (float)i * 0.06f + 0.12f, ((float)GD.Randf() - 0.5f) * 0.65f);
                 }
                 return;
             }
+
+            if (feuillage != null)
+                feuillage.QueueFree();
 
             int age = rbCible.HasMeta("Age") ? (int)rbCible.GetMeta("Age").AsInt32() : 1;
             int branchesRestantes = rbCible.HasMeta("BranchesRestantes") ? (int)rbCible.GetMeta("BranchesRestantes").AsInt32() : 0;

@@ -443,10 +443,77 @@ public partial class Gestionnaire_Monde : Node3D
 		if (lz == TailleChunk - 1 && _chunks.TryGetValue(new Vector2I(c.X, c.Y + 1), out var vzp)) (vzp as Generateur_Voxel)?.ActualiserMesh();
 	}
 
+	/// <summary>
+	/// Crée HUD_Inventaire (mains) et HUD_Carnet (slot carnet) : chemins attendus par le joueur et Monde_Client.
+	/// Doit être appelé avant l’ajout de <see cref="Monde_Client"/> (son <c>_Ready</c> résout les panels).
+	/// </summary>
+	private void AssurerCalquesHudInventaireEtCarnet()
+	{
+		if (GetNodeOrNull("HUD_Inventaire") != null)
+			return;
+
+		var hudInv = new CanvasLayer { Name = "HUD_Inventaire", Layer = 15 };
+		var conteneur = new Control
+		{
+			Name = "Conteneur_Ancrage",
+			MouseFilter = Control.MouseFilterEnum.Ignore
+		};
+		conteneur.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+		conteneur.OffsetRight = 0f;
+		conteneur.OffsetBottom = 0f;
+
+		var boite = new HBoxContainer
+		{
+			Name = "Boite_Slots",
+			Alignment = BoxContainer.AlignmentMode.Center,
+			MouseFilter = Control.MouseFilterEnum.Ignore
+		};
+		boite.SetAnchorsPreset(Control.LayoutPreset.CenterBottom);
+		boite.OffsetLeft = -200f;
+		boite.OffsetRight = 200f;
+		boite.OffsetTop = -120f;
+		boite.OffsetBottom = -20f;
+		boite.AddThemeConstantOverride("separation", 28);
+
+		var slotG = new Panel
+		{
+			Name = "Slot_Main_Gauche",
+			CustomMinimumSize = new Vector2(72f, 72f),
+			MouseFilter = Control.MouseFilterEnum.Stop
+		};
+		var slotD = new Panel
+		{
+			Name = "Slot_Main_Droite",
+			CustomMinimumSize = new Vector2(72f, 72f),
+			MouseFilter = Control.MouseFilterEnum.Stop
+		};
+		boite.AddChild(slotG);
+		boite.AddChild(slotD);
+		conteneur.AddChild(boite);
+		hudInv.AddChild(conteneur);
+		AddChild(hudInv);
+
+		var hudCarnet = new CanvasLayer { Name = "HUD_Carnet", Layer = 16 };
+		var slotCarnet = new Panel
+		{
+			Name = "Slot_Carnet_Savoir",
+			CustomMinimumSize = new Vector2(64f, 64f),
+			MouseFilter = Control.MouseFilterEnum.Stop
+		};
+		slotCarnet.SetAnchorsPreset(Control.LayoutPreset.TopRight);
+		slotCarnet.OffsetLeft = -88f;
+		slotCarnet.OffsetRight = -16f;
+		slotCarnet.OffsetTop = 52f;
+		slotCarnet.OffsetBottom = 124f;
+		hudCarnet.AddChild(slotCarnet);
+		AddChild(hudCarnet);
+	}
+
 	public override void _Ready()
 	{
 		DirAccess.MakeDirRecursiveAbsolute("user://chunks");
 		_joueur = GetParent().GetNode<CharacterBody3D>("Joueur");
+		AssurerCalquesHudInventaireEtCarnet();
 		Chunk_Client.EchelleGazon = EchelleGazon;
 		_optionsGraphiquesDefautProjet = CapturerOptionsGraphiquesCourantes(PresetGraphique.Personnalise);
 		ChargerOptionsGraphiquesAuDemarrage();

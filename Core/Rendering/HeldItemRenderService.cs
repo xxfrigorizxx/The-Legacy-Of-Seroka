@@ -411,7 +411,7 @@ public partial class Joueur
         int idxMorphMain = main.IndexMorphologique;
         Mesh m = main.EstUnEclat ? main.MeshEclat : ObtenirMeshDepuisCache(main.ID, idxMorphMain, main.IndexTaille);
         _objetEnMain.Mesh = m;
-        if (main.ID == 30 || main.ID == 32)
+        if (main.ID == 30 || main.ID == 32 || (main.ID == BlocChutant.ID_BRANCHE && main.IndexMorphologique != 1))
         {
             _objetEnMain.Scale = Vector3.One * 0.38f;
             _objetEnMain.RotationDegrees = new Vector3(15f + _rotationManuelleX, 55f + _rotationManuelleY, -25f + _rotationManuelleZ);
@@ -431,7 +431,7 @@ public partial class Joueur
         {
             if (ItemPhysique.EstIdRocheMatiere(main.ID))
                 AppliquerMaterielObjet(_objetEnMain, main.ID, main.IndexChimique, 0, 0, main.IndexBotanique);
-            else if (main.ID == 30 || main.ID == 32)
+            else if (main.ID == 30 || main.ID == 32 || main.ID == BlocChutant.ID_BRANCHE)
                 AppliquerMaterielObjet(_objetEnMain, main.ID, main.IndexChimique, main.IndexMorphologique, 0, main.IndexBotanique);
             else if (main.ID >= 1 && main.ID <= 9)
                 AppliquerMaterielObjet(_objetEnMain, main.ID, main.IndexChimique, 0, 0, main.IndexBotanique);
@@ -441,7 +441,7 @@ public partial class Joueur
         else if (m != null)
         {
             int morphMat = main.ID is 20 or 21 or IdObjetCeinturePoches or IdObjetCeintureSacoches or IdObjetPochetteTier0 or IdObjetSacTier0 ? main.IndexMorphologique
-                : (main.ID == 30 || main.ID == 32) ? main.IndexMorphologique : 0;
+                : (main.ID == 30 || main.ID == 32 || main.ID == BlocChutant.ID_BRANCHE) ? main.IndexMorphologique : 0;
             int tresMat = main.ID is 20 or 21 or IdObjetCeinturePoches or IdObjetCeintureSacoches or IdObjetPochetteTier0 or IdObjetSacTier0 ? main.NiveauFracture : 0;
             AppliquerMaterielObjet(_objetEnMain, main.ID, main.IndexChimique, morphMat, tresMat, main.IndexBotanique);
         }
@@ -850,7 +850,7 @@ public partial class Joueur
             meshNode.RemoveMeta(MetaSignatureSac101);
         Mesh m = slot.EstUnEclat ? slot.MeshEclat : ObtenirMeshDepuisCache(slot.ID, slot.IndexMorphologique, slot.IndexTaille);
         meshNode.Mesh = m;
-        if (slot.ID == 30 || slot.ID == 32)
+        if (slot.ID == 30 || slot.ID == 32 || slot.ID == BlocChutant.ID_BRANCHE)
         {
             meshNode.Scale = Vector3.One * 0.72f;
             meshNode.RotationDegrees = new Vector3(68f, 18f, 0);
@@ -869,7 +869,7 @@ public partial class Joueur
         {
             if (ItemPhysique.EstIdRocheMatiere(slot.ID))
                 AppliquerMaterielObjet(meshNode, slot.ID, slot.IndexChimique, 0, 0, slot.IndexBotanique);
-            else if (slot.ID == 30 || slot.ID == 32)
+            else if (slot.ID == 30 || slot.ID == 32 || slot.ID == BlocChutant.ID_BRANCHE)
                 AppliquerMaterielObjet(meshNode, slot.ID, slot.IndexChimique, slot.IndexMorphologique, 0, slot.IndexBotanique);
             else if (slot.ID >= 1 && slot.ID <= 9)
                 AppliquerMaterielObjet(meshNode, slot.ID, slot.IndexChimique, 0, 0, slot.IndexBotanique);
@@ -879,7 +879,7 @@ public partial class Joueur
         else if (m != null)
         {
             int morphMat = slot.ID is 20 or 21 or IdObjetCeinturePoches or IdObjetCeintureSacoches or IdObjetPochetteTier0 or IdObjetSacTier0 ? slot.IndexMorphologique
-                : (slot.ID == 30 || slot.ID == 32) ? slot.IndexMorphologique : 0;
+                : (slot.ID == 30 || slot.ID == 32 || slot.ID == BlocChutant.ID_BRANCHE) ? slot.IndexMorphologique : 0;
             int tresMat = slot.ID is 20 or 21 or IdObjetCeinturePoches or IdObjetCeintureSacoches or IdObjetPochetteTier0 or IdObjetSacTier0 ? slot.NiveauFracture : 0;
             AppliquerMaterielObjet(meshNode, slot.ID, slot.IndexChimique, morphMat, tresMat, slot.IndexBotanique);
         }

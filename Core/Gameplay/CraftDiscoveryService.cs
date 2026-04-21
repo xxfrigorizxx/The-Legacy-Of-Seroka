@@ -22,7 +22,9 @@ public partial class Joueur
 		BuchePleine = 1 << 11,
 		DemiBuche = 1 << 12,
 		Pochette = 1 << 13,
-		CeinturePoches = 1 << 14
+		CeinturePoches = 1 << 14,
+		/// <summary>Branche d'arbre / de buisson (ID 31) : manche hachette primitive, mais pas substitut du bâton brut (32) pour « bâton façonné » seul.</summary>
+		BrancheBrute = 1 << 15
 	}
 
 	private sealed class RecetteAnalysable
@@ -75,7 +77,7 @@ public partial class Joueur
 			IdResultat = 32,
 			Masque = CategorieAnalyse.Baton,
 			Titre = "Baton faconne",
-			LegendeSymboles = new[] { "B = Baton brut" },
+			LegendeSymboles = new[] { "B = Baton brut (32) ou branche (31) — même formule, essence = bois utilisé" },
 			PatronCraft = new[] { "(B)" }
 		},
 		new RecetteAnalysable
@@ -93,7 +95,7 @@ public partial class Joueur
 			IdResultat = 106,
 			Masque = CategorieAnalyse.Baton | CategorieAnalyse.RochePlate | CategorieAnalyse.Ligature,
 			Titre = "Hachette primitive",
-			LegendeSymboles = new[] { "R = Petite roche plate", "L = Ligature", "B = Baton" },
+			LegendeSymboles = new[] { "R = Petite roche plate", "L = Ligature", "B = Baton brut (32) ou branche (31)" },
 			PatronCraft = new[] { "(R)(L)", "(  )(B)" }
 		},
 		new RecetteAnalysable
@@ -147,8 +149,8 @@ public partial class Joueur
 			IdResultat = IdObjetRackBatons,
 			Masque = CategorieAnalyse.Baton | CategorieAnalyse.Ligature,
 			Titre = "Rack a batons",
-			LegendeSymboles = new[] { "B = Baton", "L = Ligature" },
-			PatronCraft = new[] { "(B)(L)(  )", "(  )(B)(  )", "(  )(L)(B)" }
+			LegendeSymboles = new[] { "B = Baton faconne", "L = Corde ou liane" },
+			PatronCraft = new[] { "(  )(  )(  )", "(L)(B)(L)", "(B)( )(B)" }
 		},
 		new RecetteAnalysable
 		{
@@ -230,6 +232,7 @@ public partial class Joueur
 		return $"Vous avez decouvert: {titre}\n{schema}";
 	}
 
+	/// <summary>Clé de déblocage : pour le bâton façonné, une seule entrée <c>baton_faconne</c> couvre toutes les essences (IndexBotanique porté par le résultat craft).</summary>
 	private static string CleCraftDepuisResultat(in SlotInventaire resultat)
 	{
 		if (resultat.ID <= 0) return "";
@@ -300,6 +303,9 @@ public partial class Joueur
 			if (s.IndexChimique == 1) c |= CategorieAnalyse.BatonFaconne;
 			if (s.IndexMorphologique == 4) c |= CategorieAnalyse.BatonEnT;
 		}
+		// Branche (31) : manche pour hachette primitive (masque dédié), pas la catégorie « Baton » seule (sinon une branche seule déclenche « bâton façonné »).
+		if (s.ID == BlocChutant.ID_BRANCHE)
+			c |= CategorieAnalyse.BrancheBrute;
 		if (s.ID == 30)
 		{
 			if (s.IndexMorphologique == 1) c |= CategorieAnalyse.DemiBuche;
@@ -315,6 +321,22 @@ public partial class Joueur
 			else if (s.IndexMorphologique == 3) c |= CategorieAnalyse.RochePointe;
 		}
 		return c;
+	}
+
+	/// <summary>Hachette primitive : bâton (32) <b>ou</b> branche (31) + roche plate + ligature. Les autres recettes suivent le masque bit à bit.</summary>
+	private static bool AnalyseurUnionSatisfaitRecette(CategorieAnalyse union, RecetteAnalysable r)
+	{
+		if (r.CleCraft == "id_106")
+		{
+			bool manche = (union & CategorieAnalyse.Baton) != 0 || (union & CategorieAnalyse.BrancheBrute) != 0;
+			bool roche = (union & CategorieAnalyse.RochePlate) != 0;
+			bool lig = (union & CategorieAnalyse.Ligature) != 0;
+			return manche && roche && lig;
+		}
+		// Bâton façonné : une seule clé « baton_faconne » pour toutes les essences (chêne, bouleau, …) — bâton brut (32) ou branche (31).
+		if (r.CleCraft == "baton_faconne")
+			return (union & CategorieAnalyse.Baton) != 0 || (union & CategorieAnalyse.BrancheBrute) != 0;
+		return (union & r.Masque) == r.Masque;
 	}
 
 	public bool EssayerAnalyserCrafts(out string message)
@@ -347,7 +369,7 @@ public partial class Joueur
 		for (int i = 0; i < RecettesAnalyseur.Length; i++)
 		{
 			RecetteAnalysable r = RecettesAnalyseur[i];
-			if ((masque & r.Masque) == r.Masque)
+			if (AnalyseurUnionSatisfaitRecette(masque, r))
 				candidates.Add(r);
 		}
 		if (candidates.Count == 0)
