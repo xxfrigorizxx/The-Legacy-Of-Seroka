@@ -9,7 +9,10 @@ public partial class Joueur
     private const int VersionPersistenceJoueur = 5;
     private const int VersionPersistenceObjetsPoses = 4;
     private const int VersionPersistenceProgression = 2;
-    private bool _etatPersistantCharge;
+    private bool _persistantPhaseJoueurChargee;
+    private bool _persistantObjetsSolCharges;
+    /// <summary>Évite d’écrire <c>placed_objects.dat</c> pendant le remplacement des objets (fenêtre vide = tout effacé au disque).</summary>
+    private bool _chargementObjetsPosesMondeEnCours;
 
     private static string ObtenirCheminDossierSauvegardeMonde()
     {
@@ -111,19 +114,54 @@ public partial class Joueur
         ObtenirGestionnaireFauneCourant(tree)?.SauvegarderFauneMonde();
     }
 
-    public void ChargerEtatPersistantMonde()
+    /// <summary>
+    /// Inventaire / progression / carnet uniquement — à utiliser quand l’arbre monde peut être en cours de destruction
+    /// (ex. <see cref="Node._ExitTree"/> du joueur après ses frères <c>BlocsPoses</c>), pour ne pas écraser <c>placed_objects.dat</c> avec 0 entrée.
+    /// </summary>
+    private void SauvegarderFichiersJoueurHorsObjetsAuSol()
     {
-        if (_etatPersistantCharge) return;
-        _etatPersistantCharge = true;
+        SauvegarderProgressionJoueurMonde();
+        SauvegarderInventaireMonde();
+        SauvegarderCarnetSavoirMonde();
+    }
+
+    /// <summary>Compat : n’exécute que la phase joueur (inventaire, progression, carnet). Les objets au sol sont chargés par <see cref="ChargerEtatPersistantPhaseObjetsAuSolEtFaune"/>.</summary>
+    public void ChargerEtatPersistantMonde() => ChargerEtatPersistantPhaseJoueur();
+
+    /// <summary>Phase A — dès le premier <c>CallDeferred</c> au chargement de scène.</summary>
+    public void ChargerEtatPersistantPhaseJoueur()
+    {
+        if (_persistantPhaseJoueurChargee) return;
+        _persistantPhaseJoueurChargee = true;
         ChargerProgressionJoueurMonde();
         ChargerInventaireMonde();
         bool carnetCharge = ChargerCarnetSavoirMonde();
         if (!carnetCharge)
             InitialiserCarnetParDefautSiAucuneDonnee();
-        ChargerObjetsPosesMonde();
-        ChargerBlocsChutantsMonde();
-        ObtenirGestionnaireFauneCourant(null)?.ChargerFauneMonde();
         RafraichirHUD();
+    }
+
+    /// <summary>Phase B — après que le terrain sous le spawn soit prêt ; gèle les corps jusqu’à collision chunk sous chaque objet.</summary>
+    public void ChargerEtatPersistantPhaseObjetsAuSolEtFaune()
+    {
+        if (_persistantObjetsSolCharges) return;
+        try
+        {
+            ChargerObjetsPosesMonde();
+            ChargerBlocsChutantsMonde();
+            ObtenirGestionnaireFauneCourant(null)?.ChargerFauneMonde();
+        }
+        finally
+        {
+            _persistantObjetsSolCharges = true;
+        }
+        RafraichirHUD();
+    }
+
+    private void EnregistrerGelRestaurationSolSiBesoin(Node3D noeud)
+    {
+        if (noeud is RigidBody3D rb)
+            _gestionnaireMonde?.EnregistrerRigidBodyRestaurationSolSiCollisionManquante(rb);
     }
 
     private GestionnaireFauneBoeufs ObtenirGestionnaireFauneCourant(SceneTree arbreScene)
@@ -467,6 +505,11 @@ public partial class Joueur
         try
         {
             if (tree == null) return;
+            if (_chargementObjetsPosesMondeEnCours)
+            {
+                GD.Print("ZERO-K : Sauvegarde objets posés ignorée (chargement des objets posés en cours).");
+                return;
+            }
             string dossier = ObtenirCheminDossierSauvegardeMonde();
             Directory.CreateDirectory(dossier);
             string chemin = Path.Combine(dossier, "placed_objects.dat");
@@ -488,6 +531,19 @@ public partial class Joueur
                     aSauver.Add((s, p, r, atelier, coffre));
                 }
             }
+
+            int nbAtelier200 = 0, nbRack = 0, nbCoffre = 0, nbAutres = 0;
+            foreach (var e in aSauver)
+            {
+                if (e.slot.EstVide) continue;
+                int id = e.slot.ID;
+                if (id == 200) nbAtelier200++;
+                else if (id == IdObjetRackBatons || id == IdObjetRackBuches) nbRack++;
+                else if (id == IdObjetCoffreBoisTier0) nbCoffre++;
+                else nbAutres++;
+            }
+            GD.Print($"ZERO-K : Sauvegarde objets posés → placed_objects.dat : {aSauver.Count} objet(s) " +
+                $"(atelier craft 200={nbAtelier200}, racks={nbRack}, coffres={nbCoffre}, autres={nbAutres}) — monde {GameState.Instance?.NomMondeActuel ?? "?"}");
 
             using var w = new BinaryWriter(File.Open(chemin, FileMode.Create));
             w.Write(VersionPersistenceObjetsPoses);
@@ -526,74 +582,124 @@ public partial class Joueur
             string chemin = Path.Combine(ObtenirCheminDossierSauvegardeMonde(), "placed_objects.dat");
             if (!File.Exists(chemin)) return;
 
+            // Lecture intégrale AVANT toute destruction : sinon fichier vide / version inconnue / erreur
+            // supprime tout l’existant sans rien respawner (ateliers, racks, roches au sol « posées », etc.).
+            var entrees = new List<(SlotInventaire slot, Vector3 pos, Vector3 rot, SlotInventaire[] atelier, SlotInventaire[] coffre)>();
+            using (var r = new BinaryReader(File.Open(chemin, FileMode.Open, System.IO.FileAccess.Read, FileShare.Read)))
+            {
+                int version = r.ReadInt32();
+                if (version < 1 || version > VersionPersistenceObjetsPoses)
+                {
+                    GD.PrintErr($"ZERO-K : placed_objects.dat version {version} non prise en charge — les objets déjà en scène sont conservés.");
+                    return;
+                }
+                bool lireExtras = version >= 3;
+                int nObj = r.ReadInt32();
+                for (int i = 0; i < nObj; i++)
+                {
+                    SlotInventaire s = LireSlot(r, lireExtras);
+                    Vector3 p = new Vector3(r.ReadSingle(), r.ReadSingle(), r.ReadSingle());
+                    Vector3 rot = new Vector3(r.ReadSingle(), r.ReadSingle(), r.ReadSingle());
+                    SlotInventaire[] grilleAtelier = null;
+                    SlotInventaire[] grilleCoffre = null;
+                    if (version >= 2)
+                    {
+                        bool aAtelier = r.ReadBoolean();
+                        if (aAtelier)
+                        {
+                            grilleAtelier = new SlotInventaire[9];
+                            for (int g = 0; g < 9; g++)
+                                grilleAtelier[g] = LireSlot(r, lireExtras);
+                        }
+                    }
+                    if (version >= 4)
+                    {
+                        bool aCoffre = r.ReadBoolean();
+                        if (aCoffre)
+                        {
+                            grilleCoffre = new SlotInventaire[10];
+                            for (int g = 0; g < 10; g++)
+                                grilleCoffre[g] = LireSlot(r, lireExtras);
+                        }
+                    }
+                    entrees.Add((s, p, rot, grilleAtelier, grilleCoffre));
+                }
+            }
+
+            int nbAtelier200L = 0, nbRackL = 0, nbCoffreL = 0, nbAutresL = 0;
+            foreach (var e in entrees)
+            {
+                if (e.slot.EstVide) continue;
+                int id = e.slot.ID;
+                if (id == 200) nbAtelier200L++;
+                else if (id == IdObjetRackBatons || id == IdObjetRackBuches) nbRackL++;
+                else if (id == IdObjetCoffreBoisTier0) nbCoffreL++;
+                else nbAutresL++;
+            }
+            GD.Print($"ZERO-K : Chargement objets posés depuis placed_objects.dat : {entrees.Count} entrée(s) " +
+                $"(atelier 200={nbAtelier200L}, racks={nbRackL}, coffres={nbCoffreL}, autres={nbAutresL}) — monde {GameState.Instance?.NomMondeActuel ?? "?"}");
+
+            // Référencer les anciens avant de respawner : évite une fenêtre où le groupe BlocsPoses est vide
+            // si une sauvegarde (autosave, pose, fermeture) s’exécute entre QueueFree et CreerBlocPose.
+            var anciensBlocsPoses = new List<Node>();
             if (IsInsideTree())
             {
                 foreach (Node n in GetTree().GetNodesInGroup("BlocsPoses"))
-                    n.QueueFree();
+                    anciensBlocsPoses.Add(n);
             }
 
-            using var r = new BinaryReader(File.Open(chemin, FileMode.Open, System.IO.FileAccess.Read, FileShare.Read));
-            int version = r.ReadInt32();
-            if (version < 1 || version > VersionPersistenceObjetsPoses) return;
-            bool lireExtras = version >= 3;
-            int nObj = r.ReadInt32();
-            for (int i = 0; i < nObj; i++)
+            _chargementObjetsPosesMondeEnCours = true;
+            try
             {
-                SlotInventaire s = LireSlot(r, lireExtras);
-                Vector3 p = new Vector3(r.ReadSingle(), r.ReadSingle(), r.ReadSingle());
-                Vector3 rot = new Vector3(r.ReadSingle(), r.ReadSingle(), r.ReadSingle());
-                SlotInventaire[] grilleAtelier = null;
-                SlotInventaire[] grilleCoffre = null;
-                if (version >= 2)
+                foreach (var e in entrees)
                 {
-                    bool aAtelier = r.ReadBoolean();
-                    if (aAtelier)
+                    if (e.slot.EstVide) continue;
+                    SlotInventaire s = e.slot;
+                    Vector3 p = e.pos;
+                    Vector3 rot = e.rot;
+                    SlotInventaire[] grilleAtelier = e.atelier;
+                    SlotInventaire[] grilleCoffre = e.coffre;
+                    Node3D n = CreerBlocPose(p, s);
+                    if (n != null)
                     {
-                        grilleAtelier = new SlotInventaire[9];
-                        for (int g = 0; g < 9; g++)
-                            grilleAtelier[g] = LireSlot(r, lireExtras);
-                    }
-                }
-                if (version >= 4)
-                {
-                    bool aCoffre = r.ReadBoolean();
-                    if (aCoffre)
-                    {
-                        grilleCoffre = new SlotInventaire[10];
-                        for (int g = 0; g < 10; g++)
-                            grilleCoffre[g] = LireSlot(r, lireExtras);
-                    }
-                }
-                if (s.EstVide) continue;
-                Node3D n = CreerBlocPose(p, s);
-                if (n != null)
-                {
-                    n.GlobalRotationDegrees = rot;
-                    if ((s.ID == 200 || s.ID == IdObjetRackBatons || s.ID == IdObjetRackBuches) && grilleAtelier != null)
-                    {
-                        var item = TrouverItemPhysiqueDansNoeud(n);
-                        if (item != null && item.GrillePlanTravailAtelier != null)
+                        n.GlobalRotationDegrees = rot;
+                        if ((s.ID == 200 || s.ID == IdObjetRackBatons || s.ID == IdObjetRackBuches) && grilleAtelier != null)
                         {
-                            int len = Mathf.Min(9, item.GrillePlanTravailAtelier.Length);
-                            for (int g = 0; g < len; g++)
-                                item.GrillePlanTravailAtelier[g] = grilleAtelier[g];
-                            if (item.ID_Objet == IdObjetRackBatons)
-                                SynchroniserVisuelRackBatons(item);
-                            else if (item.ID_Objet == IdObjetRackBuches)
-                                SynchroniserVisuelRackBuches(item);
+                            var item = TrouverItemPhysiqueDansNoeud(n);
+                            if (item != null && item.GrillePlanTravailAtelier != null)
+                            {
+                                int len = Mathf.Min(9, item.GrillePlanTravailAtelier.Length);
+                                for (int g = 0; g < len; g++)
+                                    item.GrillePlanTravailAtelier[g] = grilleAtelier[g];
+                                if (item.ID_Objet == IdObjetRackBatons)
+                                    SynchroniserVisuelRackBatons(item);
+                                else if (item.ID_Objet == IdObjetRackBuches)
+                                    SynchroniserVisuelRackBuches(item);
+                            }
                         }
-                    }
-                    if (s.ID == IdObjetCoffreBoisTier0 && grilleCoffre != null)
-                    {
-                        var itemC = TrouverItemPhysiqueDansNoeud(n);
-                        if (itemC != null && itemC.GrilleStockageCoffre != null)
+                        if (s.ID == IdObjetCoffreBoisTier0 && grilleCoffre != null)
                         {
-                            int lenC = Mathf.Min(10, itemC.GrilleStockageCoffre.Length);
-                            for (int g = 0; g < lenC; g++)
-                                itemC.GrilleStockageCoffre[g] = grilleCoffre[g];
+                            var itemC = TrouverItemPhysiqueDansNoeud(n);
+                            if (itemC != null && itemC.GrilleStockageCoffre != null)
+                            {
+                                int lenC = Mathf.Min(10, itemC.GrilleStockageCoffre.Length);
+                                for (int g = 0; g < lenC; g++)
+                                    itemC.GrilleStockageCoffre[g] = grilleCoffre[g];
+                            }
                         }
+                        EnregistrerGelRestaurationSolSiBesoin(n);
                     }
                 }
+
+                foreach (Node n in anciensBlocsPoses)
+                {
+                    if (GodotObject.IsInstanceValid(n) && n.IsInsideTree())
+                        n.QueueFree();
+                }
+            }
+            finally
+            {
+                _chargementObjetsPosesMondeEnCours = false;
             }
         }
         catch (Exception ex)
@@ -641,32 +747,45 @@ public partial class Joueur
             string chemin = Path.Combine(ObtenirCheminDossierSauvegardeMonde(), "dropped_blocks.dat");
             if (!File.Exists(chemin)) return;
 
+            var entrees = new List<(byte id, Vector3 pos, Vector3 rot)>();
+            using (var r = new BinaryReader(File.Open(chemin, FileMode.Open, System.IO.FileAccess.Read, FileShare.Read)))
+            {
+                int version = r.ReadInt32();
+                if (version < 1 || version > VersionPersistenceObjetsPoses)
+                {
+                    GD.PrintErr($"ZERO-K : dropped_blocks.dat version {version} non prise en charge — blocs persistants conservés.");
+                    return;
+                }
+                int count = r.ReadInt32();
+                for (int i = 0; i < count; i++)
+                {
+                    byte id = r.ReadByte();
+                    Vector3 pos = new Vector3(r.ReadSingle(), r.ReadSingle(), r.ReadSingle());
+                    Vector3 rot = new Vector3(r.ReadSingle(), r.ReadSingle(), r.ReadSingle());
+                    entrees.Add((id, pos, rot));
+                }
+            }
+
             if (IsInsideTree())
             {
                 foreach (Node n in GetTree().GetNodesInGroup("PersistantsBlocChutant"))
                     n.QueueFree();
             }
 
-            using var r = new BinaryReader(File.Open(chemin, FileMode.Open, System.IO.FileAccess.Read, FileShare.Read));
-            int version = r.ReadInt32();
-            if (version < 1 || version > VersionPersistenceObjetsPoses) return;
-            int count = r.ReadInt32();
             Material matTerrain = _gestionnaireMonde?.MaterielTerrain ?? GD.Load<Material>("res://Manteau_Planetaire.tres");
-            for (int i = 0; i < count; i++)
+            foreach (var e in entrees)
             {
-                byte id = r.ReadByte();
-                Vector3 pos = new Vector3(r.ReadSingle(), r.ReadSingle(), r.ReadSingle());
-                Vector3 rot = new Vector3(r.ReadSingle(), r.ReadSingle(), r.ReadSingle());
-                if (!EstBlocChutantPersistable(id)) continue;
-                BlocChutant bloc = id == BlocChutant.ID_FEUILLE_ARRACHEE
-                    ? BlocChutant.CreerFeuillageArrache(pos, null)
-                    : BlocChutant.Creer(pos, id, matTerrain);
+                if (!EstBlocChutantPersistable(e.id)) continue;
+                BlocChutant bloc = e.id == BlocChutant.ID_FEUILLE_ARRACHEE
+                    ? BlocChutant.CreerFeuillageArrache(e.pos, null)
+                    : BlocChutant.Creer(e.pos, e.id, matTerrain);
                 if (bloc == null) continue;
                 if (GetParent() != null)
                 {
                     GetParent().AddChild(bloc);
-                    bloc.GlobalPosition = pos;
-                    bloc.GlobalRotationDegrees = rot;
+                    bloc.GlobalPosition = e.pos;
+                    bloc.GlobalRotationDegrees = e.rot;
+                    EnregistrerGelRestaurationSolSiBesoin(bloc);
                 }
             }
         }
@@ -674,5 +793,21 @@ public partial class Joueur
         {
             GD.PrintErr($"ZERO-K : Erreur chargement blocschutants : {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// Sous <c>Monde_Zero</c>, l’atelier et les <c>BlocsPoses</c> sont souvent des <b>frères</b> du joueur.
+    /// À la destruction de la scène, Godot peut libérer ces nœuds <b>avant</b> le <c>_ExitTree</c> du joueur :
+    /// un <see cref="SauvegarderEtatPersistantMonde"/> ici voyait 0 objet et <b>effaçait</b> <c>placed_objects.dat</c>.
+    /// On ne persiste donc que position + fichiers joueur ; tables / faune / chunks passent par le menu pause, Quitter, ou <see cref="Gestionnaire_Monde.SauvegarderManuelDepuisMenu"/>.
+    /// </summary>
+    public override void _ExitTree()
+    {
+        if (!Engine.IsEditorHint())
+        {
+            GameState.Instance?.SauvegarderPositionJoueur(GlobalPosition);
+            SauvegarderFichiersJoueurHorsObjetsAuSol();
+        }
+        base._ExitTree();
     }
 }

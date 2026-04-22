@@ -1,7 +1,9 @@
 using Godot;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
+using System.Text;
 
 /// <summary>État global du jeu. Autoload pour passer monde/seed entre menu et jeu.</summary>
 public partial class GameState : Node
@@ -18,24 +20,176 @@ public partial class GameState : Node
 	public override void _Ready()
 	{
 		Instance = this;
+		// Godot 4 : SceneTree n’expose pas le signal « tree_exiting » (Godot 3). Fermeture via fenêtre racine + notification WM.
+		Window fenetre = GetWindow();
+		if (fenetre != null)
+			fenetre.CloseRequested += ExecuterSauvegardeFiletAvantFermetureApplication;
+	}
+
+	public override void _Notification(int what)
+	{
+		base._Notification(what);
+		// Croix Windows / demande de fermeture (souvent avant la destruction de la scène de jeu).
+		if (!Engine.IsEditorHint() && what == Node.NotificationWMCloseRequest)
+			ExecuterSauvegardeFiletAvantFermetureApplication();
+	}
+
+	/// <summary>Filet si fermeture sans passer par le bouton Sauvegarder (croix fenêtre, etc.). <c>GetTree().Quit()</c> est déjà couvert par les boutons Quitter.</summary>
+	private void ExecuterSauvegardeFiletAvantFermetureApplication()
+	{
+		if (Engine.IsEditorHint()) return;
+		EssayerSauvegardeCompleteSiEnPartie();
+	}
+
+	/// <summary>
+	/// La scène <c>monde_zero.tscn</c> a pour racine un nœud (ex. <c>Monde_Zero</c>) : le <see cref="Gestionnaire_Monde"/> est enfant, pas la racine <see cref="SceneTree.CurrentScene"/>.
+	/// </summary>
+	private static Gestionnaire_Monde ObtenirGestionnaireMondeDepuisSceneCourante(SceneTree tree)
+	{
+		Node scene = tree?.CurrentScene;
+		if (scene == null) return null;
+		if (scene is Gestionnaire_Monde g) return g;
+		Gestionnaire_Monde enfant = scene.GetNodeOrNull<Gestionnaire_Monde>("Gestionnaire_Monde");
+		if (enfant != null) return enfant;
+		return scene.FindChild("Gestionnaire_Monde", recursive: true, owned: false) as Gestionnaire_Monde;
+	}
+
+	/// <summary>
+	/// Sauvegarde joueur + objets + chunks (même logique que le bouton Sauvegarder) si la scène courante est le monde de jeu.
+	/// Ne fait rien depuis le menu principal ou une autre scène.
+	/// </summary>
+	public static void EssayerSauvegardeCompleteSiEnPartie()
+	{
+		if (Engine.IsEditorHint()) return;
+		SceneTree tree = Instance?.GetTree() ?? Engine.GetMainLoop() as SceneTree;
+		ObtenirGestionnaireMondeDepuisSceneCourante(tree)?.SauvegarderManuelDepuisMenu();
+	}
+
+	/// <summary>Lit <c>user://last_played_world.txt</c> (nom de dossier sous <c>user://saves/</c>).</summary>
+	public bool EssayerLireDernierMondeJoueSurDisque(out string nomMonde)
+	{
+		nomMonde = null;
+		string p = ProjectSettings.GlobalizePath(FichierDernierMondeJoue);
+		if (!File.Exists(p)) return false;
+		try
+		{
+			nomMonde = File.ReadAllText(p).Trim();
+			return !string.IsNullOrEmpty(nomMonde);
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"ZERO-K : Lecture dernier monde joué : {ex.Message}");
+			return false;
+		}
+	}
+
+	/// <summary>Réécrit le fichier « dernier monde » pour F5 / reprise et éviter tout décalage avec <see cref="NomMondeActuel"/>.</summary>
+	public void PublierMondeActuelCommeDernierJoueSurDisque()
+	{
+		if (string.IsNullOrWhiteSpace(NomMondeActuel)) return;
+		EcrireDernierMondeJoue(NomMondeActuel);
 	}
 
 	/// <summary>Seed du terrain pour le monde actuel.</summary>
 	public int SeedTerrainActuel { get; private set; } = 19847;
 
-	/// <summary>Prépare un nouveau monde (nouvelle seed, nouveau dossier). Retourne le nom du monde créé.</summary>
-	public string CreerNouveauMonde()
+	/// <summary>
+	/// Crée un nouveau monde : nom nettoyé pour le dossier sous <c>user://saves/</c>.
+	/// Seed vide ou blanc → aléatoire ; sinon nombre (culture invariante) ou texte → hash déterministe FNV-1a.
+	/// </summary>
+	public bool EssayerCreerNouveauMonde(string nomBrut, string seedTexteBrut, out string erreur)
+	{
+		erreur = null;
+		int seed = ResoudreSeedDepuisTexte(seedTexteBrut);
+		string nom = NettoyerNomMonde(nomBrut);
+		if (string.IsNullOrEmpty(nom))
+			nom = $"Monde_{seed}";
+
+		if (MondeExisteDejaSurDisque(nom))
+		{
+			erreur = "Un monde avec ce nom existe déjà.";
+			return false;
+		}
+
+		try
+		{
+			NomMondeActuel = nom;
+			SeedTerrainActuel = seed;
+			string dossier = ProjectSettings.GlobalizePath($"user://saves/{nom}/chunks");
+			Directory.CreateDirectory(dossier);
+			SauvegarderMetadataMonde(nom, seed);
+			EcrireDernierMondeJoue(nom);
+			GD.Print($"ZERO-K : Nouveau monde créé : {nom} (seed {seed})");
+			return true;
+		}
+		catch (Exception ex)
+		{
+			erreur = $"Impossible de créer le monde : {ex.Message}";
+			GD.PrintErr($"ZERO-K : {erreur}");
+			return false;
+		}
+	}
+
+	private static bool MondeExisteDejaSurDisque(string nom)
+	{
+		string dossier = ProjectSettings.GlobalizePath($"user://saves/{nom}");
+		if (!Directory.Exists(dossier))
+			return false;
+		return File.Exists(Path.Combine(dossier, "world_meta.dat"))
+			|| Directory.Exists(Path.Combine(dossier, "chunks"));
+	}
+
+	/// <summary>Retire les caractères interdits pour un nom de dossier. Null si rien d’utilisable.</summary>
+	private static string NettoyerNomMonde(string brut)
+	{
+		if (string.IsNullOrWhiteSpace(brut))
+			return null;
+		var sb = new StringBuilder(brut.Trim().Length);
+		foreach (char c in brut.Trim())
+		{
+			if (Array.IndexOf(Path.GetInvalidFileNameChars(), c) >= 0)
+				sb.Append('_');
+			else
+				sb.Append(c);
+		}
+		string s = sb.ToString().Trim().TrimEnd('.', ' ');
+		if (string.IsNullOrWhiteSpace(s) || s == "." || s == "..")
+			return null;
+		return s;
+	}
+
+	private static int GenererSeedAleatoire()
 	{
 		int seed = (int)(DateTime.UtcNow.Ticks % 2147483647);
 		if (seed < 0) seed = -seed;
-		string nom = $"Monde_{seed}";
-		NomMondeActuel = nom;
-		SeedTerrainActuel = seed;
-		string dossier = ProjectSettings.GlobalizePath($"user://saves/{nom}/chunks");
-		Directory.CreateDirectory(dossier);
-		SauvegarderMetadataMonde(nom, seed);
-		GD.Print($"ZERO-K : Nouveau monde créé : {nom} (seed {seed})");
-		return nom;
+		if (seed == 0) seed = 19847;
+		return seed;
+	}
+
+	/// <summary>Vide → aléatoire ; entier → tel quel (0 remplacé par aléatoire) ; autre texte → hash stable.</summary>
+	private static int ResoudreSeedDepuisTexte(string seedTexteBrut)
+	{
+		if (string.IsNullOrWhiteSpace(seedTexteBrut))
+			return GenererSeedAleatoire();
+		string t = seedTexteBrut.Trim();
+		if (int.TryParse(t, NumberStyles.Integer, CultureInfo.InvariantCulture, out int n))
+			return n == 0 ? GenererSeedAleatoire() : n;
+		return HasherTexteEnSeedPositif(t);
+	}
+
+	private static int HasherTexteEnSeedPositif(string s)
+	{
+		unchecked
+		{
+			uint h = 2166136261u;
+			foreach (char c in s)
+			{
+				h ^= c;
+				h *= 16777619u;
+			}
+			int v = (int)(h & 0x7FFFFFFF);
+			return v == 0 ? 1337 : v;
+		}
 	}
 
 	/// <summary>Charge un monde existant par son nom. Retourne true si trouvé. Rétrocompatibilité : MonMonde sans world_meta → seed 19847.</summary>
@@ -64,8 +218,48 @@ public partial class GameState : Node
 		NomMondeActuel = nomMonde;
 		SeedTerrainActuel = seed;
 		ChargerJourAbsolu(nomMonde);
+		EcrireDernierMondeJoue(nomMonde);
 		GD.Print($"ZERO-K : Monde chargé : {nomMonde} (seed {seed}, jour {JourAbsolu})");
 		return true;
+	}
+
+	private const string FichierDernierMondeJoue = "user://last_played_world.txt";
+
+	private static void EcrireDernierMondeJoue(string nom)
+	{
+		if (string.IsNullOrWhiteSpace(nom)) return;
+		try
+		{
+			string p = ProjectSettings.GlobalizePath(FichierDernierMondeJoue);
+			File.WriteAllText(p, nom.Trim());
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"ZERO-K : Écriture dernier monde joué : {ex.Message}");
+		}
+	}
+
+	/// <summary>
+	/// Si <c>monde_zero</c> est lancé sans menu (F5, raccourci) alors que <see cref="NomMondeActuel"/> vaut encore <c>MonMonde</c>,
+	/// réutilise le dernier monde enregistré (objets posés, chunks, inventaire) pour éviter d’écrire dans le mauvais dossier.
+	/// </summary>
+	public void AppliquerDernierMondeJoueSiChargementDirectVersMondeZero()
+	{
+		if (!string.Equals(NomMondeActuel, "MonMonde", StringComparison.Ordinal))
+			return;
+		if (!EssayerLireDernierMondeJoueSurDisque(out string nomFichier))
+			return;
+		if (nomFichier == NomMondeActuel)
+			return;
+		string dossierCible = ProjectSettings.GlobalizePath($"user://saves/{nomFichier}");
+		if (!Directory.Exists(dossierCible))
+			return;
+		bool cibleValide = File.Exists(Path.Combine(dossierCible, "world_meta.dat"))
+			|| Directory.Exists(Path.Combine(dossierCible, "chunks"));
+		if (!cibleValide)
+			return;
+		if (!ChargerMonde(nomFichier))
+			GD.PrintErr($"ZERO-K : Impossible de charger le dernier monde joué ({nomFichier}).");
 	}
 
 	/// <summary>Liste les noms des mondes sauvegardés. Inclut les dossiers avec chunks/ (rétrocompatibilité MonMonde).</summary>

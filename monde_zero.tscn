@@ -46,7 +46,7 @@ adjustment_contrast = 1.25
 
 [node name="Gestionnaire_Monde" type="Node3D" parent="." unique_id=1912975737]
 script = ExtResource("1_gestionnaire_monde")
-FuseauHoraireHeures = -10.0
+FuseauHoraireHeures = -9.0
 
 [node name="Joueur" parent="." unique_id=1690833917 instance=ExtResource("2_joueur_scene")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 8, 125, -8)

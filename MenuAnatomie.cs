@@ -1981,7 +1981,11 @@ public partial class MenuAnatomie : Control
 		col.AddChild(btnSauve);
 
 		var btnQuit = new Button { Text = "Quitter le jeu", CustomMinimumSize = new Vector2(220, 40) };
-		btnQuit.Pressed += () => GetTree().Quit();
+		btnQuit.Pressed += () =>
+		{
+			ObtenirGestionnaireMonde()?.SauvegarderManuelDepuisMenu();
+			GetTree().Quit();
+		};
 		col.AddChild(btnQuit);
 
 		vbox.AddChild(_panneauSauvegarderQuitter);

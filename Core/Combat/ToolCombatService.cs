@@ -1188,13 +1188,25 @@ public partial class Joueur
         }
     }
 
+    /// <summary>True si la cible est un arbre tombé (<c>ArbreMort</c>) ou une branche morte au sol — exemptions gameplay ci-dessous.</summary>
+    private static bool EstRigidCadavreBoise(RigidBody3D rb)
+    {
+        if (rb == null) return false;
+        string n = rb.Name.ToString();
+        return n.Contains("ArbreMort") || n.Contains("BrancheMorte");
+    }
+
     /// <summary>Arbres vivants/morts, roches, rigides — efficacité hache émergente.</summary>
     private void ExecuterFrappePhysique(float force, float efficaciteHache, float masseOutil, Node objetTouche, Vector3 pointImpact, Vector3 directionFrappe, TypeMouvementFrappe mouvement)
     {
         SlotInventaire mainActive = MainGaucheEstActive ? MainGauche : MainDroite;
         float multiplicateurForce = ObtenirMultiplicateurDegatsForce();
 
-        if (efficaciteHache < 0.4f && masseOutil > 2f && mainActive.ID != 106)
+        // Évite un « soft-lock » : avec pelle/outil lourd ou mauvais angle, efficaciteHache peut chuter avant d'atteindre ArbreMort.
+        RigidBody3D probeCadavre = ResoudreRigidBodyDepuisCollider(objetTouche);
+        bool cadavreBoise = EstRigidCadavreBoise(probeCadavre);
+
+        if (!cadavreBoise && efficaciteHache < 0.4f && masseOutil > 2f && mainActive.ID != 106)
         {
             AlerteSqueletteBoiteNoire("REBOND MASSIF ! Tu frappes avec le plat de l'outil. Choc structurel violent !");
             return;
@@ -1382,7 +1394,10 @@ public partial class Joueur
                 || EstRocheTranchantePourBois(main)
                 || fauxSurCadavre;
             if (!outilTranchantPourArbre)
+            {
+                GD.Print("ZERO-K : Cadavre d'arbre — utilisez une hachette (106), un éclat, une roche plate/pointe, ou la lame de la faux (orientation tranchante). Pas la pelle ni la pioche comme tranchant.");
                 return;
+            }
 
             // Étape 1 : arrachage du feuillage (une action par frappe) — uniquement si le mesh existe (sinon enchaîner branches / tronc).
             Node feuillage = rbCible.GetNodeOrNull("Feuillage");

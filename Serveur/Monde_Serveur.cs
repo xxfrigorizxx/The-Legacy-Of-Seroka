@@ -764,7 +764,13 @@ public partial class Monde_Serveur : Node
 			ReveillerEauAdjacente
 		);
 		chunk.SetOnVoxelModifie((pos, id) => _onVoxelModifie?.Invoke(pos, id));
-		chunk.SetOnFlorePurgée((c, inventaire) => _onFloreModifie?.Invoke(c, inventaire));
+		chunk.SetOnFlorePurgée((c, inventaire) =>
+		{
+			_onFloreModifie?.Invoke(c, inventaire);
+			// La fauche et les interactions buissons ne touchent pas aux voxels : sans gravure immédiate,
+			// l’état flore ne part sur disque qu’au prochain passage de l’autosauvegarde progressive (potentiellement très tard).
+			SauvegarderFloreChunk(c, chunk);
+		});
 		return chunk;
 	}
 

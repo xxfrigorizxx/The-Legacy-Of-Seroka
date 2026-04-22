@@ -260,7 +260,8 @@ public partial class Joueur
         return s.ID == 200 || s.ID == IdObjetRackBatons || s.ID == IdObjetRackBuches || s.ID == IdObjetCoffreBoisTier0;
     }
 
-    public static bool EstSlotStockableRackBatons(SlotInventaire s) => !s.EstVide && (s.ID == 30 || s.ID == 32);
+    public static bool EstSlotStockableRackBatons(SlotInventaire s) =>
+        !s.EstVide && (s.ID == 30 || s.ID == 32 || s.ID == BlocChutant.ID_BRANCHE);
 
     public static bool EstSlotStockableRackBuches(SlotInventaire s) => !s.EstVide && s.ID == 30;
 

@@ -516,6 +516,10 @@ public partial class Joueur
 
         ReinitialiserRotationManuelle();
         RafraichirHUD();
+
+        // Persistance immédiate : évite de perdre tables / racks / blocs si crash ou fermeture avant autosauvegarde.
+        if (!Engine.IsEditorHint())
+            SauvegarderEtatPersistantMonde(GetTree());
     }
 
     private bool EstObjetLancableAuMaintien(SlotInventaire slot)

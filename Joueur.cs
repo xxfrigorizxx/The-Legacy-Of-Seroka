@@ -3760,6 +3760,9 @@ public partial class Joueur : CharacterBody3D
         ConsommerUneUniteMainActive();
         RafraichirHUD();
         ReinitialiserRotationManuelle();
+
+        if (!Engine.IsEditorHint())
+            SauvegarderEtatPersistantMonde(GetTree());
     }
 
     /// <summary>Dague (105) au sol : une enveloppe convexe par mesh du GLB (même principe que l’atelier, mais convexe — trimesh concave interdit sur RigidBody dynamique).</summary>

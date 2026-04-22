@@ -782,7 +782,7 @@ public partial class Joueur
         for (int i = 0; i < n && unites.Count < 30; i++)
         {
             var s = rack.GrillePlanTravailAtelier[i];
-            if (s.EstVide || (s.ID != 30 && s.ID != 32)) continue;
+            if (s.EstVide || (s.ID != 30 && s.ID != 32 && s.ID != BlocChutant.ID_BRANCHE)) continue;
             int q = Mathf.Clamp(ObtenirQuantiteSlot(s), 1, 30);
             for (int k = 0; k < q && unites.Count < 30; k++)
                 unites.Add(s);

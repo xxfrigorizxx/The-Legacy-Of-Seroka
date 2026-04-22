@@ -31,7 +31,8 @@ public partial class Gestionnaire_Monde : Node3D
 	[Export] public bool ModeEssencesPartoutTemporaire = false;
 	[Export] public float RatioJungleModeTest = 0.30f;
 	[Export] public bool ActiverAutosauvegarde = true;
-	[Export] public float IntervalleAutosauvegardeSecondes = 45f;
+	/// <summary>Moins d’écart entre deux gravures disque en cas de crash (rechargement = monde identique si sauvegarde récente).</summary>
+	[Export] public float IntervalleAutosauvegardeSecondes = 25f;
 	[Export] public int MaxChunksAutosauvegardeParCycle = 4;
 	[Export] public bool ExigerBootstrapClientStableAvantMasquerOverlay = true;
 	[Export(PropertyHint.Range, "0,120,1")] public float DureeMaxAttenteBootstrapClientSec = 18f;
@@ -79,7 +80,14 @@ public partial class Gestionnaire_Monde : Node3D
 	private Vector3 _spawnInitialEnAttente;
 	private bool _spawnDoitEtreAligneAuSol;
 	private bool _spawnAligneAuSol;
-	private bool _etatPersistantRestaure;
+	/// <summary>Phase A (inventaire, progression, carnet) déjà restaurée depuis le disque.</summary>
+	private bool _restaurationPersistantPhaseJoueurFaite;
+	/// <summary>Phase B (objets posés, blocs chutants persistants, faune) déjà exécutée.</summary>
+	private bool _restaurationPersistantObjetsSolFaite;
+	/// <summary>Une sauvegarde complète après la 1re restauration sol pour aligner disque ↔ scène (tables, inventaire, chunks).</summary>
+	private bool _synchronisationDisquePostRestaurationSolEffectuee;
+	/// <summary>RigidBody restaurés gelés jusqu’à ce que le chunk ait une collision terrain (évite chute dans le vide au reload).</summary>
+	private readonly List<RigidBody3D> _rigidBodiesAttenteCollisionSolRestauration = new List<RigidBody3D>();
 	private double _secondesDormanceObjets;
 	private const int RayonDormanceObjetsChunks = 5;
 	[Export] public int BudgetDormanceObjetsParCycle = 120;
@@ -159,6 +167,54 @@ public partial class Gestionnaire_Monde : Node3D
 		if (ch == null) return false;
 		int sec = Mathf.FloorToInt(pos.Y / 16f);
 		return ch.SectionAPret(sec);
+	}
+
+	/// <summary>Vrai si la collision du chunk contenant ce point monde est prête (réseau ou legacy).</summary>
+	public bool EstCollisionTerrainChunkPretPourPoint(Vector3 monde)
+	{
+		Vector2I c = WorldToChunkCoord(monde, TailleChunk);
+		if (UseArchitectureReseau)
+			return _mondeClient != null && _mondeClient.ChunkCollisionActive(c);
+		if (!_chunks.TryGetValue(c, out var n)) return false;
+		var ch = n as Generateur_Voxel;
+		if (ch == null) return false;
+		int sec = Mathf.FloorToInt(monde.Y / 16f);
+		return ch.SectionAPret(sec);
+	}
+
+	/// <summary>Gèle le corps jusqu’à ce que le terrain soit streamé sous lui, puis dégel progressif dans <see cref="TraiterDepgelRigidBodiesRestaurationSol"/>.</summary>
+	public void EnregistrerRigidBodyRestaurationSolSiCollisionManquante(RigidBody3D rb)
+	{
+		if (rb == null || !GodotObject.IsInstanceValid(rb)) return;
+		if (EstCollisionTerrainChunkPretPourPoint(rb.GlobalPosition)) return;
+		if (_rigidBodiesAttenteCollisionSolRestauration.Contains(rb)) return;
+		rb.Freeze = true;
+		rb.LinearVelocity = Vector3.Zero;
+		rb.AngularVelocity = Vector3.Zero;
+		rb.Sleeping = true;
+		_rigidBodiesAttenteCollisionSolRestauration.Add(rb);
+	}
+
+	private void TraiterDepgelRigidBodiesRestaurationSol(int maxParFrame)
+	{
+		int budget = Mathf.Max(1, maxParFrame);
+		for (int i = _rigidBodiesAttenteCollisionSolRestauration.Count - 1; i >= 0 && budget > 0; i--)
+		{
+			RigidBody3D rb = _rigidBodiesAttenteCollisionSolRestauration[i];
+			if (!GodotObject.IsInstanceValid(rb) || !rb.IsInsideTree())
+			{
+				_rigidBodiesAttenteCollisionSolRestauration.RemoveAt(i);
+				budget--;
+				continue;
+			}
+			if (EstCollisionTerrainChunkPretPourPoint(rb.GlobalPosition))
+			{
+				rb.Freeze = false;
+				rb.Sleeping = false;
+				_rigidBodiesAttenteCollisionSolRestauration.RemoveAt(i);
+			}
+			budget--;
+		}
 	}
 
 	private Vector3 ObtenirPointReferenceSpawn()
@@ -513,6 +569,13 @@ public partial class Gestionnaire_Monde : Node3D
 	{
 		DirAccess.MakeDirRecursiveAbsolute("user://chunks");
 		_joueur = GetParent().GetNode<CharacterBody3D>("Joueur");
+		// F5 / lancement direct : GameState reste sur « MonMonde » par défaut alors que les sauvegardes sont dans le dernier monde du menu.
+		GameState.Instance?.AppliquerDernierMondeJoueSiChargementDirectVersMondeZero();
+		// Aligner la seed exportée de la scène sur le monde chargé (évite spawn / outils basés sur 19847 alors que le terrain utilise GameState).
+		if (GameState.Instance != null)
+			SeedTerrain = GameState.Instance.SeedTerrainActuel;
+		// Dernier monde joué = celui dont on charge les sauvegardes (évite F5 / reprise sur le mauvais dossier).
+		GameState.Instance?.PublierMondeActuelCommeDernierJoueSurDisque();
 		AssurerCalquesHudInventaireEtCarnet();
 		Chunk_Client.EchelleGazon = EchelleGazon;
 		_optionsGraphiquesDefautProjet = CapturerOptionsGraphiquesCourantes(PresetGraphique.Personnalise);
@@ -651,10 +714,21 @@ public partial class Gestionnaire_Monde : Node3D
 
 	private void RestaurerEtatPersistantMonde()
 	{
-		if (_etatPersistantRestaure) return;
-		_etatPersistantRestaure = true;
+		if (_restaurationPersistantPhaseJoueurFaite) return;
+		_restaurationPersistantPhaseJoueurFaite = true;
 		if (_joueur is Joueur j)
-			j.ChargerEtatPersistantMonde();
+			j.ChargerEtatPersistantPhaseJoueur();
+	}
+
+	/// <summary>Phase B : objets posés / blocs persistants / faune — après collision minimale au spawn (évite chute dans le vide).</summary>
+	/// <returns>True si la restauration vient d’être exécutée cette frame (première fois).</returns>
+	private bool EssayerRestaurerObjetsPersistantsPhaseSol(bool spawnPretEtAligne)
+	{
+		if (_restaurationPersistantObjetsSolFaite) return false;
+		if (!spawnPretEtAligne || _joueur is not Joueur j) return false;
+		j.ChargerEtatPersistantPhaseObjetsAuSolEtFaune();
+		_restaurationPersistantObjetsSolFaite = true;
+		return true;
 	}
 
 	private void ChargerOptionsGraphiquesAuDemarrage()
@@ -958,17 +1032,7 @@ public partial class Gestionnaire_Monde : Node3D
 	public override void _Notification(int what)
 	{
 		if (what == Node.NotificationWMCloseRequest)
-		{
-			if (_joueur != null)
-				GameState.Instance?.SauvegarderPositionJoueur(_joueur.GlobalPosition);
-			if (_joueur is Joueur j)
-				j.SauvegarderEtatPersistantMonde(GetTree());
-			if (UseArchitectureReseau)
-				_mondeServeur?.SauvegarderMondeEntier();
-			else
-				foreach (var kv in _chunks)
-					(kv.Value as Generateur_Voxel)?.Sauvegarder(kv.Key);
-		}
+			SauvegarderManuelDepuisMenu();
 		base._Notification(what);
 	}
 
@@ -984,12 +1048,8 @@ public partial class Gestionnaire_Monde : Node3D
 		_effetsRemousParCorps.Clear();
 		_corpsSuiviRemous.Clear();
 		_corpsDansOcean.Clear();
-		// Sauvegarde position joueur (reconnexion au même endroit) — uniquement si encore dans l'arbre.
-		if (_joueur != null && _joueur.IsInsideTree())
-			GameState.Instance?.SauvegarderPositionJoueur(_joueur.GlobalPosition);
-		if (_joueur is Joueur j)
-			j.SauvegarderEtatPersistantMonde(GetTree());
-		// RÈGLE ABSOLUE : sauvegarde des chunks modifiés AVANT destruction (parent _ExitTree avant enfants).
+		// Inventaire / objets au sol : déjà gravés dans Joueur._ExitTree (le joueur quitte l’arbre avant ce nœud).
+		// Ici uniquement les chunks voxel + données serveur associées.
 		if (UseArchitectureReseau)
 			_mondeServeur?.SauvegarderMondeEntier();
 		else
@@ -1110,11 +1170,16 @@ public partial class Gestionnaire_Monde : Node3D
 		{
 			ToggleMenuPause();
 			GetTree().Paused = false;
+			SauvegarderManuelDepuisMenu();
 			GetTree().ChangeSceneToFile("res://menu_principal.tscn");
 		};
 		vbox.AddChild(btnMenu);
 		var btnQuit = new Button { Text = "Quitter le jeu" };
-		btnQuit.Pressed += () => GetTree().Quit();
+		btnQuit.Pressed += () =>
+		{
+			SauvegarderManuelDepuisMenu();
+			GetTree().Quit();
+		};
 		vbox.AddChild(btnQuit);
 		layer.AddChild(_panelPause);
 		CreerPanelGraphismes(layer);
@@ -2024,6 +2089,17 @@ public partial class Gestionnaire_Monde : Node3D
 			}
 		}
 FinBlocOverlay:
+
+		bool spawnPretEtAlignePourRestauration = EstSpawnPret() && (!_spawnDoitEtreAligneAuSol || _spawnAligneAuSol);
+		bool restaurationSolVientDeTourner = EssayerRestaurerObjetsPersistantsPhaseSol(spawnPretEtAlignePourRestauration);
+		// Réécrit tout de suite inventaire + placed_objects + chunks : le disque reflète exactement la scène après reload.
+		if (restaurationSolVientDeTourner && !_synchronisationDisquePostRestaurationSolEffectuee)
+		{
+			_synchronisationDisquePostRestaurationSolEffectuee = true;
+			SauvegarderManuelDepuisMenu();
+			GD.Print("ZERO-K : Synchronisation disque post-restauration (aucune perte au prochain chargement si le jeu s’arrête ici).");
+		}
+		TraiterDepgelRigidBodiesRestaurationSol(64);
 
 		// Mise à jour des coordonnées affichées en haut à droite
 		if (_labelCoords != null && _joueur != null && _joueur.IsInsideTree())

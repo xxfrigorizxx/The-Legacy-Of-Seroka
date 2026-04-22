@@ -1,26 +1,59 @@
 using Godot;
 using System;
 
-/// <summary>Gestionnaire ENet pour Solo (Host local) et MMORPG. Héberger/Solo = serveur 25565 + client local.</summary>
+/// <summary>Gestionnaire ENet pour Solo (Host local) et MMORPG. Héberger/Solo = serveur UDP (25565 par défaut) + client local.</summary>
 public partial class NetworkManager : Node
 {
 	public const ushort PortServeur = 25565;
+	private const int NombrePortsEssai = 16;
 
-	private ENetMultiplayerPeer _peer;
+	private MultiplayerPeer _peer;
 	private bool _estServeur;
+
+	/// <summary>Port UDP réellement ouvert si ENet a réussi ; null si mode hors-ligne.</summary>
+	public ushort? PortEnecoute { get; private set; }
+
+	/// <summary>Vrai si un hôte ENet UDP est actif ; faux si <see cref="OfflineMultiplayerPeer"/> (pas de socket).</summary>
+	public bool ENetActif { get; private set; }
 
 	public bool EstServeur => _estServeur;
 	public bool EstConnecte => Multiplayer.HasMultiplayerPeer() && Multiplayer.MultiplayerPeer.GetConnectionStatus() == MultiplayerPeer.ConnectionStatus.Connected;
 
-	/// <summary>Démarre en mode Héberger/Solo : crée un serveur et connecte le client local.</summary>
+	/// <summary>Démarre en mode Héberger/Solo : tente plusieurs ports puis bascule hors-ligne si ENet est impossible.</summary>
 	public void DemarrerHostSolo()
 	{
-		_peer = new ENetMultiplayerPeer();
-		Error err = _peer.CreateServer(PortServeur);
-		if (err != Error.Ok)
+		_peer?.Dispose();
+		_peer = null;
+		PortEnecoute = null;
+		ENetActif = false;
+
+		ushort portEssai = PortServeur;
+		ENetMultiplayerPeer enet = null;
+		Error err = Error.Failed;
+
+		for (int i = 0; i < NombrePortsEssai; i++)
 		{
-			GD.PrintErr($"NetworkManager: création serveur échouée ({err})");
-			return;
+			enet?.Dispose();
+			enet = new ENetMultiplayerPeer();
+			err = enet.CreateServer(portEssai);
+			if (err == Error.Ok)
+			{
+				_peer = enet;
+				PortEnecoute = portEssai;
+				ENetActif = true;
+				break;
+			}
+
+			GD.PrintErr($"NetworkManager: impossible d'ouvrir le port {portEssai} pour ENet ({err}). Cause fréquente : port déjà utilisé (autre instance du jeu, Minecraft Java, etc.).");
+			if (portEssai < ushort.MaxValue)
+				portEssai++;
+		}
+
+		if (_peer == null)
+		{
+			enet?.Dispose();
+			GD.PrintErr("NetworkManager: aucun port ENet libre après plusieurs essais. Basculement en multijoueur hors-ligne (solo sans UDP ; les RPC locaux restent disponibles).");
+			_peer = new OfflineMultiplayerPeer();
 		}
 
 		Multiplayer.MultiplayerPeer = _peer;
@@ -29,24 +62,30 @@ public partial class NetworkManager : Node
 		_peer.PeerConnected += (id) => GD.Print($"Client connecté: {id}");
 		_peer.PeerDisconnected += (id) => GD.Print($"Client déconnecté: {id}");
 
-		// En Solo: l'hôte EST le serveur (GetUniqueId() == 1). Pas besoin de connexion client.
-		GD.Print("NetworkManager: Serveur démarré (Solo/Host) sur port ", PortServeur);
+		if (ENetActif)
+			GD.Print($"NetworkManager: serveur ENet démarré (Solo/Host) sur le port {PortEnecoute}.");
+		else
+			GD.Print("NetworkManager: solo en mode OfflineMultiplayerPeer (aucune socket réseau).");
 	}
 
 	/// <summary>Connecte le client à une adresse. Pour rejoindre un serveur distant.</summary>
 	public void ConnecterClient(string adresse = "127.0.0.1")
 	{
-		_peer = new ENetMultiplayerPeer();
-		Error err = _peer.CreateClient(adresse, PortServeur);
+		_peer?.Dispose();
+		var enet = new ENetMultiplayerPeer();
+		Error err = enet.CreateClient(adresse, PortServeur);
 		if (err != Error.Ok)
 		{
 			GD.PrintErr($"NetworkManager: connexion client échouée ({err})");
+			enet.Dispose();
 			return;
 		}
+		_peer = enet;
 		Multiplayer.MultiplayerPeer = _peer;
 		_estServeur = false;
+		ENetActif = true;
+		PortEnecoute = null;
 	}
-
 	/// <summary>RPC appelé par le client pour demander la destruction d'un bloc.</summary>
 	[Rpc(MultiplayerApi.RpcMode.AnyPeer, CallLocal = true)]
 	public void DemanderDestructionBloc(Vector3I pos, float rayon)
