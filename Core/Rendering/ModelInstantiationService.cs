@@ -714,14 +714,44 @@ public partial class Joueur
 
         Node3D modele = scene.Instantiate<Node3D>();
         modele.Name = "ModeleArme";
-        byte essenceBois = slot.IndexBotanique;
+        byte botaniqueCraft = slot.IndexBotanique;
+        byte essenceBois = botaniqueCraft;
         if (essenceBois == Joueur.TagVarianteLiane || essenceBois == Joueur.TagVarianteHerbeSolide)
             essenceBois = LSystem_Botanique.IndexChene;
+
+        byte varianteLigature = (botaniqueCraft == Joueur.TagVarianteLiane || botaniqueCraft == Joueur.TagVarianteHerbeSolide)
+            ? botaniqueCraft
+            : LSystem_Botanique.IndexChene;
 
         void ParcourirMeshesCoffre(Node n)
         {
             if (n is MeshInstance3D mi)
-                mi.MaterialOverride = ArbreVivant.ObtenirMaterielBoisTriplanar(essenceBois);
+            {
+                string nom = mi.Name.ToString().ToLowerInvariant();
+                bool estLigature = nom.Contains("corde")
+                    || nom.Contains("cord")
+                    || nom.Contains("rope")
+                    || nom.Contains("ligature")
+                    || nom.Contains("liane")
+                    || nom.Contains("ficelle");
+                bool estBranche = nom.Contains("branche")
+                    || nom.Contains("baton")
+                    || nom.Contains("stick")
+                    || nom.Contains("shaft");
+                if (estLigature)
+                {
+                    RemplacerMeshParNormalesFacettes(mi);
+                    int idLigature = varianteLigature == Joueur.TagVarianteLiane ? 16 : 20;
+                    AppliquerMaterielObjet(mi, idLigature, slot.IndexChimique, slot.IndexMorphologique, slot.NiveauFracture, varianteLigature);
+                }
+                else if (estBranche)
+                {
+                    RemplacerMeshParNormalesFacettes(mi);
+                    AppliquerMaterielObjet(mi, 32, 0, 0, 0, essenceBois);
+                }
+                else
+                    mi.MaterialOverride = ArbreVivant.ObtenirMaterielBoisTriplanar(essenceBois);
+            }
             foreach (Node c in n.GetChildren())
                 ParcourirMeshesCoffre(c);
         }
@@ -1138,7 +1168,7 @@ public partial class Joueur
             MeshInstance3D miCorde106;
             if (estPelle || estLance || estFaux)
             {
-                // Pelle/Lance : mapping primaire part_0 = manche, part_1 = corde, part_2 = roche/pointe.
+                // Pelle/Faux : part_0 = manche, part_1 = corde, part_2 = roche. Lance : même nœuds, ordre géométrique inversé (corrigé après fallback).
                 MeshInstance3D part0 = modeleHachette.GetNodeOrNull<MeshInstance3D>("tripo_part_0")
                     ?? TrouverMeshInstanceDontLeNomContient(modeleHachette, "tripo_part_0")
                     ?? TrouverMeshParMots(modeleHachette, "manche", "wood", "bois", "baton", "stick", "handle", "shaft");
@@ -1187,6 +1217,10 @@ public partial class Joueur
                 if (miManche106 == null && restants.Count > 0)
                     miManche106 = restants[0];
             }
+
+            // Lance : dans le GLB, tripo_part_0 / _2 sont inversés par rapport à la pelle (pointe vs manche) ; la corde reste _1.
+            if (estLance && miManche106 != null && miLame106 != null)
+                (miManche106, miLame106) = (miLame106, miManche106);
 
             int idRoche106 = ItemPhysique.IdRocheMatiereMin + Mathf.Clamp(slot.IndexChimique, 0, ItemPhysique.TableGeologique.Length - 1);
             int idxRocheSecondaire = Mathf.Clamp(slot.IndexChimique, 0, ItemPhysique.TableGeologique.Length - 1);
