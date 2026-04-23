@@ -1,39 +1,153 @@
 using Godot;
-using System.Collections.Generic;
 
-/// <summary>Menu principal : nouveau monde (nom + seed optionnelle), charger, quitter.</summary>
+/// <summary>Menu principal : charger, quitter, assistant « Nouveau monde » en deux étapes + aperçu 3D.</summary>
 public partial class MenuPrincipal : Control
 {
-	private VBoxContainer _vbox;
+	private Panel _panelMenuPrincipal;
+	private Panel _panelEtapeMonde;
+	private Panel _panelEtapePerso;
+	private VBoxContainer _vboxPrincipal;
 	private LineEdit _nomNouveauMonde;
 	private LineEdit _seedNouveauMonde;
-	private Label _labelErreurCreation;
+	private Label _labelErreurMonde;
+	private LineEdit _nomPersonnage;
+	private Label _labelRaceCourante;
+	private Label _labelErreurPerso;
 	private OptionButton _listeMondes;
-	private Button _btnNewWorld;
+	private Button _btnNouveauMondeWizard;
 	private Button _btnLoadGame;
 	private Button _btnQuit;
+	private Button _btnSuivantMonde;
+	private Button _btnRetourMenuDepuisMonde;
+	private Button _btnRacePrecedente;
+	private Button _btnRaceSuivante;
+	private Button _btnRetourDepuisPerso;
+	private Button _btnConfirmerEtJouer;
+	private ApercuRaceMenu3D _apercu3d;
+	private RaceJoueur _raceSelectionnee = RaceJoueur.Humain;
 
 	public override void _Ready()
 	{
-		_vbox = GetNode<VBoxContainer>("VBoxContainer");
-		_nomNouveauMonde = _vbox.GetNode<LineEdit>("NomNouveauMonde");
-		_seedNouveauMonde = _vbox.GetNode<LineEdit>("SeedNouveauMonde");
-		_labelErreurCreation = _vbox.GetNode<Label>("LabelErreurCreation");
-		_btnNewWorld = _vbox.GetNode<Button>("BtnNewWorld");
-		_btnLoadGame = _vbox.GetNode<Button>("BtnLoadGame");
-		_listeMondes = _vbox.GetNode<OptionButton>("ListeMondes");
-		_btnQuit = _vbox.GetNode<Button>("BtnQuit");
+		_panelMenuPrincipal = GetNode<Panel>("PanelMenuPrincipal");
+		_panelEtapeMonde = GetNode<Panel>("PanelEtapeMonde");
+		_panelEtapePerso = GetNode<Panel>("PanelEtapePerso");
 
-		_labelErreurCreation.Text = "";
-		_btnNewWorld.Pressed += OnNewWorld;
+		_vboxPrincipal = _panelMenuPrincipal.GetNode<VBoxContainer>("VBoxMenuPrincipal");
+		_listeMondes = _vboxPrincipal.GetNode<OptionButton>("ListeMondes");
+		_btnLoadGame = _vboxPrincipal.GetNode<Button>("BtnLoadGame");
+		_btnNouveauMondeWizard = _vboxPrincipal.GetNode<Button>("BtnNouveauMondeWizard");
+		_btnQuit = _vboxPrincipal.GetNode<Button>("BtnQuit");
+
+		var vboxMonde = _panelEtapeMonde.GetNode<VBoxContainer>("VBoxEtapeMonde");
+		_nomNouveauMonde = vboxMonde.GetNode<LineEdit>("NomNouveauMonde");
+		_seedNouveauMonde = vboxMonde.GetNode<LineEdit>("SeedNouveauMonde");
+		_labelErreurMonde = vboxMonde.GetNode<Label>("LabelErreurMonde");
+		_btnRetourMenuDepuisMonde = vboxMonde.GetNode<Button>("HBoxBtnsMonde/BtnRetourMenuDepuisMonde");
+		_btnSuivantMonde = vboxMonde.GetNode<Button>("HBoxBtnsMonde/BtnSuivantMonde");
+
+		var vboxPerso = _panelEtapePerso.GetNode<VBoxContainer>("VBoxEtapePerso");
+		_apercu3d = vboxPerso.GetNode<ApercuRaceMenu3D>("SubViewportContainer/SubViewport/ApercuRaceMenu3D");
+		_btnRacePrecedente = vboxPerso.GetNode<Button>("HBoxRace/BtnRacePrecedente");
+		_btnRaceSuivante = vboxPerso.GetNode<Button>("HBoxRace/BtnRaceSuivante");
+		_labelRaceCourante = vboxPerso.GetNode<Label>("HBoxRace/LabelRaceCourante");
+		_nomPersonnage = vboxPerso.GetNode<LineEdit>("NomPersonnage");
+		_labelErreurPerso = vboxPerso.GetNode<Label>("LabelErreurPerso");
+		_btnRetourDepuisPerso = vboxPerso.GetNode<Button>("HBoxBtnsPerso/BtnRetourDepuisPerso");
+		_btnConfirmerEtJouer = vboxPerso.GetNode<Button>("HBoxBtnsPerso/BtnConfirmerEtJouer");
+
+		_labelErreurMonde.Text = "";
+		_labelErreurPerso.Text = "";
+		_btnNouveauMondeWizard.Pressed += OuvrirAssistantEtapeMonde;
+		_btnSuivantMonde.Pressed += OnSuivantEtapeMonde;
+		_btnRetourMenuDepuisMonde.Pressed += OnRetourMenuDepuisEtapeMonde;
+		_btnRetourDepuisPerso.Pressed += OnRetourDepuisEtapePerso;
+		_btnConfirmerEtJouer.Pressed += OnConfirmerEtJouer;
+		_btnRacePrecedente.Pressed += () => ChangerRace(-1);
+		_btnRaceSuivante.Pressed += () => ChangerRace(1);
 		_btnLoadGame.Pressed += OnLoadGame;
 		_btnQuit.Pressed += () => GetTree().Quit();
 
 		RafraichirListeMondes();
 		SelectionnerDernierMondeJoueDansListeSiConnu();
+		AfficherPanneauPrincipal();
 	}
 
 	private GameState Etat => GetNode<GameState>("/root/GameState");
+
+	private void AfficherPanneauPrincipal()
+	{
+		Input.MouseMode = Input.MouseModeEnum.Visible;
+		_panelMenuPrincipal.Visible = true;
+		_panelEtapeMonde.Visible = false;
+		_panelEtapePerso.Visible = false;
+	}
+
+	private void OuvrirAssistantEtapeMonde()
+	{
+		Input.MouseMode = Input.MouseModeEnum.Visible;
+		_labelErreurMonde.Text = "";
+		_panelMenuPrincipal.Visible = false;
+		_panelEtapeMonde.Visible = true;
+		_panelEtapePerso.Visible = false;
+	}
+
+	private void OnRetourMenuDepuisEtapeMonde()
+	{
+		Etat.AnnulerCreationMondeBrouillon();
+		AfficherPanneauPrincipal();
+	}
+
+	private void OnSuivantEtapeMonde()
+	{
+		_labelErreurMonde.Text = "";
+		if (!Etat.EssayerValiderEtapeMondeNouveau(_nomNouveauMonde.Text, _seedNouveauMonde.Text, out string erreur))
+		{
+			_labelErreurMonde.Text = erreur ?? "Validation impossible.";
+			return;
+		}
+
+		_panelEtapeMonde.Visible = false;
+		_panelEtapePerso.Visible = true;
+		_labelErreurPerso.Text = "";
+		_raceSelectionnee = RaceJoueur.Humain;
+		MettreAJourAffichageRace();
+		_apercu3d?.DefinirRace(_raceSelectionnee);
+	}
+
+	private void OnRetourDepuisEtapePerso()
+	{
+		_panelEtapePerso.Visible = false;
+		_panelEtapeMonde.Visible = true;
+	}
+
+	private void ChangerRace(int delta)
+	{
+		int v = (int)_raceSelectionnee + delta;
+		while (v < 0) v += 2;
+		while (v > 1) v -= 2;
+		_raceSelectionnee = (RaceJoueur)v;
+		MettreAJourAffichageRace();
+		_apercu3d?.DefinirRace(_raceSelectionnee);
+	}
+
+	private void MettreAJourAffichageRace()
+	{
+		_labelRaceCourante.Text = _raceSelectionnee == RaceJoueur.Orc ? "Orc" : "Humain";
+	}
+
+	private void OnConfirmerEtJouer()
+	{
+		_labelErreurPerso.Text = "";
+		if (!Etat.EssayerFinaliserNouveauMondeAvecPersonnage(_nomPersonnage.Text, _raceSelectionnee, out string erreur))
+		{
+			_labelErreurPerso.Text = erreur ?? "Création impossible.";
+			return;
+		}
+
+		RafraichirListeMondes();
+		SelectionnerDernierMondeJoueDansListeSiConnu();
+		GetTree().ChangeSceneToFile("res://monde_zero.tscn");
+	}
 
 	private void RafraichirListeMondes()
 	{
@@ -44,7 +158,6 @@ public partial class MenuPrincipal : Control
 			_listeMondes.AddItem(mondes[i], i + 1);
 	}
 
-	/// <summary>Pré-sélectionne le dernier monde enregistré pour éviter de recharger le mauvais dossier par inadvertance.</summary>
 	private void SelectionnerDernierMondeJoueDansListeSiConnu()
 	{
 		if (!Etat.EssayerLireDernierMondeJoueSurDisque(out string dernier)) return;
@@ -56,19 +169,6 @@ public partial class MenuPrincipal : Control
 				return;
 			}
 		}
-	}
-
-	private void OnNewWorld()
-	{
-		_labelErreurCreation.Text = "";
-		if (!Etat.EssayerCreerNouveauMonde(_nomNouveauMonde.Text, _seedNouveauMonde.Text, out string erreur))
-		{
-			_labelErreurCreation.Text = erreur ?? "Création impossible.";
-			return;
-		}
-		RafraichirListeMondes();
-		SelectionnerDernierMondeJoueDansListeSiConnu();
-		GetTree().ChangeSceneToFile("res://monde_zero.tscn");
 	}
 
 	private void OnLoadGame()

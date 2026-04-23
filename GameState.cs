@@ -5,6 +5,13 @@ using System.Globalization;
 using System.IO;
 using System.Text;
 
+/// <summary>Race du personnage joueur (persistée par monde).</summary>
+public enum RaceJoueur
+{
+	Humain = 0,
+	Orc = 1
+}
+
 /// <summary>État global du jeu. Autoload pour passer monde/seed entre menu et jeu.</summary>
 public partial class GameState : Node
 {
@@ -93,11 +100,26 @@ public partial class GameState : Node
 	/// <summary>Seed du terrain pour le monde actuel.</summary>
 	public int SeedTerrainActuel { get; private set; } = 19847;
 
-	/// <summary>
-	/// Crée un nouveau monde : nom nettoyé pour le dossier sous <c>user://saves/</c>.
-	/// Seed vide ou blanc → aléatoire ; sinon nombre (culture invariante) ou texte → hash déterministe FNV-1a.
-	/// </summary>
-	public bool EssayerCreerNouveauMonde(string nomBrut, string seedTexteBrut, out string erreur)
+	/// <summary>Nom d’affichage du personnage pour ce monde.</summary>
+	public string NomPersonnageJoue { get; private set; } = "";
+
+	/// <summary>Race du personnage pour ce monde.</summary>
+	public RaceJoueur RaceJoueurCourante { get; private set; } = RaceJoueur.Humain;
+
+	private const int VersionFichierIdentiteJoueur = 1;
+	private const string NomFichierIdentiteJoueur = "player_identity.dat";
+
+	/// <summary>Brouillon assistant : étape monde validée, pas encore d’écriture disque.</summary>
+	public bool CreationMondeBrouillonActif { get; private set; }
+
+	/// <summary>Nom de dossier monde prêt après étape 1 (vide si pas de brouillon).</summary>
+	public string NomMondeNouveauPret { get; private set; } = "";
+
+	/// <summary>Seed terrain après étape 1.</summary>
+	public int SeedTerrainNouveauPret { get; private set; }
+
+	/// <summary>Valide nom + seed sans créer de fichiers (étape 1 de l’assistant).</summary>
+	public bool EssayerValiderEtapeMondeNouveau(string nomBrut, string seedTexteBrut, out string erreur)
 	{
 		erreur = null;
 		int seed = ResoudreSeedDepuisTexte(seedTexteBrut);
@@ -111,6 +133,69 @@ public partial class GameState : Node
 			return false;
 		}
 
+		CreationMondeBrouillonActif = true;
+		NomMondeNouveauPret = nom;
+		SeedTerrainNouveauPret = seed;
+		return true;
+	}
+
+	/// <summary>Annule le brouillon (Retour depuis l’assistant ou abandon).</summary>
+	public void AnnulerCreationMondeBrouillon()
+	{
+		CreationMondeBrouillonActif = false;
+		NomMondeNouveauPret = "";
+		SeedTerrainNouveauPret = 0;
+	}
+
+	/// <summary>Écrit le monde après l’étape personnage (nécessite un brouillon actif).</summary>
+	public bool EssayerFinaliserNouveauMondeAvecPersonnage(string nomPersonnageBrut, RaceJoueur race, out string erreur)
+	{
+		erreur = null;
+		if (!CreationMondeBrouillonActif || string.IsNullOrWhiteSpace(NomMondeNouveauPret))
+		{
+			erreur = "Aucune création de monde en cours.";
+			return false;
+		}
+
+		string nom = NomMondeNouveauPret;
+		int seed = SeedTerrainNouveauPret;
+		if (MondeExisteDejaSurDisque(nom))
+		{
+			AnnulerCreationMondeBrouillon();
+			erreur = "Un monde avec ce nom existe déjà.";
+			return false;
+		}
+
+		if (!ExecuterEcritureNouveauMondeSurDisque(nom, seed, nomPersonnageBrut, race, out erreur))
+			return false;
+
+		AnnulerCreationMondeBrouillon();
+		return true;
+	}
+
+	/// <summary>
+	/// Crée un nouveau monde en une fois (API directe). Pour l’assistant, préférer <see cref="EssayerValiderEtapeMondeNouveau"/> puis <see cref="EssayerFinaliserNouveauMondeAvecPersonnage"/>.
+	/// </summary>
+	public bool EssayerCreerNouveauMonde(string nomBrut, string seedTexteBrut, string nomPersonnageBrut, RaceJoueur race, out string erreur)
+	{
+		erreur = null;
+		int seed = ResoudreSeedDepuisTexte(seedTexteBrut);
+		string nom = NettoyerNomMonde(nomBrut);
+		if (string.IsNullOrEmpty(nom))
+			nom = $"Monde_{seed}";
+
+		if (MondeExisteDejaSurDisque(nom))
+		{
+			erreur = "Un monde avec ce nom existe déjà.";
+			return false;
+		}
+
+		return ExecuterEcritureNouveauMondeSurDisque(nom, seed, nomPersonnageBrut, race, out erreur);
+	}
+
+	private bool ExecuterEcritureNouveauMondeSurDisque(string nom, int seed, string nomPersonnageBrut, RaceJoueur race, out string erreur)
+	{
+		erreur = null;
 		try
 		{
 			NomMondeActuel = nom;
@@ -118,14 +203,72 @@ public partial class GameState : Node
 			string dossier = ProjectSettings.GlobalizePath($"user://saves/{nom}/chunks");
 			Directory.CreateDirectory(dossier);
 			SauvegarderMetadataMonde(nom, seed);
+			string nomPerso = NettoyerNomPersonnage(nomPersonnageBrut);
+			NomPersonnageJoue = nomPerso;
+			RaceJoueurCourante = race;
+			SauvegarderIdentiteJoueurSurDisque(nom, nomPerso, race);
 			EcrireDernierMondeJoue(nom);
-			GD.Print($"ZERO-K : Nouveau monde créé : {nom} (seed {seed})");
+			GD.Print($"ZERO-K : Nouveau monde créé : {nom} (seed {seed}, perso « {nomPerso} », {race})");
 			return true;
 		}
 		catch (Exception ex)
 		{
 			erreur = $"Impossible de créer le monde : {ex.Message}";
 			GD.PrintErr($"ZERO-K : {erreur}");
+			return false;
+		}
+	}
+
+	/// <summary>Nom affichable ; vide → « Voyageur ». Pas un nom de dossier.</summary>
+	public static string NettoyerNomPersonnage(string brut)
+	{
+		if (string.IsNullOrWhiteSpace(brut))
+			return "Voyageur";
+		var sb = new StringBuilder(Math.Min(brut.Trim().Length, 64));
+		int n = 0;
+		foreach (char c in brut.Trim())
+		{
+			if (n >= 64) break;
+			if (char.IsControl(c)) continue;
+			sb.Append(c);
+			n++;
+		}
+		string s = sb.ToString().Trim();
+		return string.IsNullOrEmpty(s) ? "Voyageur" : s;
+	}
+
+	private static void SauvegarderIdentiteJoueurSurDisque(string nomMonde, string nomPersonnage, RaceJoueur race)
+	{
+		string dossier = ProjectSettings.GlobalizePath($"user://saves/{nomMonde}");
+		Directory.CreateDirectory(dossier);
+		string chemin = Path.Combine(dossier, NomFichierIdentiteJoueur);
+		using var w = new BinaryWriter(File.Open(chemin, FileMode.Create));
+		w.Write(VersionFichierIdentiteJoueur);
+		w.Write(nomPersonnage ?? "Voyageur");
+		w.Write((byte)race);
+	}
+
+	private static bool EssayerLireIdentiteJoueurDepuisDisque(string nomMonde, out string nomPersonnage, out RaceJoueur race)
+	{
+		nomPersonnage = "Voyageur";
+		race = RaceJoueur.Humain;
+		string chemin = Path.Combine(ProjectSettings.GlobalizePath($"user://saves/{nomMonde}"), NomFichierIdentiteJoueur);
+		if (!File.Exists(chemin))
+			return false;
+		try
+		{
+			using var r = new BinaryReader(File.Open(chemin, FileMode.Open, System.IO.FileAccess.Read, FileShare.Read));
+			int version = r.ReadInt32();
+			if (version < 1 || version > VersionFichierIdentiteJoueur)
+				return false;
+			nomPersonnage = NettoyerNomPersonnage(r.ReadString());
+			byte b = r.ReadByte();
+			race = b == (byte)RaceJoueur.Orc ? RaceJoueur.Orc : RaceJoueur.Humain;
+			return true;
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"ZERO-K : Lecture identité joueur : {ex.Message}");
 			return false;
 		}
 	}
@@ -217,9 +360,19 @@ public partial class GameState : Node
 		}
 		NomMondeActuel = nomMonde;
 		SeedTerrainActuel = seed;
+		if (EssayerLireIdentiteJoueurDepuisDisque(nomMonde, out string nomP, out RaceJoueur rc))
+		{
+			NomPersonnageJoue = nomP;
+			RaceJoueurCourante = rc;
+		}
+		else
+		{
+			NomPersonnageJoue = "Voyageur";
+			RaceJoueurCourante = RaceJoueur.Humain;
+		}
 		ChargerJourAbsolu(nomMonde);
 		EcrireDernierMondeJoue(nomMonde);
-		GD.Print($"ZERO-K : Monde chargé : {nomMonde} (seed {seed}, jour {JourAbsolu})");
+		GD.Print($"ZERO-K : Monde chargé : {nomMonde} (seed {seed}, jour {JourAbsolu}, perso « {NomPersonnageJoue} », {RaceJoueurCourante})");
 		return true;
 	}
 

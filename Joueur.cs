@@ -314,7 +314,25 @@ public partial class Joueur : CharacterBody3D
     private static readonly Vector3 PositionObjetMainDefaut = new Vector3(0.035f, -0.01f, 0.065f);
     private static readonly Vector3 RotationObjetMainDefautDeg = new Vector3(8f, 92f, -16f);
     /// <summary>Orientation Mixamo -> Godot : correction latÃ©rale standard.</summary>
-    private const float YawRigMixamoVersGodotDeg = 180f;
+    public const float YawRigMixamoVersGodotDeg = 180f;
+
+    /// <summary>Échelle du rig humain/orc identique en jeu et dans l’aperçu menu (assistant création).</summary>
+    public static void AppliquerEchelleRigSelonRace(Node3D rig, RaceJoueur race)
+    {
+        if (rig == null || !GodotObject.IsInstanceValid(rig)) return;
+        const float scaleHumainUniforme = 1.3f;
+        if (race == RaceJoueur.Orc)
+        {
+            const float refH = 1.7f;
+            const float refW = 0.45f;
+            rig.Scale = new Vector3(
+                scaleHumainUniforme * (refW + 0.1f) / refW,
+                scaleHumainUniforme * (refH + 0.3f) / refH,
+                scaleHumainUniforme * (refW + 0.1f) / refW);
+        }
+        else
+            rig.Scale = Vector3.One * scaleHumainUniforme;
+    }
     /// <summary>DÃ©calage Y supplÃ©mentaire du rig (pieds / sol), ajoutÃ© au bas de la capsule.</summary>
     [Export] public float DecalageYRigHumain { get; set; }
     /// <summary>Si non-NaN, remplace le bas collision utilisÃ© uniquement pour <see cref="InitialiserModeleHumainJoueur"/> (pieds du mesh), en mÃ¨tres espace local joueur.</summary>
@@ -491,6 +509,7 @@ public partial class Joueur : CharacterBody3D
         SafeMargin = 0.06f;
         FloorMaxAngle = Mathf.DegToRad(52f);
         ConstruireHitboxesCompositeJoueur();
+        RedimensionnerHitboxesSiOrc();
         ConstruireRigCameraTps();
         InitialiserModeleHumainJoueur();
         Callable.From(RetryLierPlaybackAnimationTreeHumain).CallDeferred();
@@ -1529,23 +1548,35 @@ public partial class Joueur : CharacterBody3D
         if (capsuleVisuelle != null)
             capsuleVisuelle.Visible = false;
 
-        // PrÃ©fÃ©rer le nÅ“ud liÃ© dans la scÃ¨ne (Joueur.tscn / monde_zero.tscn) pour que lâ€™Ã©diteur montre le GLB.
+        bool estOrc = GameState.Instance?.RaceJoueurCourante == RaceJoueur.Orc;
         _rigHumain = GetNodeOrNull<Node3D>("HumainRigRoot");
+        if (estOrc && _rigHumain != null)
+        {
+            RemoveChild(_rigHumain);
+            _rigHumain.QueueFree();
+            _rigHumain = null;
+        }
+
+        // PrÃ©fÃ©rer le nÅ“ud liÃ© dans la scÃ¨ne (Joueur.tscn / monde_zero.tscn) pour que lâ€™Ã©diteur montre le GLB.
         if (_rigHumain == null)
         {
-            PackedScene sceneHumain = GD.Load<PackedScene>("res://Modeles/Entites/Humain/humain.glb");
-            if (sceneHumain == null)
+            PackedScene sceneCorps = estOrc
+                ? GD.Load<PackedScene>("res://Modeles/Entites/Orc/Orc.glb")
+                : GD.Load<PackedScene>("res://Modeles/Entites/Humain/humain.glb");
+            if (sceneCorps == null)
             {
-                GD.PrintErr("ZERO-K : ModÃ¨le joueur introuvable : res://Modeles/Entites/Humain/humain.glb (ajoute un enfant HumainRigRoot depuis humain.glb).");
+                GD.PrintErr(estOrc
+                    ? "ZERO-K : ModÃ¨le Orc introuvable : res://Modeles/Entites/Orc/Orc.glb."
+                    : "ZERO-K : ModÃ¨le joueur introuvable : res://Modeles/Entites/Humain/humain.glb (ajoute un enfant HumainRigRoot depuis humain.glb).");
                 return;
             }
 
-            _rigHumain = sceneHumain.Instantiate<Node3D>();
+            _rigHumain = sceneCorps.Instantiate<Node3D>();
             _rigHumain.Name = "HumainRigRoot";
             AddChild(_rigHumain);
         }
 
-        _rigHumain.Scale = Vector3.One * 1.3f; // rÃ©glage final demandÃ©
+        AppliquerEchelleRigSelonRace(_rigHumain, estOrc ? RaceJoueur.Orc : RaceJoueur.Humain);
 
         _solCapsuleLocalY = CalculerBasCollisionLocalJoueur();
         float basPourPieds = CalculerBasPourAlignementPiedsDuMesh();
@@ -1555,7 +1586,8 @@ public partial class Joueur : CharacterBody3D
         Vector3 man = CorrectionManuelleEulerRigHumainDeg;
         _rigHumain.RotationDegrees = new Vector3(man.X, YawRigMixamoVersGodotDeg + man.Y, man.Z);
 
-        SecuriserMateriauxModeleHumain(_rigHumain);
+        if (!estOrc)
+            SecuriserMateriauxModeleHumain(_rigHumain);
         AssignerCalquesTetePourVueFps(_rigHumain);
         InitialiserSqueletteHumain();
         BrancherCameraFpsSurSquelette();
@@ -1853,6 +1885,47 @@ public partial class Joueur : CharacterBody3D
         Ajouter("HitboxTete", new SphereShape3D { Radius = 0.105f }, new Vector3(0f, 0.58f, 0f), Vector3.Zero);
         Ajouter("HitboxBrasG", new CapsuleShape3D { Radius = 0.055f, Height = 0.34f }, new Vector3(-0.27f, 0.05f, 0f), new Vector3(0f, 0f, 72f));
         Ajouter("HitboxBrasD", new CapsuleShape3D { Radius = 0.055f, Height = 0.34f }, new Vector3(0.27f, 0.05f, 0f), new Vector3(0f, 0f, -72f));
+    }
+
+    /// <summary>Référence ~humain 1,7 m ; Orc +30 cm hauteur, +10 cm largeur/profondeur sur les collisions.</summary>
+    private void RedimensionnerHitboxesSiOrc()
+    {
+        if (GameState.Instance?.RaceJoueurCourante != RaceJoueur.Orc) return;
+        const float refH = 1.7f;
+        const float refW = 0.45f;
+        float fxz = (refW + 0.1f) / refW;
+        float fy = (refH + 0.3f) / refH;
+        foreach (Node c in GetChildren())
+        {
+            if (c is not CollisionShape3D cs || cs.Shape == null) continue;
+            Vector3 p = cs.Position;
+            cs.Position = new Vector3(p.X * fxz, p.Y * fy, p.Z * fxz);
+            switch (cs.Shape)
+            {
+                case CapsuleShape3D cap0:
+                {
+                    var cap = new CapsuleShape3D
+                    {
+                        Radius = cap0.Radius * fxz,
+                        Height = cap0.Height * fy
+                    };
+                    cs.Shape = cap;
+                    break;
+                }
+                case SphereShape3D sp0:
+                {
+                    var sp = new SphereShape3D { Radius = sp0.Radius * Mathf.Max(fxz, fy) };
+                    cs.Shape = sp;
+                    break;
+                }
+                case BoxShape3D box0:
+                {
+                    var box = new BoxShape3D { Size = new Vector3(box0.Size.X * fxz, box0.Size.Y * fy, box0.Size.Z * fxz) };
+                    cs.Shape = box;
+                    break;
+                }
+            }
+        }
     }
 
     /// <summary>Point bas (Y local) dâ€™une forme sous sa transform ; <see cref="float.MaxValue"/> si non gÃ©rÃ©e.</summary>
@@ -2861,6 +2934,9 @@ public partial class Joueur : CharacterBody3D
     {
         if (string.IsNullOrWhiteSpace(nomStat) || xpGagne == 0UL)
             return;
+        xpGagne = AppliquerMultiplicateurRacialXpFutureState(nomStat, xpGagne);
+        if (xpGagne == 0UL)
+            return;
         AjouterFutureStateSiAbsent(nomStat, 0UL);
         UInt128 xpActuel = ObtenirXpFutureState(nomStat);
         UInt128 gain = xpGagne;
@@ -2966,6 +3042,9 @@ public partial class Joueur : CharacterBody3D
     {
         if (string.IsNullOrWhiteSpace(nomMetier) || xpGagne == 0UL)
             return;
+        xpGagne = AppliquerMultiplicateurRacialXpMetier(xpGagne);
+        if (xpGagne == 0UL)
+            return;
         AjouterMetierSiAbsent(nomMetier, 0UL);
         UInt128 xpActuel = ObtenirXpMetier(nomMetier);
         UInt128 gain = xpGagne;
@@ -2997,7 +3076,10 @@ public partial class Joueur : CharacterBody3D
         double multiplicateur = 1d + (niveauForce * BonusForceParNiveauPourcent);
         if (double.IsNaN(multiplicateur) || double.IsInfinity(multiplicateur))
             return 1f;
-        return (float)Mathf.Clamp((float)multiplicateur, 1f, 100000f);
+        float m = (float)Mathf.Clamp((float)multiplicateur, 1f, 100000f);
+        if (GameState.Instance?.RaceJoueurCourante == RaceJoueur.Orc)
+            m *= 1.1f;
+        return m;
     }
 
     public float ObtenirMultiplicateurCapaciteChargeForce()
@@ -3007,6 +3089,40 @@ public partial class Joueur : CharacterBody3D
         if (double.IsNaN(multiplicateur) || double.IsInfinity(multiplicateur))
             return 1f;
         return (float)Mathf.Clamp((float)multiplicateur, 1f, 100000f);
+    }
+
+    /// <summary>Humain +10 % sur toute stat ; Orc : Intelligence ×0,5, Force et Metaboliste ×1,2, le reste ×1.</summary>
+    private static ulong AppliquerMultiplicateurRacialXpFutureState(string nomStat, ulong xpGagne)
+    {
+        if (xpGagne == 0UL) return 0UL;
+        RaceJoueur race = GameState.Instance?.RaceJoueurCourante ?? RaceJoueur.Humain;
+        double mult = race switch
+        {
+            RaceJoueur.Humain => 1.1d,
+            RaceJoueur.Orc => nomStat switch
+            {
+                "Intelligence" => 0.5d,
+                "Force" => 1.2d,
+                "Metaboliste" => 1.2d,
+                _ => 1.0d
+            },
+            _ => 1.0d
+        };
+        double d = xpGagne * mult;
+        if (d <= 0d) return 0UL;
+        if (d >= ulong.MaxValue) return ulong.MaxValue;
+        return (ulong)Math.Round(d);
+    }
+
+    /// <summary>Humain +10 % sur les métiers ; Orc : pas de modificateur.</summary>
+    private static ulong AppliquerMultiplicateurRacialXpMetier(ulong xpGagne)
+    {
+        if (xpGagne == 0UL) return 0UL;
+        if ((GameState.Instance?.RaceJoueurCourante ?? RaceJoueur.Humain) != RaceJoueur.Humain)
+            return xpGagne;
+        double d = xpGagne * 1.1d;
+        if (d >= ulong.MaxValue) return ulong.MaxValue;
+        return (ulong)Math.Round(d);
     }
 
     private static float ObtenirMasseUnitaireRocheInventaireKg(int indexTaille) => Mathf.Clamp(indexTaille, 0, 4) switch
