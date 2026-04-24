@@ -111,27 +111,22 @@ public partial class Monde_Serveur : Node
 	private readonly List<Vector2I> _cycleAutosaveChunks = new List<Vector2I>();
 	private int _indexCycleAutosaveChunks;
 
+	/// <summary>
+	/// Budget d’objets traités par tick (arbres, pierres, décharge chunks). Indépendant du FPS pour que le
+	/// débit soit identique entre machines ; le plafond CPU par tick reste assuré par les budgets temps (µs)
+	/// dans les boucles <c>while</c> qui consomment ces files.
+	/// </summary>
 	private int CalculerBudgetSpawnAdaptatif(int budgetBase)
 	{
-		int baseSafe = Mathf.Max(1, budgetBase);
-		float fps = (float)Engine.GetFramesPerSecond();
-		if (fps <= 0f) return baseSafe;
-		if (fps < 38f) return Mathf.Max(1, baseSafe / 3);
-		if (fps < 52f) return Mathf.Max(1, baseSafe / 2);
-		if (fps > 90f) return baseSafe + 1;
-		return baseSafe;
+		return Mathf.Max(1, budgetBase);
 	}
 
+	/// <summary>
+	/// Réduit le débit quand les files de spawn sont longues (et mode strict). Sans lecture du FPS : parité entre PC.
+	/// </summary>
 	private float CalculerFacteurPressionSpawn()
 	{
 		float facteur = 1f;
-		float fps = (float)Engine.GetFramesPerSecond();
-		if (fps > 0f)
-		{
-			if (fps < 55f) facteur *= 0.82f;
-			if (fps < 48f) facteur *= 0.72f;
-			if (fps < 40f) facteur *= 0.58f;
-		}
 
 		int chargeObjets = _fileSpawnArbres.Count + _filePierresAInstancier.Count;
 		if (chargeObjets > 220) facteur *= 0.84f;
@@ -1659,7 +1654,7 @@ public partial class Monde_Serveur : Node
 			for (int cz = czMin; cz <= czMax; cz++)
 			{
 				var chunk = ObtenirOuCreerChunk(new Vector2I(cx, cz));
-				if (!chunk.EssayerDetecterBuisson(pointImpact, rayon, out Vector3 pos, out byte typeFlore) || typeFlore != 1)
+				if (!chunk.EssayerDetecterBuisson(pointImpact, rayon, out Vector3 pos, out byte typeFlore) || !Chunk_Serveur.EstBuissonPlein(typeFlore))
 					continue;
 				float d2 = pos.DistanceSquaredTo(pointImpact);
 				if (!trouve || d2 < meilleureDist2)
