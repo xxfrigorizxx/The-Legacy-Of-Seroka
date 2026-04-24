@@ -114,19 +114,24 @@ public partial class BlocChutant : RigidBody3D
 
 	/// <summary>Méta sur ID 31 : branche issue d'un buisson (coupée courte / fine), pas d'un arbre.</summary>
 	public const string MetaBrancheTailléeBuisson = "BrancheTailléeBuisson";
+	/// <summary>Méta sur ID 35 : teinte de baie (<see cref="Joueur.BaieNombreCouleurs"/> indices 0..7).</summary>
+	public const string MetaIndexCouleurBaie = "IndexChimiqueBaie";
 
 	/// <summary>Crée un BlocChutant. Le parent doit l'ajouter à la scène, puis définir GlobalPosition immédiatement après.</summary>
 	/// <param name="brancheTailléeBuisson">Si true et <see cref="ID_BRANCHE"/> : mesh court (récolte buisson). Sinon : branche d'arbre (longue).</param>
-	public static BlocChutant Creer(Vector3 positionMonde, byte idMateriau, Material matTerrain, bool brancheTailléeBuisson = false)
+	/// <param name="indexCouleurBaie">Si <see cref="ID_BAIE"/> : index 0..7 pour la teinte (ramassage → inventaire).</param>
+	public static BlocChutant Creer(Vector3 positionMonde, byte idMateriau, Material matTerrain, bool brancheTailléeBuisson = false, byte indexCouleurBaie = 0)
 	{
 		var bloc = new BlocChutant();
 		bloc.SetMeta("ID_Matiere", (int)idMateriau);
 		if (idMateriau == ID_BRANCHE && brancheTailléeBuisson)
 			bloc.SetMeta(MetaBrancheTailléeBuisson, true);
+		if (idMateriau == ID_BAIE)
+			bloc.SetMeta(MetaIndexCouleurBaie, Joueur.ClampIndexCouleurBaie(indexCouleurBaie));
 		if (idMateriau == ID_FEUILLE_ARRACHEE)
 			bloc._ConstruireVisuelFeuillage(null);
 		else
-			bloc._ConstruireVisuelEtCollision(idMateriau, matTerrain);
+			bloc._ConstruireVisuelEtCollision(idMateriau, matTerrain, indexCouleurBaie);
 		// GlobalPosition nécessite is_inside_tree() == true : à définir par l'appelant après AddChild().
 		return bloc;
 	}
@@ -219,7 +224,7 @@ public partial class BlocChutant : RigidBody3D
 		AddChild(collision);
 	}
 
-	private void _ConstruireVisuelEtCollision(byte idMateriau, Material matTerrain)
+	private void _ConstruireVisuelEtCollision(byte idMateriau, Material matTerrain, byte indexCouleurBaie = 0)
 	{
 		var meshInstance = new MeshInstance3D { Name = "MeshInstance3D" };
 
@@ -281,16 +286,19 @@ public partial class BlocChutant : RigidBody3D
 				}
 				break;
 			case ID_BAIE:
+			{
+				Color c = Joueur.ObtenirCouleurAlbedoBaie(indexCouleurBaie);
 				meshInstance.Mesh = new SphereMesh { Radius = 0.08f, Height = 0.16f, RadialSegments = 10, Rings = 6 };
 				meshInstance.MaterialOverride = new StandardMaterial3D
 				{
-					AlbedoColor = new Color(0.90f, 0.14f, 0.14f),
+					AlbedoColor = c,
 					Roughness = 0.34f,
 					Metallic = 0f,
 					EmissionEnabled = true,
-					Emission = new Color(0.05f, 0.01f, 0.01f)
+					Emission = c * 0.07f
 				};
 				break;
+			}
 			default:
 				meshInstance.Mesh = _ConstruireMeshCube(idMateriau);
 				break;

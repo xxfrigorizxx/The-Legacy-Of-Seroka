@@ -337,6 +337,43 @@ public partial class Joueur
             _objetEnMain.RotationDegrees = new Vector3(-6f + _rotationManuelleX, 22f + _rotationManuelleY, 2f + _rotationManuelleZ);
             return;
         }
+        if (main.ID == IdObjetSteakCru)
+        {
+            _objetEnMain.Mesh = null;
+            _objetEnMain.MaterialOverride = null;
+            NettoyerModelesEnfants(_objetEnMain);
+            InstancierModeleSteakCru(_objetEnMain, main, 0.18f);
+            _objetEnMain.Scale = Vector3.One;
+            _objetEnMain.RotationDegrees = new Vector3(-4f + _rotationManuelleX, 18f + _rotationManuelleY, 5f + _rotationManuelleZ);
+            return;
+        }
+        if (main.ID == IdObjetOsBoeuf)
+        {
+            _objetEnMain.Mesh = null;
+            _objetEnMain.MaterialOverride = null;
+            NettoyerModelesEnfants(_objetEnMain);
+            InstancierModeleOsBoeuf(_objetEnMain, main, 0.2f);
+            _objetEnMain.Scale = Vector3.One;
+            _objetEnMain.RotationDegrees = new Vector3(8f + _rotationManuelleX, 24f + _rotationManuelleY, -12f + _rotationManuelleZ);
+            return;
+        }
+        if (main.ID == IdObjetCuirBoeuf)
+        {
+            _objetEnMain.Mesh = null;
+            _objetEnMain.MaterialOverride = null;
+            int sig = (main.GenomeAssemblage ?? "").GetHashCode();
+            int prev = _objetEnMain.HasMeta(MetaSignatureLootCuir117) ? (int)_objetEnMain.GetMeta(MetaSignatureLootCuir117).AsInt32() : int.MinValue;
+            bool manqueModele = _objetEnMain.FindChild("ModeleArme", true, false) == null;
+            if (manqueModele || sig != prev)
+            {
+                NettoyerModelesEnfants(_objetEnMain);
+                InstancierModeleCuirBoeuf(_objetEnMain, main, 0.2f);
+                _objetEnMain.SetMeta(MetaSignatureLootCuir117, sig);
+            }
+            _objetEnMain.Scale = Vector3.One;
+            _objetEnMain.RotationDegrees = new Vector3(2f + _rotationManuelleX, 40f + _rotationManuelleY, -6f + _rotationManuelleZ);
+            return;
+        }
         if (main.ID == 10 || main.ID == 11)
         {
             NettoyerModelesEnfants(_objetEnMain);
@@ -777,6 +814,43 @@ public partial class Joueur
             InstancierModeleBaie(meshNode, slot, 0.14f);
             meshNode.Scale = Vector3.One;
             meshNode.RotationDegrees = new Vector3(0f, 30f, 0f);
+            return;
+        }
+        if (slot.ID == IdObjetSteakCru)
+        {
+            meshNode.Mesh = null;
+            meshNode.MaterialOverride = null;
+            NettoyerModelesEnfants(meshNode);
+            InstancierModeleSteakCru(meshNode, slot, 0.16f);
+            meshNode.Scale = Vector3.One;
+            meshNode.RotationDegrees = new Vector3(-2f, 22f, 4f);
+            return;
+        }
+        if (slot.ID == IdObjetOsBoeuf)
+        {
+            meshNode.Mesh = null;
+            meshNode.MaterialOverride = null;
+            NettoyerModelesEnfants(meshNode);
+            InstancierModeleOsBoeuf(meshNode, slot, 0.18f);
+            meshNode.Scale = Vector3.One;
+            meshNode.RotationDegrees = new Vector3(6f, 28f, -10f);
+            return;
+        }
+        if (slot.ID == IdObjetCuirBoeuf)
+        {
+            meshNode.Mesh = null;
+            meshNode.MaterialOverride = null;
+            int sig = (slot.GenomeAssemblage ?? "").GetHashCode();
+            int prev = meshNode.HasMeta(MetaSignatureLootCuir117) ? (int)meshNode.GetMeta(MetaSignatureLootCuir117).AsInt32() : int.MinValue;
+            bool manque = meshNode.FindChild("ModeleArme", true, false) == null;
+            if (manque || sig != prev)
+            {
+                NettoyerModelesEnfants(meshNode);
+                InstancierModeleCuirBoeuf(meshNode, slot, 0.18f);
+                meshNode.SetMeta(MetaSignatureLootCuir117, sig);
+            }
+            meshNode.Scale = Vector3.One;
+            meshNode.RotationDegrees = new Vector3(4f, 36f, -4f);
             return;
         }
         if (slot.ID == 10 || slot.ID == 11)

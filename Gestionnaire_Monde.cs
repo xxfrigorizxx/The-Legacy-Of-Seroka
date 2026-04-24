@@ -1104,6 +1104,22 @@ public partial class Gestionnaire_Monde : Node3D
 	private float _timerAjustementAutoHybride;
 	private float _fpsMinSessionAutoHybride = float.MaxValue;
 
+	private void LancerSynchronisationDisquePostRestaurationSolDifferee()
+	{
+		_ = ExecuterSynchronisationDisquePostRestaurationApresDelaiAsync();
+	}
+
+	private async Task ExecuterSynchronisationDisquePostRestaurationApresDelaiAsync()
+	{
+		for (int i = 0; i < 2; i++)
+		{
+			await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+			if (!IsInsideTree()) return;
+		}
+		SauvegarderManuelDepuisMenu();
+		GD.Print("ZERO-K : Synchronisation disque post-restauration (aucune perte au prochain chargement si le jeu s’arrête ici).");
+	}
+
 	/// <summary>Même logique que le bouton Sauvegarder du menu pause et de l’inventaire (position + monde / chunks).</summary>
 	public void SauvegarderManuelDepuisMenu()
 	{
@@ -2092,12 +2108,12 @@ FinBlocOverlay:
 
 		bool spawnPretEtAlignePourRestauration = EstSpawnPret() && (!_spawnDoitEtreAligneAuSol || _spawnAligneAuSol);
 		bool restaurationSolVientDeTourner = EssayerRestaurerObjetsPersistantsPhaseSol(spawnPretEtAlignePourRestauration);
-		// Réécrit tout de suite inventaire + placed_objects + chunks : le disque reflète exactement la scène après reload.
+		// Réécrit inventaire + placed_objects + chunks après reload. Décalé de quelques frames : une sauvegarde
+		// immédiate dans la même frame que la restauration sol a rarement provoqué un plantage moteur (PagedArray hors limites).
 		if (restaurationSolVientDeTourner && !_synchronisationDisquePostRestaurationSolEffectuee)
 		{
 			_synchronisationDisquePostRestaurationSolEffectuee = true;
-			SauvegarderManuelDepuisMenu();
-			GD.Print("ZERO-K : Synchronisation disque post-restauration (aucune perte au prochain chargement si le jeu s’arrête ici).");
+			CallDeferred(nameof(LancerSynchronisationDisquePostRestaurationSolDifferee));
 		}
 		TraiterDepgelRigidBodiesRestaurationSol(64);
 

@@ -454,7 +454,8 @@ public partial class Joueur
             CleConteneur = (item != null && item.HasMeta("CleConteneur")) ? item.GetMeta("CleConteneur").AsString() : "",
             DurabiliteOutilMax = (item != null && item.HasMeta(MetaDurabiliteOutilMax)) ? (float)item.GetMeta(MetaDurabiliteOutilMax).AsDouble() : 0f,
             DurabiliteOutilActuelle = (item != null && item.HasMeta(MetaDurabiliteOutilActuelle)) ? (float)item.GetMeta(MetaDurabiliteOutilActuelle).AsDouble() : 0f,
-            IndexTailleLameRoche = (item != null && item.HasMeta(MetaTailleLameRoche)) ? (int)item.GetMeta(MetaTailleLameRoche).AsInt32() : 2
+            IndexTailleLameRoche = (item != null && item.HasMeta(MetaTailleLameRoche)) ? (int)item.GetMeta(MetaTailleLameRoche).AsInt32() : 2,
+            Quantite = (item != null && item.HasMeta(MetaQuantiteObjetPose)) ? (int)item.GetMeta(MetaQuantiteObjetPose).AsInt32() : 1
         };
         if (slot.EstUnEclat)
             slot.EstUnEclat = false;

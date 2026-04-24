@@ -712,7 +712,8 @@ public partial class Joueur
     }
 
     /// <summary>True si la pointe (manche→lame) est alignée sur la visée caméra→cible — les rotations R / Maj+R / Ctrl+R sur l’objet en main sont prises en compte via <see cref="GlobalTransform"/>.</summary>
-    private bool EstFrappeDagueAvecLaLame(Vector3 pointImpact, Vector3 directionFrappe)
+    /// <param name="seuilAlignementMin">Combat vivant : ~0,15. Cadavre au sol : passer ~0,04 pour accepter des coups « hachoir ».</param>
+    private bool EstFrappeDagueAvecLaLame(Vector3 pointImpact, Vector3 directionFrappe, float seuilAlignementMin = 0.15f)
     {
         if (_objetEnMain == null || _camera == null) return false;
         var modele = _objetEnMain.FindChild("ModeleArme", true, false) as Node3D;
@@ -743,8 +744,7 @@ public partial class Joueur
                 alignMouvement += 0.4f;
         }
 
-        const float seuil = 0.15f;
-        return Mathf.Max(alignVisée, alignMouvement) > seuil;
+        return Mathf.Max(alignVisée, alignMouvement) > seuilAlignementMin;
     }
 
     /// <summary>Hachette 106 : lame <c>tripo_part_4</c>, manche <c>tripo_part_5</c> (aligné avec <see cref="InstancierModeleArme"/> id 106).</summary>
@@ -945,6 +945,8 @@ public partial class Joueur
         AssurerDurabiliteOutilsSurLesMains();
         SlotInventaire mainActive = MainGaucheEstActive ? MainGauche : MainDroite;
         if (mainActive.EstVide || !PeutUtiliserFrappe(mainActive)) return;
+        // Alignement lame (dague) lit la géométrie sur _objetEnMain : doit refléter la main sélectionnée avant le raycast.
+        MettreAJourObjetEnMain();
         force *= MultiplicateurForceFrappeEndurance();
 
         _rayon.ForceRaycastUpdate();
@@ -1334,6 +1336,19 @@ public partial class Joueur
         BoeufSauvage boeufTouche = ObtenirBoeufDepuisCollider(objetTouche);
         if (boeufTouche != null)
         {
+            if (boeufTouche.EstCadavreDepecable())
+            {
+                // Cadavre au sol : seuil d’alignement plus bas (sinon beaucoup de coups « valides » visuellement ne comptent pas).
+                if (mainActive.ID == 105 && EstFrappeDagueAvecLaLame(pointImpact, directionFrappe, 0.04f))
+                {
+                    bool troisiemeCoup = boeufTouche.EnregistrerCoupDepecageDagueValide();
+                    AppliquerUsureOutilMainActive(0.35f);
+                    if (troisiemeCoup)
+                        ExecuterLootDepecageCadavreBoeuf(boeufTouche, pointImpact, directionFrappe);
+                }
+                return;
+            }
+
             bool tranchant = false;
             if (mainActive.ID == 105)
                 tranchant = EstFrappeDagueAvecLaLame(pointImpact, directionFrappe);
@@ -1776,6 +1791,55 @@ public partial class Joueur
     }
 
     /// <summary>Rayon vertical sur le masque collision 1 ; place un point au-dessus du sol (évite tronc/branches sous le terrain).</summary>
+    private void ExecuterLootDepecageCadavreBoeuf(BoeufSauvage boeuf, Vector3 pointImpact, Vector3 directionFrappe)
+    {
+        if (boeuf == null || !GodotObject.IsInstanceValid(boeuf))
+            return;
+        Texture2D texPeau = boeuf.EssayerObtenirTexturePeauPourCuir();
+        string genomeCuir = boeuf.ConstruireGenomePeauPourSlotCuir(texPeau);
+        Vector3 basePos = boeuf.GlobalPosition + Vector3.Up * 0.28f;
+        Vector3 dir = directionFrappe.LengthSquared() > 1e-6f ? directionFrappe.Normalized() : -GlobalTransform.Basis.Z.Normalized();
+        Vector3 orth = Vector3.Up.Cross(dir);
+        if (orth.LengthSquared() < 1e-4f)
+            orth = GlobalTransform.Basis.X;
+        orth = orth.Normalized();
+
+        for (int i = 0; i < 3; i++)
+        {
+            var slotSteak = new SlotInventaire { ID = IdObjetSteakCru, Quantite = 1, IndexChimique = 0, IndexMorphologique = 0, IndexTaille = 0 };
+            Vector3 off = orth * (0.14f * (i - 1)) + Vector3.Up * (0.03f * i);
+            Node3D n = CreerBlocPose(basePos + off + dir * 0.18f, slotSteak);
+            if (n is RigidBody3D rb)
+                rb.ApplyCentralImpulse(dir * 0.55f + Vector3.Up * 0.38f + orth * 0.12f * (i - 1));
+        }
+
+        var slotOs = new SlotInventaire { ID = IdObjetOsBoeuf, Quantite = 10, IndexChimique = 0, IndexMorphologique = 0, IndexTaille = 0 };
+        Node3D nOs = CreerBlocPose(basePos + dir * 0.38f, slotOs);
+        if (nOs is RigidBody3D rbOs)
+            rbOs.ApplyCentralImpulse(dir * 0.48f + Vector3.Up * 0.32f);
+
+        var slotCuir = new SlotInventaire
+        {
+            ID = IdObjetCuirBoeuf,
+            Quantite = 2,
+            IndexChimique = 0,
+            IndexMorphologique = 0,
+            IndexTaille = 0,
+            GenomeAssemblage = genomeCuir
+        };
+        Node3D nCuir = CreerBlocPose(basePos - orth * 0.2f + dir * 0.24f, slotCuir);
+        if (nCuir is ItemPhysique ipC && !string.IsNullOrEmpty(genomeCuir))
+        {
+            ipC.GenomeAssemblage = genomeCuir;
+            ipC.SetMeta(MetaGenomeAssemblage, genomeCuir);
+        }
+        if (nCuir is RigidBody3D rbC)
+            rbC.ApplyCentralImpulse(-orth * 0.22f + Vector3.Up * 0.3f + dir * 0.22f);
+
+        boeuf.FinaliserCadavreApresDepecage();
+        GD.Print("ZERO-K : Viande, os et cuir récupérés sur la carcasse.");
+    }
+
     private Vector3 CalculerPointAuDessusSol(Vector3 reference, float clearanceSelonNormale)
     {
         var space = GetWorld3D()?.DirectSpaceState;

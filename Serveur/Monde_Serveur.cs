@@ -759,7 +759,7 @@ public partial class Monde_Serveur : Node
 	{
 		var chunk = new Chunk_Serveur(
 			coord.X, coord.Y, TailleChunk, HauteurMax, SeedTerrain,
-			(pos, mat, brancheTailléeBuisson) => { SpawnBlocChutant(pos, mat, brancheTailléeBuisson); },
+			(pos, mat, brancheTailléeBuisson, indexCouleurBaie) => { SpawnBlocChutant(pos, mat, brancheTailléeBuisson, indexCouleurBaie); },
 			ChunkEstCharge,
 			ReveillerEauAdjacente
 		);
@@ -774,11 +774,11 @@ public partial class Monde_Serveur : Node
 		return chunk;
 	}
 
-	private void SpawnBlocChutant(Vector3 pos, byte mat, bool brancheTailléeBuisson = false)
+	private void SpawnBlocChutant(Vector3 pos, byte mat, bool brancheTailléeBuisson = false, byte indexCouleurBaie = 0)
 	{
 		if (_parentPourBlocsChutants == null) return;
 		var matTerrain = MaterielTerrain ?? GD.Load<Material>("res://Manteau_Planetaire.tres");
-		var bloc = BlocChutant.Creer(pos, mat, matTerrain, brancheTailléeBuisson);
+		var bloc = BlocChutant.Creer(pos, mat, matTerrain, brancheTailléeBuisson, indexCouleurBaie);
 		_parentPourBlocsChutants.AddChild(bloc);
 		// Fibres (fauchage) : léger décalage vers le haut pour éviter d’être coincées dans le sol / la collision.
 		Vector3 posPose = mat == 15 ? pos + new Vector3(0f, 0.12f, 0f) : pos;

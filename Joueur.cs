@@ -82,6 +82,8 @@ public partial class Joueur : CharacterBody3D
     private static readonly UInt128 XpHybrideDivQuadratique = (UInt128)1000;
     /// <summary>MÃ©ta et slots : mÃªme clÃ© pour lâ€™Ã©tabli CAO et les corps posÃ©s.</summary>
     public const string MetaGenomeAssemblage = "GenomeAssemblage";
+    /// <summary>Prévisualisation main : cuir bovin (variante texture/genome).</summary>
+    public const string MetaSignatureLootCuir117 = "SigLootCuir117";
     /// <summary>ItemPhysique dague (105) : durabilitÃ© synchronisÃ©e inventaire / sol.</summary>
     public const string MetaDurabiliteOutilMax = "DurOutilMax";
     public const string MetaDurabiliteOutilActuelle = "DurOutilAct";
@@ -112,12 +114,78 @@ public partial class Joueur : CharacterBody3D
     public const int IdObjetCoffreBoisTier0 = 113;
     /// <summary>Carnet du savoir dédié (slot UI exclusif + pages éditables).</summary>
     public const int IdObjetCarnetSavoir = 114;
+    /// <summary>Steak cru (loot dépeçage bovin).</summary>
+    public const int IdObjetSteakCru = 115;
+    /// <summary>Os (loot dépeçage bovin).</summary>
+    public const int IdObjetOsBoeuf = 116;
+    /// <summary>Cuir de bœuf (loot dépeçage ; texture via <see cref="SlotInventaire.GenomeAssemblage"/> préfixe PEAU:).</summary>
+    public const int IdObjetCuirBoeuf = 117;
+    /// <summary>Objet posé au sol : quantité dans l’inventaire au ramassage (>1).</summary>
+    public const string MetaQuantiteObjetPose = "QuantiteObjetPose";
     /// <summary>Rack Ã  bÃ¢tons (stockage dÃ©diÃ©).</summary>
     public const int IdObjetRackBatons = 109;
     /// <summary>Rack Ã  bÃ»ches (stockage dÃ©diÃ©).</summary>
     public const int IdObjetRackBuches = 110;
     /// <summary>Petite baie rÃ©coltable sur buisson (palette couleur via IndexChimique).</summary>
     public const int IdObjetBaie = 35;
+    /// <summary>Nombre de teintes de baie (IndexChimique valide : 0 inclus à <see cref="BaieNombreCouleurs"/> exclus).</summary>
+    public const int BaieNombreCouleurs = 8;
+
+    /// <summary>Index couleur baie (0–7) pour l’inventaire et le rendu.</summary>
+    public static int ClampIndexCouleurBaie(int indexChimique)
+    {
+        if (indexChimique < 0) return 0;
+        if (indexChimique >= BaieNombreCouleurs) return BaieNombreCouleurs - 1;
+        return indexChimique;
+    }
+
+    /// <summary>Albedo procédural (main, sol, GLB teinté).</summary>
+    public static Color ObtenirCouleurAlbedoBaie(int indexChimique)
+    {
+        return ClampIndexCouleurBaie(indexChimique) switch
+        {
+            1 => new Color(0.82f, 0.24f, 0.64f),
+            2 => new Color(0.95f, 0.62f, 0.12f),
+            3 => new Color(0.18f, 0.38f, 0.92f),
+            4 => new Color(0.98f, 0.88f, 0.12f),
+            5 => new Color(0.22f, 0.72f, 0.28f),
+            6 => new Color(0.18f, 0.08f, 0.22f),
+            7 => new Color(0.98f, 0.45f, 0.72f),
+            _ => new Color(0.90f, 0.14f, 0.14f),
+        };
+    }
+
+    /// <summary>Lexème féminin singulier pour « Petite baie … » ; pluriel « Petites baies …s » via suffixe s (oranges, roses, etc.).</summary>
+    public static string ObtenirLexemeCouleurBaiePourNomInventaire(int indexChimique)
+    {
+        return ClampIndexCouleurBaie(indexChimique) switch
+        {
+            1 => "violette",
+            2 => "orange",
+            3 => "bleue",
+            4 => "jaune",
+            5 => "verte",
+            6 => "noire",
+            7 => "rose",
+            _ => "rouge",
+        };
+    }
+
+    /// <summary>Accord avec « baie(s) » au ramassage (ex. bleue / bleues).</summary>
+    public static string ObtenirAdjectifBaieAccorde(int indexChimique, bool pluriel)
+    {
+        return ClampIndexCouleurBaie(indexChimique) switch
+        {
+            1 => pluriel ? "violettes" : "violette",
+            2 => pluriel ? "oranges" : "orange",
+            3 => pluriel ? "bleues" : "bleue",
+            4 => pluriel ? "jaunes" : "jaune",
+            5 => pluriel ? "vertes" : "verte",
+            6 => pluriel ? "noires" : "noire",
+            7 => pluriel ? "roses" : "rose",
+            _ => pluriel ? "rouges" : "rouge",
+        };
+    }
 
     /// <summary>True si cet ID est un contenant portÃ© qui ouvre la grille Â« sac Â» dans lâ€™UI.</summary>
     public static bool EstObjetQuiDebloqueGrilleSac(int id) => id == IdObjetSacDos;
@@ -3146,6 +3214,9 @@ public partial class Joueur : CharacterBody3D
         IdObjetPochetteTier0 => 0.12f,
         IdObjetSacTier0 => 0.16f,
         IdObjetCarnetSavoir => 0.24f,
+        IdObjetSteakCru => 0.14f,
+        IdObjetOsBoeuf => 0.09f,
+        IdObjetCuirBoeuf => 0.11f,
         105 => 0.32f,
         106 => 0.58f,
         IdObjetPellePierreTier0 => 0.62f,
@@ -3521,6 +3592,7 @@ public partial class Joueur : CharacterBody3D
         else if (id == 21) return null; // GLB res://Modeles/materials/tissu_tier0.glb via InstancierModeleTissuTier0
         else if (id == IdObjetSacTier0) return null; // GLB res://Modeles/Equipable/Sac_Tiere0.glb via InstancierModeleSacTier0
         else if (id == IdObjetCarnetSavoir) return null; // modèle procédural via InstancierModeleCarnetSavoir
+        else if (id == IdObjetSteakCru || id == IdObjetOsBoeuf || id == IdObjetCuirBoeuf) return null; // GLB via InstancierModele* dans ModelInstantiationService
         else if (id == IdObjetCeinturePoches || id == IdObjetCeintureSacoches) return null; // GLB ceinture / ceinture+pochettes via instanciation dÃ©diÃ©e
         else if (id == IdObjetPochetteTier0) return null; // GLB res://Modeles/materials/Pochette_Tiere0.glb via InstancierModelePochetteTier0
         else if (id == IdObjetPellePierreTier0) return null; // GLB res://Modeles/Equipements/Pelle_Pierre_tier0.glb via InstancierModeleArme
@@ -3603,12 +3675,7 @@ public partial class Joueur : CharacterBody3D
         if (idObjet == 34) { visuel.MaterialOverride = new StandardMaterial3D { AlbedoColor = new Color(0.2f, 0.55f, 0.15f), Roughness = 0.95f, Metallic = 0f }; return; }
         if (idObjet == IdObjetBaie)
         {
-            Color c = indexChimique switch
-            {
-                1 => new Color(0.82f, 0.24f, 0.64f), // futur violet
-                2 => new Color(0.95f, 0.62f, 0.12f), // futur orange
-                _ => new Color(0.90f, 0.14f, 0.14f)  // rouge par dÃ©faut
-            };
+            Color c = ObtenirCouleurAlbedoBaie(indexChimique);
             visuel.MaterialOverride = new StandardMaterial3D { AlbedoColor = c, Roughness = 0.34f, Metallic = 0f, EmissionEnabled = true, Emission = c * 0.06f };
             return;
         }
@@ -4542,6 +4609,57 @@ public partial class Joueur : CharacterBody3D
             item.AddChild(new CollisionShape3D { Shape = new SphereShape3D { Radius = 0.08f } });
             corps = item;
         }
+        else if (id == IdObjetSteakCru)
+        {
+            var item = new ItemPhysique
+            {
+                ID_Objet = id,
+                IndexChimique = 0,
+                IndexCacheMemoire = 0,
+                Name = "ItemPhysique",
+                ContinuousCd = true
+            };
+            var meshRoot = new Node3D { Name = "MeshInstance3D" };
+            InstancierModeleSteakCru(meshRoot, mainActive, 0.2f);
+            item.AddChild(meshRoot);
+            item.AddChild(new CollisionShape3D { Shape = new SphereShape3D { Radius = 0.07f } });
+            corps = item;
+        }
+        else if (id == IdObjetOsBoeuf)
+        {
+            var item = new ItemPhysique
+            {
+                ID_Objet = id,
+                IndexChimique = 0,
+                IndexCacheMemoire = 0,
+                Name = "ItemPhysique",
+                ContinuousCd = true
+            };
+            var meshRoot = new Node3D { Name = "MeshInstance3D" };
+            InstancierModeleOsBoeuf(meshRoot, mainActive, 0.22f);
+            item.AddChild(meshRoot);
+            item.AddChild(new CollisionShape3D { Shape = new CapsuleShape3D { Radius = 0.04f, Height = 0.22f } });
+            corps = item;
+        }
+        else if (id == IdObjetCuirBoeuf)
+        {
+            var item = new ItemPhysique
+            {
+                ID_Objet = id,
+                IndexChimique = 0,
+                IndexCacheMemoire = 0,
+                Name = "ItemPhysique",
+                ContinuousCd = true,
+                GenomeAssemblage = mainActive.GenomeAssemblage ?? ""
+            };
+            if (!string.IsNullOrEmpty(item.GenomeAssemblage))
+                item.SetMeta(MetaGenomeAssemblage, item.GenomeAssemblage);
+            var meshRoot = new Node3D { Name = "MeshInstance3D" };
+            InstancierModeleCuirBoeuf(meshRoot, mainActive, 0.24f);
+            item.AddChild(meshRoot);
+            item.AddChild(new CollisionShape3D { Shape = new BoxShape3D { Size = new Vector3(0.28f, 0.06f, 0.22f) } });
+            corps = item;
+        }
         else // 999 Buisson â€” RigidBody3D pour pouvoir le lancer comme les autres objets posÃ©s.
         {
             float cote = 0.85f;
@@ -4551,6 +4669,8 @@ public partial class Joueur : CharacterBody3D
             corps = rb;
         }
         corps.SetMeta("ID_Matiere", id);
+        if (corps is ItemPhysique ipQuantite && mainActive.Quantite > 1)
+            ipQuantite.SetMeta(MetaQuantiteObjetPose, mainActive.Quantite);
         corps.AddToGroup("BlocsPoses");
         GetParent().AddChild(corps);
         // Placement pur : pas de translation Y supplÃ©mentaire (Ã©vite double offset / lÃ©vitation atelier).
@@ -4653,13 +4773,16 @@ public partial class Joueur : CharacterBody3D
                 rbPose.LinearDamp = 0.42f;
                 rbPose.AngularDamp = 1.0f;
             }
-            else if (id == 20 || id == 21 || id == IdObjetCeinturePoches || id == IdObjetCeintureSacoches || id == IdObjetPochetteTier0 || id == IdObjetSacTier0 || id == IdObjetCarnetSavoir)
+            else if (id == 20 || id == 21 || id == IdObjetCeinturePoches || id == IdObjetCeintureSacoches || id == IdObjetPochetteTier0 || id == IdObjetSacTier0 || id == IdObjetCarnetSavoir
+                || id == IdObjetSteakCru || id == IdObjetOsBoeuf || id == IdObjetCuirBoeuf)
             {
                 rbPose.PhysicsMaterialOverride = _physMatCorde;
                 rbPose.LinearDampMode = RigidBody3D.DampMode.Replace;
                 rbPose.AngularDampMode = RigidBody3D.DampMode.Replace;
                 rbPose.LinearDamp = 0.32f;
                 rbPose.AngularDamp = 0.95f;
+                if (id == IdObjetSteakCru || id == IdObjetOsBoeuf || id == IdObjetCuirBoeuf)
+                    rbPose.Mass = id == IdObjetOsBoeuf ? 0.55f : (id == IdObjetCuirBoeuf ? 0.25f : 0.18f);
             }
             else if (id == 999)
             {

@@ -124,8 +124,9 @@ public partial class Joueur
         if (ajoutees > 0)
         {
             RafraichirHUD();
-            string c = couleur == 0 ? "rouges" : "colorées";
-            GD.Print($"ZERO-K : {ajoutees} baie(s) {c} récoltée(s) sur le buisson.");
+            bool pl = ajoutees > 1;
+            string adj = Joueur.ObtenirAdjectifBaieAccorde(couleur, pl);
+            GD.Print($"ZERO-K : {ajoutees} baie{(pl ? "s" : "")} {adj} récoltée{(pl ? "s" : "")} sur le buisson.");
         }
         else
         {
@@ -319,7 +320,9 @@ public partial class Joueur
                 {
                     ID = id,
                     IndexMorphologique = morphBranche,
-                    IndexChimique = 0,
+                    IndexChimique = id == BlocChutant.ID_BAIE && objetTouche.HasMeta(BlocChutant.MetaIndexCouleurBaie)
+                        ? Joueur.ClampIndexCouleurBaie((int)objetTouche.GetMeta(BlocChutant.MetaIndexCouleurBaie).AsInt32())
+                        : 0,
                     IndexTaille = id == BlocChutant.ID_BRANCHE ? 2 : 0,
                     IndexBotanique = boisChute ? idxBot : LSystem_Botanique.IndexChene
                 };
@@ -405,7 +408,17 @@ public partial class Joueur
             return;
 
         PreparerRamassageCoffreVersInventaire(ref nouveauSlot, objetTouche);
-        nouveauSlot.Quantite = ObtenirQuantiteSlot(nouveauSlot);
+        ItemPhysique itemQuantitePose = null;
+        if (objetTouche.IsInGroup("BlocsPoses"))
+            itemQuantitePose = objetTouche as ItemPhysique ?? (objetTouche as Node)?.GetParent() as ItemPhysique ?? (objetTouche as Node)?.GetNodeOrNull<ItemPhysique>("ItemPhysique");
+        else if (objetTouche is RigidBody3D rbQ && objetTouche is not BlocChutant)
+            itemQuantitePose = rbQ as ItemPhysique ?? (rbQ as Node)?.GetParent() as ItemPhysique ?? rbQ.GetNodeOrNull<ItemPhysique>("ItemPhysique");
+        else if (objetTouche is StaticBody3D sbQ)
+            itemQuantitePose = sbQ.GetNodeOrNull<ItemPhysique>("ItemPhysique");
+        if (itemQuantitePose != null && itemQuantitePose.HasMeta(MetaQuantiteObjetPose))
+            nouveauSlot.Quantite = (int)itemQuantitePose.GetMeta(MetaQuantiteObjetPose).AsInt32();
+        else
+            nouveauSlot.Quantite = ObtenirQuantiteSlot(nouveauSlot);
         if (!EssayerAjouterDansInventaire(nouveauSlot))
         {
             GD.Print("ZERO-K : Inventaire plein. Impossible de ramasser cet objet.");

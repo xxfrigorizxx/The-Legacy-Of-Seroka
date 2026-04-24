@@ -8,7 +8,7 @@ public partial class Joueur
     private static bool EstObjetAvecVisuel(int id)
     {
         if (id >= 1 && id <= 9) return true;
-        return ItemPhysique.EstIdRocheMatiere(id) || id == 10 || id == 11 || id == BlocChutant.ID_BRANCHE || id == 15 || id == 16 || id == 17 || id == 20 || id == 21 || id == Joueur.IdObjetCeinturePoches || id == Joueur.IdObjetCeintureSacoches || id == Joueur.IdObjetPochetteTier0 || id == Joueur.IdObjetSacTier0 || id == Joueur.IdObjetCarnetSavoir || id == 30 || id == 32 || id == 34 || id == Joueur.IdObjetBaie || id == 100 || id == 105 || id == 106 || id == Joueur.IdObjetPellePierreTier0 || id == Joueur.IdObjetPiochePierreTier0 || id == Joueur.IdObjetLancePierreTier0 || id == Joueur.IdObjetFauxPierreTier0 || id == 200 || id == Joueur.IdObjetRackBatons || id == Joueur.IdObjetRackBuches || id == Joueur.IdObjetCoffreBoisTier0;
+        return ItemPhysique.EstIdRocheMatiere(id) || id == 10 || id == 11 || id == BlocChutant.ID_BRANCHE || id == 15 || id == 16 || id == 17 || id == 20 || id == 21 || id == Joueur.IdObjetCeinturePoches || id == Joueur.IdObjetCeintureSacoches || id == Joueur.IdObjetPochetteTier0 || id == Joueur.IdObjetSacTier0 || id == Joueur.IdObjetCarnetSavoir || id == Joueur.IdObjetSteakCru || id == Joueur.IdObjetOsBoeuf || id == Joueur.IdObjetCuirBoeuf || id == 30 || id == 32 || id == 34 || id == Joueur.IdObjetBaie || id == 100 || id == 105 || id == 106 || id == Joueur.IdObjetPellePierreTier0 || id == Joueur.IdObjetPiochePierreTier0 || id == Joueur.IdObjetLancePierreTier0 || id == Joueur.IdObjetFauxPierreTier0 || id == 200 || id == Joueur.IdObjetRackBatons || id == Joueur.IdObjetRackBuches || id == Joueur.IdObjetCoffreBoisTier0;
     }
 
     public static void NettoyerModelesEnfants(Node3D parent)
@@ -45,6 +45,8 @@ public partial class Joueur
             parent.RemoveMeta(MetaSignatureFaux112);
         if (parent.HasMeta(MetaSignatureCarnet114))
             parent.RemoveMeta(MetaSignatureCarnet114);
+        if (parent.HasMeta(MetaSignatureLootCuir117))
+            parent.RemoveMeta(MetaSignatureLootCuir117);
     }
 
     private static Aabb TransformerAabb(Transform3D t, Aabb a)
@@ -1138,6 +1140,71 @@ public partial class Joueur
                 ParcourirMeshes(c);
         }
 
+        ParcourirMeshes(modele);
+        NormaliserEchelleEtCentrerModeleArme(modele, tailleMaxMetres);
+        parent.AddChild(modele);
+    }
+
+    /// <summary>Steak cru (GLB) — loot bovin.</summary>
+    public static void InstancierModeleSteakCru(Node3D parent, SlotInventaire slot, float tailleMaxMetres = 0.2f)
+    {
+        PackedScene scene = GD.Load<PackedScene>("res://Modeles/Nouriture/steak_cru.glb");
+        if (scene == null) return;
+        NettoyerModelesEnfants(parent);
+        Node3D modele = scene.Instantiate<Node3D>();
+        modele.Name = "ModeleArme";
+        NormaliserEchelleEtCentrerModeleArme(modele, tailleMaxMetres);
+        parent.AddChild(modele);
+    }
+
+    /// <summary>Os (GLB) — loot bovin.</summary>
+    public static void InstancierModeleOsBoeuf(Node3D parent, SlotInventaire slot, float tailleMaxMetres = 0.22f)
+    {
+        PackedScene scene = GD.Load<PackedScene>("res://Modeles/materials/bone.glb");
+        if (scene == null) return;
+        NettoyerModelesEnfants(parent);
+        Node3D modele = scene.Instantiate<Node3D>();
+        modele.Name = "ModeleArme";
+        NormaliserEchelleEtCentrerModeleArme(modele, tailleMaxMetres);
+        parent.AddChild(modele);
+    }
+
+    /// <summary>Cuir (GLB) — albedo depuis <see cref="SlotInventaire.GenomeAssemblage"/> (<c>PEAU:</c> + chemin res:// ou repli teinte).</summary>
+    public static void InstancierModeleCuirBoeuf(Node3D parent, SlotInventaire slot, float tailleMaxMetres = 0.24f)
+    {
+        PackedScene scene = GD.Load<PackedScene>("res://Modeles/materials/Cuire.glb");
+        if (scene == null) return;
+        NettoyerModelesEnfants(parent);
+        Node3D modele = scene.Instantiate<Node3D>();
+        modele.Name = "ModeleArme";
+        string g = slot.GenomeAssemblage ?? "";
+        Texture2D albedo = null;
+        if (g.StartsWith("PEAU:", StringComparison.Ordinal))
+        {
+            string reste = g.Length > 5 ? g.Substring(5) : "";
+            if (reste.Length > 0 && reste != "TAUREAU" && reste != "VACHE" && ResourceLoader.Exists(reste))
+                albedo = GD.Load<Texture2D>(reste);
+        }
+        void ParcourirMeshes(Node n)
+        {
+            if (n is MeshInstance3D mi)
+            {
+                if (albedo != null)
+                    mi.MaterialOverride = new StandardMaterial3D { AlbedoTexture = albedo, Roughness = 0.88f, Metallic = 0f };
+                else
+                {
+                    bool taureau = g.IndexOf("TAUREAU", StringComparison.Ordinal) >= 0;
+                    mi.MaterialOverride = new StandardMaterial3D
+                    {
+                        AlbedoColor = taureau ? new Color(0.34f, 0.21f, 0.13f) : new Color(0.44f, 0.36f, 0.28f),
+                        Roughness = 0.9f,
+                        Metallic = 0f
+                    };
+                }
+            }
+            foreach (Node c in n.GetChildren())
+                ParcourirMeshes(c);
+        }
         ParcourirMeshes(modele);
         NormaliserEchelleEtCentrerModeleArme(modele, tailleMaxMetres);
         parent.AddChild(modele);

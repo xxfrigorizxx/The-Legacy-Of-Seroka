@@ -270,6 +270,11 @@ public partial class BoeufSauvage : CharacterBody3D
 	private float _vieCourante = 50f;
 	private float _vieMaxActuelle = 50f;
 	private float _tempsMort;
+	/// <summary>Cadavre : attend 3 coups de dague avant disparition ; pas de décompte timer tant que vrai.</summary>
+	private bool _cadavreAttendDepecage;
+	/// <summary>True après distribution du loot (QueueFree côté joueur ou filet).</summary>
+	private bool _cadavreLootDistribue;
+	private int _coupsDepecageDagueValides;
 	private float _ageSecondes;
 	private float _experience;
 	private float _cooldownAge;
@@ -3015,7 +3020,10 @@ public partial class BoeufSauvage : CharacterBody3D
 	private void BasculerEnMort()
 	{
 		_etat = EtatBoeuf.Mort;
-		_tempsMort = DureeCadavreAvantSuppression * (ConstitutionActuelle / Mathf.Max(0.1f, ConstitutionBase));
+		_cadavreAttendDepecage = true;
+		_cadavreLootDistribue = false;
+		_coupsDepecageDagueValides = 0;
+		_tempsMort = float.MaxValue;
 		Velocity = Vector3.Zero;
 		EmitSignal(SignalName.EvolutionEvenement, "mort_faim", 1f, _niveau, _ageSecondes / 3600f);
 		if (!string.IsNullOrEmpty(_clipMort) && _animationPlayer != null && _animationPlayer.HasAnimation(_clipMort))
@@ -3032,9 +3040,78 @@ public partial class BoeufSauvage : CharacterBody3D
 
 	private void GererMort(float dt)
 	{
+		if (_cadavreLootDistribue)
+			return;
+		if (_cadavreAttendDepecage)
+			return;
 		_tempsMort -= dt;
 		if (_tempsMort <= 0f)
 			QueueFree();
+	}
+
+	/// <summary>Cadavre encore présent (pas looté).</summary>
+	public bool EstCadavreDepecable() => _etat == EtatBoeuf.Mort && !_cadavreLootDistribue;
+
+	/// <summary>Enregistre un coup de dague valide sur le cadavre. Retourne true uniquement au 3e coup (déclencher le loot).</summary>
+	public bool EnregistrerCoupDepecageDagueValide()
+	{
+		if (_etat != EtatBoeuf.Mort || !_cadavreAttendDepecage || _cadavreLootDistribue)
+			return false;
+		if (_coupsDepecageDagueValides >= 3)
+			return false;
+		_coupsDepecageDagueValides++;
+		return _coupsDepecageDagueValides == 3;
+	}
+
+	/// <summary>Marque le cadavre comme traité et le retire de la scène (après spawn du loot).</summary>
+	public void FinaliserCadavreApresDepecage()
+	{
+		_cadavreLootDistribue = true;
+		_cadavreAttendDepecage = false;
+		if (IsInsideTree())
+			QueueFree();
+	}
+
+	/// <summary>Première texture d’albedo trouvée sur le mesh du bovin (cuir dérivé de la peau).</summary>
+	public Texture2D EssayerObtenirTexturePeauPourCuir()
+	{
+		Node racine = _modeleVisuel != null && GodotObject.IsInstanceValid(_modeleVisuel) ? _modeleVisuel : (Node)this;
+		return ChercherPremiereAlbedoTextureRecursif(racine);
+	}
+
+	private static Texture2D ChercherPremiereAlbedoTextureRecursif(Node n)
+	{
+		if (n is MeshInstance3D mi && mi.Mesh != null)
+		{
+			int nSurf = mi.Mesh.GetSurfaceCount();
+			for (int s = 0; s < nSurf; s++)
+			{
+				Material ov = mi.GetSurfaceOverrideMaterial(s);
+				if (ov is BaseMaterial3D bmOv && bmOv.AlbedoTexture != null)
+					return bmOv.AlbedoTexture;
+			}
+			for (int s = 0; s < nSurf; s++)
+			{
+				Material mSurf = mi.Mesh.SurfaceGetMaterial(s);
+				if (mSurf is BaseMaterial3D bmSurf && bmSurf.AlbedoTexture != null)
+					return bmSurf.AlbedoTexture;
+			}
+		}
+		foreach (Node enfant in n.GetChildren())
+		{
+			Texture2D t = ChercherPremiereAlbedoTextureRecursif(enfant);
+			if (t != null)
+				return t;
+		}
+		return null;
+	}
+
+	/// <summary>Clé pour <see cref="SlotInventaire.GenomeAssemblage"/> : empilement cuir selon la même « peau ».</summary>
+	public string ConstruireGenomePeauPourSlotCuir(Texture2D texPeau)
+	{
+		if (texPeau != null && !string.IsNullOrEmpty(texPeau.ResourcePath))
+			return "PEAU:" + texPeau.ResourcePath;
+		return EstTaureau ? "PEAU:TAUREAU" : "PEAU:VACHE";
 	}
 
 	public bool RecevoirImpactCombat(

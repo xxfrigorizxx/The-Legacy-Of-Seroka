@@ -568,12 +568,7 @@ public static class Atlas_Matiere
         }
         if (id == Joueur.IdObjetBaie)
         {
-            string couleur = slot.IndexChimique switch
-            {
-                1 => "violette",
-                2 => "orange",
-                _ => "rouge"
-            };
+            string couleur = Joueur.ObtenirLexemeCouleurBaiePourNomInventaire(slot.IndexChimique);
             int q = Joueur.ObtenirQuantiteSlot(slot);
             return q > 1 ? $"Petites baies {couleur}s x{q}" : $"Petite baie {couleur}";
         }
@@ -583,6 +578,12 @@ public static class Atlas_Matiere
             return "Rack à bûches";
         if (id == Joueur.IdObjetCarnetSavoir)
             return "Carnet du savoir";
+        if (id == Joueur.IdObjetSteakCru || id == Joueur.IdObjetOsBoeuf || id == Joueur.IdObjetCuirBoeuf)
+        {
+            int q = Joueur.ObtenirQuantiteSlot(slot);
+            string nom = id == Joueur.IdObjetSteakCru ? "Steak cru" : (id == Joueur.IdObjetOsBoeuf ? "Os" : "Cuir");
+            return q > 1 ? $"{nom} x{q}" : nom;
+        }
         return id switch
         {
             1 => "Terre",
