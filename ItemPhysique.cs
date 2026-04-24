@@ -35,6 +35,13 @@ public partial class ItemPhysique : RigidBody3D
 
 	public static bool EstMatiereSilexParIdObjet(int id) => EstIdRocheMatiere(id) && IndexChimiqueDepuisIdRoche(id) == IndexChimiqueSilex;
 
+	/// <summary>Atelier (200), racks, coffre : corps figé en mode statique au sol — ne pas les traiter comme des objets à « dégeler » après streaming du terrain.</summary>
+	public static bool EstMeublePoseStatique(int idObjet) =>
+		idObjet == 200
+		|| idObjet == Joueur.IdObjetRackBatons
+		|| idObjet == Joueur.IdObjetRackBuches
+		|| idObjet == Joueur.IdObjetCoffreBoisTier0;
+
 	public static float RayonBaseRochesJoueur(int indexTaille) => indexTaille switch
 	{
 		0 => 0.08f,

@@ -83,13 +83,15 @@ public partial class Joueur
         Vector3 pointImpact = _rayon.GetCollisionPoint();
         if (!_gestionnaireMonde.EssayerDetecterBuissonSousPoint(pointImpact, RayonInteractionBaiesBuisson, out _, out byte typeFlore))
             return false;
-        if (typeFlore != 1)
+        if (!Chunk_Serveur.EstBuissonPlein(typeFlore))
         {
             GD.Print("ZERO-K : Ce buisson est vide, aucune baie à ramasser.");
             return true;
         }
 
-        var slotTest = new SlotInventaire { ID = IdObjetBaie, IndexChimique = 0, Quantite = 1 };
+        byte couleurPourTest = (byte)Joueur.ClampIndexCouleurBaie(
+            Chunk_Serveur.ObtenirVarianteBuisson(typeFlore) % Joueur.BaieNombreCouleurs);
+        var slotTest = new SlotInventaire { ID = IdObjetBaie, IndexChimique = couleurPourTest, Quantite = 1 };
         if (!ADeLaPlacePourSlotInventaire(slotTest))
         {
             GD.Print("ZERO-K : Inventaire plein, impossible de cueillir les baies.");

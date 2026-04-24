@@ -474,7 +474,8 @@ public partial class Chunk_Serveur : RefCounted
 		int rayonEspacement = estJungle ? 2 : 1;
 		if (!PeutPlacerBuissonAvecEspacement(posGlobale, rayonEspacement)) return;
 		byte variante = DeterminerVarianteBuisson(xGlobal, zGlobal, estJungle);
-		bool plein = DeterministicRand(xGlobal + 17f, zGlobal) < 0.5f;
+		// Plus de buissons à baies qu’à vide pour remplir le monde de cueillettes.
+		bool plein = DeterministicRand(xGlobal + 17f, zGlobal) < 0.68f;
 		InventaireFlore[posGlobale] = ConstruireTypeBuisson(variante, plein);
 	}
 
@@ -592,21 +593,22 @@ public partial class Chunk_Serveur : RefCounted
 	{
 		float humiditeBrute = CalculerHumiditeGlobale(xGlobal, zGlobal);
 		float humiditeNorm = (humiditeBrute + 1f) * 0.5f;
-		if (humiditeNorm <= 0.28f) return 0f;
-		float t = (humiditeNorm - 0.28f) / 0.72f;
-		float chance = 0.003f + t * 0.045f;
+		// Seuil bas abaissé : des buissons même en zones plus sèches (baies visibles « partout »).
+		if (humiditeNorm <= 0.14f) return 0f;
+		float t = (humiditeNorm - 0.14f) / 0.86f;
+		float chance = 0.010f + t * 0.085f;
 		// Jungle: plus de buissons (espacement appliqué séparément).
 		if (EstZoneJungle(xGlobal, zGlobal))
-			chance *= 1.55f;
+			chance *= 1.65f;
 		// Tempéré uniquement: distribution des baies par biome forêt.
 		float temperature = _noiseTemperature.GetNoise2D(xGlobal, zGlobal);
 		if (temperature >= -0.15f)
 		{
 			int biome = DeterminerBiomeForetTempere((int)xGlobal, (int)zGlobal);
 			if (biome == 2) chance *= 1.35f;      // Mixte (bouleau + chêne): plus forte densité de baies.
-			else if (biome == 0) chance *= 0.50f; // Zone tempérée sans arbres: deux fois moins que l’actuel.
+			else if (biome == 0) chance *= 0.82f; // Plaine / peu d’arbres : reste couvrant.
 		}
-		return Mathf.Clamp(chance, 0f, 0.05f);
+		return Mathf.Clamp(chance, 0f, 0.11f);
 	}
 
 	/// <summary>Seuil de pente max (m) : si la hauteur varie de plus sur 1 m, pas de flore (évite lévitation sur bords).</summary>

@@ -18,7 +18,8 @@ public class SectionPayload
 public class ChunkFlorePayload
 {
 	public List<(Transform3D T, Color C, Vector3 PosMonde)> Gazon;
-	public List<Transform3D> BuissonPlein;
+	/// <summary>Buissons avec baies : transform + index couleur baie (0..7, voir <see cref="Joueur.BaieNombreCouleurs"/>).</summary>
+	public List<(Transform3D T, int CouleurIdx)> BuissonPlein;
 	public List<Transform3D> BuissonVide;
 }
 
@@ -54,7 +55,8 @@ public partial class Chunk_Client : Node3D
 	private MeshInstance3D[] _sectionsEau;
 	private CollisionShape3D[] _sectionsPhysiques;
 	private MultiMeshInstance3D _mmGazon;
-	private MultiMeshInstance3D _mmBuissonPlein;
+	/// <summary>Un MultiMesh par teinte de baies (draw calls regroupés par mesh procédural).</summary>
+	private MultiMeshInstance3D[] _mmBuissonPleinParCouleur;
 	private MultiMeshInstance3D _mmBuissonVide;
 
 	/// <summary>Échelle du gazon (grass.glb) partout sur ID 1. Ajustable pour uniformiser la taille.</summary>
@@ -121,10 +123,16 @@ public partial class Chunk_Client : Node3D
 			_sectionsEau[i] = miEau;
 		}
 		_mmGazon = new MultiMeshInstance3D { Name = "Gazon" };
-		_mmBuissonPlein = new MultiMeshInstance3D { Name = "BuissonPlein" };
+		var racineBuissonsPleins = new Node3D { Name = "BuissonPleinParCouleur" };
+		_mmBuissonPleinParCouleur = new MultiMeshInstance3D[Joueur.BaieNombreCouleurs];
+		for (int i = 0; i < Joueur.BaieNombreCouleurs; i++)
+		{
+			_mmBuissonPleinParCouleur[i] = new MultiMeshInstance3D { Name = $"BuissonPlein_c{i}" };
+			racineBuissonsPleins.AddChild(_mmBuissonPleinParCouleur[i]);
+		}
 		_mmBuissonVide = new MultiMeshInstance3D { Name = "BuissonVide" };
 		AddChild(_mmGazon);
-		AddChild(_mmBuissonPlein);
+		AddChild(racineBuissonsPleins);
 		AddChild(_mmBuissonVide);
 	}
 
@@ -473,7 +481,7 @@ public partial class Chunk_Client : Node3D
 		var payload = new ChunkFlorePayload
 		{
 			Gazon = new List<(Transform3D T, Color C, Vector3 PosMonde)>(),
-			BuissonPlein = new List<Transform3D>(),
+			BuissonPlein = new List<(Transform3D T, int CouleurIdx)>(),
 			BuissonVide = new List<Transform3D>()
 		};
 		Vector3 chunkOrigin = new Vector3(originX, 0, originZ);
@@ -511,7 +519,11 @@ public partial class Chunk_Client : Node3D
 				var tBuis = Transform3D.Identity;
 				tBuis.Origin = positionLocale + new Vector3(0f, -0.04f, 0f);
 				tBuis.Basis = Basis.Identity.Scaled(new Vector3(echelleBuis, echelleBuis, echelleBuis)).Rotated(Vector3.Up, angle);
-				if (Chunk_Serveur.EstBuissonPlein(kv.Value)) payload.BuissonPlein.Add(tBuis);
+				if (Chunk_Serveur.EstBuissonPlein(kv.Value))
+				{
+					int idxCouleur = Joueur.ClampIndexCouleurBaie(Chunk_Serveur.ObtenirVarianteBuisson(kv.Value) % Joueur.BaieNombreCouleurs);
+					payload.BuissonPlein.Add((tBuis, idxCouleur));
+				}
 				else payload.BuissonVide.Add(tBuis);
 			}
 		}
@@ -571,14 +583,14 @@ public partial class Chunk_Client : Node3D
 			if (!IsInsideTree())
 			{
 				if (_mmGazon != null) _mmGazon.Multimesh = null;
-				if (_mmBuissonPlein != null) _mmBuissonPlein.Multimesh = null;
+				ViderMultimeshBuissonsPleinsClient();
 				if (_mmBuissonVide != null) _mmBuissonVide.Multimesh = null;
 				return;
 			}
 			if (payload == null || (payload.Gazon.Count == 0 && payload.BuissonPlein.Count == 0 && payload.BuissonVide.Count == 0))
 			{
 				if (_mmGazon != null) _mmGazon.Multimesh = null;
-				if (_mmBuissonPlein != null) _mmBuissonPlein.Multimesh = null;
+				ViderMultimeshBuissonsPleinsClient();
 				if (_mmBuissonVide != null) _mmBuissonVide.Multimesh = null;
 				return;
 			}
@@ -765,22 +777,41 @@ public partial class Chunk_Client : Node3D
 		_mmGazon.Visible = true;
 	}
 
-	private void RemplirMultiMeshBuissons(List<Transform3D> pleins, List<Transform3D> vides)
+	private void ViderMultimeshBuissonsPleinsClient()
 	{
-		if (_cacheMeshPlein == null) _cacheMeshPlein = GenererMeshBuissonProcedural(true);
-		if (_cacheMeshVide == null) _cacheMeshVide = GenererMeshBuissonProcedural(false);
-		Material matBuisson = ObtenirMaterielBuissonProcedural();
-		Mesh meshPlein = _cacheMeshPlein;
-		if (meshPlein != null && pleins != null && pleins.Count > 0)
+		if (_mmBuissonPleinParCouleur == null) return;
+		for (int i = 0; i < _mmBuissonPleinParCouleur.Length; i++)
 		{
-			var mm = new MultiMesh();
-			ConfigurerMultiMeshBuissonAvecTransforms(mm, meshPlein, pleins);
-			mm.CustomAabb = CalculerAabbFusionneMultimesh(meshPlein, pleins);
-			_mmBuissonPlein.Multimesh = mm;
-			_mmBuissonPlein.MaterialOverride = matBuisson;
-			_mmBuissonPlein.Visible = true;
+			if (_mmBuissonPleinParCouleur[i] != null)
+				_mmBuissonPleinParCouleur[i].Multimesh = null;
 		}
-		else _mmBuissonPlein.Multimesh = null;
+	}
+
+	private void RemplirMultiMeshBuissons(List<(Transform3D T, int CouleurIdx)> pleinsColores, List<Transform3D> vides)
+	{
+		if (_cacheMeshVide == null) _cacheMeshVide = GenererMeshBuissonProcedural(false, 0);
+		Material matBuisson = ObtenirMaterielBuissonProcedural();
+		ViderMultimeshBuissonsPleinsClient();
+		if (_mmBuissonPleinParCouleur != null && pleinsColores != null && pleinsColores.Count > 0)
+		{
+			var parCouleur = new List<Transform3D>[Joueur.BaieNombreCouleurs];
+			for (int i = 0; i < parCouleur.Length; i++)
+				parCouleur[i] = new List<Transform3D>();
+			foreach (var p in pleinsColores)
+				parCouleur[Joueur.ClampIndexCouleurBaie(p.CouleurIdx)].Add(p.T);
+			for (int c = 0; c < _mmBuissonPleinParCouleur.Length; c++)
+			{
+				Mesh meshPlein = ObtenirMeshBuissonProcedural(true, c);
+				if (meshPlein == null || parCouleur[c].Count <= 0)
+					continue;
+				var mm = new MultiMesh();
+				ConfigurerMultiMeshBuissonAvecTransforms(mm, meshPlein, parCouleur[c]);
+				mm.CustomAabb = CalculerAabbFusionneMultimesh(meshPlein, parCouleur[c]);
+				_mmBuissonPleinParCouleur[c].Multimesh = mm;
+				_mmBuissonPleinParCouleur[c].MaterialOverride = matBuisson;
+				_mmBuissonPleinParCouleur[c].Visible = true;
+			}
+		}
 		Mesh meshVide = _cacheMeshVide;
 		if (meshVide != null && vides != null && vides.Count > 0)
 		{
@@ -841,12 +872,12 @@ public partial class Chunk_Client : Node3D
 			if (inventaire == null || inventaire.Count == 0)
 			{
 				if (_mmGazon != null) _mmGazon.Multimesh = null;
-				if (_mmBuissonPlein != null) _mmBuissonPlein.Multimesh = null;
+				ViderMultimeshBuissonsPleinsClient();
 				if (_mmBuissonVide != null) _mmBuissonVide.Multimesh = null;
 				return;
 			}
 		Vector3 chunkOrigin = GlobalPosition;
-		var pleins = new List<Transform3D>();
+		var pleins = new List<(Transform3D T, int CouleurIdx)>();
 		var vides = new List<Transform3D>();
 		var gazonInstances = new List<(Transform3D t, Color c)>();
 		Vector3 posObs = (GetParent() as Monde_Client)?.ObtenirPositionObservation() ?? chunkOrigin;
@@ -887,7 +918,11 @@ public partial class Chunk_Client : Node3D
 				var tBuis = Transform3D.Identity;
 				tBuis.Origin = positionLocale + new Vector3(0f, -0.04f, 0f);
 				tBuis.Basis = Basis.Identity.Scaled(new Vector3(echelleBuis, echelleBuis, echelleBuis)).Rotated(Vector3.Up, angle);
-				if (Chunk_Serveur.EstBuissonPlein(kv.Value)) pleins.Add(tBuis);
+				if (Chunk_Serveur.EstBuissonPlein(kv.Value))
+				{
+					int idxCouleur = Joueur.ClampIndexCouleurBaie(Chunk_Serveur.ObtenirVarianteBuisson(kv.Value) % Joueur.BaieNombreCouleurs);
+					pleins.Add((tBuis, idxCouleur));
+				}
 				else vides.Add(tBuis);
 			}
 		}
@@ -898,7 +933,7 @@ public partial class Chunk_Client : Node3D
 	}
 
 	private static Mesh _cacheMeshGazon;
-	private static Mesh _cacheMeshPlein;
+	private static readonly Mesh[] _cacheMeshPleinParCouleurCache = new Mesh[Joueur.BaieNombreCouleurs];
 	private static Mesh _cacheMeshVide;
 	private static Material _cacheMaterielGazonSymbiotique;
 	private static Material _cacheMaterielBuissonProcedural;
@@ -1343,23 +1378,26 @@ private static bool EstCorpsAuSol(PhysicsBody3D body)
 	}
 
 	/// <summary>Expose les meshes buisson procéduraux pour les autres systèmes (ex: bloc chutant).</summary>
-	public static Mesh ObtenirMeshBuissonProcedural(bool avecBaies)
+	public static Mesh ObtenirMeshBuissonProcedural(bool avecBaies, int couleurBaieIndex = 0)
 	{
-		if (avecBaies)
+		if (!avecBaies)
 		{
-			if (_cacheMeshPlein == null) _cacheMeshPlein = GenererMeshBuissonProcedural(true);
-			return _cacheMeshPlein;
+			if (_cacheMeshVide == null) _cacheMeshVide = GenererMeshBuissonProcedural(false, 0);
+			return _cacheMeshVide;
 		}
-		if (_cacheMeshVide == null) _cacheMeshVide = GenererMeshBuissonProcedural(false);
-		return _cacheMeshVide;
+		int c = Joueur.ClampIndexCouleurBaie(couleurBaieIndex);
+		if (_cacheMeshPleinParCouleurCache[c] == null)
+			_cacheMeshPleinParCouleurCache[c] = GenererMeshBuissonProcedural(true, c);
+		return _cacheMeshPleinParCouleurCache[c];
 	}
 
-	/// <summary>Buisson procédural unifié : "vide" = feuillage seul, "plein" = feuillage + baies rouges.</summary>
-	private static Mesh GenererMeshBuissonProcedural(bool avecBaies)
+	/// <summary>Buisson procédural unifié : "vide" = feuillage seul, "plein" = feuillage + baies teintées (<paramref name="indexCouleurBaie"/>).</summary>
+	private static Mesh GenererMeshBuissonProcedural(bool avecBaies, int indexCouleurBaie = 0)
 	{
+		int c = avecBaies ? Joueur.ClampIndexCouleurBaie(indexCouleurBaie) : 0;
 		var st = new SurfaceTool();
 		st.Begin(Mesh.PrimitiveType.Triangles);
-		var rng = new RandomNumberGenerator { Seed = avecBaies ? 0xB511u : 0xB512u };
+		var rng = new RandomNumberGenerator { Seed = avecBaies ? (uint)(0xB511u + (uint)c * 199u) : 0xB512u };
 
 		int couches = avecBaies ? 10 : 9;
 		for (int couche = 0; couche < couches; couche++)
@@ -1401,14 +1439,14 @@ private static bool EstCorpsAuSol(PhysicsBody3D body)
 		if (avecBaies)
 		{
 			int nbBaies = 8;
+			Color couleurBaie = Joueur.ObtenirCouleurAlbedoBaie(c);
 			for (int i = 0; i < nbBaies; i++)
 			{
 				float a = (i / (float)nbBaies) * Mathf.Tau + rng.RandfRange(-0.25f, 0.25f);
 				float r = rng.RandfRange(10f, 22f);
 				float y = rng.RandfRange(10f, 28f);
 				Vector3 centreBaie = new Vector3(Mathf.Cos(a) * r, y, Mathf.Sin(a) * r);
-				Color rougeBaie = new Color(0.90f, 0.14f, 0.14f, 1f);
-				AjouterBaieGourmande(st, centreBaie, rng.RandfRange(2.1f, 3.3f), rougeBaie);
+				AjouterBaieGourmande(st, centreBaie, rng.RandfRange(2.1f, 3.3f), couleurBaie);
 			}
 		}
 
@@ -2078,9 +2116,9 @@ private static bool EstCorpsAuSol(PhysicsBody3D body)
 		return node;
 	}
 
-	private static void ConstruireListesTransformBuissonsDepuisChunkData(ChunkData data, Vector3 positionObservation, List<Transform3D> pleins, List<Transform3D> vides)
+	private static void ConstruireListesTransformBuissonsDepuisChunkData(ChunkData data, Vector3 positionObservation, List<(Transform3D T, int CouleurIdx)> pleinsColores, List<Transform3D> vides)
 	{
-		pleins.Clear();
+		pleinsColores.Clear();
 		vides.Clear();
 		if (data?.InventaireFlore == null) return;
 		float originX = data.Coordonnees.X * (float)data.TailleChunk;
@@ -2101,8 +2139,62 @@ private static bool EstCorpsAuSol(PhysicsBody3D body)
 			var tBuis = Transform3D.Identity;
 			tBuis.Origin = positionLocale + new Vector3(0f, -0.04f, 0f);
 			tBuis.Basis = Basis.Identity.Scaled(new Vector3(echelleBuis, echelleBuis, echelleBuis)).Rotated(Vector3.Up, angle);
-			if (Chunk_Serveur.EstBuissonPlein(kv.Value)) pleins.Add(tBuis);
+			if (Chunk_Serveur.EstBuissonPlein(kv.Value))
+			{
+				int idxCouleur = Joueur.ClampIndexCouleurBaie(Chunk_Serveur.ObtenirVarianteBuisson(kv.Value) % Joueur.BaieNombreCouleurs);
+				pleinsColores.Add((tBuis, idxCouleur));
+			}
 			else vides.Add(tBuis);
+		}
+	}
+
+	/// <summary>Remplit jusqu’à 8 MultiMesh (une teinte de baie par mesh procédural) sous la racine flore.</summary>
+	private static void AppliquerBuissonsPleinsGroupesSurRacineFlore(Node3D root, List<(Transform3D T, int CouleurIdx)> pleinsColores, Material matBuisson)
+	{
+		if (root == null) return;
+		if (pleinsColores == null || pleinsColores.Count == 0)
+		{
+			var groupe0 = root.GetNodeOrNull<Node3D>("BuissonPleinGroup");
+			if (groupe0 != null)
+			{
+				foreach (Node n in groupe0.GetChildren())
+				{
+					if (n is MultiMeshInstance3D m)
+					{
+						m.Multimesh = null;
+						m.Visible = false;
+					}
+				}
+			}
+			var leg0 = root.GetNodeOrNull<MultiMeshInstance3D>("BuissonPlein");
+			if (leg0 != null)
+			{
+				leg0.Multimesh = null;
+				leg0.Visible = false;
+			}
+			return;
+		}
+		var leg = root.GetNodeOrNull<MultiMeshInstance3D>("BuissonPlein");
+		leg?.QueueFree();
+		var groupe = root.GetNodeOrNull<Node3D>("BuissonPleinGroup");
+		if (groupe == null)
+		{
+			groupe = new Node3D { Name = "BuissonPleinGroup" };
+			for (int i = 0; i < Joueur.BaieNombreCouleurs; i++)
+				groupe.AddChild(new MultiMeshInstance3D { Name = $"c{i}" });
+			root.AddChild(groupe);
+		}
+		var parCouleur = new List<Transform3D>[Joueur.BaieNombreCouleurs];
+		for (int i = 0; i < parCouleur.Length; i++)
+			parCouleur[i] = new List<Transform3D>();
+		foreach (var p in pleinsColores)
+			parCouleur[Joueur.ClampIndexCouleurBaie(p.CouleurIdx)].Add(p.T);
+		for (int c = 0; c < Joueur.BaieNombreCouleurs; c++)
+		{
+			var mmi = groupe.GetNodeOrNull<MultiMeshInstance3D>($"c{c}");
+			if (mmi == null) continue;
+			Mesh meshPlein = ObtenirMeshBuissonProcedural(true, c);
+			AppliquerMultiMeshBuissonsSurNoeud(mmi, parCouleur[c], meshPlein, matBuisson);
 		}
 	}
 
@@ -2130,12 +2222,11 @@ private static bool EstCorpsAuSol(PhysicsBody3D body)
 		Vector3 chunkPos = new Vector3(data.Coordonnees.X * tailleChunk, 0, data.Coordonnees.Y * tailleChunk);
 		var root = new Node3D { Name = "Flore", Position = chunkPos };
 
-		var pleins = new List<Transform3D>();
+		var pleinsColores = new List<(Transform3D T, int CouleurIdx)>();
 		var vides = new List<Transform3D>();
-		ConstruireListesTransformBuissonsDepuisChunkData(data, positionObservation, pleins, vides);
+		ConstruireListesTransformBuissonsDepuisChunkData(data, positionObservation, pleinsColores, vides);
 
-		if (_cacheMeshPlein == null) _cacheMeshPlein = GenererMeshBuissonProcedural(true);
-		if (_cacheMeshVide == null) _cacheMeshVide = GenererMeshBuissonProcedural(false);
+		if (_cacheMeshVide == null) _cacheMeshVide = GenererMeshBuissonProcedural(false, 0);
 		Material matBuisson = ObtenirMaterielBuissonProcedural();
 
 		MultiMeshInstance3D nodeGazon = CreerNoeudGazonPourChunkData(data, positionObservation, tailleChunk);
@@ -2146,12 +2237,7 @@ private static bool EstCorpsAuSol(PhysicsBody3D body)
 			root.AddChild(nodeGazon);
 		}
 
-		if (pleins.Count > 0)
-		{
-			var mmi = new MultiMeshInstance3D { Name = "BuissonPlein" };
-			AppliquerMultiMeshBuissonsSurNoeud(mmi, pleins, _cacheMeshPlein, matBuisson);
-			root.AddChild(mmi);
-		}
+		AppliquerBuissonsPleinsGroupesSurRacineFlore(root, pleinsColores, matBuisson);
 		if (vides.Count > 0)
 		{
 			var mmi = new MultiMeshInstance3D { Name = "BuissonVide" };
@@ -2159,7 +2245,7 @@ private static bool EstCorpsAuSol(PhysicsBody3D body)
 			root.AddChild(mmi);
 		}
 
-		if (!aGazon && pleins.Count == 0 && vides.Count == 0) return null;
+		if (!aGazon && pleinsColores.Count == 0 && vides.Count == 0) return null;
 		return root;
 	}
 
@@ -2172,29 +2258,14 @@ private static bool EstCorpsAuSol(PhysicsBody3D body)
 		if (gazon != null)
 			MettreAJourGazonPourChunkData(data, positionObservation, gazon);
 
-		if (_cacheMeshPlein == null) _cacheMeshPlein = GenererMeshBuissonProcedural(true);
-		if (_cacheMeshVide == null) _cacheMeshVide = GenererMeshBuissonProcedural(false);
+		if (_cacheMeshVide == null) _cacheMeshVide = GenererMeshBuissonProcedural(false, 0);
 		Material matBuisson = ObtenirMaterielBuissonProcedural();
 
-		var pleins = new List<Transform3D>();
+		var pleinsColores = new List<(Transform3D T, int CouleurIdx)>();
 		var vides = new List<Transform3D>();
-		ConstruireListesTransformBuissonsDepuisChunkData(data, positionObservation, pleins, vides);
+		ConstruireListesTransformBuissonsDepuisChunkData(data, positionObservation, pleinsColores, vides);
 
-		var mmiPlein = nodeFlore.GetNodeOrNull<MultiMeshInstance3D>("BuissonPlein");
-		if (pleins.Count > 0)
-		{
-			if (mmiPlein == null)
-			{
-				mmiPlein = new MultiMeshInstance3D { Name = "BuissonPlein" };
-				nodeFlore.AddChild(mmiPlein);
-			}
-			AppliquerMultiMeshBuissonsSurNoeud(mmiPlein, pleins, _cacheMeshPlein, matBuisson);
-		}
-		else if (mmiPlein != null)
-		{
-			mmiPlein.Multimesh = null;
-			mmiPlein.Visible = false;
-		}
+		AppliquerBuissonsPleinsGroupesSurRacineFlore(nodeFlore, pleinsColores, matBuisson);
 
 		var mmiVide = nodeFlore.GetNodeOrNull<MultiMeshInstance3D>("BuissonVide");
 		if (vides.Count > 0)

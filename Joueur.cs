@@ -536,7 +536,6 @@ public partial class Joueur : CharacterBody3D
     private const float CoutFaimParPointEndurance = 0.045f;
     /// <summary>Multiplicateur sur la perte de faim (passif, effort, sprint, coût lié à la régénération d'énergie).</summary>
     private const float FacteurRalentissementDrainFaim = 0.5f;
-    private const float RatioGainFaimConsommationBaie = 0.10f;
     private const float MultiplicateurVitesseSprint = 1.65f;
     /// <summary>Au sol : vitesse physique ×1,05 ; <see cref="Speed"/> reste la référence des blends d’animation.</summary>
     private const float FacteurVitesseMouvementAuSol = 1.05f;
@@ -706,6 +705,55 @@ public partial class Joueur : CharacterBody3D
                 break;
         }
         RafraichirHUD();
+    }
+
+    private const float GainFaimConsommationBaieRouge = 10f;
+    private const float GainFaimConsommationBaieAutreCouleur = 1f;
+
+    /// <summary>+1 PV sur la zone corporelle la plus abîmée (baies).</summary>
+    public void AppliquerSoinConsommationBaieUnePv()
+    {
+        string[] cles =
+        {
+            SectionCorpsTete, SectionCorpsTorse, SectionCorpsBrasGauche, SectionCorpsBrasDroit,
+            SectionCorpsJambeGauche, SectionCorpsJambeDroite
+        };
+        int meilleurIndex = -1;
+        int meilleurDeficit = 0;
+        for (int i = 0; i < cles.Length; i++)
+        {
+            string cle = cles[i];
+            int pv = cle switch
+            {
+                SectionCorpsTete => _pvTete,
+                SectionCorpsTorse => _pvTorse,
+                SectionCorpsBrasGauche => _pvBrasGauche,
+                SectionCorpsBrasDroit => _pvBrasDroit,
+                SectionCorpsJambeGauche => _pvJambeGauche,
+                SectionCorpsJambeDroite => _pvJambeDroite,
+                _ => _pvTorse
+            };
+            int maxPv = ObtenirPvMaxSectionCorps(NormaliserCleSectionCorps(cle));
+            int deficit = maxPv - pv;
+            if (deficit > meilleurDeficit)
+            {
+                meilleurDeficit = deficit;
+                meilleurIndex = i;
+            }
+        }
+        if (meilleurIndex < 0 || meilleurDeficit <= 0)
+            return;
+        SoignerSectionCorps(cles[meilleurIndex], 1);
+    }
+
+    /// <summary>Effets d’une baie mangée : soin léger + faim (rouge IndexChimique 0 : +10, autres teintes : +1).</summary>
+    public void AppliquerEffetsConsommationBaie(int indexCouleurBaie)
+    {
+        AppliquerSoinConsommationBaieUnePv();
+        int idx = ClampIndexCouleurBaie(indexCouleurBaie);
+        float gain = idx == 0 ? GainFaimConsommationBaieRouge : GainFaimConsommationBaieAutreCouleur;
+        _faimJoueur = Mathf.Min(FaimMaxJoueur, _faimJoueur + gain);
+        MettreAJourHudStatsSurvie();
     }
 
     public void SoignerSectionCorps(string cleSection, int pointsSoin)
@@ -2696,11 +2744,12 @@ public partial class Joueur : CharacterBody3D
                 }
                 else
                 {
-                    // Baie : maintien clic droit = manger une unité (+10 % faim), pas de lancer.
+                    // Baie : maintien clic droit = manger une unité (+1 PV + faim selon la teinte).
                     if (mainActive.ID == IdObjetBaie)
                     {
+                        int couleurBaie = mainActive.IndexChimique;
                         ConsommerUneUniteMainActive();
-                        _faimJoueur = Mathf.Min(FaimMaxJoueur, _faimJoueur + RatioGainFaimConsommationBaie * FaimMaxJoueur);
+                        AppliquerEffetsConsommationBaie(couleurBaie);
                         RafraichirHUD();
                         ReinitialiserRotationManuelle();
                         GetViewport().SetInputAsHandled();

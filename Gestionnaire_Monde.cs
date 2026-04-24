@@ -186,6 +186,8 @@ public partial class Gestionnaire_Monde : Node3D
 	public void EnregistrerRigidBodyRestaurationSolSiCollisionManquante(RigidBody3D rb)
 	{
 		if (rb == null || !GodotObject.IsInstanceValid(rb)) return;
+		if (rb is ItemPhysique ipMeuble && ItemPhysique.EstMeublePoseStatique(ipMeuble.ID_Objet))
+			return;
 		if (EstCollisionTerrainChunkPretPourPoint(rb.GlobalPosition)) return;
 		if (_rigidBodiesAttenteCollisionSolRestauration.Contains(rb)) return;
 		rb.Freeze = true;
@@ -209,8 +211,19 @@ public partial class Gestionnaire_Monde : Node3D
 			}
 			if (EstCollisionTerrainChunkPretPourPoint(rb.GlobalPosition))
 			{
-				rb.Freeze = false;
-				rb.Sleeping = false;
+				if (rb is ItemPhysique ipFigé && ItemPhysique.EstMeublePoseStatique(ipFigé.ID_Objet))
+				{
+					ipFigé.LinearVelocity = Vector3.Zero;
+					ipFigé.AngularVelocity = Vector3.Zero;
+					ipFigé.Freeze = true;
+					ipFigé.FreezeMode = RigidBody3D.FreezeModeEnum.Static;
+					ipFigé.Sleeping = true;
+				}
+				else
+				{
+					rb.Freeze = false;
+					rb.Sleeping = false;
+				}
 				_rigidBodiesAttenteCollisionSolRestauration.RemoveAt(i);
 			}
 			budget--;
@@ -2307,7 +2320,7 @@ FinBlocOverlay:
 				if (total == 0) { indexCurseur = 0; return; }
 				continue;
 			}
-			if (ignorerRacks && rb is ItemPhysique ip && (ip.ID_Objet == 200 || ip.ID_Objet == Joueur.IdObjetRackBatons || ip.ID_Objet == Joueur.IdObjetRackBuches || ip.ID_Objet == Joueur.IdObjetCoffreBoisTier0))
+			if (ignorerRacks && rb is ItemPhysique ip && ItemPhysique.EstMeublePoseStatique(ip.ID_Objet))
 				continue;
 			AppliquerDormanceRigidBody(rb, chunkJoueur, rayon, useGardeTerrain, rayonSecuriteTerrain);
 		}
