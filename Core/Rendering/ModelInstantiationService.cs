@@ -1157,8 +1157,8 @@ public partial class Joueur
         parent.AddChild(modele);
     }
 
-    /// <summary>Os (GLB) — loot bovin.</summary>
-    public static void InstancierModeleOsBoeuf(Node3D parent, SlotInventaire slot, float tailleMaxMetres = 0.22f)
+    /// <summary>Os (GLB) — loot bovin. Échelle visuelle +40 % par rapport à la base d’origine (0,22 m).</summary>
+    public static void InstancierModeleOsBoeuf(Node3D parent, SlotInventaire slot, float tailleMaxMetres = 0.308f)
     {
         PackedScene scene = GD.Load<PackedScene>("res://Modeles/materials/bone.glb");
         if (scene == null) return;
@@ -1169,8 +1169,8 @@ public partial class Joueur
         parent.AddChild(modele);
     }
 
-    /// <summary>Cuir (GLB) — albedo depuis <see cref="SlotInventaire.GenomeAssemblage"/> (<c>PEAU:</c> + chemin res:// ou repli teinte).</summary>
-    public static void InstancierModeleCuirBoeuf(Node3D parent, SlotInventaire slot, float tailleMaxMetres = 0.24f)
+    /// <summary>Cuir (GLB) — albedo depuis <see cref="SlotInventaire.GenomeAssemblage"/> (<c>PEAU:</c> + chemin res:// ou repli teinte). Échelle visuelle +20 % par rapport à la base d’origine (0,24 m).</summary>
+    public static void InstancierModeleCuirBoeuf(Node3D parent, SlotInventaire slot, float tailleMaxMetres = 0.288f)
     {
         PackedScene scene = GD.Load<PackedScene>("res://Modeles/materials/Cuire.glb");
         if (scene == null) return;

@@ -384,6 +384,23 @@ public partial class Joueur : CharacterBody3D
     /// <summary>Orientation Mixamo -> Godot : correction latÃ©rale standard.</summary>
     public const float YawRigMixamoVersGodotDeg = 180f;
 
+    /// <summary>Méta sur <c>HumainRigRoot</c> : chemin <c>res://</c> du GLB instancié (recréation si race ou sexe change).</summary>
+    public static readonly StringName MetaCheminCorpsJoueurZk = new StringName("zk_chemin_corps");
+
+    /// <summary>Chemin du GLB corps joueur (race + sexe), identique menu et partie.</summary>
+    public static string ObtenirCheminGlbCorpsJoueur(RaceJoueur race, SexeJoueur sexe)
+    {
+        if (race == RaceJoueur.Orc)
+        {
+            return sexe == SexeJoueur.Feminin
+                ? "res://Modeles/Entites/Orc/Orcesse.glb"
+                : "res://Modeles/Entites/Orc/Orc.glb";
+        }
+        return sexe == SexeJoueur.Feminin
+            ? "res://Modeles/Entites/Humain/Humaine.glb"
+            : "res://Modeles/Entites/Humain/humain.glb";
+    }
+
     /// <summary>Échelle du rig humain/orc identique en jeu et dans l’aperçu menu (assistant création).</summary>
     public static void AppliquerEchelleRigSelonRace(Node3D rig, RaceJoueur race)
     {
@@ -1664,31 +1681,37 @@ public partial class Joueur : CharacterBody3D
         if (capsuleVisuelle != null)
             capsuleVisuelle.Visible = false;
 
-        bool estOrc = GameState.Instance?.RaceJoueurCourante == RaceJoueur.Orc;
+        RaceJoueur race = GameState.Instance?.RaceJoueurCourante ?? RaceJoueur.Humain;
+        SexeJoueur sexe = GameState.Instance?.SexeJoueurCourante ?? SexeJoueur.Masculin;
+        bool estOrc = race == RaceJoueur.Orc;
+        string cheminVoulu = ObtenirCheminGlbCorpsJoueur(race, sexe);
+
         _rigHumain = GetNodeOrNull<Node3D>("HumainRigRoot");
-        if (estOrc && _rigHumain != null)
+        if (_rigHumain != null && GodotObject.IsInstanceValid(_rigHumain))
         {
-            RemoveChild(_rigHumain);
-            _rigHumain.QueueFree();
-            _rigHumain = null;
+            string cheminInstalle = _rigHumain.HasMeta(MetaCheminCorpsJoueurZk)
+                ? _rigHumain.GetMeta(MetaCheminCorpsJoueurZk).AsString()
+                : "";
+            if (cheminInstalle != cheminVoulu)
+            {
+                RemoveChild(_rigHumain);
+                _rigHumain.QueueFree();
+                _rigHumain = null;
+            }
         }
 
-        // PrÃ©fÃ©rer le nÅ“ud liÃ© dans la scÃ¨ne (Joueur.tscn / monde_zero.tscn) pour que lâ€™Ã©diteur montre le GLB.
         if (_rigHumain == null)
         {
-            PackedScene sceneCorps = estOrc
-                ? GD.Load<PackedScene>("res://Modeles/Entites/Orc/Orc.glb")
-                : GD.Load<PackedScene>("res://Modeles/Entites/Humain/humain.glb");
+            PackedScene sceneCorps = GD.Load<PackedScene>(cheminVoulu);
             if (sceneCorps == null)
             {
-                GD.PrintErr(estOrc
-                    ? "ZERO-K : ModÃ¨le Orc introuvable : res://Modeles/Entites/Orc/Orc.glb."
-                    : "ZERO-K : ModÃ¨le joueur introuvable : res://Modeles/Entites/Humain/humain.glb (ajoute un enfant HumainRigRoot depuis humain.glb).");
+                GD.PrintErr($"ZERO-K : Modèle joueur introuvable : {cheminVoulu}");
                 return;
             }
 
             _rigHumain = sceneCorps.Instantiate<Node3D>();
             _rigHumain.Name = "HumainRigRoot";
+            _rigHumain.SetMeta(MetaCheminCorpsJoueurZk, cheminVoulu);
             AddChild(_rigHumain);
         }
 
@@ -1702,7 +1725,7 @@ public partial class Joueur : CharacterBody3D
         Vector3 man = CorrectionManuelleEulerRigHumainDeg;
         _rigHumain.RotationDegrees = new Vector3(man.X, YawRigMixamoVersGodotDeg + man.Y, man.Z);
 
-        if (!estOrc)
+        if (race == RaceJoueur.Humain)
             SecuriserMateriauxModeleHumain(_rigHumain);
         AssignerCalquesTetePourVueFps(_rigHumain);
         InitialiserSqueletteHumain();
@@ -4685,9 +4708,9 @@ public partial class Joueur : CharacterBody3D
                 ContinuousCd = true
             };
             var meshRoot = new Node3D { Name = "MeshInstance3D" };
-            InstancierModeleOsBoeuf(meshRoot, mainActive, 0.22f);
+            InstancierModeleOsBoeuf(meshRoot, mainActive, 0.308f);
             item.AddChild(meshRoot);
-            item.AddChild(new CollisionShape3D { Shape = new CapsuleShape3D { Radius = 0.04f, Height = 0.22f } });
+            item.AddChild(new CollisionShape3D { Shape = new CapsuleShape3D { Radius = 0.056f, Height = 0.308f } });
             corps = item;
         }
         else if (id == IdObjetCuirBoeuf)
@@ -4704,9 +4727,9 @@ public partial class Joueur : CharacterBody3D
             if (!string.IsNullOrEmpty(item.GenomeAssemblage))
                 item.SetMeta(MetaGenomeAssemblage, item.GenomeAssemblage);
             var meshRoot = new Node3D { Name = "MeshInstance3D" };
-            InstancierModeleCuirBoeuf(meshRoot, mainActive, 0.24f);
+            InstancierModeleCuirBoeuf(meshRoot, mainActive, 0.288f);
             item.AddChild(meshRoot);
-            item.AddChild(new CollisionShape3D { Shape = new BoxShape3D { Size = new Vector3(0.28f, 0.06f, 0.22f) } });
+            item.AddChild(new CollisionShape3D { Shape = new BoxShape3D { Size = new Vector3(0.336f, 0.072f, 0.264f) } });
             corps = item;
         }
         else // 999 Buisson â€” RigidBody3D pour pouvoir le lancer comme les autres objets posÃ©s.

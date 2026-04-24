@@ -24,6 +24,8 @@ public partial class Cycle_Solaire : Node
 	private float _injectAmbiantVolBrouillardJour = 1.74f;
 	/// <summary>Texture ciel étoilé générée une fois (ProceduralSkyMaterial.SkyCover).</summary>
 	private bool _textureEtoilesAppliquee;
+	/// <summary>Évite de spammer la console si le matériau de ciel n’est pas procédural (scène modifiée / upgrade moteur).</summary>
+	private bool _alerteTypeSkyMaterialEmise;
 
 	/// <summary>RPC appelé par le Serveur une seule fois quand le joueur spawn ou traverse un portail.</summary>
 	[Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = true)]
@@ -149,16 +151,17 @@ public partial class Cycle_Solaire : Node
 		float fin = (_renderDistanceBrouillardChunks + 2) * tailleChunkMetres; // Laisse une marge pour un fondu doux.
 
 		var env = _environnement.Environment;
-		env.Set("fog_depth_enabled", true);
-		env.Set("fog_depth_begin", debut);
-		env.Set("fog_depth_end", Mathf.Max(debut + tailleChunkMetres, fin));
-		env.Set("fog_depth_curve", 1.15f);
+		// Godot 4.x : pas de propriété fog_depth_enabled — brouillard profondeur = FogEnabled + FogMode Depth.
+		env.FogEnabled = true;
+		env.FogMode = Godot.Environment.FogModeEnum.Depth;
+		env.FogDepthBegin = debut;
+		env.FogDepthEnd = Mathf.Max(debut + tailleChunkMetres, fin);
+		env.FogDepthCurve = 1.15f;
 	}
 
 	public override void _Process(double delta)
 	{
 		if (!IsInsideTree()) return; // GARROT SPATIAL : le Soleil ne tourne pas si l'univers s'effondre.
-		if (_soleil == null) return;
 
 		AppliquerTextureEtoilesSiPossible();
 
@@ -175,6 +178,13 @@ public partial class Cycle_Solaire : Node
 		float angleX = 90f - (float)(pourcentageJournee * 360.0);
 		// Hauteur : 1 = Zénith (Midi), 0 = Horizon, -1 = Nadir (Minuit)
 		float hauteurSoleil = Mathf.Sin(Mathf.DegToRad(-angleX));
+
+		// Toujours rafraîchir l’atmosphère / le ciel procédural, même si le nœud Soleil manque (sinon ciel figé noir).
+		if (_soleil == null)
+		{
+			MettreAJourAtmosphereEtCiel(hauteurSoleil);
+			return;
+		}
 
 		if (_chargementMondeActif)
 		{
@@ -232,6 +242,11 @@ public partial class Cycle_Solaire : Node
 		if (_environnement == null || _environnement.Environment == null)
 			return;
 
+		var envGlobal = _environnement.Environment;
+		// Réparation si un réglage ou une ressource a basculé le fond hors Sky (ciel entièrement noir).
+		if (envGlobal.BackgroundMode != Godot.Environment.BGMode.Sky)
+			envGlobal.BackgroundMode = Godot.Environment.BGMode.Sky;
+
 		float intensiteJour = Mathf.Clamp(hauteurSoleil + 0.11f, 0f, 1f); // 0 = nuit, 1 = jour
 		// Courbe rééquilibrée : nuit plus sombre qu'avant, mais ciel encore lisible.
 		float intensiteJourLisse = Mathf.Pow(intensiteJour, 1.35f);
@@ -241,20 +256,26 @@ public partial class Cycle_Solaire : Node
 		Color couleurBrouillardJour = new Color(0.6f, 0.7f, 0.8f);
 		Color couleurBrouillardNuit = new Color(0.01f, 0.01f, 0.03f);
 
-		_environnement.Environment.AmbientLightEnergy = intensiteJourLisse;
-		_environnement.Environment.AmbientLightSkyContribution = intensiteJourLisse;
-		_environnement.Environment.VolumetricFogAmbientInject =
+		envGlobal.AmbientLightEnergy = intensiteJourLisse;
+		envGlobal.AmbientLightSkyContribution = intensiteJourLisse;
+		envGlobal.VolumetricFogAmbientInject =
 			Mathf.Lerp(0.015f, _injectAmbiantVolBrouillardJour, intensiteJourLisse);
 
-		if (_environnement.Environment.FogEnabled)
-		{
-			_environnement.Environment.FogLightColor = couleurBrouillardNuit.Lerp(couleurBrouillardJour, intensiteJour);
-		}
+		if (envGlobal.FogEnabled)
+			envGlobal.FogLightColor = couleurBrouillardNuit.Lerp(couleurBrouillardJour, intensiteJour);
 
 		// Ciel dynamique : jour (bleu) ↔ crépuscule (orange/rose) ↔ nuit (sombre)
-		var sky = _environnement.Environment.Sky;
+		var sky = envGlobal.Sky;
 		if (sky?.SkyMaterial is not ProceduralSkyMaterial skyMat)
+		{
+			if (!_alerteTypeSkyMaterialEmise)
+			{
+				_alerteTypeSkyMaterialEmise = true;
+				string nomType = sky?.SkyMaterial?.GetType().Name ?? "null";
+				GD.PrintErr($"ZERO-K : Sky.SkyMaterial attendu = ProceduralSkyMaterial, reçu = {nomType}. Ciel dynamique non mis à jour.");
+			}
 			return;
+		}
 
 		// Couleurs jour
 		Color cielHautJour = new Color(0.38f, 0.5f, 0.65f);   // Bleu ciel

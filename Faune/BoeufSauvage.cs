@@ -191,6 +191,10 @@ public partial class BoeufSauvage : CharacterBody3D
 	[Export(PropertyHint.Range, "0.05,2,0.01")] public float CooldownCriDegatsSecondes = 0.35f;
 	[Export(PropertyHint.Range, "-24,6,0.1")] public float VolumeCriDegatsDb = -4.5f;
 
+	[ExportGroup("Dépeçage cadavre")]
+	/// <summary>Nombre de coups de dague (lame) valides sur le cadavre avant la distribution du loot. Au-delà de 3 pour ralentir le dépeçage.</summary>
+	[Export(PropertyHint.Range, "3,20,1")] public int CoupsDagueRequisPourFinDepecage = 6;
+
 	[ExportGroup("Animation vivante (squelette + scenes + arbre)")]
 	/// <summary>
 	/// Pipeline : squelette sous Modele → fusion <c>locomotion_faune</c> → <see cref="AnimationTree"/> (machine d'états).
@@ -270,7 +274,7 @@ public partial class BoeufSauvage : CharacterBody3D
 	private float _vieCourante = 50f;
 	private float _vieMaxActuelle = 50f;
 	private float _tempsMort;
-	/// <summary>Cadavre : attend 3 coups de dague avant disparition ; pas de décompte timer tant que vrai.</summary>
+	/// <summary>Cadavre : attend <see cref="CoupsDagueRequisPourFinDepecage"/> coups de dague avant disparition ; pas de décompte timer tant que vrai.</summary>
 	private bool _cadavreAttendDepecage;
 	/// <summary>True après distribution du loot (QueueFree côté joueur ou filet).</summary>
 	private bool _cadavreLootDistribue;
@@ -3052,15 +3056,16 @@ public partial class BoeufSauvage : CharacterBody3D
 	/// <summary>Cadavre encore présent (pas looté).</summary>
 	public bool EstCadavreDepecable() => _etat == EtatBoeuf.Mort && !_cadavreLootDistribue;
 
-	/// <summary>Enregistre un coup de dague valide sur le cadavre. Retourne true uniquement au 3e coup (déclencher le loot).</summary>
+	/// <summary>Enregistre un coup de dague valide sur le cadavre. Retourne true uniquement au dernier coup requis (déclencher le loot).</summary>
 	public bool EnregistrerCoupDepecageDagueValide()
 	{
 		if (_etat != EtatBoeuf.Mort || !_cadavreAttendDepecage || _cadavreLootDistribue)
 			return false;
-		if (_coupsDepecageDagueValides >= 3)
+		int requis = Mathf.Max(3, CoupsDagueRequisPourFinDepecage);
+		if (_coupsDepecageDagueValides >= requis)
 			return false;
 		_coupsDepecageDagueValides++;
-		return _coupsDepecageDagueValides == 3;
+		return _coupsDepecageDagueValides == requis;
 	}
 
 	/// <summary>Marque le cadavre comme traité et le retire de la scène (après spawn du loot).</summary>

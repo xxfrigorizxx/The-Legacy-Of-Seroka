@@ -390,6 +390,7 @@ public partial class Monde_Serveur : Node
 				// BRANCHE COMMUNE : Chunk ressuscité. Pierres + Arbres. Spawn quand chunk demandé (visible écran).
 				_chunks[chunkCible] = chunkActuel;
 				SynchroniserFrontieresAvecVoisinsCharges(chunkCible, chunkActuel);
+				RepousserBorduresChunkDisqueVersVoisinsProceduraux(chunkCible, chunkActuel);
 				SpawnerArbresChunkAvecPrioriteSauvegarde(chunkCible, chunkActuel);
 				if (!ChargerEtSpawnerPierresChunk(chunkCible))
 				{
@@ -565,10 +566,12 @@ public partial class Monde_Serveur : Node
 		}
 		_chunks[coord] = chunkActuel;
 		SynchroniserFrontieresAvecVoisinsCharges(coord, chunkActuel);
+		RepousserBorduresChunkDisqueVersVoisinsProceduraux(coord, chunkActuel);
 		return chunkActuel;
 	}
 
 	/// <summary>Quand un chunk arrive après ses voisins, aligne ses bordures sur les chunks déjà chargés pour éviter les coutures visuelles.</summary>
+	/// <remarks>Ne copie jamais une bordure procédurale sur un chunk ressuscité du disque : sinon trous sauvegardés rebouchés au reload.</remarks>
 	private void SynchroniserFrontieresAvecVoisinsCharges(Vector2I coord, Chunk_Serveur chunk)
 	{
 		if (chunk == null) return;
@@ -576,6 +579,7 @@ public partial class Monde_Serveur : Node
 		void SynchroniserBordureDepuisVoisin(Vector2I coordVoisin, int voisinX, int chunkX, int voisinZ, int chunkZ, bool axeX)
 		{
 			if (!_chunks.TryGetValue(coordVoisin, out var voisin) || voisin == null) return;
+			if (chunk.EstChargeDepuisDisque && !voisin.EstChargeDepuisDisque) return;
 			for (int y = 0; y <= HauteurMax; y++)
 			{
 				if (axeX)
@@ -604,18 +608,88 @@ public partial class Monde_Serveur : Node
 		SynchroniserBordureDepuisVoisin(new Vector2I(coord.X, coord.Y + 1), 0, 0, 0, TailleChunk, false);         // Sud
 
 		// 4 coins (Marching Cubes lit aussi les coins partagés).
-		if (_chunks.TryGetValue(new Vector2I(coord.X - 1, coord.Y - 1), out var nordOuest))
+		if (_chunks.TryGetValue(new Vector2I(coord.X - 1, coord.Y - 1), out var nordOuest) && !(chunk.EstChargeDepuisDisque && !nordOuest.EstChargeDepuisDisque))
 			for (int y = 0; y <= HauteurMax; y++)
 				chunk.SetVoxelLocal(0, y, 0, nordOuest.LireVoxelLocalBrut(TailleChunk, y, TailleChunk), false);
-		if (_chunks.TryGetValue(new Vector2I(coord.X + 1, coord.Y - 1), out var nordEst))
+		if (_chunks.TryGetValue(new Vector2I(coord.X + 1, coord.Y - 1), out var nordEst) && !(chunk.EstChargeDepuisDisque && !nordEst.EstChargeDepuisDisque))
 			for (int y = 0; y <= HauteurMax; y++)
 				chunk.SetVoxelLocal(TailleChunk, y, 0, nordEst.LireVoxelLocalBrut(0, y, TailleChunk), false);
-		if (_chunks.TryGetValue(new Vector2I(coord.X - 1, coord.Y + 1), out var sudOuest))
+		if (_chunks.TryGetValue(new Vector2I(coord.X - 1, coord.Y + 1), out var sudOuest) && !(chunk.EstChargeDepuisDisque && !sudOuest.EstChargeDepuisDisque))
 			for (int y = 0; y <= HauteurMax; y++)
 				chunk.SetVoxelLocal(0, y, TailleChunk, sudOuest.LireVoxelLocalBrut(TailleChunk, y, 0), false);
-		if (_chunks.TryGetValue(new Vector2I(coord.X + 1, coord.Y + 1), out var sudEst))
+		if (_chunks.TryGetValue(new Vector2I(coord.X + 1, coord.Y + 1), out var sudEst) && !(chunk.EstChargeDepuisDisque && !sudEst.EstChargeDepuisDisque))
 			for (int y = 0; y <= HauteurMax; y++)
 				chunk.SetVoxelLocal(TailleChunk, y, TailleChunk, sudEst.LireVoxelLocalBrut(0, y, 0), false);
+	}
+
+	/// <summary>Après résurrection disque : recopie la bordure sauvegardée vers les voisins procéduraux déjà en RAM, puis ré-enfile leur envoi client.</summary>
+	private void RepousserBorduresChunkDisqueVersVoisinsProceduraux(Vector2I coord, Chunk_Serveur chunk)
+	{
+		if (chunk == null || !chunk.EstChargeDepuisDisque) return;
+
+		void PousserBordureVersVoisin(Vector2I coordVoisin, int chunkX, int voisinX, int chunkZ, int voisinZ, bool axeX)
+		{
+			if (!_chunks.TryGetValue(coordVoisin, out var voisin) || voisin == null || voisin.EstChargeDepuisDisque) return;
+			for (int y = 0; y <= HauteurMax; y++)
+			{
+				if (axeX)
+				{
+					for (int z = 0; z <= TailleChunk; z++)
+					{
+						byte id = chunk.LireVoxelLocalBrut(chunkX, y, z);
+						voisin.SetVoxelLocal(voisinX, y, z, id);
+					}
+				}
+				else
+				{
+					for (int x = 0; x <= TailleChunk; x++)
+					{
+						byte id = chunk.LireVoxelLocalBrut(x, y, chunkZ);
+						voisin.SetVoxelLocal(x, y, voisinZ, id);
+					}
+				}
+			}
+			EnfileEnvoiCompletChunkAuClient(coordVoisin);
+		}
+
+		// Miroir de SynchroniserBordureDepuisVoisin : bord du chunk disque → padding du voisin procédural.
+		PousserBordureVersVoisin(new Vector2I(coord.X - 1, coord.Y), 0, TailleChunk, 0, 0, true);   // face Ouest du chunk → colonne Est du voisin Ouest
+		PousserBordureVersVoisin(new Vector2I(coord.X + 1, coord.Y), TailleChunk, 0, 0, 0, true);
+		PousserBordureVersVoisin(new Vector2I(coord.X, coord.Y - 1), 0, 0, 0, TailleChunk, false);
+		PousserBordureVersVoisin(new Vector2I(coord.X, coord.Y + 1), 0, 0, TailleChunk, 0, false);
+
+		// Coins diagonaux : voxel partagé (évite décalage MC sur voisin procédural déjà envoyé).
+		if (_chunks.TryGetValue(new Vector2I(coord.X - 1, coord.Y - 1), out var no) && !no.EstChargeDepuisDisque)
+		{
+			for (int y = 0; y <= HauteurMax; y++)
+				no.SetVoxelLocal(TailleChunk, y, TailleChunk, chunk.LireVoxelLocalBrut(0, y, 0));
+			EnfileEnvoiCompletChunkAuClient(new Vector2I(coord.X - 1, coord.Y - 1));
+		}
+		if (_chunks.TryGetValue(new Vector2I(coord.X + 1, coord.Y - 1), out var ne) && !ne.EstChargeDepuisDisque)
+		{
+			for (int y = 0; y <= HauteurMax; y++)
+				ne.SetVoxelLocal(0, y, TailleChunk, chunk.LireVoxelLocalBrut(TailleChunk, y, 0));
+			EnfileEnvoiCompletChunkAuClient(new Vector2I(coord.X + 1, coord.Y - 1));
+		}
+		if (_chunks.TryGetValue(new Vector2I(coord.X - 1, coord.Y + 1), out var so) && !so.EstChargeDepuisDisque)
+		{
+			for (int y = 0; y <= HauteurMax; y++)
+				so.SetVoxelLocal(TailleChunk, y, 0, chunk.LireVoxelLocalBrut(0, y, TailleChunk));
+			EnfileEnvoiCompletChunkAuClient(new Vector2I(coord.X - 1, coord.Y + 1));
+		}
+		if (_chunks.TryGetValue(new Vector2I(coord.X + 1, coord.Y + 1), out var se) && !se.EstChargeDepuisDisque)
+		{
+			for (int y = 0; y <= HauteurMax; y++)
+				se.SetVoxelLocal(0, y, 0, chunk.LireVoxelLocalBrut(TailleChunk, y, TailleChunk));
+			EnfileEnvoiCompletChunkAuClient(new Vector2I(coord.X + 1, coord.Y + 1));
+		}
+	}
+
+	/// <summary>Ré-enfile un colis complet pour que le client remplace le maillage après mutation serveur.</summary>
+	private void EnfileEnvoiCompletChunkAuClient(Vector2I coord)
+	{
+		if (!_chunks.TryGetValue(coord, out var ch) || ch == null) return;
+		_fileEnvoiReseau.Enqueue(new ColisChunk { Coord = coord, Donnees = ch.ObtenirDonneesPourClient() });
 	}
 
 	private static bool FichierChunkExiste(Vector2I coord)

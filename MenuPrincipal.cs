@@ -21,10 +21,14 @@ public partial class MenuPrincipal : Control
 	private Button _btnRetourMenuDepuisMonde;
 	private Button _btnRacePrecedente;
 	private Button _btnRaceSuivante;
+	private Button _btnSexePrecedent;
+	private Button _btnSexeSuivant;
+	private Label _labelSexeCourant;
 	private Button _btnRetourDepuisPerso;
 	private Button _btnConfirmerEtJouer;
 	private ApercuRaceMenu3D _apercu3d;
 	private RaceJoueur _raceSelectionnee = RaceJoueur.Humain;
+	private SexeJoueur _sexeSelectionne = SexeJoueur.Masculin;
 
 	public override void _Ready()
 	{
@@ -50,6 +54,9 @@ public partial class MenuPrincipal : Control
 		_btnRacePrecedente = vboxPerso.GetNode<Button>("HBoxRace/BtnRacePrecedente");
 		_btnRaceSuivante = vboxPerso.GetNode<Button>("HBoxRace/BtnRaceSuivante");
 		_labelRaceCourante = vboxPerso.GetNode<Label>("HBoxRace/LabelRaceCourante");
+		_btnSexePrecedent = vboxPerso.GetNode<Button>("HBoxSexe/BtnSexePrecedent");
+		_btnSexeSuivant = vboxPerso.GetNode<Button>("HBoxSexe/BtnSexeSuivant");
+		_labelSexeCourant = vboxPerso.GetNode<Label>("HBoxSexe/LabelSexeCourant");
 		_nomPersonnage = vboxPerso.GetNode<LineEdit>("NomPersonnage");
 		_labelErreurPerso = vboxPerso.GetNode<Label>("LabelErreurPerso");
 		_btnRetourDepuisPerso = vboxPerso.GetNode<Button>("HBoxBtnsPerso/BtnRetourDepuisPerso");
@@ -64,6 +71,8 @@ public partial class MenuPrincipal : Control
 		_btnConfirmerEtJouer.Pressed += OnConfirmerEtJouer;
 		_btnRacePrecedente.Pressed += () => ChangerRace(-1);
 		_btnRaceSuivante.Pressed += () => ChangerRace(1);
+		_btnSexePrecedent.Pressed += () => ChangerSexe(-1);
+		_btnSexeSuivant.Pressed += () => ChangerSexe(1);
 		_btnLoadGame.Pressed += OnLoadGame;
 		_btnQuit.Pressed += () => GetTree().Quit();
 
@@ -110,8 +119,10 @@ public partial class MenuPrincipal : Control
 		_panelEtapePerso.Visible = true;
 		_labelErreurPerso.Text = "";
 		_raceSelectionnee = RaceJoueur.Humain;
+		_sexeSelectionne = SexeJoueur.Masculin;
 		MettreAJourAffichageRace();
-		_apercu3d?.DefinirRace(_raceSelectionnee);
+		MettreAJourAffichageSexe();
+		_apercu3d?.DefinirRaceEtSexe(_raceSelectionnee, _sexeSelectionne);
 	}
 
 	private void OnRetourDepuisEtapePerso()
@@ -127,7 +138,17 @@ public partial class MenuPrincipal : Control
 		while (v > 1) v -= 2;
 		_raceSelectionnee = (RaceJoueur)v;
 		MettreAJourAffichageRace();
-		_apercu3d?.DefinirRace(_raceSelectionnee);
+		_apercu3d?.DefinirRaceEtSexe(_raceSelectionnee, _sexeSelectionne);
+	}
+
+	private void ChangerSexe(int delta)
+	{
+		int v = (int)_sexeSelectionne + delta;
+		while (v < 0) v += 2;
+		while (v > 1) v -= 2;
+		_sexeSelectionne = (SexeJoueur)v;
+		MettreAJourAffichageSexe();
+		_apercu3d?.DefinirRaceEtSexe(_raceSelectionnee, _sexeSelectionne);
 	}
 
 	private void MettreAJourAffichageRace()
@@ -135,10 +156,15 @@ public partial class MenuPrincipal : Control
 		_labelRaceCourante.Text = _raceSelectionnee == RaceJoueur.Orc ? "Orc" : "Humain";
 	}
 
+	private void MettreAJourAffichageSexe()
+	{
+		_labelSexeCourant.Text = _sexeSelectionne == SexeJoueur.Feminin ? "Féminin" : "Masculin";
+	}
+
 	private void OnConfirmerEtJouer()
 	{
 		_labelErreurPerso.Text = "";
-		if (!Etat.EssayerFinaliserNouveauMondeAvecPersonnage(_nomPersonnage.Text, _raceSelectionnee, out string erreur))
+		if (!Etat.EssayerFinaliserNouveauMondeAvecPersonnage(_nomPersonnage.Text, _raceSelectionnee, _sexeSelectionne, out string erreur))
 		{
 			_labelErreurPerso.Text = erreur ?? "Création impossible.";
 			return;

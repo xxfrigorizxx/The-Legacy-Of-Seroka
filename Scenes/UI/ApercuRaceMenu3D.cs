@@ -1,6 +1,6 @@
 using Godot;
 
-/// <summary>Aperçu 3D tournant pour choisir la race dans le menu (assistant création).</summary>
+/// <summary>Aperçu 3D tournant pour choisir la race et le sexe dans le menu (assistant création).</summary>
 public partial class ApercuRaceMenu3D : Node3D
 {
 	[Export] public float VitesseRotationYRad { get; set; } = 0.65f;
@@ -25,8 +25,8 @@ public partial class ApercuRaceMenu3D : Node3D
 			_pivot.RotateY(VitesseRotationYRad * (float)delta);
 	}
 
-	/// <summary>Charge le GLB humain ou orc sous le pivot (même échelle que <see cref="Joueur"/>).</summary>
-	public void DefinirRace(RaceJoueur race)
+	/// <summary>Charge le GLB selon race et sexe sous le pivot (même échelle que <see cref="Joueur"/>).</summary>
+	public void DefinirRaceEtSexe(RaceJoueur race, SexeJoueur sexe)
 	{
 		if (_pivot == null) return;
 		if (_rigCourant != null && GodotObject.IsInstanceValid(_rigCourant))
@@ -36,9 +36,7 @@ public partial class ApercuRaceMenu3D : Node3D
 		}
 		_animationPlayerCourant = null;
 
-		string chemin = race == RaceJoueur.Orc
-			? "res://Modeles/Entites/Orc/Orc.glb"
-			: "res://Modeles/Entites/Humain/humain.glb";
+		string chemin = Joueur.ObtenirCheminGlbCorpsJoueur(race, sexe);
 		var sc = GD.Load<PackedScene>(chemin);
 		if (sc == null)
 		{

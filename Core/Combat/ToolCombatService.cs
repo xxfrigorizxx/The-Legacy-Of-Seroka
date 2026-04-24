@@ -1341,9 +1341,9 @@ public partial class Joueur
                 // Cadavre au sol : seuil d’alignement plus bas (sinon beaucoup de coups « valides » visuellement ne comptent pas).
                 if (mainActive.ID == 105 && EstFrappeDagueAvecLaLame(pointImpact, directionFrappe, 0.04f))
                 {
-                    bool troisiemeCoup = boeufTouche.EnregistrerCoupDepecageDagueValide();
+                    bool depecageComplet = boeufTouche.EnregistrerCoupDepecageDagueValide();
                     AppliquerUsureOutilMainActive(0.35f);
-                    if (troisiemeCoup)
+                    if (depecageComplet)
                         ExecuterLootDepecageCadavreBoeuf(boeufTouche, pointImpact, directionFrappe);
                 }
                 return;

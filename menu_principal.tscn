@@ -216,6 +216,29 @@ custom_minimum_size = Vector2(48, 36)
 layout_mode = 2
 text = "▶"
 
+[node name="HBoxSexe" type="HBoxContainer" parent="PanelEtapePerso/VBoxEtapePerso"]
+layout_mode = 2
+alignment = 1
+theme_override_constants/separation = 12
+
+[node name="BtnSexePrecedent" type="Button" parent="PanelEtapePerso/VBoxEtapePerso/HBoxSexe"]
+custom_minimum_size = Vector2(48, 36)
+layout_mode = 2
+text = "◀"
+
+[node name="LabelSexeCourant" type="Label" parent="PanelEtapePerso/VBoxEtapePerso/HBoxSexe"]
+custom_minimum_size = Vector2(160, 0)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.92, 0.88, 0.8, 1)
+theme_override_font_sizes/font_size = 18
+text = "Masculin"
+horizontal_alignment = 1
+
+[node name="BtnSexeSuivant" type="Button" parent="PanelEtapePerso/VBoxEtapePerso/HBoxSexe"]
+custom_minimum_size = Vector2(48, 36)
+layout_mode = 2
+text = "▶"
+
 [node name="LabelNomPerso" type="Label" parent="PanelEtapePerso/VBoxEtapePerso"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.85, 0.82, 0.75, 1)

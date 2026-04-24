@@ -352,7 +352,7 @@ public partial class Joueur
             _objetEnMain.Mesh = null;
             _objetEnMain.MaterialOverride = null;
             NettoyerModelesEnfants(_objetEnMain);
-            InstancierModeleOsBoeuf(_objetEnMain, main, 0.2f);
+            InstancierModeleOsBoeuf(_objetEnMain, main, 0.28f);
             _objetEnMain.Scale = Vector3.One;
             _objetEnMain.RotationDegrees = new Vector3(8f + _rotationManuelleX, 24f + _rotationManuelleY, -12f + _rotationManuelleZ);
             return;
@@ -367,7 +367,7 @@ public partial class Joueur
             if (manqueModele || sig != prev)
             {
                 NettoyerModelesEnfants(_objetEnMain);
-                InstancierModeleCuirBoeuf(_objetEnMain, main, 0.2f);
+                InstancierModeleCuirBoeuf(_objetEnMain, main, 0.24f);
                 _objetEnMain.SetMeta(MetaSignatureLootCuir117, sig);
             }
             _objetEnMain.Scale = Vector3.One;
@@ -831,7 +831,7 @@ public partial class Joueur
             meshNode.Mesh = null;
             meshNode.MaterialOverride = null;
             NettoyerModelesEnfants(meshNode);
-            InstancierModeleOsBoeuf(meshNode, slot, 0.18f);
+            InstancierModeleOsBoeuf(meshNode, slot, 0.252f);
             meshNode.Scale = Vector3.One;
             meshNode.RotationDegrees = new Vector3(6f, 28f, -10f);
             return;
@@ -846,7 +846,7 @@ public partial class Joueur
             if (manque || sig != prev)
             {
                 NettoyerModelesEnfants(meshNode);
-                InstancierModeleCuirBoeuf(meshNode, slot, 0.18f);
+                InstancierModeleCuirBoeuf(meshNode, slot, 0.216f);
                 meshNode.SetMeta(MetaSignatureLootCuir117, sig);
             }
             meshNode.Scale = Vector3.One;

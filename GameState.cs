@@ -12,6 +12,13 @@ public enum RaceJoueur
 	Orc = 1
 }
 
+/// <summary>Sexe du personnage (mesh uniquement ; la race garde les règles gameplay).</summary>
+public enum SexeJoueur
+{
+	Masculin = 0,
+	Feminin = 1
+}
+
 /// <summary>État global du jeu. Autoload pour passer monde/seed entre menu et jeu.</summary>
 public partial class GameState : Node
 {
@@ -124,7 +131,11 @@ public partial class GameState : Node
 	/// <summary>Race du personnage pour ce monde.</summary>
 	public RaceJoueur RaceJoueurCourante { get; private set; } = RaceJoueur.Humain;
 
-	private const int VersionFichierIdentiteJoueur = 1;
+	/// <summary>Sexe du personnage pour ce monde (persisté avec l’identité).</summary>
+	public SexeJoueur SexeJoueurCourante { get; private set; } = SexeJoueur.Masculin;
+
+	private const int VersionFichierIdentiteJoueur = 2;
+	private const int VersionFichierIdentiteJoueurMinLue = 1;
 	private const string NomFichierIdentiteJoueur = "player_identity.dat";
 
 	/// <summary>Brouillon assistant : étape monde validée, pas encore d’écriture disque.</summary>
@@ -166,7 +177,7 @@ public partial class GameState : Node
 	}
 
 	/// <summary>Écrit le monde après l’étape personnage (nécessite un brouillon actif).</summary>
-	public bool EssayerFinaliserNouveauMondeAvecPersonnage(string nomPersonnageBrut, RaceJoueur race, out string erreur)
+	public bool EssayerFinaliserNouveauMondeAvecPersonnage(string nomPersonnageBrut, RaceJoueur race, SexeJoueur sexe, out string erreur)
 	{
 		erreur = null;
 		if (!CreationMondeBrouillonActif || string.IsNullOrWhiteSpace(NomMondeNouveauPret))
@@ -184,7 +195,7 @@ public partial class GameState : Node
 			return false;
 		}
 
-		if (!ExecuterEcritureNouveauMondeSurDisque(nom, seed, nomPersonnageBrut, race, out erreur))
+		if (!ExecuterEcritureNouveauMondeSurDisque(nom, seed, nomPersonnageBrut, race, sexe, out erreur))
 			return false;
 
 		AnnulerCreationMondeBrouillon();
@@ -194,7 +205,7 @@ public partial class GameState : Node
 	/// <summary>
 	/// Crée un nouveau monde en une fois (API directe). Pour l’assistant, préférer <see cref="EssayerValiderEtapeMondeNouveau"/> puis <see cref="EssayerFinaliserNouveauMondeAvecPersonnage"/>.
 	/// </summary>
-	public bool EssayerCreerNouveauMonde(string nomBrut, string seedTexteBrut, string nomPersonnageBrut, RaceJoueur race, out string erreur)
+	public bool EssayerCreerNouveauMonde(string nomBrut, string seedTexteBrut, string nomPersonnageBrut, RaceJoueur race, SexeJoueur sexe, out string erreur)
 	{
 		erreur = null;
 		int seed = ResoudreSeedDepuisTexte(seedTexteBrut);
@@ -208,10 +219,10 @@ public partial class GameState : Node
 			return false;
 		}
 
-		return ExecuterEcritureNouveauMondeSurDisque(nom, seed, nomPersonnageBrut, race, out erreur);
+		return ExecuterEcritureNouveauMondeSurDisque(nom, seed, nomPersonnageBrut, race, sexe, out erreur);
 	}
 
-	private bool ExecuterEcritureNouveauMondeSurDisque(string nom, int seed, string nomPersonnageBrut, RaceJoueur race, out string erreur)
+	private bool ExecuterEcritureNouveauMondeSurDisque(string nom, int seed, string nomPersonnageBrut, RaceJoueur race, SexeJoueur sexe, out string erreur)
 	{
 		erreur = null;
 		try
@@ -224,9 +235,10 @@ public partial class GameState : Node
 			string nomPerso = NettoyerNomPersonnage(nomPersonnageBrut);
 			NomPersonnageJoue = nomPerso;
 			RaceJoueurCourante = race;
-			SauvegarderIdentiteJoueurSurDisque(nom, nomPerso, race);
+			SexeJoueurCourante = sexe;
+			SauvegarderIdentiteJoueurSurDisque(nom, nomPerso, race, sexe);
 			EcrireDernierMondeJoue(nom);
-			GD.Print($"ZERO-K : Nouveau monde créé : {nom} (seed {seed}, perso « {nomPerso} », {race})");
+			GD.Print($"ZERO-K : Nouveau monde créé : {nom} (seed {seed}, perso « {nomPerso} », {race}, {sexe})");
 			return true;
 		}
 		catch (Exception ex)
@@ -255,7 +267,7 @@ public partial class GameState : Node
 		return string.IsNullOrEmpty(s) ? "Voyageur" : s;
 	}
 
-	private static void SauvegarderIdentiteJoueurSurDisque(string nomMonde, string nomPersonnage, RaceJoueur race)
+	private static void SauvegarderIdentiteJoueurSurDisque(string nomMonde, string nomPersonnage, RaceJoueur race, SexeJoueur sexe)
 	{
 		string dossier = ProjectSettings.GlobalizePath($"user://saves/{nomMonde}");
 		Directory.CreateDirectory(dossier);
@@ -264,12 +276,14 @@ public partial class GameState : Node
 		w.Write(VersionFichierIdentiteJoueur);
 		w.Write(nomPersonnage ?? "Voyageur");
 		w.Write((byte)race);
+		w.Write((byte)sexe);
 	}
 
-	private static bool EssayerLireIdentiteJoueurDepuisDisque(string nomMonde, out string nomPersonnage, out RaceJoueur race)
+	private static bool EssayerLireIdentiteJoueurDepuisDisque(string nomMonde, out string nomPersonnage, out RaceJoueur race, out SexeJoueur sexe)
 	{
 		nomPersonnage = "Voyageur";
 		race = RaceJoueur.Humain;
+		sexe = SexeJoueur.Masculin;
 		string chemin = Path.Combine(ProjectSettings.GlobalizePath($"user://saves/{nomMonde}"), NomFichierIdentiteJoueur);
 		if (!File.Exists(chemin))
 			return false;
@@ -277,11 +291,16 @@ public partial class GameState : Node
 		{
 			using var r = new BinaryReader(File.Open(chemin, FileMode.Open, System.IO.FileAccess.Read, FileShare.Read));
 			int version = r.ReadInt32();
-			if (version < 1 || version > VersionFichierIdentiteJoueur)
+			if (version < VersionFichierIdentiteJoueurMinLue || version > VersionFichierIdentiteJoueur)
 				return false;
 			nomPersonnage = NettoyerNomPersonnage(r.ReadString());
 			byte b = r.ReadByte();
 			race = b == (byte)RaceJoueur.Orc ? RaceJoueur.Orc : RaceJoueur.Humain;
+			if (version >= 2)
+			{
+				byte bs = r.ReadByte();
+				sexe = bs == (byte)SexeJoueur.Feminin ? SexeJoueur.Feminin : SexeJoueur.Masculin;
+			}
 			return true;
 		}
 		catch (Exception ex)
@@ -378,19 +397,21 @@ public partial class GameState : Node
 		}
 		NomMondeActuel = nomMonde;
 		SeedTerrainActuel = seed;
-		if (EssayerLireIdentiteJoueurDepuisDisque(nomMonde, out string nomP, out RaceJoueur rc))
+		if (EssayerLireIdentiteJoueurDepuisDisque(nomMonde, out string nomP, out RaceJoueur rc, out SexeJoueur sx))
 		{
 			NomPersonnageJoue = nomP;
 			RaceJoueurCourante = rc;
+			SexeJoueurCourante = sx;
 		}
 		else
 		{
 			NomPersonnageJoue = "Voyageur";
 			RaceJoueurCourante = RaceJoueur.Humain;
+			SexeJoueurCourante = SexeJoueur.Masculin;
 		}
 		ChargerJourAbsolu(nomMonde);
 		EcrireDernierMondeJoue(nomMonde);
-		GD.Print($"ZERO-K : Monde chargé : {nomMonde} (seed {seed}, jour {JourAbsolu}, perso « {NomPersonnageJoue} », {RaceJoueurCourante})");
+		GD.Print($"ZERO-K : Monde chargé : {nomMonde} (seed {seed}, jour {JourAbsolu}, perso « {NomPersonnageJoue} », {RaceJoueurCourante}, {SexeJoueurCourante})");
 		return true;
 	}
 
