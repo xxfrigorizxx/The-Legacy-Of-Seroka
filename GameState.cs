@@ -41,6 +41,24 @@ public partial class GameState : Node
 			ExecuterSauvegardeFiletAvantFermetureApplication();
 	}
 
+	public override void _UnhandledInput(InputEvent @event)
+	{
+		if (Engine.IsEditorHint())
+			return;
+		Window fenetre = GetWindow();
+		if (fenetre == null)
+			return;
+		if (@event is InputEventKey key && key.Pressed && !key.Echo
+			&& (key.Keycode == Key.F11 || key.PhysicalKeycode == Key.F11))
+		{
+			if (fenetre.Mode == Window.ModeEnum.Fullscreen || fenetre.Mode == Window.ModeEnum.ExclusiveFullscreen)
+				fenetre.Mode = Window.ModeEnum.Windowed;
+			else
+				fenetre.Mode = Window.ModeEnum.Fullscreen;
+			GetViewport()?.SetInputAsHandled();
+		}
+	}
+
 	/// <summary>Filet si fermeture sans passer par le bouton Sauvegarder (croix fenêtre, etc.). <c>GetTree().Quit()</c> est déjà couvert par les boutons Quitter.</summary>
 	private void ExecuterSauvegardeFiletAvantFermetureApplication()
 	{
