@@ -13,6 +13,7 @@ public partial class MenuPrincipal : Control
 	private LineEdit _nomPersonnage;
 	private Label _labelRaceCourante;
 	private Label _labelErreurPerso;
+	private Label _labelBonusRacial;
 	private OptionButton _listeMondes;
 	private Button _btnNouveauMondeWizard;
 	private Button _btnLoadGame;
@@ -57,6 +58,20 @@ public partial class MenuPrincipal : Control
 		_btnSexePrecedent = vboxPerso.GetNode<Button>("HBoxSexe/BtnSexePrecedent");
 		_btnSexeSuivant = vboxPerso.GetNode<Button>("HBoxSexe/BtnSexeSuivant");
 		_labelSexeCourant = vboxPerso.GetNode<Label>("HBoxSexe/LabelSexeCourant");
+		_labelBonusRacial = vboxPerso.GetNodeOrNull<Label>("LabelBonusRacial");
+		if (_labelBonusRacial == null)
+		{
+			_labelBonusRacial = new Label
+			{
+				Name = "LabelBonusRacial",
+				AutowrapMode = TextServer.AutowrapMode.WordSmart,
+				SizeFlagsHorizontal = SizeFlags.ExpandFill
+			};
+			_labelBonusRacial.AddThemeColorOverride("font_color", new Color(0.82f, 0.90f, 1f));
+			_labelBonusRacial.AddThemeFontSizeOverride("font_size", 15);
+			vboxPerso.AddChild(_labelBonusRacial);
+			vboxPerso.MoveChild(_labelBonusRacial, 4);
+		}
 		_nomPersonnage = vboxPerso.GetNode<LineEdit>("NomPersonnage");
 		_labelErreurPerso = vboxPerso.GetNode<Label>("LabelErreurPerso");
 		_btnRetourDepuisPerso = vboxPerso.GetNode<Button>("HBoxBtnsPerso/BtnRetourDepuisPerso");
@@ -154,6 +169,12 @@ public partial class MenuPrincipal : Control
 	private void MettreAJourAffichageRace()
 	{
 		_labelRaceCourante.Text = _raceSelectionnee == RaceJoueur.Orc ? "Orc" : "Humain";
+		if (_labelBonusRacial != null)
+		{
+			_labelBonusRacial.Text = _raceSelectionnee == RaceJoueur.Orc
+				? "Bonus racial Orc : Force élevée, Constitution élevée, Intelligence basse. XP Force x2, XP Constitution x2 (réservé), XP Intelligence x0,5."
+				: "Humain : profil neutre. Aucun bonus ou malus racial d'XP.";
+		}
 	}
 
 	private void MettreAJourAffichageSexe()

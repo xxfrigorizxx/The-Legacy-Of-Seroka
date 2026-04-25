@@ -578,10 +578,10 @@ public static class Atlas_Matiere
             return "Rack à bûches";
         if (id == Joueur.IdObjetCarnetSavoir)
             return "Carnet du savoir";
-        if (id == Joueur.IdObjetSteakCru || id == Joueur.IdObjetOsBoeuf || id == Joueur.IdObjetCuirBoeuf)
+        if (id == Joueur.IdObjetSteakCru || id == Joueur.IdObjetOsBoeuf || id == Joueur.IdObjetCuirBoeuf || id == Joueur.IdObjetIntestinBoeuf)
         {
             int q = Joueur.ObtenirQuantiteSlot(slot);
-            string nom = id == Joueur.IdObjetSteakCru ? "Steak cru" : (id == Joueur.IdObjetOsBoeuf ? "Os" : "Cuir");
+            string nom = id == Joueur.IdObjetSteakCru ? "Steak cru" : (id == Joueur.IdObjetOsBoeuf ? "Os" : (id == Joueur.IdObjetCuirBoeuf ? "Cuir" : "Intestin"));
             return q > 1 ? $"{nom} x{q}" : nom;
         }
         return id switch

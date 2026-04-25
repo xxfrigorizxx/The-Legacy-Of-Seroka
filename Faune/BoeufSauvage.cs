@@ -80,6 +80,12 @@ public partial class BoeufSauvage : CharacterBody3D
 	[Export(PropertyHint.Range, "5,75,1")] public float AngleVisionLateraleDegres = 28f;
 	[Export(PropertyHint.Range, "0.2,2.5,0.05")] public float HauteurYeuxTerrain = 0.62f;
 	[Export(PropertyHint.Range, "0.05,0.8,0.01")] public float LongueurStepAssist = 0.24f;
+	[Export(PropertyHint.Range, "0.08,0.8,0.01")] public float HauteurMaxEnjambementObstacle = 0.28f;
+	[Export(PropertyHint.Range, "0.2,1.5,0.01")] public float DistanceAvantEnjambementObstacle = 0.52f;
+	[Export(PropertyHint.Range, "0.05,4,0.01")] public float VitesseMinEnjambementObstacle = 0.28f;
+	[Export(PropertyHint.Range, "0.1,1,0.01")] public float NormalYMinSolEnjambementObstacle = 0.45f;
+	[Export(PropertyHint.Range, "-1,0.9,0.01")] public float NormalYMaxObstacleEnjambement = 0.32f;
+	[Export(PropertyHint.Range, "0.01,1,0.01")] public float CooldownEnjambementObstacleSec = 0.09f;
 	[Export] public bool ActiverDetectionVideDevant = true;
 	[Export(PropertyHint.Range, "0.2,8,0.1")] public float ProfondeurVideCritique = 2.4f;
 	[Export] public bool ActiverSautStrategique = true;
@@ -252,6 +258,7 @@ public partial class BoeufSauvage : CharacterBody3D
 	private float _cooldownChoixCible;
 	private float _cooldownControleSol;
 	private float _cooldownAntiBlocage;
+	private float _cooldownEnjambementObstacle;
 	private float _cooldownEvaluationVisionTerrain;
 	private float _cooldownSautStrategique;
 	private float _cooldownVerificationVisionJoueur;
@@ -1180,6 +1187,7 @@ public partial class BoeufSauvage : CharacterBody3D
 		_cooldownChoixCible = 0f;
 		_cooldownControleSol = 0.2f;
 		_cooldownAntiBlocage = 0.5f;
+		_cooldownEnjambementObstacle = 0f;
 		_cooldownEvaluationVisionTerrain = 0f;
 		_cooldownSautStrategique = 0f;
 		_cooldownVerificationVisionJoueur = 0f;
@@ -1293,6 +1301,7 @@ public partial class BoeufSauvage : CharacterBody3D
 		_cooldownChoixCible -= dt;
 		_cooldownControleSol -= dt;
 		_cooldownAntiBlocage -= dt;
+		_cooldownEnjambementObstacle -= dt;
 		_cooldownEvaluationVisionTerrain -= dt;
 		_cooldownSautStrategique -= dt;
 		_cooldownVerificationVisionJoueur -= dt;
@@ -1432,6 +1441,23 @@ public partial class BoeufSauvage : CharacterBody3D
 
 		Velocity = new Vector3(vHoriz.X, vy, vHoriz.Z);
 		MoveAndSlide();
+		if (!_dansEau
+			&& _cooldownEnjambementObstacle <= 0f
+			&& _verrouMouvementMorsure <= 0f
+			&& _etat != EtatBoeuf.Mort)
+		{
+			bool enjambement = StepAssistService.TryApplyStepAssist(
+				this,
+				new Vector3(Velocity.X, 0f, Velocity.Z),
+				dt,
+				HauteurMaxEnjambementObstacle,
+				DistanceAvantEnjambementObstacle,
+				VitesseMinEnjambementObstacle,
+				NormalYMinSolEnjambementObstacle,
+				NormalYMaxObstacleEnjambement);
+			if (enjambement)
+				_cooldownEnjambementObstacle = Mathf.Max(0.01f, CooldownEnjambementObstacleSec);
+		}
 
 		float vitesseHoriz = new Vector3(Velocity.X, 0f, Velocity.Z).Length();
 		MettreAJourApprentissageNavigation(dt, direction, vitesseHoriz);
@@ -1639,6 +1665,8 @@ public partial class BoeufSauvage : CharacterBody3D
 			BasculerEnMort();
 	}
 
+	private readonly Vector3[] _echantillonsImmersionFaune = new Vector3[6];
+
 	private bool EstDansEau()
 	{
 		if (!ActiverNatationFaune)
@@ -1654,17 +1682,15 @@ public partial class BoeufSauvage : CharacterBody3D
 		Vector3 pBas = GlobalPosition + Vector3.Down * 0.38f;
 		Vector3 pVentre = GlobalPosition + Vector3.Up * 0.62f;
 		Vector3 pPoitrine = GlobalPosition + Vector3.Up * 1.03f;
-		Vector3 pAvantBas = pBas + dirAvant * 0.55f;
-		Vector3 pAvantVentre = pVentre + dirAvant * 0.55f;
 
-		int touchesEau = 0;
-		if (_gestionnaire.EstPointDansEau(pPieds) || _gestionnaire.ObtenirMatiereExacte(pPieds) == 4) touchesEau++;
-		if (_gestionnaire.EstPointDansEau(pBas) || _gestionnaire.ObtenirMatiereExacte(pBas) == 4) touchesEau++;
-		if (_gestionnaire.EstPointDansEau(pVentre) || _gestionnaire.ObtenirMatiereExacte(pVentre) == 4) touchesEau++;
-		if (_gestionnaire.EstPointDansEau(pPoitrine) || _gestionnaire.ObtenirMatiereExacte(pPoitrine) == 4) touchesEau++;
-		if (_gestionnaire.EstPointDansEau(pAvantBas) || _gestionnaire.ObtenirMatiereExacte(pAvantBas) == 4) touchesEau++;
-		if (_gestionnaire.EstPointDansEau(pAvantVentre) || _gestionnaire.ObtenirMatiereExacte(pAvantVentre) == 4) touchesEau++;
-		if (touchesEau >= 2)
+		_echantillonsImmersionFaune[0] = pPieds - GlobalPosition;
+		_echantillonsImmersionFaune[1] = pBas - GlobalPosition;
+		_echantillonsImmersionFaune[2] = pVentre - GlobalPosition;
+		_echantillonsImmersionFaune[3] = pPoitrine - GlobalPosition;
+		_echantillonsImmersionFaune[4] = (pBas + dirAvant * 0.55f) - GlobalPosition;
+		_echantillonsImmersionFaune[5] = (pVentre + dirAvant * 0.55f) - GlobalPosition;
+		float ratioImmersion = _gestionnaire.CalculerRatioImmersion(GlobalPosition, _echantillonsImmersionFaune);
+		if (ratioImmersion >= 0.5f)
 			return true;
 
 		// Anti "marche sur l'eau": si pas de sol dur sous les pattes mais eau détectée dessous, forcer nage.
@@ -1693,7 +1719,7 @@ public partial class BoeufSauvage : CharacterBody3D
 	{
 		if (_gestionnaire == null)
 			return false;
-		return _gestionnaire.EstPointDansEau(p) || _gestionnaire.ObtenirMatiereExacte(p) == 4;
+		return _gestionnaire.EstPointImmergeEau(p);
 	}
 
 	private bool TrouverDirectionSortieEau(Vector3 directionActuelle, out Vector3 directionSortie)

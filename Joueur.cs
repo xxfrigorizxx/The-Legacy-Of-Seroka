@@ -63,10 +63,10 @@ public partial class Joueur : CharacterBody3D
         public readonly string Cle;
         public readonly string Nom;
         public readonly string Matiere;
-        public readonly int PointsVie;
-        public readonly int PointsVieMax;
+        public readonly float PointsVie;
+        public readonly float PointsVieMax;
 
-        public SectionSanteCorps(string cle, string nom, string matiere, int pointsVie, int pointsVieMax)
+        public SectionSanteCorps(string cle, string nom, string matiere, float pointsVie, float pointsVieMax)
         {
             Cle = cle;
             Nom = nom;
@@ -120,6 +120,8 @@ public partial class Joueur : CharacterBody3D
     public const int IdObjetOsBoeuf = 116;
     /// <summary>Cuir de bœuf (loot dépeçage ; texture via <see cref="SlotInventaire.GenomeAssemblage"/> préfixe PEAU:).</summary>
     public const int IdObjetCuirBoeuf = 117;
+    /// <summary>Intestin de bœuf (loot dépeçage).</summary>
+    public const int IdObjetIntestinBoeuf = 118;
     /// <summary>Objet posé au sol : quantité dans l’inventaire au ramassage (>1).</summary>
     public const string MetaQuantiteObjetPose = "QuantiteObjetPose";
     /// <summary>Rack Ã  bÃ¢tons (stockage dÃ©diÃ©).</summary>
@@ -231,7 +233,8 @@ public partial class Joueur : CharacterBody3D
 
     public const float Speed = 2.5f;
     public const float JumpVelocity = 5.15f;
-    public const float MasseCorporelleBaseHumainKg = 78.0f;
+    public const float MasseCorporelleBaseHumainKg = 95.0f;
+    public const float MasseCorporelleBaseOrcKg = 110.0f;
 
     // SensibilitÃ© chirurgicale de la souris
     public const float MouseSensitivity = 0.003f;
@@ -430,6 +433,14 @@ public partial class Joueur : CharacterBody3D
     private const float MargeEpsilonPiedsSurSol = 0.07f;
     /// <summary>Euler additionnel sur le nÅ“ud racine du GLB (ajustement fin aprÃ¨s le yaw Mixamo).</summary>
     [Export] public Vector3 CorrectionManuelleEulerRigHumainDeg { get; set; }
+    [ExportGroup("Deplacement - Enjambement")]
+    [Export] public bool ActiverEnjambementObstacle = true;
+    [Export(PropertyHint.Range, "0.08,0.8,0.01")] public float HauteurMaxEnjambementObstacle = 0.42f;
+    [Export(PropertyHint.Range, "0.2,1.5,0.01")] public float DistanceAvantEnjambementObstacle = 0.56f;
+    [Export(PropertyHint.Range, "0.05,4,0.01")] public float VitesseMinEnjambementObstacle = 0.32f;
+    [Export(PropertyHint.Range, "0.1,1,0.01")] public float NormalYMinSolEnjambementObstacle = 0.5f;
+    [Export(PropertyHint.Range, "-1,0.9,0.01")] public float NormalYMaxObstacleEnjambement = 0.34f;
+    [Export(PropertyHint.Range, "0.01,1,0.01")] public float CooldownEnjambementObstacleSec = 0.08f;
     private Texture2D _texturePeauProcedurale;
     private Texture2D _textureSousVetementProcedurale;
     private Gestionnaire_Monde _gestionnaireMonde;
@@ -495,12 +506,12 @@ public partial class Joueur : CharacterBody3D
     private const string SectionCorpsBrasDroit = "bras_droit";
     private const string SectionCorpsJambeGauche = "jambe_gauche";
     private const string SectionCorpsJambeDroite = "jambe_droite";
-    private int _pvTete;
-    private int _pvTorse;
-    private int _pvBrasGauche;
-    private int _pvBrasDroit;
-    private int _pvJambeGauche;
-    private int _pvJambeDroite;
+    private float _pvTete;
+    private float _pvTorse;
+    private float _pvBrasGauche;
+    private float _pvBrasDroit;
+    private float _pvJambeGauche;
+    private float _pvJambeDroite;
     private readonly SectionSanteCorps[] _cacheSanteCorps = new SectionSanteCorps[6];
     private readonly Dictionary<string, ulong> _futureStates = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -539,6 +550,13 @@ public partial class Joueur : CharacterBody3D
     private static PhysicsMaterial _physMatDefautObjet;
     private const float DistanceParXpMetabolisteMetres = 10f;
     private const float BonusVitesseMetabolisteParNiveau = 0.00001f; // +0,001%
+    private const int ValeurNeutreStat = 10;
+    private const float BonusGameplayParPointStat = 0.0001f; // +0,01%
+    private const float BonusChargeKgParPointForce = 0.01f; // +0,01 kg par point
+    private const float BonusPvParPointConstitution = 0.01f; // +0,01 PV par section
+    private const float ChanceAnalyseBase = 0.50f;
+    private const float ChanceAnalyseMin = 0.05f;
+    private const float ChanceAnalyseMax = 0.95f;
     private bool _positionReferenceMetabolisteInitialisee;
     private Vector3 _positionReferenceMetaboliste;
     private float _distanceCumuleeMetabolisteMetres;
@@ -561,6 +579,7 @@ public partial class Joueur : CharacterBody3D
     private float _faimJoueur = FaimMaxJoueur;
     private float _enduranceJoueur = EnduranceMaxJoueur;
     private float _cooldownGainFaimClicDroit;
+    private float _cooldownEnjambementObstacle;
 
     public override void _Ready()
     {
@@ -651,12 +670,12 @@ public partial class Joueur : CharacterBody3D
 
     private void InitialiserSanteCorps()
     {
-        _pvTete = 80;
-        _pvTorse = 180;
-        _pvBrasGauche = 110;
-        _pvBrasDroit = 110;
-        _pvJambeGauche = 140;
-        _pvJambeDroite = 140;
+        _pvTete = ObtenirPvMaxSectionCorps(SectionCorpsTete);
+        _pvTorse = ObtenirPvMaxSectionCorps(SectionCorpsTorse);
+        _pvBrasGauche = ObtenirPvMaxSectionCorps(SectionCorpsBrasGauche);
+        _pvBrasDroit = ObtenirPvMaxSectionCorps(SectionCorpsBrasDroit);
+        _pvJambeGauche = ObtenirPvMaxSectionCorps(SectionCorpsJambeGauche);
+        _pvJambeDroite = ObtenirPvMaxSectionCorps(SectionCorpsJambeDroite);
     }
 
     private static string NormaliserCleSectionCorps(string cleSection)
@@ -680,7 +699,7 @@ public partial class Joueur : CharacterBody3D
         return SectionCorpsTorse;
     }
 
-    private static int ObtenirPvMaxSectionCorps(string cleSection)
+    private static int ObtenirPvBaseSectionCorps(string cleSection)
     {
         return cleSection switch
         {
@@ -692,6 +711,21 @@ public partial class Joueur : CharacterBody3D
             SectionCorpsJambeDroite => 140,
             _ => 180
         };
+    }
+
+    private int ObtenirConstitutionEffective()
+    {
+        RaceJoueur race = GameState.Instance?.RaceJoueurCourante ?? RaceJoueur.Humain;
+        int baseConstitution = race == RaceJoueur.Orc ? 20 : 10;
+        ulong niveauConstitution = ObtenirNiveauFutureState("Constitution");
+        return Math.Max(1, baseConstitution + SaturerVersInt(niveauConstitution));
+    }
+
+    private float ObtenirPvMaxSectionCorps(string cleSection)
+    {
+        float baseSection = ObtenirPvBaseSectionCorps(cleSection);
+        float bonusConstitution = (ObtenirConstitutionEffective() - ValeurNeutreStat) * BonusPvParPointConstitution;
+        return Math.Max(1f, baseSection + bonusConstitution);
     }
 
     public void AppliquerDegatsSectionCorps(string cleSection, int degats)
@@ -736,11 +770,11 @@ public partial class Joueur : CharacterBody3D
             SectionCorpsJambeGauche, SectionCorpsJambeDroite
         };
         int meilleurIndex = -1;
-        int meilleurDeficit = 0;
+        float meilleurDeficit = 0f;
         for (int i = 0; i < cles.Length; i++)
         {
             string cle = cles[i];
-            int pv = cle switch
+            float pv = cle switch
             {
                 SectionCorpsTete => _pvTete,
                 SectionCorpsTorse => _pvTorse,
@@ -750,8 +784,8 @@ public partial class Joueur : CharacterBody3D
                 SectionCorpsJambeDroite => _pvJambeDroite,
                 _ => _pvTorse
             };
-            int maxPv = ObtenirPvMaxSectionCorps(NormaliserCleSectionCorps(cle));
-            int deficit = maxPv - pv;
+            float maxPv = ObtenirPvMaxSectionCorps(NormaliserCleSectionCorps(cle));
+            float deficit = maxPv - pv;
             if (deficit > meilleurDeficit)
             {
                 meilleurDeficit = deficit;
@@ -816,8 +850,8 @@ public partial class Joueur : CharacterBody3D
 
     public float ObtenirRatioSanteGlobaleCorps()
     {
-        int pvActuels = _pvTete + _pvTorse + _pvBrasGauche + _pvBrasDroit + _pvJambeGauche + _pvJambeDroite;
-        int pvMax = ObtenirPvMaxSectionCorps(SectionCorpsTete)
+        float pvActuels = _pvTete + _pvTorse + _pvBrasGauche + _pvBrasDroit + _pvJambeGauche + _pvJambeDroite;
+        float pvMax = ObtenirPvMaxSectionCorps(SectionCorpsTete)
             + ObtenirPvMaxSectionCorps(SectionCorpsTorse)
             + ObtenirPvMaxSectionCorps(SectionCorpsBrasGauche)
             + ObtenirPvMaxSectionCorps(SectionCorpsBrasDroit)
@@ -2690,9 +2724,10 @@ public partial class Joueur : CharacterBody3D
         {
             _gaucheMaintenu = false;
             SlotInventaire mainActive = MainGaucheEstActive ? MainGauche : MainDroite;
-            if (_bloquerActionClicGaucheApresMinageBuisson)
+            if (_bloquerActionClicGaucheApresMinageBuisson || _bloquerActionClicGaucheApresDepecage)
             {
                 _bloquerActionClicGaucheApresMinageBuisson = false;
+                _bloquerActionClicGaucheApresDepecage = false;
                 ReinitialiserMinageMainNueProgression();
                 return;
             }
@@ -3033,6 +3068,169 @@ public partial class Joueur : CharacterBody3D
 
     public IReadOnlyDictionary<string, UInt128> ObtenirFutureStatesXp() => _futureStateXp;
 
+    public readonly struct FicheStatutPersonnage
+    {
+        public readonly string NomRace;
+        public readonly ulong NiveauGlobalFutureStates;
+        public readonly int PointsVieActuels;
+        public readonly int PointsVieMax;
+        public readonly int Force;
+        public readonly int Constitution;
+        public readonly int Agilite;
+        public readonly int Intelligence;
+        public readonly int Metabolisme;
+        public readonly int Defense;
+
+        public FicheStatutPersonnage(
+            string nomRace,
+            ulong niveauGlobalFutureStates,
+            int pointsVieActuels,
+            int pointsVieMax,
+            int force,
+            int constitution,
+            int agilite,
+            int intelligence,
+            int metabolisme,
+            int defense)
+        {
+            NomRace = nomRace;
+            NiveauGlobalFutureStates = niveauGlobalFutureStates;
+            PointsVieActuels = pointsVieActuels;
+            PointsVieMax = pointsVieMax;
+            Force = force;
+            Constitution = constitution;
+            Agilite = agilite;
+            Intelligence = intelligence;
+            Metabolisme = metabolisme;
+            Defense = defense;
+        }
+    }
+
+    private static int SaturerVersInt(double valeur)
+    {
+        if (double.IsNaN(valeur) || double.IsInfinity(valeur))
+            return 0;
+        if (valeur <= int.MinValue)
+            return int.MinValue;
+        if (valeur >= int.MaxValue)
+            return int.MaxValue;
+        return (int)Math.Round(valeur);
+    }
+
+    private static void ObtenirBasesFicheSelonRace(RaceJoueur race, out int force, out int constitution, out int agilite, out int intelligence, out int metabolisme, out int defense)
+    {
+        if (race == RaceJoueur.Orc)
+        {
+            force = 20;
+            constitution = 20;
+            agilite = 10;
+            intelligence = 0;
+            metabolisme = 10;
+            defense = 0;
+            return;
+        }
+
+        force = 10;
+        constitution = 10;
+        agilite = 10;
+        intelligence = 10;
+        metabolisme = 10;
+        defense = 0;
+    }
+
+    private static void AjouterBonusEquipementFiche(in SlotInventaire slot, ref int bonusPvEquip, ref int bonusForceEquip, ref int bonusAgiliteEquip, ref int bonusIntelligenceEquip, ref int bonusDefenseEquip)
+    {
+        if (slot.EstVide)
+            return;
+
+        switch (slot.ID)
+        {
+            case IdObjetSacTier0:
+                bonusPvEquip += 8;
+                break;
+            case IdObjetCeinturePoches:
+                bonusDefenseEquip += 1;
+                break;
+            case IdObjetCeintureSacoches:
+                bonusDefenseEquip += 2;
+                break;
+            case IdObjetCarnetSavoir:
+                bonusIntelligenceEquip += 2;
+                break;
+            case 105:
+            case 106:
+            case IdObjetPellePierreTier0:
+            case IdObjetPiochePierreTier0:
+            case IdObjetLancePierreTier0:
+            case IdObjetFauxPierreTier0:
+                bonusForceEquip += 1;
+                break;
+        }
+    }
+
+    public FicheStatutPersonnage ObtenirFicheStatutPersonnage()
+    {
+        RaceJoueur race = GameState.Instance?.RaceJoueurCourante ?? RaceJoueur.Humain;
+        ObtenirBasesFicheSelonRace(race, out int baseForce, out int baseConstitution, out int baseAgilite, out int baseIntelligence, out int baseMetabolisme, out int baseDefense);
+
+        ulong niveauForce = ObtenirNiveauFutureState("Force");
+        ulong niveauConstitution = ObtenirNiveauFutureState("Constitution");
+        ulong niveauAgilite = ObtenirNiveauFutureState("Dextiriter");
+        ulong niveauIntelligence = ObtenirNiveauFutureState("Intelligence");
+        ulong niveauMetabolisme = ObtenirNiveauFutureState("Metaboliste");
+
+        ulong niveauGlobal = 0UL;
+        foreach (ulong niveau in _futureStates.Values)
+        {
+            if (niveauGlobal > ulong.MaxValue - niveau)
+            {
+                niveauGlobal = ulong.MaxValue;
+                break;
+            }
+            niveauGlobal += niveau;
+        }
+
+        int bonusPvEquip = 0;
+        int bonusForceEquip = 0;
+        int bonusAgiliteEquip = 0;
+        int bonusIntelligenceEquip = 0;
+        int bonusDefenseEquip = 0;
+        AjouterBonusEquipementFiche(MainGauche, ref bonusPvEquip, ref bonusForceEquip, ref bonusAgiliteEquip, ref bonusIntelligenceEquip, ref bonusDefenseEquip);
+        AjouterBonusEquipementFiche(MainDroite, ref bonusPvEquip, ref bonusForceEquip, ref bonusAgiliteEquip, ref bonusIntelligenceEquip, ref bonusDefenseEquip);
+        AjouterBonusEquipementFiche(EquipementSacDos, ref bonusPvEquip, ref bonusForceEquip, ref bonusAgiliteEquip, ref bonusIntelligenceEquip, ref bonusDefenseEquip);
+        AjouterBonusEquipementFiche(EquipementCeinture, ref bonusPvEquip, ref bonusForceEquip, ref bonusAgiliteEquip, ref bonusIntelligenceEquip, ref bonusDefenseEquip);
+        AjouterBonusEquipementFiche(EquipementCarnet, ref bonusPvEquip, ref bonusForceEquip, ref bonusAgiliteEquip, ref bonusIntelligenceEquip, ref bonusDefenseEquip);
+
+        int force = SaturerVersInt(baseForce + (double)niveauForce + bonusForceEquip);
+        int constitution = SaturerVersInt(baseConstitution + (double)niveauConstitution);
+        int agilite = SaturerVersInt(baseAgilite + (double)niveauAgilite + bonusAgiliteEquip);
+        int intelligence = SaturerVersInt(baseIntelligence + (double)niveauIntelligence + bonusIntelligenceEquip);
+        int metabolisme = SaturerVersInt(baseMetabolisme + (double)niveauMetabolisme);
+        int defense = SaturerVersInt(baseDefense + bonusDefenseEquip);
+
+        float pvMaxFloat = ObtenirPvMaxSectionCorps(SectionCorpsTete)
+            + ObtenirPvMaxSectionCorps(SectionCorpsTorse)
+            + ObtenirPvMaxSectionCorps(SectionCorpsBrasGauche)
+            + ObtenirPvMaxSectionCorps(SectionCorpsBrasDroit)
+            + ObtenirPvMaxSectionCorps(SectionCorpsJambeGauche)
+            + ObtenirPvMaxSectionCorps(SectionCorpsJambeDroite);
+        int pvMax = SaturerVersInt(pvMaxFloat + bonusPvEquip);
+        pvMax = Mathf.Max(1, pvMax);
+        int pvActuels = SaturerVersInt(Mathf.Clamp(ObtenirRatioSanteGlobaleCorps(), 0f, 1f) * pvMax);
+
+        return new FicheStatutPersonnage(
+            race == RaceJoueur.Orc ? "Orc" : "Humain",
+            niveauGlobal,
+            pvActuels,
+            pvMax,
+            force,
+            constitution,
+            agilite,
+            intelligence,
+            metabolisme,
+            defense);
+    }
+
     public ulong ObtenirNiveauFutureState(string nomStat)
     {
         if (string.IsNullOrWhiteSpace(nomStat))
@@ -3040,13 +3238,12 @@ public partial class Joueur : CharacterBody3D
         return _futureStates.TryGetValue(nomStat, out ulong niveau) ? niveau : 0UL;
     }
 
-    /// <summary>Probabilite de reussite de l'analyseur manuel (base 50 % + 0,01 % par niveau d'Intelligence).</summary>
+    /// <summary>Probabilite de reussite de l'analyseur manuel (base 50 % + 0,01 % par point d'Intelligence autour de 10).</summary>
     public float ObtenirChanceReussiteAnalyseManuelle()
     {
-        const float chanceBase = 0.5f;
-        const float bonusParNiveau = 0.0001f;
-        ulong n = ObtenirNiveauFutureState("Intelligence");
-        return Mathf.Clamp(chanceBase + n * bonusParNiveau, 0f, 1f);
+        int intelligenceEffective = ObtenirFicheStatutPersonnage().Intelligence;
+        float chance = ChanceAnalyseBase + ((intelligenceEffective - ValeurNeutreStat) * BonusGameplayParPointStat);
+        return Mathf.Clamp(chance, ChanceAnalyseMin, ChanceAnalyseMax);
     }
 
     public UInt128 ObtenirXpFutureState(string nomStat)
@@ -3070,16 +3267,20 @@ public partial class Joueur : CharacterBody3D
         return CalculerXpNiveauSuivant(niveau);
     }
 
-    public void AjouterXpFutureState(string nomStat, ulong xpGagne)
+    private ulong CalculerXpFutureStateEffectif(string nomStat, ulong xpGagne)
     {
         if (string.IsNullOrWhiteSpace(nomStat) || xpGagne == 0UL)
-            return;
-        xpGagne = AppliquerMultiplicateurRacialXpFutureState(nomStat, xpGagne);
-        if (xpGagne == 0UL)
+            return 0UL;
+        return AppliquerMultiplicateurRacialXpFutureState(nomStat, xpGagne);
+    }
+
+    private void AjouterXpFutureStateInterne(string nomStat, ulong xpEffectif)
+    {
+        if (string.IsNullOrWhiteSpace(nomStat) || xpEffectif == 0UL)
             return;
         AjouterFutureStateSiAbsent(nomStat, 0UL);
         UInt128 xpActuel = ObtenirXpFutureState(nomStat);
-        UInt128 gain = xpGagne;
+        UInt128 gain = xpEffectif;
         UInt128 xpTotal = xpActuel > UInt128.MaxValue - gain ? UInt128.MaxValue : xpActuel + gain;
         ulong niveau = ObtenirNiveauFutureState(nomStat);
         while (niveau < NiveauMaxFutureState)
@@ -3093,6 +3294,23 @@ public partial class Joueur : CharacterBody3D
         _futureStateXp[nomStat] = xpTotal;
         _futureStates[nomStat] = Math.Min(niveau, NiveauMaxFutureState);
         _menuFutureState?.Rafraichir();
+    }
+
+    public void AjouterXpFutureState(string nomStat, ulong xpGagne)
+    {
+        ulong xpEffectif = CalculerXpFutureStateEffectif(nomStat, xpGagne);
+        if (xpEffectif == 0UL)
+            return;
+        AjouterXpFutureStateInterne(nomStat, xpEffectif);
+    }
+
+    public ulong AjouterXpFutureStateEtRetourEffectif(string nomStat, ulong xpGagne)
+    {
+        ulong xpEffectif = CalculerXpFutureStateEffectif(nomStat, xpGagne);
+        if (xpEffectif == 0UL)
+            return 0UL;
+        AjouterXpFutureStateInterne(nomStat, xpEffectif);
+        return xpEffectif;
     }
 
     public void DefinirNiveauFutureState(string nomStat, ulong niveau)
@@ -3208,42 +3426,47 @@ public partial class Joueur : CharacterBody3D
         return ObtenirNiveauMetier("Bucheron") * 0.01f;
     }
 
-    private const double BonusForceParNiveauPourcent = 0.0001d; // +0,01% / niveau
+    private static float CoefficientDepuisStat(int valeurStat)
+    {
+        float multiplicateur = 1f + ((valeurStat - ValeurNeutreStat) * BonusGameplayParPointStat);
+        if (float.IsNaN(multiplicateur) || float.IsInfinity(multiplicateur))
+            return 1f;
+        return Mathf.Clamp(multiplicateur, 0.2f, 100000f);
+    }
+
+    private int ObtenirForceEffective()
+    {
+        return Math.Max(0, ObtenirFicheStatutPersonnage().Force);
+    }
+
+    private int ObtenirMetabolismeEffective()
+    {
+        return Math.Max(0, ObtenirFicheStatutPersonnage().Metabolisme);
+    }
 
     public float ObtenirMultiplicateurDegatsForce()
     {
-        ulong niveauForce = ObtenirNiveauFutureState("Force");
-        double multiplicateur = 1d + (niveauForce * BonusForceParNiveauPourcent);
-        if (double.IsNaN(multiplicateur) || double.IsInfinity(multiplicateur))
-            return 1f;
-        float m = (float)Mathf.Clamp((float)multiplicateur, 1f, 100000f);
-        if (GameState.Instance?.RaceJoueurCourante == RaceJoueur.Orc)
-            m *= 1.1f;
-        return m;
+        return CoefficientDepuisStat(ObtenirForceEffective());
     }
 
     public float ObtenirMultiplicateurCapaciteChargeForce()
     {
-        ulong niveauForce = ObtenirNiveauFutureState("Force");
-        double multiplicateur = 1d + (niveauForce * BonusForceParNiveauPourcent);
-        if (double.IsNaN(multiplicateur) || double.IsInfinity(multiplicateur))
-            return 1f;
-        return (float)Mathf.Clamp((float)multiplicateur, 1f, 100000f);
+        return CoefficientDepuisStat(ObtenirForceEffective());
     }
 
-    /// <summary>Humain +10 % sur toute stat ; Orc : Intelligence ×0,5, Force et Metaboliste ×1,2, le reste ×1.</summary>
+    /// <summary>Humain neutre x1. Orc : Force x2, Constitution x2 (reserve), Intelligence x0,5.</summary>
     private static ulong AppliquerMultiplicateurRacialXpFutureState(string nomStat, ulong xpGagne)
     {
         if (xpGagne == 0UL) return 0UL;
         RaceJoueur race = GameState.Instance?.RaceJoueurCourante ?? RaceJoueur.Humain;
         double mult = race switch
         {
-            RaceJoueur.Humain => 1.1d,
+            RaceJoueur.Humain => 1.0d,
             RaceJoueur.Orc => nomStat switch
             {
                 "Intelligence" => 0.5d,
-                "Force" => 1.2d,
-                "Metaboliste" => 1.2d,
+                "Force" => 2.0d,
+                "Constitution" => 2.0d,
                 _ => 1.0d
             },
             _ => 1.0d
@@ -3254,15 +3477,10 @@ public partial class Joueur : CharacterBody3D
         return (ulong)Math.Round(d);
     }
 
-    /// <summary>Humain +10 % sur les métiers ; Orc : pas de modificateur.</summary>
+    /// <summary>Métiers sans bonus racial.</summary>
     private static ulong AppliquerMultiplicateurRacialXpMetier(ulong xpGagne)
     {
-        if (xpGagne == 0UL) return 0UL;
-        if ((GameState.Instance?.RaceJoueurCourante ?? RaceJoueur.Humain) != RaceJoueur.Humain)
-            return xpGagne;
-        double d = xpGagne * 1.1d;
-        if (d >= ulong.MaxValue) return ulong.MaxValue;
-        return (ulong)Math.Round(d);
+        return xpGagne;
     }
 
     private static float ObtenirMasseUnitaireRocheInventaireKg(int indexTaille) => Mathf.Clamp(indexTaille, 0, 4) switch
@@ -3289,6 +3507,7 @@ public partial class Joueur : CharacterBody3D
         IdObjetSteakCru => 0.14f,
         IdObjetOsBoeuf => 0.09f,
         IdObjetCuirBoeuf => 0.11f,
+        IdObjetIntestinBoeuf => 0.12f,
         105 => 0.32f,
         106 => 0.58f,
         IdObjetPellePierreTier0 => 0.62f,
@@ -3366,7 +3585,9 @@ public partial class Joueur : CharacterBody3D
     public float ObtenirMassePhysiqueLogiqueKg()
     {
         // Masse logique = corps de base + charge portée, bornée pour éviter les extrêmes non jouables.
-        float masse = MasseCorporelleBaseHumainKg + ObtenirPoidsTotalPorteKg();
+        RaceJoueur race = GameState.Instance?.RaceJoueurCourante ?? RaceJoueur.Humain;
+        float masseBase = race == RaceJoueur.Orc ? MasseCorporelleBaseOrcKg : MasseCorporelleBaseHumainKg;
+        float masse = masseBase + ObtenirPoidsTotalPorteKg();
         return Mathf.Clamp(masse, 45f, 260f);
     }
 
@@ -3388,7 +3609,9 @@ public partial class Joueur : CharacterBody3D
 
     public float ObtenirCapacitePoidsMaxKg()
     {
-        return CapacitePoidsBaseHumainKg * ObtenirMultiplicateurCapaciteChargeForce();
+        int forceEffective = ObtenirForceEffective();
+        float bonusForceKg = (forceEffective - ValeurNeutreStat) * BonusChargeKgParPointForce;
+        return Mathf.Max(0.1f, CapacitePoidsBaseHumainKg + bonusForceKg);
     }
 
     /// <summary>
@@ -3410,11 +3633,7 @@ public partial class Joueur : CharacterBody3D
 
     public float ObtenirMultiplicateurVitesseMetaboliste()
     {
-        ulong niveauMetaboliste = ObtenirNiveauFutureState("Metaboliste");
-        double multiplicateur = 1d + (niveauMetaboliste * BonusVitesseMetabolisteParNiveau);
-        if (double.IsNaN(multiplicateur) || double.IsInfinity(multiplicateur))
-            return 1f;
-        return (float)Mathf.Clamp((float)multiplicateur, 1f, 100000f);
+        return CoefficientDepuisStat(ObtenirMetabolismeEffective());
     }
 
     private void ReinitialiserReferencePositionMetaboliste()
@@ -3664,7 +3883,7 @@ public partial class Joueur : CharacterBody3D
         else if (id == 21) return null; // GLB res://Modeles/materials/tissu_tier0.glb via InstancierModeleTissuTier0
         else if (id == IdObjetSacTier0) return null; // GLB res://Modeles/Equipable/Sac_Tiere0.glb via InstancierModeleSacTier0
         else if (id == IdObjetCarnetSavoir) return null; // modèle procédural via InstancierModeleCarnetSavoir
-        else if (id == IdObjetSteakCru || id == IdObjetOsBoeuf || id == IdObjetCuirBoeuf) return null; // GLB via InstancierModele* dans ModelInstantiationService
+        else if (id == IdObjetSteakCru || id == IdObjetOsBoeuf || id == IdObjetCuirBoeuf || id == IdObjetIntestinBoeuf) return null; // GLB via InstancierModele* dans ModelInstantiationService
         else if (id == IdObjetCeinturePoches || id == IdObjetCeintureSacoches) return null; // GLB ceinture / ceinture+pochettes via instanciation dÃ©diÃ©e
         else if (id == IdObjetPochetteTier0) return null; // GLB res://Modeles/materials/Pochette_Tiere0.glb via InstancierModelePochetteTier0
         else if (id == IdObjetPellePierreTier0) return null; // GLB res://Modeles/Equipements/Pelle_Pierre_tier0.glb via InstancierModeleArme
@@ -4732,6 +4951,22 @@ public partial class Joueur : CharacterBody3D
             item.AddChild(new CollisionShape3D { Shape = new BoxShape3D { Size = new Vector3(0.336f, 0.072f, 0.264f) } });
             corps = item;
         }
+        else if (id == IdObjetIntestinBoeuf)
+        {
+            var item = new ItemPhysique
+            {
+                ID_Objet = id,
+                IndexChimique = 0,
+                IndexCacheMemoire = 0,
+                Name = "ItemPhysique",
+                ContinuousCd = true
+            };
+            var meshRoot = new Node3D { Name = "MeshInstance3D" };
+            InstancierModeleIntestinBoeuf(meshRoot, mainActive, 0.24f);
+            item.AddChild(meshRoot);
+            item.AddChild(new CollisionShape3D { Shape = new CapsuleShape3D { Radius = 0.06f, Height = 0.24f } });
+            corps = item;
+        }
         else // 999 Buisson â€” RigidBody3D pour pouvoir le lancer comme les autres objets posÃ©s.
         {
             float cote = 0.85f;
@@ -4846,15 +5081,15 @@ public partial class Joueur : CharacterBody3D
                 rbPose.AngularDamp = 1.0f;
             }
             else if (id == 20 || id == 21 || id == IdObjetCeinturePoches || id == IdObjetCeintureSacoches || id == IdObjetPochetteTier0 || id == IdObjetSacTier0 || id == IdObjetCarnetSavoir
-                || id == IdObjetSteakCru || id == IdObjetOsBoeuf || id == IdObjetCuirBoeuf)
+                || id == IdObjetSteakCru || id == IdObjetOsBoeuf || id == IdObjetCuirBoeuf || id == IdObjetIntestinBoeuf)
             {
                 rbPose.PhysicsMaterialOverride = _physMatCorde;
                 rbPose.LinearDampMode = RigidBody3D.DampMode.Replace;
                 rbPose.AngularDampMode = RigidBody3D.DampMode.Replace;
                 rbPose.LinearDamp = 0.32f;
                 rbPose.AngularDamp = 0.95f;
-                if (id == IdObjetSteakCru || id == IdObjetOsBoeuf || id == IdObjetCuirBoeuf)
-                    rbPose.Mass = id == IdObjetOsBoeuf ? 0.55f : (id == IdObjetCuirBoeuf ? 0.25f : 0.18f);
+                if (id == IdObjetSteakCru || id == IdObjetOsBoeuf || id == IdObjetCuirBoeuf || id == IdObjetIntestinBoeuf)
+                    rbPose.Mass = id == IdObjetOsBoeuf ? 0.55f : (id == IdObjetCuirBoeuf ? 0.25f : (id == IdObjetIntestinBoeuf ? 0.20f : 0.18f));
             }
             else if (id == 999)
             {
@@ -4937,6 +5172,17 @@ public partial class Joueur : CharacterBody3D
         return id;
     }
 
+    private static readonly Vector3[] _echantillonsImmersionJoueur =
+    {
+        Vector3.Up * 0.08f,
+        Vector3.Up * 0.28f,
+        Vector3.Up * 0.48f,
+        Vector3.Up * 0.68f,
+        Vector3.Up * 0.88f,
+        Vector3.Up * 1.08f,
+        Vector3.Up * 1.28f
+    };
+
     /// <summary>Recherche une couche d'eau dont la case au-dessus n'est pas de l'eau: donne la hauteur de surface (face haute voxel).</summary>
     private bool EssayerTrouverSurfaceEauY(Vector3 centreRecherche, out float surfaceY)
     {
@@ -4960,7 +5206,7 @@ public partial class Joueur : CharacterBody3D
     private bool PointImmergeJoueur(Vector3 p)
     {
         if (_gestionnaireMonde == null) return false;
-        return _gestionnaireMonde.EstPointDansEau(p) || ObtenirMatiereExacteCachee(p) == 4;
+        return _gestionnaireMonde.EstPointImmergeEau(p);
     }
 
     private bool EvaluerEtatEauJoueur(out float surfaceEau)
@@ -4968,23 +5214,12 @@ public partial class Joueur : CharacterBody3D
         surfaceEau = _gestionnaireMonde?.ObtenirNiveauSurfaceEau() ?? 103.35f;
         if (_gestionnaireMonde == null) return false;
 
-        Vector3 pChevilles = GlobalPosition + Vector3.Up * 0.16f;
-        Vector3 pBassin = GlobalPosition + Vector3.Up * 0.62f;
-        Vector3 pTorse = GlobalPosition + Vector3.Up * 0.95f;
-        bool chevillesImmerges = PointImmergeJoueur(pChevilles);
-        bool bassinImmerge = PointImmergeJoueur(pBassin);
-        bool torseImmerge = PointImmergeJoueur(pTorse);
-
         if (EssayerTrouverSurfaceEauY(GlobalPosition + Vector3.Up * 0.3f, out float surfaceLocale))
             surfaceEau = surfaceLocale;
 
-        // Le mode nage doit rester réservé à une vraie immersion:
-        // évite de "coller" le joueur au comportement eau sur les berges peu profondes.
-        if (torseImmerge)
-            return true;
-        if (bassinImmerge && chevillesImmerges && !IsOnFloor())
-            return true;
-        return false;
+        // Mode eau uniquement si au moins 50% du corps est immergé.
+        float ratioImmersion = _gestionnaireMonde.CalculerRatioImmersion(GlobalPosition, _echantillonsImmersionJoueur);
+        return ratioImmersion >= 0.5f;
     }
 
     /// <summary>Détecte un bord de berge devant le joueur alors qu'il est encore dans l'eau.</summary>
@@ -5021,6 +5256,7 @@ public partial class Joueur : CharacterBody3D
         _cooldownDrainProfilageJoueur += (float)delta;
         ReinitialiserConteneurOuvertSiReferencePerdue();
         float dt = (float)delta;
+        _cooldownEnjambementObstacle = Mathf.Max(0f, _cooldownEnjambementObstacle - dt);
         _cooldownGainFaimClicDroit = Mathf.Max(0f, _cooldownGainFaimClicDroit - dt);
         if (!_positionReferenceMetabolisteInitialisee)
             ReinitialiserReferencePositionMetaboliste();
@@ -5186,6 +5422,23 @@ public partial class Joueur : CharacterBody3D
 
         Velocity = velocity;
         MoveAndSlide();
+        if (!estDansEau
+            && ActiverEnjambementObstacle
+            && _cooldownEnjambementObstacle <= 0f
+            && vitesseMouvement > 0.05f)
+        {
+            bool enjambement = StepAssistService.TryApplyStepAssist(
+                this,
+                new Vector3(Velocity.X, 0f, Velocity.Z),
+                dt,
+                HauteurMaxEnjambementObstacle,
+                DistanceAvantEnjambementObstacle,
+                VitesseMinEnjambementObstacle,
+                NormalYMinSolEnjambementObstacle,
+                NormalYMaxObstacleEnjambement);
+            if (enjambement)
+                _cooldownEnjambementObstacle = Mathf.Max(0.01f, CooldownEnjambementObstacleSec);
+        }
         // DÃ©sactivÃ© en jeu normal : peut provoquer un "TP au sol" en retombÃ©e.
         if (_verrouSpawnActif)
             EssayerCollerCapsuleAuSolTerrain(estDansEau);

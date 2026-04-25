@@ -1652,20 +1652,22 @@ public partial class Gestionnaire_Monde : Node3D
 		Multiplayer.PeerConnected += EnvoyerFuseauHoraireAuPeer;
 	}
 
-	/// <summary>Matrice visqueuse : océan physique couvrant Y &lt; 103. Linear/Angular Damp 4.0, gravité 4 (Archimède).</summary>
+	/// <summary>Volume océan dédié à la détection (remous/éclaboussures), sans override physique global.</summary>
 	private void CreerAreaOcean()
 	{
 		float demiRayon = RayonMondeChunks * TailleChunk;
 		float hauteurZone = NiveauEauOcean + 500f; // Couvre jusqu'en profondeur -500
 		var ocean = new Area3D { Name = "Ocean_Physique" };
-		ocean.GravitySpaceOverride = Area3D.SpaceOverride.Replace;
-		ocean.Gravity = 4.0f; // Poussée d'Archimède (réduit chute)
+		// IMPORTANT : pas d'effet physique global ici.
+		// Les forces eau sont gérées par chaque corps selon son ratio d'immersion.
+		ocean.GravitySpaceOverride = Area3D.SpaceOverride.Disabled;
+		ocean.Gravity = 0f;
 		ocean.GravityDirection = new Vector3(0, -1, 0);
 		ocean.GravityPoint = false;
-		ocean.LinearDamp = 4.0f;
-		ocean.LinearDampSpaceOverride = Area3D.SpaceOverride.Replace;
-		ocean.AngularDamp = 4.0f;
-		ocean.AngularDampSpaceOverride = Area3D.SpaceOverride.Replace;
+		ocean.LinearDamp = 0f;
+		ocean.LinearDampSpaceOverride = Area3D.SpaceOverride.Disabled;
+		ocean.AngularDamp = 0f;
+		ocean.AngularDampSpaceOverride = Area3D.SpaceOverride.Disabled;
 		ocean.Priority = 100; // Priorité haute sur le monde par défaut
 
 		var col = new CollisionShape3D();
@@ -2331,11 +2333,30 @@ FinBlocOverlay:
 		Vector2I c = WorldToChunkCoord(rb.GlobalPosition, TailleChunk);
 		bool dansRayon = Mathf.Abs(c.X - chunkJoueur.X) <= rayon && Mathf.Abs(c.Y - chunkJoueur.Y) <= rayon;
 		bool terrainPret = !useGardeTerrain || _mondeClient.CollisionTerrainActiveAutourPoint(rb.GlobalPosition, rayonSecuriteTerrain);
+		bool itemLegerPetit = ItemPhysique.EstRigidBodyLegerEtPetitReactif(rb);
+
+		if (itemLegerPetit && _joueur != null && GodotObject.IsInstanceValid(_joueur))
+		{
+			float dist2 = rb.GlobalPosition.DistanceSquaredTo(_joueur.GlobalPosition);
+			if (dist2 <= 6f * 6f)
+			{
+				if (rb.Freeze) rb.Freeze = false;
+				if (rb.Sleeping) rb.Sleeping = false;
+				return;
+			}
+		}
+
 		// Priorité gameplay: un objet proche du joueur ne doit jamais rester figé en l'air.
 		if (dansRayon)
 		{
 			if (rb.Freeze) rb.Freeze = false;
 			if (rb.Sleeping) rb.Sleeping = false;
+			return;
+		}
+
+		if (itemLegerPetit && terrainPret)
+		{
+			if (rb.Freeze) rb.Freeze = false;
 			return;
 		}
 		if (!terrainPret || (!rb.Freeze || !rb.Sleeping))
@@ -2464,6 +2485,32 @@ FinBlocOverlay:
 					if (EstVoxelEauLegacy(new Vector3I(gx + dx, gy + dy, gz + dz)))
 						return true;
 		return false;
+	}
+
+	/// <summary>True si le point touche l'eau par voisinage voxel ou matière eau exacte.</summary>
+	public bool EstPointImmergeEau(Vector3 positionGlobale)
+	{
+		return EstPointDansEau(positionGlobale) || ObtenirMatiereExacte(positionGlobale) == 4;
+	}
+
+	/// <summary>Calcule le ratio d'immersion d'un corps via des offsets locaux (0..1).</summary>
+	public float CalculerRatioImmersion(Vector3 origineGlobale, Vector3[] offsetsLocaux)
+	{
+		if (offsetsLocaux == null || offsetsLocaux.Length == 0)
+			return 0f;
+		int pointsImmerges = 0;
+		for (int i = 0; i < offsetsLocaux.Length; i++)
+		{
+			if (EstPointImmergeEau(origineGlobale + offsetsLocaux[i]))
+				pointsImmerges++;
+		}
+		return pointsImmerges / (float)offsetsLocaux.Length;
+	}
+
+	/// <summary>True si le ratio d'immersion est au moins égal au seuil donné.</summary>
+	public bool EstMajoritairementImmerge(Vector3 origineGlobale, Vector3[] offsetsLocaux, float seuil = 0.5f)
+	{
+		return CalculerRatioImmersion(origineGlobale, offsetsLocaux) >= seuil;
 	}
 
 	/// <summary>Appelé quand un arbre est coupé : spawn branches et bûches qui tombent au sol.</summary>

@@ -8,7 +8,7 @@ public partial class Joueur
     private static bool EstObjetAvecVisuel(int id)
     {
         if (id >= 1 && id <= 9) return true;
-        return ItemPhysique.EstIdRocheMatiere(id) || id == 10 || id == 11 || id == BlocChutant.ID_BRANCHE || id == 15 || id == 16 || id == 17 || id == 20 || id == 21 || id == Joueur.IdObjetCeinturePoches || id == Joueur.IdObjetCeintureSacoches || id == Joueur.IdObjetPochetteTier0 || id == Joueur.IdObjetSacTier0 || id == Joueur.IdObjetCarnetSavoir || id == Joueur.IdObjetSteakCru || id == Joueur.IdObjetOsBoeuf || id == Joueur.IdObjetCuirBoeuf || id == 30 || id == 32 || id == 34 || id == Joueur.IdObjetBaie || id == 100 || id == 105 || id == 106 || id == Joueur.IdObjetPellePierreTier0 || id == Joueur.IdObjetPiochePierreTier0 || id == Joueur.IdObjetLancePierreTier0 || id == Joueur.IdObjetFauxPierreTier0 || id == 200 || id == Joueur.IdObjetRackBatons || id == Joueur.IdObjetRackBuches || id == Joueur.IdObjetCoffreBoisTier0;
+        return ItemPhysique.EstIdRocheMatiere(id) || id == 10 || id == 11 || id == BlocChutant.ID_BRANCHE || id == 15 || id == 16 || id == 17 || id == 20 || id == 21 || id == Joueur.IdObjetCeinturePoches || id == Joueur.IdObjetCeintureSacoches || id == Joueur.IdObjetPochetteTier0 || id == Joueur.IdObjetSacTier0 || id == Joueur.IdObjetCarnetSavoir || id == Joueur.IdObjetSteakCru || id == Joueur.IdObjetOsBoeuf || id == Joueur.IdObjetCuirBoeuf || id == Joueur.IdObjetIntestinBoeuf || id == 30 || id == 32 || id == 34 || id == Joueur.IdObjetBaie || id == 100 || id == 105 || id == 106 || id == Joueur.IdObjetPellePierreTier0 || id == Joueur.IdObjetPiochePierreTier0 || id == Joueur.IdObjetLancePierreTier0 || id == Joueur.IdObjetFauxPierreTier0 || id == 200 || id == Joueur.IdObjetRackBatons || id == Joueur.IdObjetRackBuches || id == Joueur.IdObjetCoffreBoisTier0;
     }
 
     public static void NettoyerModelesEnfants(Node3D parent)
@@ -1205,6 +1205,35 @@ public partial class Joueur
             foreach (Node c in n.GetChildren())
                 ParcourirMeshes(c);
         }
+        ParcourirMeshes(modele);
+        NormaliserEchelleEtCentrerModeleArme(modele, tailleMaxMetres);
+        parent.AddChild(modele);
+    }
+
+    /// <summary>Intestin (GLB) — loot bovin. Matériau organique rose appliqué en code.</summary>
+    public static void InstancierModeleIntestinBoeuf(Node3D parent, SlotInventaire slot, float tailleMaxMetres = 0.26f)
+    {
+        PackedScene scene = GD.Load<PackedScene>("res://Modeles/materials/intestin+de+bovin.glb");
+        if (scene == null) return;
+        NettoyerModelesEnfants(parent);
+        Node3D modele = scene.Instantiate<Node3D>();
+        modele.Name = "ModeleArme";
+
+        var matIntestin = new StandardMaterial3D
+        {
+            AlbedoColor = new Color(0.82f, 0.45f, 0.52f),
+            Roughness = 0.93f,
+            Metallic = 0f
+        };
+
+        void ParcourirMeshes(Node n)
+        {
+            if (n is MeshInstance3D mi)
+                mi.MaterialOverride = matIntestin;
+            foreach (Node c in n.GetChildren())
+                ParcourirMeshes(c);
+        }
+
         ParcourirMeshes(modele);
         NormaliserEchelleEtCentrerModeleArme(modele, tailleMaxMetres);
         parent.AddChild(modele);

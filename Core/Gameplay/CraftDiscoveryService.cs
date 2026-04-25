@@ -400,8 +400,8 @@ public partial class Joueur
 		if (GD.Randf() >= pReussite)
 		{
 			ConsommerAnalyseur();
-			AjouterXpFutureState("Intelligence", 2UL);
-			message = "Echec de l'analyse : tes echantillons sont consumes. Tu en retires une lecon (+2 XP Intelligence).";
+			ulong xpIntelligenceRecue = AjouterXpFutureStateEtRetourEffectif("Intelligence", 2UL);
+			message = $"Echec de l'analyse : tes echantillons sont consumes. Tu en retires une lecon (+{xpIntelligenceRecue} XP Intelligence).";
 			MessageAnalyseurManuel = message;
 			AlerteSqueletteBoiteNoire("Analyseur : " + message);
 			return false;
@@ -411,16 +411,16 @@ public partial class Joueur
 		RecetteAnalysable choisie = nonDecouvertes[pick];
 		DebloquerCraft(choisie.CleCraft);
 		ConsommerAnalyseur();
-		AjouterXpFutureState("Intelligence", 1UL);
+		ulong xpIntelligenceRecueSucces = AjouterXpFutureStateEtRetourEffectif("Intelligence", 1UL);
 
-		message = FormaterMessageDecouverte(choisie) + " (+1 XP Intelligence).";
+		message = FormaterMessageDecouverte(choisie) + $" (+{xpIntelligenceRecueSucces} XP Intelligence).";
 		MessageAnalyseurManuel = message;
 		string titreCourt = string.IsNullOrWhiteSpace(choisie.Titre) ? "nouvelle formule" : choisie.Titre;
 		string schemaChat = FormaterTexteSchemaRecette(choisie);
 		if (string.IsNullOrEmpty(schemaChat))
-			AlerteSqueletteBoiteNoire($"Analyseur : reussite — tu decouvres « {titreCourt} » (+1 XP Intelligence). Ouvre le menu Q pour plus de details.");
+			AlerteSqueletteBoiteNoire($"Analyseur : reussite — tu decouvres « {titreCourt} » (+{xpIntelligenceRecueSucces} XP Intelligence). Ouvre le menu Q pour plus de details.");
 		else
-			AlerteSqueletteBoiteNoire($"Analyseur : reussite — « {titreCourt} » (+1 XP Intelligence).\n{schemaChat}");
+			AlerteSqueletteBoiteNoire($"Analyseur : reussite — « {titreCourt} » (+{xpIntelligenceRecueSucces} XP Intelligence).\n{schemaChat}");
 		return true;
 	}
 

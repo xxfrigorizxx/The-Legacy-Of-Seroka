@@ -42,6 +42,53 @@ public partial class ItemPhysique : RigidBody3D
 		|| idObjet == Joueur.IdObjetRackBuches
 		|| idObjet == Joueur.IdObjetCoffreBoisTier0;
 
+	private const float SeuilMasseObjetLegerKg = 35f;
+	private const float SeuilHauteurObjetPetitMetres = 0.6f;
+
+	public static bool EstRigidBodyLegerEtPetitReactif(RigidBody3D rb)
+	{
+		if (rb is ItemPhysique ip)
+			return ip.EstObjetLegerEtPetitReactif();
+		return false;
+	}
+
+	public bool EstObjetLegerEtPetitReactif()
+	{
+		if (EstMeublePoseStatique(ID_Objet))
+			return false;
+		return Mass <= SeuilMasseObjetLegerKg && ObtenirHauteurApproxObjetMetres() <= SeuilHauteurObjetPetitMetres;
+	}
+
+	private float ObtenirHauteurApproxObjetMetres()
+	{
+		foreach (Node c in GetChildren())
+		{
+			if (c is not CollisionShape3D cs || cs.Shape == null)
+				continue;
+			switch (cs.Shape)
+			{
+				case BoxShape3D box:
+					return Mathf.Max(0.01f, box.Size.Y);
+				case SphereShape3D sphere:
+					return Mathf.Max(0.01f, sphere.Radius * 2f);
+				case CapsuleShape3D capsule:
+					return Mathf.Max(0.01f, capsule.Height + capsule.Radius * 2f);
+				case CylinderShape3D cylinder:
+					return Mathf.Max(0.01f, cylinder.Height);
+			}
+		}
+
+		foreach (Node c in GetChildren())
+		{
+			if (c is MeshInstance3D mi && mi.Mesh != null)
+			{
+				Aabb aabb = mi.Mesh.GetAabb();
+				return Mathf.Max(0.01f, aabb.Size.Y * Mathf.Abs(mi.Scale.Y));
+			}
+		}
+		return 1f;
+	}
+
 	public static float RayonBaseRochesJoueur(int indexTaille) => indexTaille switch
 	{
 		0 => 0.08f,
@@ -261,6 +308,7 @@ public partial class ItemPhysique : RigidBody3D
 	}
 	/// <summary>Cache pour flottaison : eau voxel via le gestionnaire (évite la bande Y qui cassait le sol sec).</summary>
 	private Gestionnaire_Monde _gestionnaireMondeCache;
+	private readonly Vector3[] _echantillonsImmersionObjet = new Vector3[7];
 
 	private Gestionnaire_Monde ObtenirGestionnaireMonde()
 	{
@@ -269,6 +317,75 @@ public partial class ItemPhysique : RigidBody3D
 		Node p = GetParent();
 		_gestionnaireMondeCache = p?.GetNodeOrNull<Gestionnaire_Monde>("Gestionnaire_Monde");
 		return _gestionnaireMondeCache;
+	}
+
+	private Vector3 ObtenirDemiExtentsApproxObjet()
+	{
+		Vector3 tailleMax = Vector3.Zero;
+		foreach (Node c in GetChildren())
+		{
+			if (c is not CollisionShape3D cs || cs.Shape == null)
+				continue;
+			Vector3 tailleForme = cs.Shape switch
+			{
+				BoxShape3D box => box.Size,
+				SphereShape3D sphere => Vector3.One * (sphere.Radius * 2f),
+				CapsuleShape3D capsule => new Vector3(capsule.Radius * 2f, capsule.Height + capsule.Radius * 2f, capsule.Radius * 2f),
+				CylinderShape3D cylinder => new Vector3(cylinder.Radius * 2f, cylinder.Height, cylinder.Radius * 2f),
+				_ => Vector3.Zero
+			};
+			if (tailleForme == Vector3.Zero)
+				continue;
+			Vector3 scaleLocal = new Vector3(Mathf.Abs(cs.Scale.X), Mathf.Abs(cs.Scale.Y), Mathf.Abs(cs.Scale.Z));
+			tailleForme *= scaleLocal;
+			tailleMax = new Vector3(
+				Mathf.Max(tailleMax.X, tailleForme.X),
+				Mathf.Max(tailleMax.Y, tailleForme.Y),
+				Mathf.Max(tailleMax.Z, tailleForme.Z));
+		}
+
+		if (tailleMax.LengthSquared() < 1e-6f)
+		{
+			foreach (Node c in GetChildren())
+			{
+				if (c is MeshInstance3D mi && mi.Mesh != null)
+				{
+					Vector3 tailleMesh = mi.Mesh.GetAabb().Size;
+					Vector3 scaleMesh = new Vector3(Mathf.Abs(mi.Scale.X), Mathf.Abs(mi.Scale.Y), Mathf.Abs(mi.Scale.Z));
+					tailleMesh *= scaleMesh;
+					tailleMax = new Vector3(
+						Mathf.Max(tailleMax.X, tailleMesh.X),
+						Mathf.Max(tailleMax.Y, tailleMesh.Y),
+						Mathf.Max(tailleMax.Z, tailleMesh.Z));
+				}
+			}
+		}
+
+		if (tailleMax.LengthSquared() < 1e-6f)
+			tailleMax = new Vector3(0.35f, 0.35f, 0.35f);
+
+		return tailleMax * 0.5f;
+	}
+
+	private float CalculerRatioImmersionObjet(Gestionnaire_Monde gm)
+	{
+		if (gm == null)
+			return 0f;
+		Vector3 demi = ObtenirDemiExtentsApproxObjet();
+		float x = Mathf.Max(0.05f, demi.X * 0.9f);
+		float yBas = -Mathf.Max(0.05f, demi.Y * 0.9f);
+		float yMilieu = 0f;
+		float yHaut = Mathf.Max(0.05f, demi.Y * 0.9f);
+		float z = Mathf.Max(0.05f, demi.Z * 0.9f);
+
+		_echantillonsImmersionObjet[0] = new Vector3(0f, yBas, 0f);
+		_echantillonsImmersionObjet[1] = new Vector3(0f, yMilieu, 0f);
+		_echantillonsImmersionObjet[2] = new Vector3(0f, yHaut, 0f);
+		_echantillonsImmersionObjet[3] = new Vector3(x, yMilieu, 0f);
+		_echantillonsImmersionObjet[4] = new Vector3(-x, yMilieu, 0f);
+		_echantillonsImmersionObjet[5] = new Vector3(0f, yMilieu, z);
+		_echantillonsImmersionObjet[6] = new Vector3(0f, yMilieu, -z);
+		return gm.CalculerRatioImmersion(GlobalPosition, _echantillonsImmersionObjet);
 	}
 
 	private static MeshInstance3D TrouverPremierMeshInstanceAvecMesh(Node n)
@@ -576,7 +693,7 @@ public partial class ItemPhysique : RigidBody3D
 		{
 			int m = Mathf.Clamp(IndexCacheMemoire, 0, 3);
 			Gestionnaire_Monde gmRoche = ObtenirGestionnaireMonde();
-			bool dansEau = gmRoche != null && gmRoche.EstPointDansEau(GlobalPosition);
+			bool dansEau = gmRoche != null && CalculerRatioImmersionObjet(gmRoche) >= 0.5f;
 			// Hors eau : on laisse friction/rebond du PhysicsMaterial (moteur) — pas de forces « magiques ».
 			if (dansEau)
 			{
@@ -600,12 +717,14 @@ public partial class ItemPhysique : RigidBody3D
 		if (profil.MasseDensite >= 1f) return;
 
 		Gestionnaire_Monde gm = ObtenirGestionnaireMonde();
-		if (gm == null || !gm.EstPointDansEau(GlobalPosition)) return;
+		if (gm == null) return;
+		float ratioImmersion = CalculerRatioImmersionObjet(gm);
+		if (ratioImmersion < 0.5f) return;
 
-		const float NIVEAU_EAU = 103f;
 		const float RHO_EAU = 1000f;
 		const float G_EAU = 4f;
 		float y = GlobalPosition.Y;
+		float niveauBaseEau = gm.ObtenirNiveauSurfaceEau() - 0.35f;
 
 		float rayonEff = ID_Objet == 30 ? 0.12f : 0.02f;
 		float longueurEff = ID_Objet == 30 ? 0.6f : 0.5f;
@@ -626,7 +745,7 @@ public partial class ItemPhysique : RigidBody3D
 
 		// Centre du corps un peu au-dessus du plan d’eau : cylindre couché → le rayon domine le tirant d’eau visible
 		float offsetSurface = Mathf.Clamp(rayonEff * 0.55f + longueurEff * 0.08f, 0.06f, 0.65f);
-		float niveauRef = NIVEAU_EAU + offsetSurface;
+		float niveauRef = niveauBaseEau + offsetSurface;
 		if (y >= niveauRef + 0.35f) return;
 
 		float massePortee = 0f;
@@ -747,6 +866,28 @@ public partial class ItemPhysique : RigidBody3D
 				if (perforant && vitesseImpact > 4.9f)
 					TenterPlanterDansBovin(boeufTouche);
 			}
+		}
+
+		// Objets légers/petits: au contact joueur, on les réveille et on les repousse légèrement
+		// pour éviter un blocage dur sur de petits objets au sol.
+		if (body is CharacterBody3D personnage && EstObjetLegerEtPetitReactif())
+		{
+			if (Freeze) Freeze = false;
+			if (Sleeping) Sleeping = false;
+			Vector3 dirPoussee = GlobalPosition - personnage.GlobalPosition;
+			dirPoussee.Y = 0f;
+			if (dirPoussee.LengthSquared() < 0.0001f)
+			{
+				dirPoussee = LinearVelocity;
+				dirPoussee.Y = 0f;
+			}
+			if (dirPoussee.LengthSquared() > 0.0001f)
+				dirPoussee = dirPoussee.Normalized();
+			else
+				dirPoussee = Vector3.Forward;
+
+			float impulsionHoriz = Mathf.Clamp(0.8f + Mass * 0.25f, 0.8f, 3.5f);
+			ApplyCentralImpulse(dirPoussee * impulsionHoriz + Vector3.Up * 0.18f);
 		}
 
 		// 1. Détection du corps fantôme (terrain bas-niveau)

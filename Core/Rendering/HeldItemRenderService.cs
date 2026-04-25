@@ -374,6 +374,16 @@ public partial class Joueur
             _objetEnMain.RotationDegrees = new Vector3(2f + _rotationManuelleX, 40f + _rotationManuelleY, -6f + _rotationManuelleZ);
             return;
         }
+        if (main.ID == IdObjetIntestinBoeuf)
+        {
+            _objetEnMain.Mesh = null;
+            _objetEnMain.MaterialOverride = null;
+            NettoyerModelesEnfants(_objetEnMain);
+            InstancierModeleIntestinBoeuf(_objetEnMain, main, 0.22f);
+            _objetEnMain.Scale = Vector3.One;
+            _objetEnMain.RotationDegrees = new Vector3(6f + _rotationManuelleX, 30f + _rotationManuelleY, -4f + _rotationManuelleZ);
+            return;
+        }
         if (main.ID == 10 || main.ID == 11)
         {
             NettoyerModelesEnfants(_objetEnMain);
@@ -851,6 +861,16 @@ public partial class Joueur
             }
             meshNode.Scale = Vector3.One;
             meshNode.RotationDegrees = new Vector3(4f, 36f, -4f);
+            return;
+        }
+        if (slot.ID == IdObjetIntestinBoeuf)
+        {
+            meshNode.Mesh = null;
+            meshNode.MaterialOverride = null;
+            NettoyerModelesEnfants(meshNode);
+            InstancierModeleIntestinBoeuf(meshNode, slot, 0.2f);
+            meshNode.Scale = Vector3.One;
+            meshNode.RotationDegrees = new Vector3(8f, 30f, -2f);
             return;
         }
         if (slot.ID == 10 || slot.ID == 11)

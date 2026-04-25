@@ -22,17 +22,25 @@ public partial class Joueur
     private const float DistanceMaxViseeDirecteBuisson = 0.55f;
     private const float IntervalleParticulesMinageBuisson = 0.11f;
     private const float IntervalleParticulesMinageLiane = 0.10f;
+    private const float DureeDepecageDagueCadavreSecondes = 3.0f;
+    private const float IntervalleParticulesDepecageCadavre = 0.10f;
     private float _progressionRecolteBuisson;
     private float _cooldownParticulesMinageBuisson;
     private float _progressionRecolteLianeDague;
     private float _cooldownParticulesMinageLiane;
+    private float _progressionDepecageCadavreDague;
+    private float _cooldownParticulesDepecageCadavre;
+    private float _tempsPerteCibleDepecageCadavre;
     private float _tempsPerteCibleLiane;
     private Vector3 _pointRecolteBuisson;
     private Vector3 _pointRecolteLiane;
+    private Vector3 _pointDepecageCadavre;
     private Vector3I _posBuissonRecolte;
     private bool _aCibleBuissonRecolte;
     private ArbreVivant _arbreCibleLiane;
+    private BoeufSauvage _boeufCadavreCibleDepecage;
     private bool _bloquerActionClicGaucheApresMinageBuisson;
+    private bool _bloquerActionClicGaucheApresDepecage;
 
     private static bool EstMatiereMinableMainNue(int idMatiere)
     {
@@ -90,6 +98,7 @@ public partial class Joueur
         _pointRecolteBuisson = Vector3.Zero;
         _posBuissonRecolte = default;
         _bloquerActionClicGaucheApresMinageBuisson = false;
+        ReinitialiserDepecageCadavreDagueProgression();
         ReinitialiserMinageLianeDagueProgression();
     }
 
@@ -100,6 +109,115 @@ public partial class Joueur
         _tempsPerteCibleLiane = 0f;
         _pointRecolteLiane = Vector3.Zero;
         _arbreCibleLiane = null;
+    }
+
+    private void ReinitialiserDepecageCadavreDagueProgression()
+    {
+        _progressionDepecageCadavreDague = 0f;
+        _cooldownParticulesDepecageCadavre = 0f;
+        _tempsPerteCibleDepecageCadavre = 0f;
+        _pointDepecageCadavre = Vector3.Zero;
+        _boeufCadavreCibleDepecage = null;
+    }
+
+    private void EmmettreParticulesDepecageCadavre(Vector3 position, Vector3 normale)
+    {
+        if (GetTree()?.CurrentScene == null) return;
+        Vector3 n = normale.LengthSquared() > 1e-5f ? normale.Normalized() : Vector3.Up;
+        var container = new Node3D { Name = "FxDepecageCadavre" };
+        GetTree().CurrentScene.AddChild(container);
+        container.GlobalPosition = position + n * 0.015f;
+
+        var mat = new StandardMaterial3D { AlbedoColor = new Color(0.86f, 0.34f, 0.42f), Roughness = 0.82f, Metallic = 0f };
+        for (int i = 0; i < 9; i++)
+        {
+            var mi = new MeshInstance3D
+            {
+                Mesh = new BoxMesh { Size = new Vector3(0.018f, 0.018f, 0.018f) * (0.7f + GD.Randf() * 0.8f) },
+                MaterialOverride = mat,
+                Position = new Vector3((float)(GD.Randf() - 0.5f) * 0.14f, (float)GD.Randf() * 0.08f, (float)(GD.Randf() - 0.5f) * 0.14f)
+            };
+            container.AddChild(mi);
+        }
+        var timer = container.GetTree().CreateTimer(0.22);
+        timer.Timeout += () => container.QueueFree();
+    }
+
+    /// <summary>Dépitage cadavre bovin : maintien 3s clic gauche avec dague (plus de coups comptés).</summary>
+    private bool MettreAJourDepecageCadavreDague(float dt, SlotInventaire mainActive)
+    {
+        if (mainActive.ID != 105)
+        {
+            ReinitialiserDepecageCadavreDagueProgression();
+            return false;
+        }
+
+        _rayon.ForceRaycastUpdate();
+        Vector3 pointImpact = _pointDepecageCadavre;
+        Vector3 normaleImpact = Vector3.Up;
+        BoeufSauvage boeuf = null;
+        if (_rayon.IsColliding())
+        {
+            Node objetTouche = NoeudDepuisColliderRaycast(_rayon.GetCollider());
+            boeuf = ObtenirBoeufDepuisCollider(objetTouche);
+            pointImpact = _rayon.GetCollisionPoint();
+            normaleImpact = _rayon.GetCollisionNormal();
+        }
+
+        bool boeufValide = boeuf != null && boeuf.EstCadavreDepecable();
+        if (!boeufValide)
+        {
+            // Petite grâce anti-jitter: la visée peut décrocher 1-2 frames sur un cadavre collé au sol.
+            bool cibleMemoireValide = _boeufCadavreCibleDepecage != null
+                && GodotObject.IsInstanceValid(_boeufCadavreCibleDepecage)
+                && _boeufCadavreCibleDepecage.EstCadavreDepecable();
+            if (!cibleMemoireValide)
+            {
+                ReinitialiserDepecageCadavreDagueProgression();
+                return false;
+            }
+
+            _tempsPerteCibleDepecageCadavre += dt;
+            if (_tempsPerteCibleDepecageCadavre > 0.35f)
+            {
+                ReinitialiserDepecageCadavreDagueProgression();
+                return false;
+            }
+            boeuf = _boeufCadavreCibleDepecage;
+            if (pointImpact == Vector3.Zero)
+                pointImpact = boeuf.GlobalPosition + Vector3.Up * 0.36f;
+            normaleImpact = Vector3.Up;
+        }
+        else
+        {
+            _tempsPerteCibleDepecageCadavre = 0f;
+        }
+
+        if (_boeufCadavreCibleDepecage != boeuf)
+        {
+            _boeufCadavreCibleDepecage = boeuf;
+            _progressionDepecageCadavreDague = 0f;
+            _cooldownParticulesDepecageCadavre = 0f;
+        }
+
+        _pointDepecageCadavre = pointImpact;
+        _progressionDepecageCadavreDague += dt;
+        _cooldownParticulesDepecageCadavre -= dt;
+        if (_cooldownParticulesDepecageCadavre <= 0f)
+        {
+            _cooldownParticulesDepecageCadavre = IntervalleParticulesDepecageCadavre;
+            EmmettreParticulesDepecageCadavre(pointImpact, normaleImpact);
+        }
+
+        if (_progressionDepecageCadavreDague < DureeDepecageDagueCadavreSecondes)
+            return true;
+
+        Vector3 directionFrappe = _camera != null ? -_camera.GlobalTransform.Basis.Z.Normalized() : -GlobalTransform.Basis.Z.Normalized();
+        AppliquerUsureOutilMainActive(0.95f);
+        ExecuterLootDepecageCadavreBoeuf(boeuf, _pointDepecageCadavre, directionFrappe);
+        _bloquerActionClicGaucheApresDepecage = true;
+        ReinitialiserDepecageCadavreDagueProgression();
+        return true;
     }
 
     private bool EssayerObtenirCibleBuisson(out Vector3 pointImpact, out Vector3 pointBuissonMonde, out Vector3I posBuisson, out byte typeBuisson)
@@ -551,6 +669,9 @@ public partial class Joueur
         _progressionRecuperationAtelier = 0f;
         _cooldownParticulesRecuperationAtelier = 0f;
         _atelierCibleRecuperation = null;
+
+        if (dague && MettreAJourDepecageCadavreDague(dt, mainActive))
+            return;
 
         if (dague && MettreAJourRecolteLianeDague(dt, mainActive))
             return;
@@ -1338,14 +1459,8 @@ public partial class Joueur
         {
             if (boeufTouche.EstCadavreDepecable())
             {
-                // Cadavre au sol : seuil d’alignement plus bas (sinon beaucoup de coups « valides » visuellement ne comptent pas).
-                if (mainActive.ID == 105 && EstFrappeDagueAvecLaLame(pointImpact, directionFrappe, 0.04f))
-                {
-                    bool depecageComplet = boeufTouche.EnregistrerCoupDepecageDagueValide();
-                    AppliquerUsureOutilMainActive(0.35f);
-                    if (depecageComplet)
-                        ExecuterLootDepecageCadavreBoeuf(boeufTouche, pointImpact, directionFrappe);
-                }
+                if (mainActive.ID == 105)
+                    GD.Print("ZERO-K : Maintenez clic gauche 3s avec la dague pour dépiter ce cadavre.");
                 return;
             }
 
@@ -1836,8 +1951,20 @@ public partial class Joueur
         if (nCuir is RigidBody3D rbC)
             rbC.ApplyCentralImpulse(-orth * 0.22f + Vector3.Up * 0.3f + dir * 0.22f);
 
+        var slotIntestin = new SlotInventaire
+        {
+            ID = IdObjetIntestinBoeuf,
+            Quantite = 2,
+            IndexChimique = 0,
+            IndexMorphologique = 0,
+            IndexTaille = 0
+        };
+        Node3D nIntestin = CreerBlocPose(basePos + orth * 0.2f + dir * 0.12f, slotIntestin);
+        if (nIntestin is RigidBody3D rbI)
+            rbI.ApplyCentralImpulse(orth * 0.26f + Vector3.Up * 0.34f + dir * 0.18f);
+
         boeuf.FinaliserCadavreApresDepecage();
-        GD.Print("ZERO-K : Viande, os et cuir récupérés sur la carcasse.");
+        GD.Print("ZERO-K : Viande, os, cuir et intestins récupérés sur la carcasse.");
     }
 
     private Vector3 CalculerPointAuDessusSol(Vector3 reference, float clearanceSelonNormale)

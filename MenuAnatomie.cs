@@ -99,6 +99,7 @@ public partial class MenuAnatomie : Control
 	private Panel _panneauSauvegarderQuitter;
 	private Panel _panneauAnalyseur;
 	private GridContainer _grilleAnalyseur;
+	private Label _lblAnalyseurChance;
 	private Label _lblAnalyseurMessage;
 	private Button _btnAnalyser;
 	private Panel[] _slotsAnalyseur;
@@ -599,7 +600,7 @@ public partial class MenuAnatomie : Control
 				}
 			}
 			if (_labelsSanteCorps.TryGetValue(section.Cle, out Label lbl))
-				lbl.Text = $"{section.PointsVie}/{section.PointsVieMax} PV  |  Matiere: {section.Matiere}";
+				lbl.Text = $"{section.PointsVie:F2}/{section.PointsVieMax:F2} PV  |  Matiere: {section.Matiere}";
 		}
 	}
 
@@ -2033,7 +2034,7 @@ public partial class MenuAnatomie : Control
 
 		var aide = new Label
 		{
-			Text = "Depose des objets. L'analyse consomme ce que tu as mis.",
+			Text = "Dépose des objets. L'analyse consomme ce que tu as mis.",
 			HorizontalAlignment = HorizontalAlignment.Center,
 			AutowrapMode = TextServer.AutowrapMode.WordSmart,
 			MouseFilter = Control.MouseFilterEnum.Ignore
@@ -2074,18 +2075,31 @@ public partial class MenuAnatomie : Control
 		{
 			if (_joueurRef == null) return;
 			_joueurRef.EssayerAnalyserCrafts(out string msgAnalyse);
+			RafraichirLabelChanceAnalyseur();
 			if (_lblAnalyseurMessage != null)
-				_lblAnalyseurMessage.Text = string.IsNullOrEmpty(msgAnalyse) ? _joueurRef.MessageAnalyseurManuel : msgAnalyse;
+				_lblAnalyseurMessage.Text = ConstruireTexteEtatAnalyseur(string.IsNullOrEmpty(msgAnalyse) ? _joueurRef.MessageAnalyseurManuel : msgAnalyse);
 			GetViewport()?.SetInputAsHandled();
 			_joueurRef.RafraichirHUD();
 			RafraichirMenu();
 		};
 		col.AddChild(_btnAnalyser);
 
+		_lblAnalyseurChance = new Label
+		{
+			Name = "AnalyseurChance",
+			Text = "Chance de réussite: --,--%",
+			HorizontalAlignment = HorizontalAlignment.Center,
+			VerticalAlignment = VerticalAlignment.Center,
+			MouseFilter = Control.MouseFilterEnum.Ignore
+		};
+		_lblAnalyseurChance.AddThemeFontSizeOverride("font_size", 14);
+		_lblAnalyseurChance.AddThemeColorOverride("font_color", new Color(0.90f, 0.95f, 1.00f));
+		col.AddChild(_lblAnalyseurChance);
+
 		_lblAnalyseurMessage = new Label
 		{
 			Name = "AnalyseurMessage",
-			Text = "Depose des objets puis clique sur Analyser.",
+			Text = "Dépose des objets puis clique sur Analyser.",
 			AutowrapMode = TextServer.AutowrapMode.WordSmart,
 			HorizontalAlignment = HorizontalAlignment.Center,
 			VerticalAlignment = VerticalAlignment.Top,
@@ -2128,10 +2142,11 @@ public partial class MenuAnatomie : Control
 		if (_joueurRef == null) return;
 		AssurerPanneauAnalyseur();
 		AssurerPreviewsAnalyseur();
+		RafraichirLabelChanceAnalyseur();
 		if (_lblAnalyseurMessage != null)
-			_lblAnalyseurMessage.Text = string.IsNullOrEmpty(_joueurRef.MessageAnalyseurManuel)
-				? "Depose des objets puis clique sur Analyser."
-				: _joueurRef.MessageAnalyseurManuel;
+			_lblAnalyseurMessage.Text = ConstruireTexteEtatAnalyseur(string.IsNullOrEmpty(_joueurRef.MessageAnalyseurManuel)
+				? "Dépose des objets puis clique sur Analyser."
+				: _joueurRef.MessageAnalyseurManuel);
 		if (_slotsAnalyseur == null) return;
 		for (int i = 0; i < _slotsAnalyseur.Length; i++)
 		{
@@ -2169,6 +2184,24 @@ public partial class MenuAnatomie : Control
 			}
 			RafraichirQuantiteSlot(panel, s);
 		}
+	}
+
+	private string ConstruireTexteEtatAnalyseur(string messagePrincipal)
+	{
+		if (_joueurRef == null)
+			return messagePrincipal ?? "";
+		string regle = "Règle: base 50% + 0,01% par point d'Intelligence autour de 10.";
+		if (string.IsNullOrWhiteSpace(messagePrincipal))
+			return regle;
+		return $"{regle}\n\n{messagePrincipal}";
+	}
+
+	private void RafraichirLabelChanceAnalyseur()
+	{
+		if (_lblAnalyseurChance == null || _joueurRef == null)
+			return;
+		float chance = Mathf.Clamp(_joueurRef.ObtenirChanceReussiteAnalyseManuelle() * 100f, 0f, 100f);
+		_lblAnalyseurChance.Text = $"Chance de réussite: {chance:F2}%";
 	}
 
 	private void RestituerGrilleAnalyseurAvantFermeture()
