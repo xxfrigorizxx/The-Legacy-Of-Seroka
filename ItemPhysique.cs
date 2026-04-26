@@ -19,7 +19,7 @@ public struct ProfilMineral
 public partial class ItemPhysique : RigidBody3D
 {
 	public const int IdRocheMatiereMin = 40;
-	public const int IdRocheMatiereMax = 49;
+	public const int IdRocheMatiereMax = 51;
 	/// <summary>Atelier posé (200) : grille 3×3 du plan de travail, indépendante du craft 2×2 de l’inventaire (Q).</summary>
 	public SlotInventaire[] GrillePlanTravailAtelier = new SlotInventaire[9];
 	/// <summary>Coffre en bois posé (113) : 10 slots persistés avec l’objet (monde + sauvegarde).</summary>
@@ -40,7 +40,8 @@ public partial class ItemPhysique : RigidBody3D
 		idObjet == 200
 		|| idObjet == Joueur.IdObjetRackBatons
 		|| idObjet == Joueur.IdObjetRackBuches
-		|| idObjet == Joueur.IdObjetCoffreBoisTier0;
+		|| idObjet == Joueur.IdObjetCoffreBoisTier0
+		|| idObjet == Joueur.IdObjetPitFeu;
 
 	private const float SeuilMasseObjetLegerKg = 35f;
 	private const float SeuilHauteurObjetPetitMetres = 0.6f;
@@ -255,7 +256,9 @@ public partial class ItemPhysique : RigidBody3D
 		new ProfilMineral { Nom = "Quartz", CouleurBase = new Color(0.9f, 0.88f, 0.85f), CouleurVeine = new Color(0.95f, 0.95f, 0.95f), CouleurTache = new Color(0.6f, 0.55f, 0.5f), Rugosite = 0.3f, ResistanceFuture = 70 },
 		new ProfilMineral { Nom = "Marbre", CouleurBase = new Color(0.85f, 0.85f, 0.9f), CouleurVeine = new Color(0.7f, 0.7f, 0.75f), CouleurTache = new Color(0.95f, 0.95f, 0.98f), Rugosite = 0.2f, ResistanceFuture = 50 },
 		new ProfilMineral { Nom = "Obsidienne", CouleurBase = new Color(0.08f, 0.08f, 0.1f), CouleurVeine = new Color(0.05f, 0.05f, 0.06f), CouleurTache = new Color(0.15f, 0.15f, 0.18f), Rugosite = 0.15f, ResistanceFuture = 75 },
-		new ProfilMineral { Nom = "Gneiss", CouleurBase = new Color(0.45f, 0.42f, 0.4f), CouleurVeine = new Color(0.55f, 0.5f, 0.48f), CouleurTache = new Color(0.25f, 0.22f, 0.2f), Rugosite = 0.85f, ResistanceFuture = 65 }
+		new ProfilMineral { Nom = "Gneiss", CouleurBase = new Color(0.45f, 0.42f, 0.4f), CouleurVeine = new Color(0.55f, 0.5f, 0.48f), CouleurTache = new Color(0.25f, 0.22f, 0.2f), Rugosite = 0.85f, ResistanceFuture = 65 },
+		new ProfilMineral { Nom = "Marcassite", CouleurBase = new Color(0.62f, 0.58f, 0.44f), CouleurVeine = new Color(0.72f, 0.68f, 0.5f), CouleurTache = new Color(0.33f, 0.3f, 0.24f), Rugosite = 0.56f, ResistanceFuture = 58 },
+		new ProfilMineral { Nom = "Pyrite", CouleurBase = new Color(0.76f, 0.68f, 0.3f), CouleurVeine = new Color(0.86f, 0.78f, 0.4f), CouleurTache = new Color(0.4f, 0.34f, 0.14f), Rugosite = 0.48f, ResistanceFuture = 62 }
 	};
 
 	[Export] public int ID_Objet = 0;
@@ -275,7 +278,7 @@ public partial class ItemPhysique : RigidBody3D
 	public byte IndexBotanique = 0;
 	/// <summary>Assemblage CAO identique à <see cref="SlotInventaire.GenomeAssemblage"/> (outil forgé ID 100).</summary>
 	public string GenomeAssemblage = "";
-	/// <summary>Grosseur pour roches matière (40–49) : 0=Mini … 4=Énorme. Aligné sur <see cref="SlotInventaire.IndexTaille"/>.</summary>
+	/// <summary>Grosseur pour roches matière (ID <see cref="IdRocheMatiereMin"/>–<see cref="IdRocheMatiereMax"/>) : 0=Mini … 4=Énorme. Aligné sur <see cref="SlotInventaire.IndexTaille"/>.</summary>
 	public int IndexTailleRoche = 2;
 
 	/// <summary>Banque d'ADN : accès public pour rendu en main et UI inventaire.</summary>
@@ -309,6 +312,19 @@ public partial class ItemPhysique : RigidBody3D
 	/// <summary>Cache pour flottaison : eau voxel via le gestionnaire (évite la bande Y qui cassait le sol sec).</summary>
 	private Gestionnaire_Monde _gestionnaireMondeCache;
 	private readonly Vector3[] _echantillonsImmersionObjet = new Vector3[7];
+	private double _tempsImmersionIntestin;
+	private const double DureeCombustionPitFeuSec = 300.0;
+	private const string MetaPitFeuFinCombustionUnixMs = "PitFeuFinCombustionUnixMs";
+	private GpuParticles3D _pitFlammeParticles;
+	private Node3D _pitFlammeCroix;
+	private GpuParticles3D _pitFumeeParticles;
+	private static ImageTexture _textureFlammePitCache;
+	private OmniLight3D _pitFlammeLight;
+	private static readonly Vector3 PitFlammeCroixBasePosition = new Vector3(0f, 0.105f, 0f);
+	private static readonly Vector3 PitFlammeParticlesBasePosition = new Vector3(0f, 0.18f, 0f);
+	private static readonly Vector3 PitFumeeParticlesBasePosition = new Vector3(0f, 0.24f, 0f);
+	private double _pitFeuResteSec = 0d;
+	private double _pitFeuDernierSyncRestantSec = -1d;
 
 	private Gestionnaire_Monde ObtenirGestionnaireMonde()
 	{
@@ -317,6 +333,224 @@ public partial class ItemPhysique : RigidBody3D
 		Node p = GetParent();
 		_gestionnaireMondeCache = p?.GetNodeOrNull<Gestionnaire_Monde>("Gestionnaire_Monde");
 		return _gestionnaireMondeCache;
+	}
+
+	private void ActiverVisuelPitFeu(bool actif)
+	{
+		if (ID_Objet != Joueur.IdObjetPitFeu)
+			return;
+		if (_pitFlammeCroix == null || !GodotObject.IsInstanceValid(_pitFlammeCroix))
+		{
+			_pitFlammeCroix = new Node3D
+			{
+				Name = "PitFeuFlammesCroix",
+				Position = PitFlammeCroixBasePosition,
+				Visible = false
+			};
+			StandardMaterial3D matFlamme = CreerMateriauFlammePitTexture();
+			for (int i = 0; i < 4; i++)
+			{
+				var mi = new MeshInstance3D
+				{
+					Name = $"FlammePlan{i}",
+					Mesh = new QuadMesh { Size = new Vector2(0.94f, 0.285f) },
+					CastShadow = GeometryInstance3D.ShadowCastingSetting.Off
+				};
+				mi.MaterialOverride = matFlamme;
+				mi.RotationDegrees = new Vector3(0f, i * 45f, 0f);
+				mi.Position = new Vector3(0f, 0.04f + i * 0.010f, 0f);
+				_pitFlammeCroix.AddChild(mi);
+			}
+			AddChild(_pitFlammeCroix);
+		}
+		if (_pitFlammeParticles == null || !GodotObject.IsInstanceValid(_pitFlammeParticles))
+		{
+			_pitFlammeParticles = new GpuParticles3D
+			{
+				Name = "PitFeuFlammes",
+				Amount = 84,
+				Explosiveness = 0f,
+				Lifetime = 0.74,
+				OneShot = false,
+				Emitting = false,
+				Position = PitFlammeParticlesBasePosition
+			};
+			var meshFlamme = new QuadMesh { Size = new Vector2(0.336f, 0.135f) };
+			meshFlamme.Material = CreerMateriauFlammePitTexture();
+			_pitFlammeParticles.DrawPass1 = meshFlamme;
+			var mat = new ParticleProcessMaterial
+			{
+				Direction = new Vector3(0f, 1f, 0f),
+				Gravity = new Vector3(0f, 1.35f, 0f),
+				InitialVelocityMin = 0.055f,
+				InitialVelocityMax = 0.175f,
+				ScaleMin = 0.48f,
+				ScaleMax = 1.16f,
+				ScaleCurve = null
+			};
+			_pitFlammeParticles.ProcessMaterial = mat;
+			AddChild(_pitFlammeParticles);
+		}
+		if (_pitFumeeParticles == null || !GodotObject.IsInstanceValid(_pitFumeeParticles))
+		{
+			_pitFumeeParticles = new GpuParticles3D
+			{
+				Name = "PitFeuFumee",
+				Amount = 30,
+				Explosiveness = 0f,
+				Lifetime = 3.2,
+				OneShot = false,
+				Emitting = false,
+				Position = PitFumeeParticlesBasePosition,
+				VisibilityAabb = new Aabb(new Vector3(-1.2f, -0.6f, -1.2f), new Vector3(2.4f, 3.8f, 2.4f))
+			};
+			var meshFumee = new SphereMesh { Radius = 0.05f, Height = 0.10f, RadialSegments = 8, Rings = 6 };
+			meshFumee.Material = new StandardMaterial3D
+			{
+				AlbedoColor = new Color(0.72f, 0.72f, 0.72f, 0.62f),
+				Transparency = BaseMaterial3D.TransparencyEnum.Alpha,
+				ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
+				CullMode = BaseMaterial3D.CullModeEnum.Disabled
+			};
+			_pitFumeeParticles.DrawPass1 = meshFumee;
+			var matFumee = new ParticleProcessMaterial
+			{
+				Direction = new Vector3(0f, 1f, 0f),
+				Gravity = new Vector3(0f, 0.35f, 0f),
+				InitialVelocityMin = 0.018f,
+				InitialVelocityMax = 0.082f,
+				ScaleMin = 0.26f,
+				ScaleMax = 0.9f
+			};
+			_pitFumeeParticles.ProcessMaterial = matFumee;
+			AddChild(_pitFumeeParticles);
+		}
+		if (_pitFlammeLight == null || !GodotObject.IsInstanceValid(_pitFlammeLight))
+		{
+			_pitFlammeLight = new OmniLight3D
+			{
+				Name = "PitFeuLumiere",
+				LightColor = new Color(1.0f, 0.58f, 0.26f),
+				LightEnergy = 2.2f,
+				OmniRange = 5.8f,
+				Position = new Vector3(0f, 0.28f, 0f),
+				Visible = false
+			};
+			AddChild(_pitFlammeLight);
+		}
+		_pitFlammeCroix.Visible = actif;
+		_pitFlammeParticles.Emitting = actif;
+		_pitFlammeParticles.Visible = actif;
+		_pitFumeeParticles.Emitting = actif;
+		_pitFumeeParticles.Visible = actif;
+		_pitFlammeLight.Visible = actif;
+	}
+
+	private static ImageTexture ObtenirTextureFlammePit()
+	{
+		if (_textureFlammePitCache != null && GodotObject.IsInstanceValid(_textureFlammePitCache))
+			return _textureFlammePitCache;
+		const int taille = 256;
+		Image img = Image.CreateEmpty(taille, taille, false, Image.Format.Rgba8);
+		for (int y = 0; y < taille; y++)
+		{
+			float v = (float)y / (taille - 1);
+			for (int x = 0; x < taille; x++)
+			{
+				float u = (float)x / (taille - 1);
+				float wobble = 0.045f * Mathf.Sin(v * 18.0f + u * 33.0f) + 0.03f * Mathf.Sin(v * 47.0f);
+				float langues = 0.018f * Mathf.Sin((u * 9.0f + v * 4.0f) * Mathf.Pi * 2.0f) + 0.012f * Mathf.Sin((u * 17.0f - v * 6.0f) * Mathf.Pi);
+				float centre = 1.0f - Mathf.Abs(((u + wobble + langues) - 0.5f) * 2.0f);
+				float profil = Mathf.Pow(Mathf.Clamp(centre, 0f, 1f), 1.55f);
+				float hauteur = Mathf.Clamp(1.0f - v, 0f, 1f);
+				float turbulence = 0.82f + 0.18f * Mathf.Sin(u * 52.0f + v * 29.0f) * (0.5f + 0.5f * hauteur);
+				float alpha = Mathf.Clamp(profil * Mathf.Pow(hauteur, 0.46f) * turbulence, 0f, 1f);
+				alpha *= 1.0f - Mathf.Clamp(v * v * 0.9f, 0f, 0.9f);
+				alpha = Mathf.Clamp(alpha * 1.46f, 0f, 1f);
+				float coeur = Mathf.Clamp(1.0f - Mathf.Abs((u - 0.5f) * 5.4f), 0f, 1f) * Mathf.Clamp(1.0f - v * 1.7f, 0f, 1f);
+				Color baseC = new Color(1.0f, 0.36f, 0.06f, 1f);
+				Color hotC = new Color(1.0f, 0.74f, 0.18f, 1f);
+				Color tipC = new Color(1.0f, 0.93f, 0.62f, 1f);
+				Color c = baseC.Lerp(hotC, Mathf.Clamp(v * 1.1f, 0f, 1f)).Lerp(tipC, Mathf.Clamp(v * 1.9f - 0.30f, 0f, 1f));
+				c = c.Lerp(new Color(1.0f, 0.98f, 0.86f, 1f), coeur * 0.55f);
+				c = c.Lerp(new Color(1.0f, 0.9f, 0.42f, 1f), Mathf.Clamp((1.0f - v) * 0.22f, 0f, 0.22f));
+				c.A = alpha;
+				img.SetPixel(x, y, c);
+			}
+		}
+		_textureFlammePitCache = ImageTexture.CreateFromImage(img);
+		return _textureFlammePitCache;
+	}
+
+	private static StandardMaterial3D CreerMateriauFlammePitTexture()
+	{
+		return new StandardMaterial3D
+		{
+			AlbedoTexture = ObtenirTextureFlammePit(),
+			AlbedoColor = new Color(1f, 1f, 1f, 1f),
+			Transparency = BaseMaterial3D.TransparencyEnum.Alpha,
+			BlendMode = BaseMaterial3D.BlendModeEnum.Add,
+			ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
+			CullMode = BaseMaterial3D.CullModeEnum.Disabled,
+			BillboardMode = BaseMaterial3D.BillboardModeEnum.Enabled,
+			EmissionEnabled = true,
+			Emission = new Color(1f, 0.6f, 0.22f),
+			EmissionEnergyMultiplier = 1.9f
+		};
+	}
+
+	private void SynchroniserGenomePitFeuDepuisReste()
+	{
+		if (ID_Objet != Joueur.IdObjetPitFeu)
+			return;
+		long finMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + (long)Mathf.Round((float)(_pitFeuResteSec * 1000.0));
+		GenomeAssemblage = $"PITFEU:{finMs}";
+		SetMeta(Joueur.MetaGenomeAssemblage, GenomeAssemblage);
+		SetMeta(MetaPitFeuFinCombustionUnixMs, finMs);
+	}
+
+	private void ChargerEtatPitFeuDepuisGenome()
+	{
+		if (ID_Objet != Joueur.IdObjetPitFeu)
+			return;
+		long maintenant = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+		long finMs = 0L;
+		if (!string.IsNullOrEmpty(GenomeAssemblage) && GenomeAssemblage.StartsWith("PITFEU:", StringComparison.Ordinal))
+		{
+			string brut = GenomeAssemblage.Substring("PITFEU:".Length);
+			long.TryParse(brut, out finMs);
+		}
+		else if (HasMeta(MetaPitFeuFinCombustionUnixMs))
+		{
+			finMs = GetMeta(MetaPitFeuFinCombustionUnixMs).AsInt64();
+		}
+		if (finMs > maintenant)
+		{
+			_pitFeuResteSec = (finMs - maintenant) / 1000.0;
+			_pitFeuDernierSyncRestantSec = -1d;
+			ActiverVisuelPitFeu(true);
+		}
+		else
+		{
+			_pitFeuResteSec = 0d;
+			ActiverVisuelPitFeu(false);
+		}
+	}
+
+	public bool EstPitFeuAllume()
+	{
+		return ID_Objet == Joueur.IdObjetPitFeu && _pitFeuResteSec > 0.001d;
+	}
+
+	public bool ActiverPitFeuAllume(double dureeSec = DureeCombustionPitFeuSec)
+	{
+		if (ID_Objet != Joueur.IdObjetPitFeu)
+			return false;
+		_pitFeuResteSec = Math.Max(1d, dureeSec);
+		_pitFeuDernierSyncRestantSec = -1d;
+		ActiverVisuelPitFeu(true);
+		SynchroniserGenomePitFeuDepuisReste();
+		return true;
 	}
 
 	private Vector3 ObtenirDemiExtentsApproxObjet()
@@ -388,6 +622,18 @@ public partial class ItemPhysique : RigidBody3D
 		return gm.CalculerRatioImmersion(GlobalPosition, _echantillonsImmersionObjet);
 	}
 
+	private void TransformerIntestinEnVersionNettoyee()
+	{
+		ID_Objet = Joueur.IdObjetIntestinBoeufNettoye;
+		// Le ramassage lit souvent ID_Matiere sur les objets "BlocsPoses":
+		// il faut synchroniser la meta sinon l'inventaire reçoit encore l'intestin sale (118).
+		SetMeta("ID_Matiere", ID_Objet);
+		_tempsImmersionIntestin = 0d;
+		Node3D meshRoot = GetNodeOrNull<Node3D>("MeshInstance3D");
+		if (meshRoot != null)
+			Joueur.InstancierModeleIntestinBoeufNettoye(meshRoot, new SlotInventaire { ID = Joueur.IdObjetIntestinBoeufNettoye }, 0.24f);
+	}
+
 	private static MeshInstance3D TrouverPremierMeshInstanceAvecMesh(Node n)
 	{
 		if (n is MeshInstance3D mi && mi.Mesh != null)
@@ -448,6 +694,30 @@ public partial class ItemPhysique : RigidBody3D
 			Sleeping = true;
 			Freeze = true;
 			FreezeMode = FreezeModeEnum.Static;
+			return;
+		}
+		if (ID_Objet == Joueur.IdObjetPitFeu)
+		{
+			Mass = 26f;
+			GravityScale = 0f;
+			ResistanceActuelle = 42f;
+			Scale = Vector3.One;
+			LinearVelocity = Vector3.Zero;
+			AngularVelocity = Vector3.Zero;
+			Sleeping = true;
+			Freeze = true;
+			FreezeMode = FreezeModeEnum.Static;
+			ChargerEtatPitFeuDepuisGenome();
+			if (_pitFeuResteSec <= 0.001d)
+				ActiverVisuelPitFeu(false);
+			return;
+		}
+		if (ID_Objet == Joueur.IdObjetAllumeFeu)
+		{
+			IndexChimique = Mathf.Clamp(IndexChimique, 10, 11);
+			Mass = 0.26f;
+			ResistanceActuelle = 24f;
+			Scale = Vector3.One;
 			return;
 		}
 
@@ -688,6 +958,70 @@ public partial class ItemPhysique : RigidBody3D
 			return;
 		}
 
+		if (ID_Objet == Joueur.IdObjetIntestinBoeuf)
+		{
+			Gestionnaire_Monde gmIntestin = ObtenirGestionnaireMonde();
+			float ratioIntestin = gmIntestin != null ? CalculerRatioImmersionObjet(gmIntestin) : 0f;
+			if (ratioIntestin >= 0.5f)
+				_tempsImmersionIntestin += delta;
+			else
+				_tempsImmersionIntestin = 0d;
+			if (_tempsImmersionIntestin >= 0.35d)
+				TransformerIntestinEnVersionNettoyee();
+			return;
+		}
+		if (ID_Objet == Joueur.IdObjetPitFeu)
+		{
+			if (_pitFeuResteSec <= 0.001d)
+				return;
+			_pitFeuResteSec -= delta;
+			float t = (float)Time.GetTicksMsec() * 0.001f;
+			float pulseFast = Mathf.Sin(t * 8.9f);
+			float pulseSlow = Mathf.Sin(t * 3.7f + 1.2f);
+			float swayX = 0.68f * Mathf.Sin(t * 1.6f) + 0.32f * Mathf.Sin(t * 2.9f + 0.8f);
+			float swayZ = 0.62f * Mathf.Sin(t * 1.9f + 0.35f) + 0.38f * Mathf.Sin(t * 3.3f + 1.4f);
+			if (_pitFlammeCroix != null && GodotObject.IsInstanceValid(_pitFlammeCroix))
+			{
+				float ampX = 0.95f + 0.08f * pulseFast + 0.04f * pulseSlow;
+				float ampY = 1.08f + 0.16f * Mathf.Sin(t * 7.4f + 0.5f) + 0.08f * pulseSlow;
+				float ampZ = 0.95f + 0.075f * Mathf.Sin(t * 8.1f + 0.9f) + 0.035f * pulseSlow;
+				_pitFlammeCroix.Scale = new Vector3(ampX, ampY, ampZ);
+				_pitFlammeCroix.RotationDegrees = new Vector3(2.7f * swayX, 0f, 2.1f * swayZ);
+				_pitFlammeCroix.Position = PitFlammeCroixBasePosition + new Vector3(0.012f * swayX, 0.018f * Mathf.Sin(t * 5.4f), 0.012f * swayZ);
+			}
+			if (_pitFlammeParticles != null && GodotObject.IsInstanceValid(_pitFlammeParticles))
+			{
+				float gust = 0.5f + 0.5f * Mathf.Sin(t * 2.25f + 0.3f);
+				_pitFlammeParticles.Position = PitFlammeParticlesBasePosition + new Vector3(0.011f * swayX, 0.018f * gust, 0.011f * swayZ);
+				if (_pitFlammeParticles.ProcessMaterial is ParticleProcessMaterial matFlamme)
+				{
+					matFlamme.Direction = new Vector3(0.13f * swayX, 1.0f, 0.13f * swayZ);
+					matFlamme.InitialVelocityMin = 0.055f + 0.016f * gust;
+					matFlamme.InitialVelocityMax = 0.175f + 0.046f * gust;
+				}
+			}
+			if (_pitFumeeParticles != null && GodotObject.IsInstanceValid(_pitFumeeParticles))
+			{
+				_pitFumeeParticles.Position = PitFumeeParticlesBasePosition + new Vector3(0.006f * swayX, 0.012f * Mathf.Sin(t * 2.8f + 0.4f), 0.006f * swayZ);
+			}
+			if (_pitFlammeLight != null && GodotObject.IsInstanceValid(_pitFlammeLight))
+			{
+				_pitFlammeLight.LightEnergy = 2.05f + 0.28f * Mathf.Sin(t * 9.6f) + 0.14f * pulseSlow;
+			}
+			if (_pitFeuResteSec <= 0.001d)
+			{
+				ActiverVisuelPitFeu(false);
+				QueueFree();
+				return;
+			}
+			if (_pitFeuDernierSyncRestantSec < 0d || Math.Abs(_pitFeuDernierSyncRestantSec - _pitFeuResteSec) >= 1.0d)
+			{
+				_pitFeuDernierSyncRestantSec = _pitFeuResteSec;
+				SynchroniserGenomePitFeuDepuisReste();
+			}
+			return;
+		}
+
 		// Roches matière : correction dynamique par morphologie (freinage réel, eau, et redressement des plates).
 		if (EstIdRocheMatiere(ID_Objet))
 		{
@@ -783,7 +1117,8 @@ public partial class ItemPhysique : RigidBody3D
 	{
 		if (EstMatiereSilexParIdObjet(ID_Objet)) return 80f;
 		if (EstIdRocheMatiere(ID_Objet)) return 50f;
-		if (ID_Objet == 30 || ID_Objet == 32 || ID_Objet == BlocChutant.ID_BRANCHE) return 40f; // Bois mort durci
+		if (ID_Objet == 30 || ID_Objet == 32 || ID_Objet == BlocChutant.ID_BRANCHE || ID_Objet == Joueur.IdObjetPitFeu) return 40f; // Bois mort durci
+		if (ID_Objet == Joueur.IdObjetAllumeFeu) return 44f;
 		return 10f; // Matières souples ou organiques
 	}
 
@@ -802,10 +1137,15 @@ public partial class ItemPhysique : RigidBody3D
 			degats *= 0.060f;
 			capPourcent = 0.26f;
 		}
-		else if (ID_Objet == 30 || ID_Objet == 32 || ID_Objet == BlocChutant.ID_BRANCHE)
+		else if (ID_Objet == 30 || ID_Objet == 32 || ID_Objet == BlocChutant.ID_BRANCHE || ID_Objet == Joueur.IdObjetPitFeu)
 		{
 			degats *= 0.080f;
 			capPourcent = 0.34f;
+		}
+		else if (ID_Objet == Joueur.IdObjetAllumeFeu)
+		{
+			degats *= 0.068f;
+			capPourcent = 0.28f;
 		}
 		else if (EstMatiereSilexParIdObjet(ID_Objet))
 		{
@@ -1221,7 +1561,7 @@ public partial class ItemPhysique : RigidBody3D
 	/// <summary>Spawn 2 morceaux préfabriqués depuis le cache (formes variées) + triplanar. Géométrie propre, plus de pointes ni faces noires. Retourne true si succès.</summary>
 	private bool SpawnChunksPrefabriques(Vector3 impactPos, Vector3 normalMonde, float masseFragment)
 	{
-		// Roches matière (40–49) : pas de morceaux génériques du cache — coupe réelle / contour pour garder forme + échelle ADN.
+		// Roches matière (ID <see cref="IdRocheMatiereMin"/>–<see cref="IdRocheMatiereMax"/>) : pas de morceaux génériques du cache — coupe réelle / contour pour garder forme + échelle ADN.
 		if (EstIdRocheMatiere(ID_Objet))
 			return false;
 		bool estSilex = EstMatiereSilexParIdObjet(ID_Objet);

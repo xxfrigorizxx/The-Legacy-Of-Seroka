@@ -411,8 +411,7 @@ public partial class Joueur
 
         pointImpactVoxel = _rayon.GetCollisionPoint();
         normaleImpact = _rayon.GetCollisionNormal();
-        Vector3 pointDeSondage = pointImpactVoxel - (normaleImpact * 0.5f);
-        idExtrait = _gestionnaireMonde?.ObtenirMatiereExacte(pointDeSondage) ?? 0;
+        idExtrait = ObtenirMatiereSolideDepuisImpact(pointImpactVoxel, normaleImpact);
         return EstMatiereMinableMainNue(idExtrait);
     }
 
@@ -431,9 +430,33 @@ public partial class Joueur
 
         pointImpactVoxel = _rayon.GetCollisionPoint();
         normaleImpact = _rayon.GetCollisionNormal();
-        Vector3 pointDeSondage = pointImpactVoxel - (normaleImpact * 0.5f);
-        idExtrait = _gestionnaireMonde?.ObtenirMatiereExacte(pointDeSondage) ?? 0;
+        idExtrait = ObtenirMatiereSolideDepuisImpact(pointImpactVoxel, normaleImpact);
         return EstMatiereMinablePioche(idExtrait);
+    }
+
+    /// <summary>
+    /// Lit la matière réellement frappée en privilégiant une profondeur faible sous la surface visée.
+    /// Évite le décalage de couche (ex: miner la neige et récupérer la terre/roche du dessous).
+    /// </summary>
+    private int ObtenirMatiereSolideDepuisImpact(Vector3 pointImpactVoxel, Vector3 normaleImpact)
+    {
+        if (_gestionnaireMonde == null)
+            return 0;
+
+        Vector3 n = normaleImpact.LengthSquared() > 1e-6f ? normaleImpact.Normalized() : Vector3.Up;
+        // On entre progressivement dans le volume solide à partir de la surface touchée.
+        float[] profondeurs = { 0.08f, 0.16f, 0.28f, 0.42f };
+        for (int i = 0; i < profondeurs.Length; i++)
+        {
+            Vector3 p = pointImpactVoxel - n * profondeurs[i];
+            int id = _gestionnaireMonde.ObtenirMatiereExacte(p);
+            if (id >= 1 && id <= 9)
+                return id;
+        }
+
+        // Repli conservateur pour ne pas bloquer le minage si un cas limite est rencontré.
+        int fallback = _gestionnaireMonde.ObtenirMatiereExacte(pointImpactVoxel - n * 0.5f);
+        return (fallback >= 1 && fallback <= 9) ? fallback : 0;
     }
 
     private bool EssayerObtenirAtelierSousVisee(out ItemPhysique atelier, out Vector3 pointImpact, out Vector3 normaleImpact)

@@ -111,6 +111,12 @@ public static class Atlas_Matiere
         durabilite = baseDurabilite * 1.35f;
         tensionMax = baseTension * 1.5f;
         if (pa.Fragile || pb.Fragile) durabilite *= 0.75f;
+        if (niveauQualiteCorde == Joueur.TagVarianteIntestin || niveauQualiteCorde == Joueur.TagVarianteIntestinSolide)
+        {
+            durabilite *= 10f;
+            tensionMax *= 10f;
+            return;
+        }
         if (niveauQualiteCorde >= NiveauCordeSolideTier2)
         {
             durabilite *= 2.0f;
@@ -289,9 +295,25 @@ public static class Atlas_Matiere
         return Mathf.Clamp(maxDur, 20f, 155f);
     }
 
+    public static float CalculerDurabiliteMaxNouvelAllumeFeu(SlotInventaire rocheSulfureuse)
+    {
+        int idx = Mathf.Clamp(rocheSulfureuse.ID - ItemPhysique.IdRocheMatiereMin, 0, ItemPhysique.TableGeologique.Length - 1);
+        float mineral = ItemPhysique.TableGeologique[idx].ResistanceFuture;
+        float maxDur = mineral * 0.22f + 6f;
+        return Mathf.Clamp(maxDur, 8f, 60f);
+    }
+
+    public static float CalculerDurabiliteMaxAllumeFeuDepuisSlot(SlotInventaire allumeFeu)
+    {
+        int idx = Mathf.Clamp(allumeFeu.IndexChimique, 0, ItemPhysique.TableGeologique.Length - 1);
+        float mineral = ItemPhysique.TableGeologique[idx].ResistanceFuture;
+        float maxDur = mineral * 0.22f + 6f;
+        return Mathf.Clamp(maxDur, 8f, 60f);
+    }
+
     public static void InitialiserDurabiliteOutilSiBesoin(ref SlotInventaire s)
     {
-        if (s.ID != 105 && s.ID != 106 && s.ID != Joueur.IdObjetPellePierreTier0 && s.ID != Joueur.IdObjetPiochePierreTier0 && s.ID != Joueur.IdObjetLancePierreTier0 && s.ID != Joueur.IdObjetFauxPierreTier0) return;
+        if (s.ID != 105 && s.ID != 106 && s.ID != Joueur.IdObjetPellePierreTier0 && s.ID != Joueur.IdObjetPiochePierreTier0 && s.ID != Joueur.IdObjetLancePierreTier0 && s.ID != Joueur.IdObjetFauxPierreTier0 && s.ID != Joueur.IdObjetAllumeFeu) return;
         if (s.DurabiliteOutilMax > 0.5f)
         {
             if (s.DurabiliteOutilActuelle <= 0f)
@@ -334,6 +356,12 @@ public static class Atlas_Matiere
             s.DurabiliteOutilMax = max;
             s.DurabiliteOutilActuelle = max;
         }
+        else if (s.ID == Joueur.IdObjetAllumeFeu)
+        {
+            float max = CalculerDurabiliteMaxAllumeFeuDepuisSlot(s);
+            s.DurabiliteOutilMax = max;
+            s.DurabiliteOutilActuelle = max;
+        }
     }
 
     public static string ObtenirNomObjet(SlotInventaire slot)
@@ -341,9 +369,9 @@ public static class Atlas_Matiere
         if (slot.EstVide)
             return "";
         int id = slot.ID;
-        if (id >= 40 && id <= 49)
+        if (ItemPhysique.EstIdRocheMatiere(id))
         {
-            int indexMatiere = id - 40;
+            int indexMatiere = id - ItemPhysique.IdRocheMatiereMin;
             string matiere = "Matière Inconnue";
             if (indexMatiere >= 0 && indexMatiere < ItemPhysique.TableGeologique.Length)
                 matiere = ItemPhysique.TableGeologique[indexMatiere].Nom;
@@ -443,15 +471,21 @@ public static class Atlas_Matiere
         if (id == Joueur.IdObjetSacDos) return "Sac à dos";
         if (id == Joueur.IdObjetSacTier0)
         {
+            if (Joueur.EstVarianteIntestinSolide(slot)) return "Sac tier 0 en intestin solide";
+            if (Joueur.EstVarianteIntestin(slot)) return "Sac tier 0 en intestin";
             if (Joueur.EstVarianteHerbeSolide(slot)) return "Sac tier 0 solide (herbe, tier 2)";
             if (Joueur.EstVarianteLiane(slot)) return "Sac tier 0 en liane";
             return "Sac tier 0";
         }
         if (id == Joueur.IdObjetCeinturePoches)
         {
-            string prefixe = Joueur.EstVarianteHerbeSolide(slot)
+            string prefixe = Joueur.EstVarianteIntestinSolide(slot)
+                ? "Ceinture à poches en intestin solide"
+                : (Joueur.EstVarianteIntestin(slot)
+                ? "Ceinture à poches en intestin"
+                : (Joueur.EstVarianteHerbeSolide(slot)
                 ? "Ceinture à poches solide (tier 2)"
-                : (Joueur.EstVarianteLiane(slot) ? "Ceinture à poches en liane" : "Ceinture à poches");
+                : (Joueur.EstVarianteLiane(slot) ? "Ceinture à poches en liane" : "Ceinture à poches")));
             bool a = ObtenirProfilFlexible(slot.IndexChimique, out var pa);
             bool b = ObtenirProfilFlexible(slot.IndexMorphologique, out var pb);
             if (a && b)
@@ -464,21 +498,32 @@ public static class Atlas_Matiere
         }
         if (id == Joueur.IdObjetCeintureSacoches)
         {
+            string prefixe = Joueur.EstVarianteIntestinSolide(slot)
+                ? "Ceinture à sacoches en intestin solide"
+                : (Joueur.EstVarianteIntestin(slot)
+                ? "Ceinture à sacoches en intestin"
+                : (Joueur.EstVarianteHerbeSolide(slot)
+                ? "Ceinture à sacoches solide (tier 2)"
+                : (Joueur.EstVarianteLiane(slot) ? "Ceinture à sacoches en liane" : "Ceinture à sacoches")));
             bool a = ObtenirProfilFlexible(slot.IndexChimique, out var pa);
             bool b = ObtenirProfilFlexible(slot.IndexMorphologique, out var pb);
             if (a && b)
-                return $"Ceinture à sacoches ({pa.Nom}+{pb.Nom})";
+                return $"{prefixe} ({pa.Nom}+{pb.Nom})";
             if (a)
-                return $"Ceinture à sacoches ({pa.Nom})";
+                return $"{prefixe} ({pa.Nom})";
             if (b)
-                return $"Ceinture à sacoches ({pb.Nom})";
-            return "Ceinture à sacoches";
+                return $"{prefixe} ({pb.Nom})";
+            return prefixe;
         }
         if (id == Joueur.IdObjetPochetteTier0)
         {
-            string prefixe = Joueur.EstVarianteHerbeSolide(slot)
+            string prefixe = Joueur.EstVarianteIntestinSolide(slot)
+                ? "Pochette tier 0 en intestin solide"
+                : (Joueur.EstVarianteIntestin(slot)
+                ? "Pochette tier 0 en intestin"
+                : (Joueur.EstVarianteHerbeSolide(slot)
                 ? "Pochette tier 0 solide (tier 2)"
-                : (Joueur.EstVarianteLiane(slot) ? "Pochette tier 0 en liane" : "Pochette tier 0");
+                : (Joueur.EstVarianteLiane(slot) ? "Pochette tier 0 en liane" : "Pochette tier 0")));
             bool a = ObtenirProfilFlexible(slot.IndexChimique, out var pa);
             bool b = ObtenirProfilFlexible(slot.IndexMorphologique, out var pb);
             if (a && b)
@@ -538,6 +583,12 @@ public static class Atlas_Matiere
         {
             bool a = ObtenirProfilFlexible(slot.IndexChimique, out var pa);
             bool b = ObtenirProfilFlexible(slot.IndexMorphologique, out var pb);
+            bool varianteIntestin = Joueur.EstVarianteIntestin(slot);
+            bool varianteIntestinSolide = Joueur.EstVarianteIntestinSolide(slot);
+            if (varianteIntestinSolide)
+                return "Corde d'intestin solide";
+            if (varianteIntestin)
+                return "Corde d'intestin";
             bool solideTier2 = slot.IndexBotanique >= NiveauCordeSolideTier2;
             if (a && b)
             {
@@ -553,9 +604,13 @@ public static class Atlas_Matiere
         }
         if (id == 21)
         {
-            string prefixe = Joueur.EstVarianteHerbeSolide(slot)
+            string prefixe = Joueur.EstVarianteIntestinSolide(slot)
+                ? "Tissu en intestin solide"
+                : (Joueur.EstVarianteIntestin(slot)
+                ? "Tissu en intestin"
+                : (Joueur.EstVarianteHerbeSolide(slot)
                 ? "Tissu solide (tier 2)"
-                : (Joueur.EstVarianteLiane(slot) ? "Tissu en liane (tier 0)" : "Tissu (tier 0)");
+                : (Joueur.EstVarianteLiane(slot) ? "Tissu en liane (tier 0)" : "Tissu (tier 0)")));
             bool a = ObtenirProfilFlexible(slot.IndexChimique, out var pa);
             bool b = ObtenirProfilFlexible(slot.IndexMorphologique, out var pb);
             if (a && b)
@@ -576,12 +631,32 @@ public static class Atlas_Matiere
             return "Rack à bâtons";
         if (id == Joueur.IdObjetRackBuches)
             return "Rack à bûches";
+        if (id == Joueur.IdObjetPitFeu)
+        {
+            string essence = slot.IndexBotanique switch { 0 => "Chêne", 1 => "Bouleau", 2 => "Pin", 3 => "Sapin", 4 => "Fromager", _ => "Bois" };
+            return $"Pit à feu ({essence})";
+        }
+        if (id == Joueur.IdObjetAllumeFeu)
+        {
+            string pierre = slot.IndexChimique switch { 10 => "Marcassite", 11 => "Pyrite", _ => "Sulfure" };
+            string nom = $"Allume-feu ({pierre})";
+            if (slot.DurabiliteOutilMax > 0.5f)
+            {
+                int a = Mathf.Max(0, Mathf.RoundToInt(slot.DurabiliteOutilActuelle));
+                int m = Mathf.Max(1, Mathf.RoundToInt(slot.DurabiliteOutilMax));
+                return $"{nom} ({a}/{m})";
+            }
+            return nom;
+        }
         if (id == Joueur.IdObjetCarnetSavoir)
             return "Carnet du savoir";
-        if (id == Joueur.IdObjetSteakCru || id == Joueur.IdObjetOsBoeuf || id == Joueur.IdObjetCuirBoeuf || id == Joueur.IdObjetIntestinBoeuf)
+        if (id == Joueur.IdObjetSteakCru || id == Joueur.IdObjetOsBoeuf || id == Joueur.IdObjetCuirBoeuf || id == Joueur.IdObjetIntestinBoeuf || id == Joueur.IdObjetIntestinBoeufNettoye)
         {
             int q = Joueur.ObtenirQuantiteSlot(slot);
-            string nom = id == Joueur.IdObjetSteakCru ? "Steak cru" : (id == Joueur.IdObjetOsBoeuf ? "Os" : (id == Joueur.IdObjetCuirBoeuf ? "Cuir" : "Intestin"));
+            string nom = id == Joueur.IdObjetSteakCru ? "Steak cru"
+                : (id == Joueur.IdObjetOsBoeuf ? "Os"
+                : (id == Joueur.IdObjetCuirBoeuf ? "Cuir"
+                : (id == Joueur.IdObjetIntestinBoeufNettoye ? "Intestin propre" : "Intestin")));
             return q > 1 ? $"{nom} x{q}" : nom;
         }
         return id switch
@@ -590,10 +665,10 @@ public static class Atlas_Matiere
             2 => "Roche",
             3 => "Sable",
             4 => "Neige",
-            5 => "Neige / glace",
+            5 => "Neige glacee",
             6 => "Terre aride",
             7 => "Boue",
-            8 => "Terre tropicale",
+            8 => "Herbe",
             9 => "Terre gelée",
             10 => "Buisson plein",
             11 => "Buisson vide",
@@ -613,13 +688,113 @@ public static class Atlas_Matiere
         int strideColonne = grilleCraft3x3Table ? 3 : 2;
 
         var ingredients = new List<SlotInventaire>();
+        var indicesIngredients = new List<int>();
         for (int i = 0; i < nCell; i++)
         {
             if (!grille[i].EstVide)
+            {
                 ingredients.Add(grille[i]);
+                indicesIngredients.Add(i);
+            }
         }
         if (ingredients.Count == 0)
             return new SlotInventaire();
+
+        static bool EstSlotRocheVoxelBruteCraft(SlotInventaire s) => !s.EstVide && s.ID == 2;
+        static SlotInventaire ConstruirePetiteRocheMarbre(int indexMorphologique)
+        {
+            return new SlotInventaire
+            {
+                ID = 47, // Marbre (profil équilibré demandé).
+                IndexMorphologique = Mathf.Clamp(indexMorphologique, 0, 3),
+                IndexTaille = 1,
+                IndexChimique = 0,
+                EstUnEclat = false,
+                NiveauFracture = 0
+            };
+        }
+        static bool EnsembleEgalePatron(HashSet<int> ensemble, params int[] patron)
+        {
+            if (ensemble.Count != patron.Length) return false;
+            for (int i = 0; i < patron.Length; i++)
+            {
+                if (!ensemble.Contains(patron[i]))
+                    return false;
+            }
+            return true;
+        }
+
+        // Façonnage roche voxel brute (ID 2) -> petite roche matière (ID 47, marbre) selon la forme du patron.
+        if (ingredients.Count == 2 && EstSlotRocheVoxelBruteCraft(ingredients[0]) && EstSlotRocheVoxelBruteCraft(ingredients[1]))
+        {
+            int idxA = indicesIngredients[0];
+            int idxB = indicesIngredients[1];
+            int rowA = idxA / strideColonne;
+            int colA = idxA % strideColonne;
+            int rowB = idxB / strideColonne;
+            int colB = idxB % strideColonne;
+
+            bool verticale = colA == colB && Mathf.Abs(rowA - rowB) == 1;
+            if (verticale)
+                return ConstruirePetiteRocheMarbre(3); // Pointe
+
+            bool horizontale = rowA == rowB && Mathf.Abs(colA - colB) == 1;
+            if (horizontale)
+                return ConstruirePetiteRocheMarbre(1); // Plate
+        }
+
+        if (ingredients.Count == 4)
+        {
+            bool toutesRochesVoxel = true;
+            for (int i = 0; i < ingredients.Count; i++)
+            {
+                if (!EstSlotRocheVoxelBruteCraft(ingredients[i]))
+                {
+                    toutesRochesVoxel = false;
+                    break;
+                }
+            }
+
+            if (toutesRochesVoxel)
+            {
+                int lignes = grilleCraft3x3Table ? 3 : 2;
+                var indices = new HashSet<int>(indicesIngredients);
+                for (int row = 0; row <= lignes - 2; row++)
+                {
+                    for (int col = 0; col <= strideColonne - 2; col++)
+                    {
+                        int origine = row * strideColonne + col;
+                        if (EnsembleEgalePatron(indices, origine, origine + 1, origine + strideColonne, origine + strideColonne + 1))
+                            return ConstruirePetiteRocheMarbre(0); // Ronde
+                    }
+                }
+            }
+        }
+
+        if (grilleCraft3x3Table && ingredients.Count == 6)
+        {
+            bool toutesRochesVoxel = true;
+            for (int i = 0; i < ingredients.Count; i++)
+            {
+                if (!EstSlotRocheVoxelBruteCraft(ingredients[i]))
+                {
+                    toutesRochesVoxel = false;
+                    break;
+                }
+            }
+
+            if (toutesRochesVoxel)
+            {
+                var indices = new HashSet<int>(indicesIngredients);
+                bool estRectangle2x3Ou3x2 =
+                    EnsembleEgalePatron(indices, 0, 1, 3, 4, 6, 7) // 2x3 gauche
+                    || EnsembleEgalePatron(indices, 1, 2, 4, 5, 7, 8) // 2x3 droite
+                    || EnsembleEgalePatron(indices, 0, 1, 2, 3, 4, 5) // 3x2 haut
+                    || EnsembleEgalePatron(indices, 3, 4, 5, 6, 7, 8); // 3x2 bas
+                if (estRectangle2x3Ou3x2)
+                    return ConstruirePetiteRocheMarbre(2); // Ovale
+            }
+        }
 
         // Un seul ingrédient : bâton brut (32, chim. 0) ou branche (31) → bâton façonné (32, chim. 1), même essence (IndexBotanique) pour solidité / crafts (rack, outils).
         if (ingredients.Count == 1)
@@ -659,6 +834,40 @@ public static class Atlas_Matiere
 
         if (ingredients.Count == 2)
         {
+            bool AdjacentDansGrille(int a, int b)
+            {
+                int diff = Mathf.Abs(a - b);
+                if (diff == strideColonne) return true;
+                if (diff == 1)
+                    return (a / strideColonne) == (b / strideColonne);
+                return false;
+            }
+            SlotInventaire sA = ingredients[0];
+            SlotInventaire sB = ingredients[1];
+            bool aSilex = ItemPhysique.EstMatiereSilexParIdObjet(sA.ID);
+            bool bSilex = ItemPhysique.EstMatiereSilexParIdObjet(sB.ID);
+            bool aSulfure = ItemPhysique.EstIdRocheMatiere(sA.ID)
+                && (ItemPhysique.IndexChimiqueDepuisIdRoche(sA.ID) == 10 || ItemPhysique.IndexChimiqueDepuisIdRoche(sA.ID) == 11);
+            bool bSulfure = ItemPhysique.EstIdRocheMatiere(sB.ID)
+                && (ItemPhysique.IndexChimiqueDepuisIdRoche(sB.ID) == 10 || ItemPhysique.IndexChimiqueDepuisIdRoche(sB.ID) == 11);
+            if (AdjacentDansGrille(indicesIngredients[0], indicesIngredients[1]) && ((aSilex && bSulfure) || (bSilex && aSulfure)))
+            {
+                SlotInventaire rocheSulfureuse = aSulfure ? sA : sB;
+                int idxSulfure = ItemPhysique.IndexChimiqueDepuisIdRoche(rocheSulfureuse.ID);
+                float dMax = CalculerDurabiliteMaxNouvelAllumeFeu(rocheSulfureuse);
+                return new SlotInventaire
+                {
+                    ID = Joueur.IdObjetAllumeFeu,
+                    IndexChimique = idxSulfure,
+                    IndexMorphologique = 0,
+                    IndexTaille = 0,
+                    EstUnEclat = false,
+                    NiveauFracture = 0,
+                    DurabiliteOutilMax = dMax,
+                    DurabiliteOutilActuelle = dMax
+                };
+            }
+
             // 2 cordes d'herbe simples -> 1 corde d'herbe solide tier 2.
             if (ingredients[0].ID == 20 && ingredients[1].ID == 20
                 && ingredients[0].IndexChimique == 15 && ingredients[0].IndexMorphologique == 15
@@ -672,6 +881,32 @@ public static class Atlas_Matiere
                     IndexChimique = 15,
                     IndexMorphologique = 15,
                     IndexBotanique = NiveauCordeSolideTier2,
+                    EstUnEclat = false,
+                    NiveauFracture = 0
+                };
+            }
+            // 2 intestins propres -> 1 corde d'intestin.
+            if (ingredients[0].ID == Joueur.IdObjetIntestinBoeufNettoye && ingredients[1].ID == Joueur.IdObjetIntestinBoeufNettoye)
+            {
+                return new SlotInventaire
+                {
+                    ID = 20,
+                    IndexChimique = 17,
+                    IndexMorphologique = 17,
+                    IndexBotanique = Joueur.TagVarianteIntestin,
+                    EstUnEclat = false,
+                    NiveauFracture = 0
+                };
+            }
+            // 2 cordes d'intestin -> 1 corde d'intestin solide.
+            if (EstSlotCordeIntestinCraft(ingredients[0]) && EstSlotCordeIntestinCraft(ingredients[1]))
+            {
+                return new SlotInventaire
+                {
+                    ID = 20,
+                    IndexChimique = 17,
+                    IndexMorphologique = 17,
+                    IndexBotanique = Joueur.TagVarianteIntestinSolide,
                     EstUnEclat = false,
                     NiveauFracture = 0
                 };
@@ -712,17 +947,23 @@ public static class Atlas_Matiere
             !s.EstVide && ItemPhysique.EstIdRocheMatiere(s.ID) && s.IndexMorphologique == 1
             && (s.IndexTaille == 0 || s.IndexTaille == 1);
         static bool EstSlotCordeOuLianeCraft(SlotInventaire s) => !s.EstVide && (s.ID == 20 || s.ID == 16);
+        static bool EstSlotCordeIntestinCraft(SlotInventaire s) =>
+            !s.EstVide && s.ID == 20 && s.IndexChimique == 17 && s.IndexMorphologique == 17 && Joueur.EstVarianteIntestin(s);
+        static bool EstSlotCordeIntestinSolideCraft(SlotInventaire s) =>
+            !s.EstVide && s.ID == 20 && s.IndexChimique == 17 && s.IndexMorphologique == 17 && Joueur.EstVarianteIntestinSolide(s);
         static byte VarianteLigatureCraft(SlotInventaire s)
         {
             if (s.EstVide) return 0;
             if (s.ID == 16 || Joueur.EstVarianteLiane(s)) return Joueur.TagVarianteLiane;
+            if (EstSlotCordeIntestinSolideCraft(s) || Joueur.EstVarianteIntestinSolide(s)) return Joueur.TagVarianteIntestinSolide;
+            if (EstSlotCordeIntestinCraft(s) || Joueur.EstVarianteIntestin(s)) return Joueur.TagVarianteIntestin;
             if (EstSlotCordeHerbeSolideCraft(s) || Joueur.EstVarianteHerbeSolide(s)) return Joueur.TagVarianteHerbeSolide;
             return LSystem_Botanique.IndexChene;
         }
         static bool MemeVarianteLigature(SlotInventaire a, SlotInventaire b) =>
             VarianteLigatureCraft(a) == VarianteLigatureCraft(b);
         static bool EstSlotTissuBaseCraft(SlotInventaire s) =>
-            EstSlotTissuCraft(s) && !Joueur.EstVarianteLiane(s) && !Joueur.EstVarianteHerbeSolide(s);
+            EstSlotTissuCraft(s) && !Joueur.EstVarianteLiane(s) && !Joueur.EstVarianteHerbeSolide(s) && !Joueur.EstVarianteIntestin(s) && !Joueur.EstVarianteIntestinSolide(s);
         static bool EstSlotCordeHerbeSolideCraft(SlotInventaire s)
         {
             if (s.EstVide || s.ID != 20) return false;
@@ -738,6 +979,10 @@ public static class Atlas_Matiere
             if (Joueur.EstVarianteHerbeSolide(s)) return true;
             return s.IndexChimique == 15 && s.IndexMorphologique == 15 && s.IndexBotanique >= NiveauCordeSolideTier2;
         }
+        static bool EstSlotTissuIntestinCraft(SlotInventaire s) =>
+            !s.EstVide && s.ID == 21 && s.IndexChimique == 17 && s.IndexMorphologique == 17 && Joueur.EstVarianteIntestin(s);
+        static bool EstSlotTissuIntestinSolideCraft(SlotInventaire s) =>
+            !s.EstVide && s.ID == 21 && s.IndexChimique == 17 && s.IndexMorphologique == 17 && Joueur.EstVarianteIntestinSolide(s);
         // Outils à durabilité: autorise corde (20) OU liane brute (16) comme ligature.
         static bool EstSlotLigatureOutilCraft(SlotInventaire s) => !s.EstVide && (s.ID == 20 || s.ID == 16);
         static SlotInventaire NormaliserLigatureOutil(SlotInventaire s)
@@ -798,6 +1043,34 @@ public static class Atlas_Matiere
             c1 = grille[1];
             c2 = grille[2];
             c3 = grille[3];
+        }
+
+        // RECETTE 2×2 : Pit à feu (120) = 4 branches (31) de même essence.
+        bool pitFeuCarreBranches =
+            !c0.EstVide && c0.ID == BlocChutant.ID_BRANCHE &&
+            !c1.EstVide && c1.ID == BlocChutant.ID_BRANCHE &&
+            !c2.EstVide && c2.ID == BlocChutant.ID_BRANCHE &&
+            !c3.EstVide && c3.ID == BlocChutant.ID_BRANCHE &&
+            c1.IndexBotanique == c0.IndexBotanique &&
+            c2.IndexBotanique == c0.IndexBotanique &&
+            c3.IndexBotanique == c0.IndexBotanique;
+        if (pitFeuCarreBranches)
+        {
+            bool horsCarreVides = !grilleCraft3x3Table
+                || (grille.Length >= 9 && grille[2].EstVide && grille[5].EstVide && grille[6].EstVide && grille[7].EstVide && grille[8].EstVide);
+            if (horsCarreVides)
+            {
+                return new SlotInventaire
+                {
+                    ID = Joueur.IdObjetPitFeu,
+                    IndexBotanique = c0.IndexBotanique,
+                    EstUnEclat = false,
+                    IndexChimique = 0,
+                    IndexMorphologique = 0,
+                    IndexTaille = 0,
+                    NiveauFracture = Mathf.Max(Mathf.Max(c0.NiveauFracture, c1.NiveauFracture), Mathf.Max(c2.NiveauFracture, c3.NiveauFracture))
+                };
+            }
         }
 
         // RECETTE ATELIER : 6 cordes (20) → ceinture à poches (102). Formes : 2×3 (colonnes gauche/droite) ou 3×2 (lignes haut/bas).
@@ -912,8 +1185,12 @@ public static class Atlas_Matiere
                     return false;
                 bool toutesLigaturesLiane = lig0.ID == 16 && lig1.ID == 16;
                 bool toutesLigaturesHerbeSolide = EstSlotCordeHerbeSolideCraft(lig0) && EstSlotCordeHerbeSolideCraft(lig1);
+                bool toutesLigaturesIntestinSolide = EstSlotCordeIntestinSolideCraft(lig0) && EstSlotCordeIntestinSolideCraft(lig1);
+                bool toutesLigaturesIntestin = EstSlotCordeIntestinCraft(lig0) && EstSlotCordeIntestinCraft(lig1);
                 byte tagVariante = toutesLigaturesLiane ? Joueur.TagVarianteLiane
-                    : (toutesLigaturesHerbeSolide ? Joueur.TagVarianteHerbeSolide : LSystem_Botanique.IndexChene);
+                    : (toutesLigaturesIntestinSolide ? Joueur.TagVarianteIntestinSolide
+                    : (toutesLigaturesIntestin ? Joueur.TagVarianteIntestin
+                    : (toutesLigaturesHerbeSolide ? Joueur.TagVarianteHerbeSolide : LSystem_Botanique.IndexChene)));
                 slotRack = new SlotInventaire
                 {
                     ID = Joueur.IdObjetRackBatons,
@@ -998,6 +1275,10 @@ public static class Atlas_Matiere
                 byte variante = VarianteLigatureCraft(grille[4]);
                 bool okVariante = variante == Joueur.TagVarianteLiane
                     ? Joueur.EstVarianteLiane(grille[1]) && Joueur.EstVarianteLiane(grille[7])
+                    : variante == Joueur.TagVarianteIntestinSolide
+                    ? EstSlotTissuIntestinSolideCraft(grille[1]) && EstSlotTissuIntestinSolideCraft(grille[7])
+                    : variante == Joueur.TagVarianteIntestin
+                    ? EstSlotTissuIntestinCraft(grille[1]) && EstSlotTissuIntestinCraft(grille[7])
                     : variante == Joueur.TagVarianteHerbeSolide
                     ? EstSlotTissuHerbeSolideCraft(grille[1]) && EstSlotTissuHerbeSolideCraft(grille[7])
                     : EstSlotTissuBaseCraft(grille[1]) && EstSlotTissuBaseCraft(grille[7]);
@@ -1025,8 +1306,10 @@ public static class Atlas_Matiere
             if (sacTier0)
             {
                 byte varianteCorde = VarianteLigatureCraft(grille[1]);
-                byte variantePochette = Joueur.EstVarianteLiane(grille[4]) ? Joueur.TagVarianteLiane
-                    : (Joueur.EstVarianteHerbeSolide(grille[4]) ? Joueur.TagVarianteHerbeSolide : LSystem_Botanique.IndexChene);
+                byte variantePochette = Joueur.EstVarianteIntestinSolide(grille[4]) ? Joueur.TagVarianteIntestinSolide
+                    : (Joueur.EstVarianteIntestin(grille[4]) ? Joueur.TagVarianteIntestin
+                    : (Joueur.EstVarianteLiane(grille[4]) ? Joueur.TagVarianteLiane
+                    : (Joueur.EstVarianteHerbeSolide(grille[4]) ? Joueur.TagVarianteHerbeSolide : LSystem_Botanique.IndexChene)));
                 if (varianteCorde != variantePochette)
                     return new SlotInventaire();
                 int nf = Mathf.Max(grille[1].NiveauFracture, grille[4].NiveauFracture);
@@ -1049,13 +1332,19 @@ public static class Atlas_Matiere
             if (ceintureSacoches)
             {
                 var refB = grille[4];
-                byte p0 = Joueur.EstVarianteHerbeSolide(grille[0]) ? Joueur.TagVarianteHerbeSolide : (Joueur.EstVarianteLiane(grille[0]) ? Joueur.TagVarianteLiane : (byte)0);
-                byte p1 = Joueur.EstVarianteHerbeSolide(grille[2]) ? Joueur.TagVarianteHerbeSolide : (Joueur.EstVarianteLiane(grille[2]) ? Joueur.TagVarianteLiane : (byte)0);
-                byte p2 = Joueur.EstVarianteHerbeSolide(grille[6]) ? Joueur.TagVarianteHerbeSolide : (Joueur.EstVarianteLiane(grille[6]) ? Joueur.TagVarianteLiane : (byte)0);
-                byte p3 = Joueur.EstVarianteHerbeSolide(grille[8]) ? Joueur.TagVarianteHerbeSolide : (Joueur.EstVarianteLiane(grille[8]) ? Joueur.TagVarianteLiane : (byte)0);
+                byte p0 = Joueur.EstVarianteIntestinSolide(grille[0]) ? Joueur.TagVarianteIntestinSolide : (Joueur.EstVarianteIntestin(grille[0]) ? Joueur.TagVarianteIntestin : (Joueur.EstVarianteHerbeSolide(grille[0]) ? Joueur.TagVarianteHerbeSolide : (Joueur.EstVarianteLiane(grille[0]) ? Joueur.TagVarianteLiane : (byte)0)));
+                byte p1 = Joueur.EstVarianteIntestinSolide(grille[2]) ? Joueur.TagVarianteIntestinSolide : (Joueur.EstVarianteIntestin(grille[2]) ? Joueur.TagVarianteIntestin : (Joueur.EstVarianteHerbeSolide(grille[2]) ? Joueur.TagVarianteHerbeSolide : (Joueur.EstVarianteLiane(grille[2]) ? Joueur.TagVarianteLiane : (byte)0)));
+                byte p2 = Joueur.EstVarianteIntestinSolide(grille[6]) ? Joueur.TagVarianteIntestinSolide : (Joueur.EstVarianteIntestin(grille[6]) ? Joueur.TagVarianteIntestin : (Joueur.EstVarianteHerbeSolide(grille[6]) ? Joueur.TagVarianteHerbeSolide : (Joueur.EstVarianteLiane(grille[6]) ? Joueur.TagVarianteLiane : (byte)0)));
+                byte p3 = Joueur.EstVarianteIntestinSolide(grille[8]) ? Joueur.TagVarianteIntestinSolide : (Joueur.EstVarianteIntestin(grille[8]) ? Joueur.TagVarianteIntestin : (Joueur.EstVarianteHerbeSolide(grille[8]) ? Joueur.TagVarianteHerbeSolide : (Joueur.EstVarianteLiane(grille[8]) ? Joueur.TagVarianteLiane : (byte)0)));
                 bool versionLiane = Joueur.EstVarianteLiane(refB)
                     && Joueur.EstVarianteLiane(grille[0]) && Joueur.EstVarianteLiane(grille[2])
                     && Joueur.EstVarianteLiane(grille[6]) && Joueur.EstVarianteLiane(grille[8]);
+                bool versionIntestin = Joueur.EstVarianteIntestin(refB)
+                    && Joueur.EstVarianteIntestin(grille[0]) && Joueur.EstVarianteIntestin(grille[2])
+                    && Joueur.EstVarianteIntestin(grille[6]) && Joueur.EstVarianteIntestin(grille[8]);
+                bool versionIntestinSolide = Joueur.EstVarianteIntestinSolide(refB)
+                    && Joueur.EstVarianteIntestinSolide(grille[0]) && Joueur.EstVarianteIntestinSolide(grille[2])
+                    && Joueur.EstVarianteIntestinSolide(grille[6]) && Joueur.EstVarianteIntestinSolide(grille[8]);
                 bool versionHerbeSolide = Joueur.EstVarianteHerbeSolide(refB)
                     && Joueur.EstVarianteHerbeSolide(grille[0]) && Joueur.EstVarianteHerbeSolide(grille[2])
                     && Joueur.EstVarianteHerbeSolide(grille[6]) && Joueur.EstVarianteHerbeSolide(grille[8]);
@@ -1065,7 +1354,7 @@ public static class Atlas_Matiere
                     ID = Joueur.IdObjetCeintureSacoches,
                     IndexChimique = refB.IndexChimique,
                     IndexMorphologique = refB.IndexMorphologique,
-                    IndexBotanique = versionLiane ? Joueur.TagVarianteLiane : (versionHerbeSolide ? Joueur.TagVarianteHerbeSolide : LSystem_Botanique.IndexChene),
+                    IndexBotanique = versionLiane ? Joueur.TagVarianteLiane : (versionIntestinSolide ? Joueur.TagVarianteIntestinSolide : (versionIntestin ? Joueur.TagVarianteIntestin : (versionHerbeSolide ? Joueur.TagVarianteHerbeSolide : LSystem_Botanique.IndexChene))),
                     GenomeAssemblage = Joueur.EncoderConfigPochettesCeinture(p0, p1, p2, p3),
                     NiveauFracture = nf,
                     EstUnEclat = false

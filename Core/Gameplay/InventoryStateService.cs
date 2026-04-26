@@ -17,7 +17,7 @@ public partial class Joueur
         if (s.ID == Joueur.IdObjetBaie) return 20;
         if (s.ID == 30 || s.ID == 32 || s.ID == BlocChutant.ID_BRANCHE) return 30;
         if (s.ID is 15 or 16 or 17 or 20 or 21) return 15;
-        if (s.ID == Joueur.IdObjetSteakCru || s.ID == Joueur.IdObjetOsBoeuf || s.ID == Joueur.IdObjetCuirBoeuf || s.ID == Joueur.IdObjetIntestinBoeuf) return 15;
+        if (s.ID == Joueur.IdObjetSteakCru || s.ID == Joueur.IdObjetOsBoeuf || s.ID == Joueur.IdObjetCuirBoeuf || s.ID == Joueur.IdObjetIntestinBoeuf || s.ID == Joueur.IdObjetIntestinBoeufNettoye) return 15;
         if (ItemPhysique.EstIdRocheMatiere(s.ID) && s.IndexTaille <= 1) return 5;
         return 1;
     }
@@ -37,18 +37,44 @@ public partial class Joueur
     public static bool EstVarianteHerbeSolide(SlotInventaire s) =>
         !s.EstVide && (s.IndexBotanique == Joueur.TagVarianteHerbeSolide || EstEncodageLegacyHerbeSolide(s));
 
+    public static bool EstVarianteIntestin(SlotInventaire s) =>
+        !s.EstVide && s.IndexBotanique == Joueur.TagVarianteIntestin;
+
+    public static bool EstVarianteIntestinSolide(SlotInventaire s) =>
+        !s.EstVide && s.IndexBotanique == Joueur.TagVarianteIntestinSolide;
+
     public static bool EstSacTier0Liane(SlotInventaire s) => !s.EstVide && s.ID == Joueur.IdObjetSacTier0 && EstVarianteLiane(s);
     public static bool EstSacTier0HerbeSolide(SlotInventaire s) => !s.EstVide && s.ID == Joueur.IdObjetSacTier0 && EstVarianteHerbeSolide(s);
+    public static bool EstSacTier0Intestin(SlotInventaire s) => !s.EstVide && s.ID == Joueur.IdObjetSacTier0 && (EstVarianteIntestin(s) || EstVarianteIntestinSolide(s));
     public static bool EstCeintureSacochesHerbeSolide(SlotInventaire s) => !s.EstVide && s.ID == Joueur.IdObjetCeintureSacoches && EstVarianteHerbeSolide(s);
-    public static int ObtenirCapaciteSacStockage(SlotInventaire sacEquipe) => EstSacTier0HerbeSolide(sacEquipe) ? 2 : 1;
-    private static int ObtenirCapacitePochetteDepuisTag(byte tag) => tag == Joueur.TagVarianteHerbeSolide ? 2 : 1;
-    private static int ObtenirMultiplicateurPilePochetteDepuisTag(byte tag) => tag == Joueur.TagVarianteLiane ? 2 : 1;
+    public static int ObtenirCapaciteSacStockage(SlotInventaire sacEquipe)
+    {
+        if (EstSacTier0Intestin(sacEquipe)) return 3;
+        return EstSacTier0HerbeSolide(sacEquipe) ? 2 : 1;
+    }
+    public static int ObtenirMultiplicateurPileSac(SlotInventaire sacEquipe)
+    {
+        if (EstSacTier0Liane(sacEquipe) || EstVarianteIntestinSolide(sacEquipe)) return 2;
+        return 1;
+    }
+    private static int ObtenirCapacitePochetteDepuisTag(byte tag)
+    {
+        if (tag == Joueur.TagVarianteIntestin || tag == Joueur.TagVarianteIntestinSolide) return 3;
+        return tag == Joueur.TagVarianteHerbeSolide ? 2 : 1;
+    }
+    private static int ObtenirMultiplicateurPilePochetteDepuisTag(byte tag)
+    {
+        if (tag == Joueur.TagVarianteIntestinSolide) return 2;
+        return tag == Joueur.TagVarianteLiane ? 2 : 1;
+    }
 
     private static byte[] ObtenirTagsPochettesCeinture(SlotInventaire ceinture)
     {
         // Compatibilité anciens objets: infère 4 pochettes homogènes depuis la variante globale.
-        byte tagCompat = EstVarianteHerbeSolide(ceinture) ? Joueur.TagVarianteHerbeSolide
-            : (EstVarianteLiane(ceinture) ? Joueur.TagVarianteLiane : (byte)0);
+        byte tagCompat = EstVarianteIntestinSolide(ceinture) ? Joueur.TagVarianteIntestinSolide
+            : (EstVarianteIntestin(ceinture) ? Joueur.TagVarianteIntestin
+            : (EstVarianteHerbeSolide(ceinture) ? Joueur.TagVarianteHerbeSolide
+            : (EstVarianteLiane(ceinture) ? Joueur.TagVarianteLiane : (byte)0)));
         var tagsParDefaut = new byte[] { tagCompat, tagCompat, tagCompat, tagCompat };
         if (string.IsNullOrEmpty(ceinture.GenomeAssemblage) || !ceinture.GenomeAssemblage.StartsWith(PrefixConfigPochettesCeinture))
             return tagsParDefaut;

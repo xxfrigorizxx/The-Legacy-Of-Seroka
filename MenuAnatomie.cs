@@ -964,7 +964,7 @@ public partial class MenuAnatomie : Control
 	private int ObtenirMultiplicateurPileSlotSac()
 	{
 		if (_joueurRef == null || !_joueurRef.ASacEquipe()) return 1;
-		return Joueur.EstSacTier0Liane(_joueurRef.EquipementSacDos) ? 2 : 1;
+		return Joueur.ObtenirMultiplicateurPileSac(_joueurRef.EquipementSacDos);
 	}
 
 	private int ObtenirMultiplicateurPileSlotCeinture(int indexSlotCeinture)

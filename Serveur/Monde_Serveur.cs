@@ -897,7 +897,7 @@ public partial class Monde_Serveur : Node
 		onStasePrete?.Invoke(chunkCoord, chunk);
 	}
 
-	/// <summary>Pré-crée les pools par matière rocheuse (40–49).</summary>
+	/// <summary>Pré-crée les pools par matière rocheuse (ID <see cref="ItemPhysique.IdRocheMatiereMin"/>–<see cref="ItemPhysique.IdRocheMatiereMax"/>).</summary>
 	private void CreerPoolsRochesParTaille()
 	{
 		if (_parentPourBlocsChutants == null) return;
@@ -915,7 +915,7 @@ public partial class Monde_Serveur : Node
 		GD.Print($"ZERO-K : Pools roches par matière créés ({n} x {TaillePoolParType}).");
 	}
 
-	/// <summary>Collecte positions, ID matière (40–49), morph (-1 = tirage), taille (0–4).</summary>
+	/// <summary>Collecte positions, ID matière (ID <see cref="ItemPhysique.IdRocheMatiereMin"/>–<see cref="ItemPhysique.IdRocheMatiereMax"/>), morph (-1 = tirage), taille (0–4).</summary>
 	private List<(Vector3 pos, int idMat, int idxMorph, int taille)> CollecterPositionsEnsemencement(Vector2I chunkCoord, Chunk_Serveur chunk, float tailleChunk)
 	{
 		var liste = new List<(Vector3 pos, int idMat, int idxMorph, int taille)>();
@@ -1008,7 +1008,7 @@ public partial class Monde_Serveur : Node
 			_filePierresAInstancier.Enqueue((p.pos, p.id, p.indexCache, p.indexChimique));
 	}
 
-	/// <summary>Roches matière 40–49 : <paramref name="indexCache"/> = morph (-1/-2 = tirage), <paramref name="indexChimique"/> = <see cref="ItemPhysique.IndexTailleRoche"/> (0–4).</summary>
+	/// <summary>Roches matière (ID <see cref="ItemPhysique.IdRocheMatiereMin"/>–<see cref="ItemPhysique.IdRocheMatiereMax"/>) : <paramref name="indexCache"/> = morph (-1/-2 = tirage), <paramref name="indexChimique"/> = <see cref="ItemPhysique.IndexTailleRoche"/> (0–4).</summary>
 	private void GenererItemPhysique(Vector3 position, int idObjet, int indexCache = -1, int indexChimique = -1)
 	{
 		if (_parentPourBlocsChutants == null) return;
@@ -1152,7 +1152,7 @@ public partial class Monde_Serveur : Node
 		return false;
 	}
 
-	/// <summary>Sauvegarde les roches matière (40–49) : morph dans index, taille dans chimique (octet).</summary>
+	/// <summary>Sauvegarde les roches matière (ID <see cref="ItemPhysique.IdRocheMatiereMin"/>–<see cref="ItemPhysique.IdRocheMatiereMax"/>) : morph dans index, taille dans chimique (octet).</summary>
 	private void SauvegarderPierresChunk(Vector2I coord)
 	{
 		if (_parentPourBlocsChutants == null) return;

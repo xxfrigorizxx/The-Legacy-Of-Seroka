@@ -8,7 +8,7 @@ public partial class Joueur
     private static bool EstObjetAvecVisuel(int id)
     {
         if (id >= 1 && id <= 9) return true;
-        return ItemPhysique.EstIdRocheMatiere(id) || id == 10 || id == 11 || id == BlocChutant.ID_BRANCHE || id == 15 || id == 16 || id == 17 || id == 20 || id == 21 || id == Joueur.IdObjetCeinturePoches || id == Joueur.IdObjetCeintureSacoches || id == Joueur.IdObjetPochetteTier0 || id == Joueur.IdObjetSacTier0 || id == Joueur.IdObjetCarnetSavoir || id == Joueur.IdObjetSteakCru || id == Joueur.IdObjetOsBoeuf || id == Joueur.IdObjetCuirBoeuf || id == Joueur.IdObjetIntestinBoeuf || id == 30 || id == 32 || id == 34 || id == Joueur.IdObjetBaie || id == 100 || id == 105 || id == 106 || id == Joueur.IdObjetPellePierreTier0 || id == Joueur.IdObjetPiochePierreTier0 || id == Joueur.IdObjetLancePierreTier0 || id == Joueur.IdObjetFauxPierreTier0 || id == 200 || id == Joueur.IdObjetRackBatons || id == Joueur.IdObjetRackBuches || id == Joueur.IdObjetCoffreBoisTier0;
+        return ItemPhysique.EstIdRocheMatiere(id) || id == 10 || id == 11 || id == BlocChutant.ID_BRANCHE || id == 15 || id == 16 || id == 17 || id == 20 || id == 21 || id == Joueur.IdObjetCeinturePoches || id == Joueur.IdObjetCeintureSacoches || id == Joueur.IdObjetPochetteTier0 || id == Joueur.IdObjetSacTier0 || id == Joueur.IdObjetCarnetSavoir || id == Joueur.IdObjetSteakCru || id == Joueur.IdObjetOsBoeuf || id == Joueur.IdObjetCuirBoeuf || id == Joueur.IdObjetIntestinBoeuf || id == Joueur.IdObjetIntestinBoeufNettoye || id == 30 || id == 32 || id == 34 || id == Joueur.IdObjetBaie || id == 100 || id == 105 || id == 106 || id == Joueur.IdObjetPellePierreTier0 || id == Joueur.IdObjetPiochePierreTier0 || id == Joueur.IdObjetLancePierreTier0 || id == Joueur.IdObjetFauxPierreTier0 || id == 200 || id == Joueur.IdObjetRackBatons || id == Joueur.IdObjetRackBuches || id == Joueur.IdObjetCoffreBoisTier0 || id == Joueur.IdObjetPitFeu || id == Joueur.IdObjetAllumeFeu;
     }
 
     public static void NettoyerModelesEnfants(Node3D parent)
@@ -47,6 +47,8 @@ public partial class Joueur
             parent.RemoveMeta(MetaSignatureCarnet114);
         if (parent.HasMeta(MetaSignatureLootCuir117))
             parent.RemoveMeta(MetaSignatureLootCuir117);
+        if (parent.HasMeta(MetaSignatureAllumeFeu121))
+            parent.RemoveMeta(MetaSignatureAllumeFeu121);
     }
 
     private static Aabb TransformerAabb(Transform3D t, Aabb a)
@@ -241,6 +243,10 @@ public partial class Joueur
             return Atlas_Matiere.ObtenirMaterielCorde(16, 16, 0);
         if (tagPochette == Joueur.TagVarianteHerbeSolide)
             return Atlas_Matiere.ObtenirMaterielCorde(15, 15, 2);
+        if (tagPochette == Joueur.TagVarianteIntestin)
+            return Atlas_Matiere.ObtenirMaterielCorde(17, 17, 0);
+        if (tagPochette == Joueur.TagVarianteIntestinSolide)
+            return Atlas_Matiere.ObtenirMaterielCorde(17, 17, 2);
         return Atlas_Matiere.ObtenirMaterielCorde(ceinture.IndexChimique, ceinture.IndexMorphologique, ceinture.NiveauFracture);
     }
 
@@ -460,10 +466,10 @@ public partial class Joueur
         else
         {
             // Compatibilité anciens racks: le tag ligature était stocké dans IndexBotanique.
-            if (slot.IndexBotanique == Joueur.TagVarianteLiane || slot.IndexBotanique == Joueur.TagVarianteHerbeSolide)
+            if (slot.IndexBotanique == Joueur.TagVarianteLiane || slot.IndexBotanique == Joueur.TagVarianteHerbeSolide || slot.IndexBotanique == Joueur.TagVarianteIntestin || slot.IndexBotanique == Joueur.TagVarianteIntestinSolide)
                 varianteLigature = slot.IndexBotanique;
         }
-        if (essenceBois == Joueur.TagVarianteLiane || essenceBois == Joueur.TagVarianteHerbeSolide)
+        if (essenceBois == Joueur.TagVarianteLiane || essenceBois == Joueur.TagVarianteHerbeSolide || essenceBois == Joueur.TagVarianteIntestin || essenceBois == Joueur.TagVarianteIntestinSolide)
             essenceBois = LSystem_Botanique.IndexChene;
 
         // Bois : triplanar selon l’essence du craft ; ligatures : corde/liane du craft.
@@ -558,7 +564,7 @@ public partial class Joueur
             if (byte.TryParse(raw, out byte tag))
                 varianteLigature = tag;
         }
-        else if (slot.IndexBotanique == Joueur.TagVarianteLiane || slot.IndexBotanique == Joueur.TagVarianteHerbeSolide)
+        else if (slot.IndexBotanique == Joueur.TagVarianteLiane || slot.IndexBotanique == Joueur.TagVarianteHerbeSolide || slot.IndexBotanique == Joueur.TagVarianteIntestin || slot.IndexBotanique == Joueur.TagVarianteIntestinSolide)
         {
             varianteLigature = slot.IndexBotanique;
             essenceBois = LSystem_Botanique.IndexChene;
@@ -718,10 +724,10 @@ public partial class Joueur
         modele.Name = "ModeleArme";
         byte botaniqueCraft = slot.IndexBotanique;
         byte essenceBois = botaniqueCraft;
-        if (essenceBois == Joueur.TagVarianteLiane || essenceBois == Joueur.TagVarianteHerbeSolide)
+        if (essenceBois == Joueur.TagVarianteLiane || essenceBois == Joueur.TagVarianteHerbeSolide || essenceBois == Joueur.TagVarianteIntestin || essenceBois == Joueur.TagVarianteIntestinSolide)
             essenceBois = LSystem_Botanique.IndexChene;
 
-        byte varianteLigature = (botaniqueCraft == Joueur.TagVarianteLiane || botaniqueCraft == Joueur.TagVarianteHerbeSolide)
+        byte varianteLigature = (botaniqueCraft == Joueur.TagVarianteLiane || botaniqueCraft == Joueur.TagVarianteHerbeSolide || botaniqueCraft == Joueur.TagVarianteIntestin || botaniqueCraft == Joueur.TagVarianteIntestinSolide)
             ? botaniqueCraft
             : LSystem_Botanique.IndexChene;
 
@@ -759,6 +765,97 @@ public partial class Joueur
         }
 
         ParcourirMeshesCoffre(modele);
+        if (ancrerBaseAuSol)
+            NormaliserEchelleTableAtelierAuSol(modele, tailleMaxMetres);
+        else
+            NormaliserEchelleEtCentrerModeleArme(modele, tailleMaxMetres);
+        parent.AddChild(modele);
+    }
+
+    /// <summary>Pit à feu : GLB de survie, recoloré selon l'essence de bois du craft.</summary>
+    public static void InstancierModelePitFeu(Node3D parent, SlotInventaire slot, float tailleMaxMetres = 0.9f, bool ancrerBaseAuSol = true)
+    {
+        PackedScene scene = GD.Load<PackedScene>("res://Modeles/survie/Pit_a_feu.glb");
+        byte essenceBois = slot.IndexBotanique;
+        if (essenceBois == Joueur.TagVarianteLiane || essenceBois == Joueur.TagVarianteHerbeSolide || essenceBois == Joueur.TagVarianteIntestin || essenceBois == Joueur.TagVarianteIntestinSolide)
+            essenceBois = LSystem_Botanique.IndexChene;
+        if (scene == null)
+        {
+            var fb = new MeshInstance3D
+            {
+                Name = "ModeleArme",
+                Mesh = new BoxMesh { Size = new Vector3(0.86f, 0.24f, 0.86f) },
+                MaterialOverride = ArbreVivant.ObtenirMaterielBoisTriplanar((byte)Mathf.Clamp((int)essenceBois, 0, 4))
+            };
+            parent.AddChild(fb);
+            return;
+        }
+
+        Node3D modele = scene.Instantiate<Node3D>();
+        modele.Name = "ModeleArme";
+        void ParcourirMeshesPit(Node n)
+        {
+            if (n is MeshInstance3D mi)
+            {
+                RemplacerMeshParNormalesFacettes(mi);
+                mi.MaterialOverride = ArbreVivant.ObtenirMaterielBoisTriplanar(essenceBois);
+            }
+            foreach (Node c in n.GetChildren())
+                ParcourirMeshesPit(c);
+        }
+
+        ParcourirMeshesPit(modele);
+        if (ancrerBaseAuSol)
+            NormaliserEchelleTableAtelierAuSol(modele, tailleMaxMetres);
+        else
+            NormaliserEchelleEtCentrerModeleArme(modele, tailleMaxMetres);
+        parent.AddChild(modele);
+    }
+
+    /// <summary>Allume-feu préhistorique : modèle GLB avec matériau dépendant de la roche sulfureuse (marcassite/pyrite).</summary>
+    public static void InstancierModeleAllumeFeu(Node3D parent, SlotInventaire slot, float tailleMaxMetres = 0.42f, bool ancrerBaseAuSol = false)
+    {
+        const string cheminGlb = "res://Modeles/Equipements/alume_feu_preistorique.glb";
+        PackedScene scene = GD.Load<PackedScene>(cheminGlb);
+        int idxSulfure = Mathf.Clamp(slot.IndexChimique, ItemPhysique.IndexChimiqueSilex, ItemPhysique.TableGeologique.Length - 1);
+        if (idxSulfure != 10 && idxSulfure != 11)
+            idxSulfure = 10;
+        Material matSilex = ItemPhysique.CreerMaterielProcedural(true, ItemPhysique.IndexChimiqueSilex);
+        Material matSulfure = ItemPhysique.CreerMaterielProcedural(false, idxSulfure);
+        if (scene == null)
+        {
+            var fallback = new MeshInstance3D
+            {
+                Name = "ModeleArme",
+                Mesh = new BoxMesh { Size = new Vector3(0.18f, 0.05f, 0.08f) },
+                MaterialOverride = matSulfure
+            };
+            parent.AddChild(fallback);
+            return;
+        }
+
+        Node3D modele = scene.Instantiate<Node3D>();
+        modele.Name = "ModeleArme";
+        int meshIndex = 0;
+        void ParcourirMeshesAllumeFeu(Node n)
+        {
+            if (n is MeshInstance3D mi)
+            {
+                string nom = mi.Name.ToString().ToLowerInvariant();
+                bool estSilex = nom.Contains("silex") || nom.Contains("flint");
+                bool estSulfure = nom.Contains("pyrit") || nom.Contains("marcas") || nom.Contains("sulf");
+                if (estSilex)
+                    mi.MaterialOverride = matSilex;
+                else if (estSulfure)
+                    mi.MaterialOverride = matSulfure;
+                else
+                    mi.MaterialOverride = (meshIndex++ % 2 == 0) ? matSulfure : matSilex;
+            }
+            foreach (Node c in n.GetChildren())
+                ParcourirMeshesAllumeFeu(c);
+        }
+
+        ParcourirMeshesAllumeFeu(modele);
         if (ancrerBaseAuSol)
             NormaliserEchelleTableAtelierAuSol(modele, tailleMaxMetres);
         else
@@ -1210,6 +1307,44 @@ public partial class Joueur
         parent.AddChild(modele);
     }
 
+    private static void AppliquerMateriauIntestin(Node3D modele, Material materiau)
+    {
+        void ParcourirMeshes(Node n)
+        {
+            if (n is MeshInstance3D mi)
+                mi.MaterialOverride = materiau;
+            foreach (Node c in n.GetChildren())
+                ParcourirMeshes(c);
+        }
+
+        ParcourirMeshes(modele);
+    }
+
+    private static Texture2D CreerTextureProceduraleIntestinNettoye()
+    {
+        const int largeur = 128;
+        const int hauteur = 128;
+        var img = Image.CreateEmpty(largeur, hauteur, false, Image.Format.Rgba8);
+        Color baseC = new Color(0.82f, 0.70f, 0.64f);
+        Color veineC = new Color(0.92f, 0.78f, 0.72f);
+        for (int y = 0; y < hauteur; y++)
+        {
+            float vy = y / (float)(hauteur - 1);
+            for (int x = 0; x < largeur; x++)
+            {
+                float vx = x / (float)(largeur - 1);
+                float bandes = Mathf.Sin((vx * 10.8f + vy * 2.4f) * Mathf.Pi);
+                float nervure = Mathf.Sin((vx * 27.0f - vy * 6.0f) * Mathf.Pi) * 0.5f + 0.5f;
+                float grain = Mathf.Sin((vx * 96.0f + 0.37f) * 12.0f) * Mathf.Sin((vy * 96.0f + 0.91f) * 11.0f);
+                float lissage = Mathf.Clamp(0.52f + bandes * 0.20f + nervure * 0.18f + grain * 0.10f, 0.2f, 1f);
+                Color c = baseC.Lerp(veineC, Mathf.Clamp(nervure * 0.65f + 0.12f, 0f, 1f));
+                c = c.Lightened((lissage - 0.5f) * 0.34f);
+                img.SetPixel(x, y, new Color(c.R, c.G, c.B, 1f));
+            }
+        }
+        return ImageTexture.CreateFromImage(img);
+    }
+
     /// <summary>Intestin (GLB) — loot bovin. Matériau organique rose appliqué en code.</summary>
     public static void InstancierModeleIntestinBoeuf(Node3D parent, SlotInventaire slot, float tailleMaxMetres = 0.26f)
     {
@@ -1219,22 +1354,34 @@ public partial class Joueur
         Node3D modele = scene.Instantiate<Node3D>();
         modele.Name = "ModeleArme";
 
-        var matIntestin = new StandardMaterial3D
+        var matIntestinSale = new StandardMaterial3D
         {
             AlbedoColor = new Color(0.82f, 0.45f, 0.52f),
             Roughness = 0.93f,
             Metallic = 0f
         };
+        AppliquerMateriauIntestin(modele, matIntestinSale);
+        NormaliserEchelleEtCentrerModeleArme(modele, tailleMaxMetres);
+        parent.AddChild(modele);
+    }
 
-        void ParcourirMeshes(Node n)
+    /// <summary>Intestin propre (GLB) — texture procédurale réaliste générée en code.</summary>
+    public static void InstancierModeleIntestinBoeufNettoye(Node3D parent, SlotInventaire slot, float tailleMaxMetres = 0.26f)
+    {
+        PackedScene scene = GD.Load<PackedScene>("res://Modeles/materials/intestin+netoyer.glb");
+        if (scene == null) return;
+        NettoyerModelesEnfants(parent);
+        Node3D modele = scene.Instantiate<Node3D>();
+        modele.Name = "ModeleArme";
+        Texture2D texNettoyee = CreerTextureProceduraleIntestinNettoye();
+        var matIntestinNettoye = new StandardMaterial3D
         {
-            if (n is MeshInstance3D mi)
-                mi.MaterialOverride = matIntestin;
-            foreach (Node c in n.GetChildren())
-                ParcourirMeshes(c);
-        }
-
-        ParcourirMeshes(modele);
+            AlbedoTexture = texNettoyee,
+            AlbedoColor = new Color(1f, 1f, 1f),
+            Roughness = 0.8f,
+            Metallic = 0f
+        };
+        AppliquerMateriauIntestin(modele, matIntestinNettoye);
         NormaliserEchelleEtCentrerModeleArme(modele, tailleMaxMetres);
         parent.AddChild(modele);
     }

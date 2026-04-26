@@ -1763,7 +1763,10 @@ public partial class Monde_Client : Node3D
 		_centreHorizonCell = celluleActuelle;
 
 		float nearRadius = (RayonDetailChunksActif() + 10) * TailleChunk;
-		float farRadius = Mathf.Max(nearRadius + TailleChunk * 10f, RayonHorizonChunks * TailleChunk);
+		float farRadiusCible = Mathf.Max(nearRadius + TailleChunk * 10f, RayonHorizonChunks * TailleChunk);
+		// Horizon borné par RenderDistance (+ marge) : évite des silhouettes à des distances non demandées par le joueur.
+		float limiteRender = Mathf.Max(nearRadius + TailleChunk * 2f, (Mathf.Max(6, RenderDistance) + 2) * TailleChunk);
+		float farRadius = Mathf.Min(farRadiusCible, limiteRender);
 		if (farRadius <= nearRadius + pas) return;
 
 		float cx = celluleActuelle.X * pas;

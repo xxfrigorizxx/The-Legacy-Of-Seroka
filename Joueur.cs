@@ -94,6 +94,10 @@ public partial class Joueur : CharacterBody3D
     public const byte TagVarianteLiane = 16;
     /// <summary>Tag botanique rÃ©servÃ© aux variantes corde d'herbe solide (pochette/sac/ceinture).</summary>
     public const byte TagVarianteHerbeSolide = 17;
+    /// <summary>Tag réservé à la filière intestin (corde/tissu/pochette/sac/ceinture).</summary>
+    public const byte TagVarianteIntestin = 18;
+    /// <summary>Tag réservé à la filière intestin solide (slots identiques, pile x2).</summary>
+    public const byte TagVarianteIntestinSolide = 19;
     /// <summary>Alias historique (= <see cref="IdObjetSacTier0"/>).</summary>
     public const int IdObjetSacDos = 101;
     /// <summary>Ceinture tissÃ©e (102) : slot corps uniquement, sans stockage.</summary>
@@ -122,6 +126,12 @@ public partial class Joueur : CharacterBody3D
     public const int IdObjetCuirBoeuf = 117;
     /// <summary>Intestin de bœuf (loot dépeçage).</summary>
     public const int IdObjetIntestinBoeuf = 118;
+    /// <summary>Intestin de bœuf nettoyé (obtenu par immersion dans l'eau).</summary>
+    public const int IdObjetIntestinBoeufNettoye = 119;
+    /// <summary>Pit à feu (structure bois posable, sans allumage dans cette étape).</summary>
+    public const int IdObjetPitFeu = 120;
+    /// <summary>Allume-feu préhistorique (silex + marcassite/pyrite).</summary>
+    public const int IdObjetAllumeFeu = 121;
     /// <summary>Objet posé au sol : quantité dans l’inventaire au ramassage (>1).</summary>
     public const string MetaQuantiteObjetPose = "QuantiteObjetPose";
     /// <summary>Rack Ã  bÃ¢tons (stockage dÃ©diÃ©).</summary>
@@ -478,6 +488,8 @@ public partial class Joueur : CharacterBody3D
     private const string MetaSignatureSac101 = "SigSac101";
     private const string MetaSignatureRack109 = "SigRack109";
     private const string MetaSignatureCoffre113 = "SigCoffre113";
+    private const string MetaSignaturePitFeu120 = "SigPitFeu120";
+    private const string MetaSignatureAllumeFeu121 = "SigAllumeFeu121";
     private const string MetaSignatureCarnet114 = "SigCarnet114";
     private const string MetaSignatureBaie35 = "SigBaie35";
     private SubViewportContainer _viewportSlotGauche;
@@ -2745,6 +2757,17 @@ public partial class Joueur : CharacterBody3D
                 ExecuterAction(1.0f, mouv);
                 JouerAnimationFrappe(mouv);
             }
+            else if (!mainActive.EstVide && mainActive.ID == IdObjetAllumeFeu)
+            {
+                if (EssayerAllumerPitFeuSousVisee(ref mainActive))
+                {
+                    if (MainGaucheEstActive) MainGauche = mainActive;
+                    else MainDroite = mainActive;
+                    RafraichirHUD();
+                    ReinitialiserMinageMainNueProgression();
+                    return;
+                }
+            }
             else if (mainActive.EstVide)
             {
                 ExecuterActionMainNue(1.0f, mouv);
@@ -2783,14 +2806,15 @@ public partial class Joueur : CharacterBody3D
                 bool estAtelierEnMain = mainActive.ID == 200;
                 bool estRackBatonsEnMain = mainActive.ID == IdObjetRackBatons || mainActive.ID == IdObjetRackBuches;
                 bool estCoffreEnMain = mainActive.ID == IdObjetCoffreBoisTier0;
+                bool estPitFeuEnMain = mainActive.ID == IdObjetPitFeu;
                 bool estBuissonEnMain = mainActive.ID == 10 || mainActive.ID == 11;
                 // Clic bref = poser. Maintien du clic = lancer (seuil 0,5 s).
                 // Atelier + rack (structures fixes) : jamais de lancer.
-                if (estAtelierEnMain || estRackBatonsEnMain || estCoffreEnMain || estBuissonEnMain || estTerrainVoxel || _forceLancer < 0.5f)
+                if (estAtelierEnMain || estRackBatonsEnMain || estCoffreEnMain || estPitFeuEnMain || estBuissonEnMain || estTerrainVoxel || _forceLancer < 0.5f)
                 {
                     // Clic droit court + lame / roche plate / pointe + sol : fauchage (le gauche le fait aussi).
                     // Objet lançable : le clic droit court sert à poser sous la visée — pas de vol du fauchage.
-                    if (!estAtelierEnMain && !estRackBatonsEnMain && !estCoffreEnMain && !estTerrainVoxel && _forceLancer < 0.5f
+                    if (!estAtelierEnMain && !estRackBatonsEnMain && !estCoffreEnMain && !estPitFeuEnMain && !estTerrainVoxel && _forceLancer < 0.5f
                         && !EstObjetLancableAuMaintien(mainActive)
                         && ExecuterFauchageSolPrioritaireClicDroit())
                     {
@@ -3508,6 +3532,7 @@ public partial class Joueur : CharacterBody3D
         IdObjetOsBoeuf => 0.09f,
         IdObjetCuirBoeuf => 0.11f,
         IdObjetIntestinBoeuf => 0.12f,
+        IdObjetIntestinBoeufNettoye => 0.12f,
         105 => 0.32f,
         106 => 0.58f,
         IdObjetPellePierreTier0 => 0.62f,
@@ -3521,6 +3546,8 @@ public partial class Joueur : CharacterBody3D
         IdObjetRackBatons => 8.0f,
         IdObjetRackBuches => 8.0f,
         IdObjetCoffreBoisTier0 => 42f,
+        IdObjetPitFeu => 26f,
+        IdObjetAllumeFeu => 0.26f,
         _ => 0.5f
     };
 
@@ -3883,7 +3910,7 @@ public partial class Joueur : CharacterBody3D
         else if (id == 21) return null; // GLB res://Modeles/materials/tissu_tier0.glb via InstancierModeleTissuTier0
         else if (id == IdObjetSacTier0) return null; // GLB res://Modeles/Equipable/Sac_Tiere0.glb via InstancierModeleSacTier0
         else if (id == IdObjetCarnetSavoir) return null; // modèle procédural via InstancierModeleCarnetSavoir
-        else if (id == IdObjetSteakCru || id == IdObjetOsBoeuf || id == IdObjetCuirBoeuf || id == IdObjetIntestinBoeuf) return null; // GLB via InstancierModele* dans ModelInstantiationService
+        else if (id == IdObjetSteakCru || id == IdObjetOsBoeuf || id == IdObjetCuirBoeuf || id == IdObjetIntestinBoeuf || id == IdObjetIntestinBoeufNettoye) return null; // GLB via InstancierModele* dans ModelInstantiationService
         else if (id == IdObjetCeinturePoches || id == IdObjetCeintureSacoches) return null; // GLB ceinture / ceinture+pochettes via instanciation dÃ©diÃ©e
         else if (id == IdObjetPochetteTier0) return null; // GLB res://Modeles/materials/Pochette_Tiere0.glb via InstancierModelePochetteTier0
         else if (id == IdObjetPellePierreTier0) return null; // GLB res://Modeles/Equipements/Pelle_Pierre_tier0.glb via InstancierModeleArme
@@ -3892,6 +3919,8 @@ public partial class Joueur : CharacterBody3D
         else if (id == IdObjetFauxPierreTier0) return null; // GLB res://Modeles/Equipements/Epe_pierre_tier0.glb via InstancierModeleArme
         else if (id == IdObjetRackBatons || id == IdObjetRackBuches) return null; // GLB rack (bÃ¢tons / bÃ»ches) via instanciation dÃ©diÃ©e
         else if (id == IdObjetCoffreBoisTier0) return null; // GLB coffre via InstancierModeleCoffreBoisTier0
+        else if (id == IdObjetPitFeu) return null; // GLB pit à feu via InstancierModelePitFeu
+        else if (id == IdObjetAllumeFeu) return null; // GLB allume-feu via InstancierModeleAllumeFeu
         else if (id == 30 || id == 32)
         {
             CalculerDimensionsBoisPose(id, indexMorpho, indexTaille, out float br, out float bl, out _, out _);
@@ -3925,6 +3954,8 @@ public partial class Joueur : CharacterBody3D
                 || (indexChimique == 15 && indexMorphologique == 15 && indexBotanique >= 2);
             bool varianteLiane = indexBotanique == TagVarianteLiane
                 || (indexChimique == 16 && indexMorphologique == 16 && indexBotanique < 2);
+            bool varianteIntestin = indexBotanique == TagVarianteIntestin;
+            bool varianteIntestinSolide = indexBotanique == TagVarianteIntestinSolide;
 
             int matA = indexChimique;
             int matB = indexMorphologique;
@@ -3942,6 +3973,13 @@ public partial class Joueur : CharacterBody3D
                 matA = 16;
                 matB = 16;
             }
+            else if (varianteIntestin || varianteIntestinSolide)
+            {
+                matA = 17;
+                matB = 17;
+                if (varianteIntestinSolide)
+                    niveauAspect = Mathf.Max(niveauAspect, 2);
+            }
 
             visuel.MaterialOverride = Atlas_Matiere.ObtenirMaterielCorde(matA, matB, niveauAspect);
             return;
@@ -3951,6 +3989,11 @@ public partial class Joueur : CharacterBody3D
             visuel.MaterialOverride = idObjet == 32 && indexChimique == 1 && indexBotanique == LSystem_Botanique.IndexChene
                 ? ArbreVivant.ObtenirMaterielBoisTriplanarBatonChenEPale()
                 : ArbreVivant.ObtenirMaterielBoisTriplanar(indexBotanique);
+            return;
+        }
+        if (idObjet == IdObjetPitFeu)
+        {
+            visuel.MaterialOverride = ArbreVivant.ObtenirMaterielBoisTriplanar(indexBotanique);
             return;
         }
         if (idObjet == 10 || idObjet == 11)
@@ -4120,11 +4163,9 @@ public partial class Joueur : CharacterBody3D
         // Si objetTouche est null, cela signifie qu'on a touchÃ© le terrain bas-niveau ! ON CONTINUE LE MINAGE.
         Vector3 pointImpactVoxel = _rayon.GetCollisionPoint();
         Vector3 normaleImpact = _rayon.GetCollisionNormal();
-        Vector3 pointDeSondage = pointImpactVoxel - (normaleImpact * 0.5f);
-
-        int idExtrait = _gestionnaireMonde?.ObtenirMatiereExacte(pointDeSondage) ?? 1;
-        // Toujours terrain (1-9) pour que la pose refusionne avec le sol ; jamais 10/11/12/999 (bloc vert).
-        if (idExtrait < 1 || idExtrait > 9) idExtrait = 1;
+        int idExtrait = ObtenirMatiereSolideDepuisImpact(pointImpactVoxel, normaleImpact);
+        if (idExtrait < 1 || idExtrait > 9)
+            return;
 
         if (MainGaucheEstActive && !MainGauche.EstVide && !MainDroite.EstVide) return;
         if (!MainGaucheEstActive && !MainDroite.EstVide && !MainGauche.EstVide) return;
@@ -4602,6 +4643,53 @@ public partial class Joueur : CharacterBody3D
             RestaurerContenuCoffreSurItem(item, cleCoffre);
             corps = item;
         }
+        else if (id == IdObjetPitFeu)
+        {
+            var item = new ItemPhysique
+            {
+                ID_Objet = id,
+                IndexBotanique = mainActive.IndexBotanique,
+                IndexChimique = mainActive.IndexChimique,
+                IndexCacheMemoire = mainActive.IndexMorphologique,
+                GenomeAssemblage = mainActive.GenomeAssemblage ?? "",
+                Name = "ItemPhysique",
+                ContinuousCd = true,
+                Freeze = true,
+                FreezeMode = RigidBody3D.FreezeModeEnum.Static
+            };
+            if (!string.IsNullOrEmpty(item.GenomeAssemblage))
+                item.SetMeta(MetaGenomeAssemblage, item.GenomeAssemblage);
+            var meshRoot = new Node3D { Name = "MeshInstance3D" };
+            InstancierModelePitFeu(meshRoot, mainActive, 0.92f, true);
+            item.AddChild(meshRoot);
+            var pilePit = new List<Node> { meshRoot };
+            for (int i = 0; i < pilePit.Count; i++)
+            {
+                foreach (Node c in pilePit[i].GetChildren())
+                {
+                    if (c is MeshInstance3D mi && mi.Mesh != null)
+                    {
+                        Shape3D shape = mi.Mesh.CreateTrimeshShape();
+                        if (shape != null)
+                        {
+                            Transform3D t = mi.Transform;
+                            Node parentNode = mi.GetParent();
+                            while (parentNode != null && parentNode != item && parentNode is Node3D n3d)
+                            {
+                                t = n3d.Transform * t;
+                                parentNode = parentNode.GetParent();
+                            }
+                            var colNode = new CollisionShape3D { Shape = shape, Transform = t };
+                            item.AddChild(colNode);
+                        }
+                    }
+                    pilePit.Add(c);
+                }
+            }
+            if (item.GetChildCount() <= 1)
+                item.AddChild(new CollisionShape3D { Shape = new BoxShape3D { Size = new Vector3(0.86f, 0.32f, 0.86f) }, Position = new Vector3(0f, 0.16f, 0f) });
+            corps = item;
+        }
         else if (id == 200)
         {
             var item = new ItemPhysique
@@ -4815,6 +4903,34 @@ public partial class Joueur : CharacterBody3D
             item.AddChild(new CollisionShape3D { Shape = new BoxShape3D { Size = new Vector3(0.30f, 0.055f, 0.42f) } });
             corps = item;
         }
+        else if (id == IdObjetAllumeFeu)
+        {
+            SlotInventaire slotAllumeFeu = mainActive;
+            Atlas_Matiere.InitialiserDurabiliteOutilSiBesoin(ref slotAllumeFeu);
+            var item = new ItemPhysique
+            {
+                ID_Objet = id,
+                IndexChimique = slotAllumeFeu.IndexChimique,
+                IndexCacheMemoire = 0,
+                Name = "ItemPhysique",
+                ContinuousCd = true
+            };
+            item.SetMeta(MetaDurabiliteOutilMax, slotAllumeFeu.DurabiliteOutilMax);
+            item.SetMeta(MetaDurabiliteOutilActuelle, slotAllumeFeu.DurabiliteOutilActuelle);
+            var meshRoot = new Node3D { Name = "MeshInstance3D" };
+            InstancierModeleAllumeFeu(meshRoot, slotAllumeFeu, 0.42f, false);
+            item.AddChild(meshRoot);
+            if (AjouterCollisionsConvexesDepuisMeshesSousRacineItem(item, meshRoot) == 0)
+            {
+                item.AddChild(new CollisionShape3D
+                {
+                    Name = "CollisionShape3D",
+                    Shape = new BoxShape3D { Size = new Vector3(0.18f, 0.05f, 0.08f) },
+                    Position = new Vector3(0f, 0.025f, 0f)
+                });
+            }
+            corps = item;
+        }
         else if (id == 30 || id == 32)
         {
             int f = Mathf.Clamp(mainActive.IndexMorphologique, 0, 3);
@@ -4967,6 +5083,22 @@ public partial class Joueur : CharacterBody3D
             item.AddChild(new CollisionShape3D { Shape = new CapsuleShape3D { Radius = 0.06f, Height = 0.24f } });
             corps = item;
         }
+        else if (id == IdObjetIntestinBoeufNettoye)
+        {
+            var item = new ItemPhysique
+            {
+                ID_Objet = id,
+                IndexChimique = 0,
+                IndexCacheMemoire = 0,
+                Name = "ItemPhysique",
+                ContinuousCd = true
+            };
+            var meshRoot = new Node3D { Name = "MeshInstance3D" };
+            InstancierModeleIntestinBoeufNettoye(meshRoot, mainActive, 0.24f);
+            item.AddChild(meshRoot);
+            item.AddChild(new CollisionShape3D { Shape = new CapsuleShape3D { Radius = 0.06f, Height = 0.24f } });
+            corps = item;
+        }
         else // 999 Buisson â€” RigidBody3D pour pouvoir le lancer comme les autres objets posÃ©s.
         {
             float cote = 0.85f;
@@ -4982,7 +5114,7 @@ public partial class Joueur : CharacterBody3D
         GetParent().AddChild(corps);
         // Placement pur : pas de translation Y supplÃ©mentaire (Ã©vite double offset / lÃ©vitation atelier).
         corps.GlobalPosition = pointDeChute;
-        if (id == IdObjetRackBatons || id == IdObjetRackBuches || id == IdObjetCoffreBoisTier0)
+        if (id == IdObjetRackBatons || id == IdObjetRackBuches || id == IdObjetCoffreBoisTier0 || id == IdObjetPitFeu)
         {
             // Snap sol robuste pour le rack: corrige les cas oÃ¹ le raycast vise une surface dÃ©calÃ©e.
             var espace = GetWorld3D()?.DirectSpaceState;
@@ -5045,7 +5177,7 @@ public partial class Joueur : CharacterBody3D
                     rbPose.AngularDamp = 0.88f;
                 }
             }
-            else if (id == 30 || id == 32 || id == 200 || id == IdObjetRackBatons || id == IdObjetRackBuches || id == IdObjetCoffreBoisTier0)
+            else if (id == 30 || id == 32 || id == 200 || id == IdObjetRackBatons || id == IdObjetRackBuches || id == IdObjetCoffreBoisTier0 || id == IdObjetPitFeu)
             {
                 rbPose.PhysicsMaterialOverride = _physMatBois;
                 rbPose.LinearDampMode = RigidBody3D.DampMode.Replace;
@@ -5071,6 +5203,21 @@ public partial class Joueur : CharacterBody3D
                     rbPose.GravityScale = 0f;
                     rbPose.Sleeping = true;
                 }
+                else if (id == IdObjetPitFeu)
+                {
+                    rbPose.Mass = 26f;
+                    rbPose.GravityScale = 0f;
+                    rbPose.Sleeping = true;
+                }
+            }
+            else if (id == IdObjetAllumeFeu)
+            {
+                rbPose.PhysicsMaterialOverride = _physMatRochePlate;
+                rbPose.LinearDampMode = RigidBody3D.DampMode.Replace;
+                rbPose.AngularDampMode = RigidBody3D.DampMode.Replace;
+                rbPose.LinearDamp = 0.22f;
+                rbPose.AngularDamp = 0.72f;
+                rbPose.Mass = 0.26f;
             }
             else if (id is >= 15 and <= 17)
             {
@@ -5081,15 +5228,15 @@ public partial class Joueur : CharacterBody3D
                 rbPose.AngularDamp = 1.0f;
             }
             else if (id == 20 || id == 21 || id == IdObjetCeinturePoches || id == IdObjetCeintureSacoches || id == IdObjetPochetteTier0 || id == IdObjetSacTier0 || id == IdObjetCarnetSavoir
-                || id == IdObjetSteakCru || id == IdObjetOsBoeuf || id == IdObjetCuirBoeuf || id == IdObjetIntestinBoeuf)
+                || id == IdObjetSteakCru || id == IdObjetOsBoeuf || id == IdObjetCuirBoeuf || id == IdObjetIntestinBoeuf || id == IdObjetIntestinBoeufNettoye)
             {
                 rbPose.PhysicsMaterialOverride = _physMatCorde;
                 rbPose.LinearDampMode = RigidBody3D.DampMode.Replace;
                 rbPose.AngularDampMode = RigidBody3D.DampMode.Replace;
                 rbPose.LinearDamp = 0.32f;
                 rbPose.AngularDamp = 0.95f;
-                if (id == IdObjetSteakCru || id == IdObjetOsBoeuf || id == IdObjetCuirBoeuf || id == IdObjetIntestinBoeuf)
-                    rbPose.Mass = id == IdObjetOsBoeuf ? 0.55f : (id == IdObjetCuirBoeuf ? 0.25f : (id == IdObjetIntestinBoeuf ? 0.20f : 0.18f));
+                if (id == IdObjetSteakCru || id == IdObjetOsBoeuf || id == IdObjetCuirBoeuf || id == IdObjetIntestinBoeuf || id == IdObjetIntestinBoeufNettoye)
+                    rbPose.Mass = id == IdObjetOsBoeuf ? 0.55f : (id == IdObjetCuirBoeuf ? 0.25f : ((id == IdObjetIntestinBoeuf || id == IdObjetIntestinBoeufNettoye) ? 0.20f : 0.18f));
             }
             else if (id == 999)
             {
@@ -5206,7 +5353,9 @@ public partial class Joueur : CharacterBody3D
     private bool PointImmergeJoueur(Vector3 p)
     {
         if (_gestionnaireMonde == null) return false;
-        return _gestionnaireMonde.EstPointImmergeEau(p);
+        // Joueur: détection stricte pour éviter les faux positifs sur berge
+        // (le voisinage 3x3 de EstPointDansEau déclenchait parfois la nage trop tôt).
+        return ObtenirMatiereExacteCachee(p) == 4;
     }
 
     private bool EvaluerEtatEauJoueur(out float surfaceEau)
@@ -5315,8 +5464,6 @@ public partial class Joueur : CharacterBody3D
 
         bool estDansEau = EvaluerEtatEauJoueur(out float surfaceEau);
         bool sautMaintenu = !uiBloquanteOuverte && (Input.IsActionPressed("ui_accept") || Input.IsActionPressed("jump"));
-        Vector3 directionEau = new Vector3(velocity.X, 0f, velocity.Z);
-        bool bordBergeEau = estDansEau && DetecterBordBergeSortieEau(directionEau, surfaceEau);
 
         if (IsOnFloor())
         {
@@ -5343,15 +5490,6 @@ public partial class Joueur : CharacterBody3D
             velocity.Z *= facteurFrottementXZ;
             velocity.Y *= 0.92f;
 
-            // Sortie de l'eau: au bord de berge, le corps remonte légèrement de lui-même.
-            if (bordBergeEau)
-            {
-                float cibleSortieY = surfaceEau + 0.06f;
-                float erreurSortieY = cibleSortieY - GlobalPosition.Y;
-                float vYAuto = Mathf.Clamp(erreurSortieY * 3.8f, -0.35f, 1.35f);
-                velocity.Y = Mathf.MoveToward(velocity.Y, Mathf.Max(velocity.Y, vYAuto), 7.2f * dt);
-            }
-
             if (sautMaintenu)
             {
                 // Nage active: on autorise une montée franche pour ressortir de l'eau.
@@ -5359,8 +5497,6 @@ public partial class Joueur : CharacterBody3D
                 float erreurY = cibleY - GlobalPosition.Y;
                 float vYCible = Mathf.Clamp(erreurY * 5.2f, -1.65f, 3.2f);
                 velocity.Y = Mathf.MoveToward(velocity.Y, vYCible, 9.2f * dt);
-                if (bordBergeEau)
-                    velocity.Y = Mathf.Max(velocity.Y, JumpVelocity * 0.92f);
             }
             else if (!IsOnFloor())
             {

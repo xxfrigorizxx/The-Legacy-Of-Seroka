@@ -24,7 +24,11 @@ public partial class Joueur
 		Pochette = 1 << 13,
 		CeinturePoches = 1 << 14,
 		/// <summary>Branche d'arbre / de buisson (ID 31) : manche hachette primitive, mais pas substitut du bâton brut (32) pour « bâton façonné » seul.</summary>
-		BrancheBrute = 1 << 15
+		BrancheBrute = 1 << 15,
+		/// <summary>Roche voxel brute (ID 2), utilisée pour débloquer la recette de façonnage vers petite roche matière (ID 47).</summary>
+		RocheVoxelBrute = 1 << 16,
+		Silex = 1 << 17,
+		RocheSulfuree = 1 << 18
 	}
 
 	private sealed class RecetteAnalysable
@@ -79,6 +83,58 @@ public partial class Joueur
 			Titre = "Baton faconne",
 			LegendeSymboles = new[] { "B = Baton brut (32) ou branche (31) — même formule, essence = bois utilisé" },
 			PatronCraft = new[] { "(B)" }
+		},
+		new RecetteAnalysable
+		{
+			CleCraft = "roche_marbre_pointe",
+			IdResultat = 47,
+			Masque = CategorieAnalyse.RocheVoxelBrute,
+			Titre = "Petite roche faconnee en pointe (marbre)",
+			LegendeSymboles = new[]
+			{
+				"R = Roche brute (ID 2)",
+				"Resultat = Petite roche marbre en pointe"
+			},
+			PatronCraft = new[] { "(R)", "(R)" }
+		},
+		new RecetteAnalysable
+		{
+			CleCraft = "roche_marbre_plate",
+			IdResultat = 47,
+			Masque = CategorieAnalyse.RocheVoxelBrute,
+			Titre = "Petite roche faconnee plate (marbre)",
+			LegendeSymboles = new[]
+			{
+				"R = Roche brute (ID 2)",
+				"Resultat = Petite roche marbre plate"
+			},
+			PatronCraft = new[] { "(R)(R)" }
+		},
+		new RecetteAnalysable
+		{
+			CleCraft = "roche_marbre_ronde",
+			IdResultat = 47,
+			Masque = CategorieAnalyse.RocheVoxelBrute,
+			Titre = "Petite roche faconnee ronde (marbre)",
+			LegendeSymboles = new[]
+			{
+				"R = Roche brute (ID 2)",
+				"Resultat = Petite roche marbre ronde"
+			},
+			PatronCraft = new[] { "(R)(R)", "(R)(R)" }
+		},
+		new RecetteAnalysable
+		{
+			CleCraft = "roche_marbre_ovale",
+			IdResultat = 47,
+			Masque = CategorieAnalyse.RocheVoxelBrute,
+			Titre = "Petite roche faconnee ovale (marbre)",
+			LegendeSymboles = new[]
+			{
+				"R = Roche brute (ID 2)",
+				"Resultat = Petite roche marbre ovale"
+			},
+			PatronCraft = new[] { "(R)(R)(R)", "(R)(R)(R) (rotation 2x3/3x2)" }
 		},
 		new RecetteAnalysable
 		{
@@ -199,6 +255,24 @@ public partial class Joueur
 		},
 		new RecetteAnalysable
 		{
+			CleCraft = "id_120",
+			IdResultat = IdObjetPitFeu,
+			Masque = CategorieAnalyse.BrancheBrute,
+			Titre = "Pit a feu",
+			LegendeSymboles = new[] { "Br = Branche brute (meme essence)" },
+			PatronCraft = new[] { "(Br)(Br)", "(Br)(Br)" }
+		},
+		new RecetteAnalysable
+		{
+			CleCraft = "id_121",
+			IdResultat = IdObjetAllumeFeu,
+			Masque = CategorieAnalyse.Silex | CategorieAnalyse.RocheSulfuree,
+			Titre = "Allume-feu préhistorique",
+			LegendeSymboles = new[] { "S = Silex", "P = Marcassite ou pyrite" },
+			PatronCraft = new[] { "(S)(P) ou (P)(S)" }
+		},
+		new RecetteAnalysable
+		{
 			CleCraft = "id_200",
 			IdResultat = 200,
 			Masque = CategorieAnalyse.DemiBuche | CategorieAnalyse.BuchePleine | CategorieAnalyse.RocheRonde | CategorieAnalyse.Corde,
@@ -240,6 +314,17 @@ public partial class Joueur
 			return resultat.IndexBotanique >= 2 ? "corde_tier2" : "corde_tier0";
 		if (resultat.ID == 32 && resultat.IndexChimique == 1)
 			return "baton_faconne";
+		if (resultat.ID == 47)
+		{
+			return resultat.IndexMorphologique switch
+			{
+				3 => "roche_marbre_pointe",
+				1 => "roche_marbre_plate",
+				0 => "roche_marbre_ronde",
+				2 => "roche_marbre_ovale",
+				_ => "id_47"
+			};
+		}
 		return $"id_{resultat.ID}";
 	}
 
@@ -313,6 +398,15 @@ public partial class Joueur
 		}
 		if (s.ID == IdObjetPochetteTier0) c |= CategorieAnalyse.Pochette;
 		if (s.ID == IdObjetCeinturePoches) c |= CategorieAnalyse.CeinturePoches;
+		if (s.ID == 2) c |= CategorieAnalyse.RocheVoxelBrute;
+		if (ItemPhysique.EstMatiereSilexParIdObjet(s.ID))
+			c |= CategorieAnalyse.Silex;
+		if (ItemPhysique.EstIdRocheMatiere(s.ID))
+		{
+			int idxGeo = ItemPhysique.IndexChimiqueDepuisIdRoche(s.ID);
+			if (idxGeo == 10 || idxGeo == 11)
+				c |= CategorieAnalyse.RocheSulfuree;
+		}
 		if (ItemPhysique.EstIdRocheMatiere(s.ID))
 		{
 			if (s.IndexMorphologique == 0) c |= CategorieAnalyse.RocheRonde;
@@ -462,7 +556,7 @@ public partial class Joueur
 		for (int i = 0; i < GrilleSacStockage.Length && !slot.EstVide; i++)
 		{
 			int max = Joueur.ObtenirPileMax(GrilleSacStockage[i]);
-			if (Joueur.EstSacTier0Liane(EquipementSacDos)) max *= 2;
+			max *= Joueur.ObtenirMultiplicateurPileSac(EquipementSacDos);
 			EssayerFusionnerSlot(ref GrilleSacStockage[i], ref slot, max);
 		}
 		for (int i = 0; i < GrilleCeintureStockage.Length && !slot.EstVide; i++)

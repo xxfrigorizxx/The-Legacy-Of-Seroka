@@ -5,6 +5,12 @@ using System.IO;
 
 public partial class GestionnaireFauneBoeufs : Node3D
 {
+	private sealed class EntreeFaunePersistante
+	{
+		public bool EstFemelle;
+		public Godot.Collections.Dictionary Profil;
+	}
+
 	// Legacy: scene unique (utilisee si SceneVache est vide).
 	[Export] public PackedScene SceneBoeuf;
 	[Export] public PackedScene SceneVache;
@@ -31,6 +37,8 @@ public partial class GestionnaireFauneBoeufs : Node3D
 	[Export] public float RayonValidationSolSpawn = 1.2f;
 	[Export] public bool GarantirPremierTroupeau = true;
 	[Export(PropertyHint.Range, "8,256,1")] public int BudgetChunksEvaluesParCycle = 64;
+	[Export(PropertyHint.Range, "1,64,1")] public int BudgetDechargementsFauneParCycle = 12;
+	[Export(PropertyHint.Range, "1,64,1")] public int BudgetRechargementsFauneParCycle = 10;
 	[ExportGroup("Diagnostic performance")]
 	[Export] public bool ActiverProfilagePerfFaune = false;
 	[Export(PropertyHint.Range, "0.2,10,0.1")] public float IntervalleLogProfilageFauneSec = 2.0f;
@@ -38,6 +46,10 @@ public partial class GestionnaireFauneBoeufs : Node3D
 	private Gestionnaire_Monde _gestionnaireMonde;
 	private CharacterBody3D _joueur;
 	private readonly List<BoeufSauvage> _boeufs = new List<BoeufSauvage>();
+	private readonly Dictionary<string, EntreeFaunePersistante> _banqueFaune = new Dictionary<string, EntreeFaunePersistante>();
+	private readonly HashSet<string> _idsActifs = new HashSet<string>();
+	private readonly List<BoeufSauvage> _scratchBoeufsADecharger = new List<BoeufSauvage>();
+	private readonly List<string> _scratchIdsARecharger = new List<string>();
 	private readonly RandomNumberGenerator _rng = new RandomNumberGenerator();
 	private readonly HashSet<Vector2I> _chunksEvaluesSpawnFaune = new HashSet<Vector2I>();
 	private float _cooldownVerification;
@@ -68,6 +80,7 @@ public partial class GestionnaireFauneBoeufs : Node3D
 			ChargerFauneMonde();
 			_fauneChargeeDepuisSauvegarde = true;
 		}
+		SynchroniserStreamingFaune();
 
 		_cooldownVerification -= (float)delta;
 		if (_cooldownVerification > 0f)
@@ -103,7 +116,7 @@ public partial class GestionnaireFauneBoeufs : Node3D
 
 	public IReadOnlyList<BoeufSauvage> ObtenirBoeufsActifs()
 	{
-		_boeufs.RemoveAll(b => !IsInstanceValid(b) || !b.IsInsideTree());
+		NettoyerBoeufsActifsInvalides();
 		return _boeufs;
 	}
 
@@ -119,17 +132,24 @@ public partial class GestionnaireFauneBoeufs : Node3D
 	{
 		try
 		{
-			_boeufs.RemoveAll(b => !IsInstanceValid(b) || !b.IsInsideTree());
+			NettoyerBoeufsActifsInvalides();
+			MettreAJourBanqueDepuisActifs();
+			var entreesValides = new List<EntreeFaunePersistante>(_banqueFaune.Count);
+			foreach (EntreeFaunePersistante entree in _banqueFaune.Values)
+			{
+				if (entree?.Profil == null) continue;
+				string id = ObtenirIdDepuisProfil(entree.Profil, true);
+				if (string.IsNullOrEmpty(id)) continue;
+				entreesValides.Add(entree);
+			}
 			string chemin = ObtenirCheminFichierFaune();
 			using var w = new BinaryWriter(File.Open(chemin, FileMode.Create));
 			w.Write(VersionPersistanceFaune);
-			w.Write(_boeufs.Count);
-			foreach (BoeufSauvage b in _boeufs)
+			w.Write(entreesValides.Count);
+			foreach (EntreeFaunePersistante entree in entreesValides)
 			{
-				bool estFemelle = b is VacheSauvage;
-				w.Write(estFemelle);
-				var profil = b.ExtraireProfilPersistant();
-				w.Write(Json.Stringify(profil));
+				w.Write(entree.EstFemelle);
+				w.Write(Json.Stringify(entree.Profil));
 			}
 		}
 		catch (Exception ex)
@@ -157,6 +177,8 @@ public partial class GestionnaireFauneBoeufs : Node3D
 					b.QueueFree();
 			}
 			_boeufs.Clear();
+			_banqueFaune.Clear();
+			_idsActifs.Clear();
 
 			using var r = new BinaryReader(File.Open(chemin, FileMode.Open, System.IO.FileAccess.Read, FileShare.Read));
 			int version = r.ReadInt32();
@@ -171,28 +193,16 @@ public partial class GestionnaireFauneBoeufs : Node3D
 				if (v.VariantType != Variant.Type.Dictionary)
 					continue;
 				var dict = v.AsGodotDictionary();
-
-				PackedScene scene = estFemelle ? ResoudreSceneFemelle() : SceneTaureau;
-				if (scene == null)
-					scene = ResoudreSceneFemelle() ?? SceneTaureau;
-				if (scene == null)
+				string id = ObtenirIdDepuisProfil(dict, true);
+				if (string.IsNullOrEmpty(id))
 					continue;
-
-				Node inst = scene.Instantiate();
-				if (inst is not BoeufSauvage boeuf)
+				_banqueFaune[id] = new EntreeFaunePersistante
 				{
-					inst?.QueueFree();
-					continue;
-				}
-				AddChild(boeuf);
-				Vector3 pos = Vector3.Zero;
-				if (dict.TryGetValue("x", out Variant x) && dict.TryGetValue("y", out Variant y) && dict.TryGetValue("z", out Variant z))
-					pos = new Vector3(x.AsSingle(), y.AsSingle(), z.AsSingle());
-				boeuf.GlobalPosition = pos;
-				boeuf.Configurer(_gestionnaireMonde, _joueur, _gestionnaireMonde.SeedTerrain, pos);
-				boeuf.AppliquerProfilPersistant(dict);
-				_boeufs.Add(boeuf);
+					EstFemelle = estFemelle,
+					Profil = dict
+				};
 			}
+			SynchroniserStreamingFaune();
 			_fauneChargeeDepuisSauvegarde = true;
 		}
 		catch (Exception ex)
@@ -208,6 +218,7 @@ public partial class GestionnaireFauneBoeufs : Node3D
 	private void EvaluerChunksEtSpawnerTroupeaux()
 	{
 		_boeufs.RemoveAll(b => !IsInstanceValid(b));
+		MettreAJourBanqueDepuisActifs();
 		Vector2I chunkJoueur = Gestionnaire_Monde.WorldToChunkCoord(_joueur.GlobalPosition, _gestionnaireMonde.TailleChunk);
 		int rayon = Mathf.Max(1, RayonEvaluationChunksAutourJoueur);
 		if (_gestionnaireMonde.RenderDistance > 0)
@@ -250,7 +261,7 @@ public partial class GestionnaireFauneBoeufs : Node3D
 		_curseurEvaluationChunks = (_curseurEvaluationChunks + evals) % totalCases;
 
 		// Sécurité UX: éviter le cas "je cherche partout et je ne vois rien".
-		if (GarantirPremierTroupeau && !_premierTroupeauForce && _boeufs.Count == 0 && chunkPlaineProche.HasValue)
+		if (GarantirPremierTroupeau && !_premierTroupeauForce && _banqueFaune.Count == 0 && _boeufs.Count == 0 && chunkPlaineProche.HasValue)
 		{
 			SpawnerTroupeauDansChunk(chunkPlaineProche.Value);
 			_premierTroupeauForce = true;
@@ -351,10 +362,167 @@ public partial class GestionnaireFauneBoeufs : Node3D
 			boeuf.GlobalPosition = pointSol + Vector3.Up * 0.2f;
 			boeuf.Configurer(_gestionnaireMonde, _joueur, _gestionnaireMonde.SeedTerrain, ancre);
 			_boeufs.Add(boeuf);
+			EnregistrerProfilActifDansBanque(boeuf);
 			if (boeuf is VacheSauvage) nbFemelles++;
 			else nbMales++;
 			spawnsReussis++;
 			tentativesGlobales++;
+		}
+	}
+
+	private void NettoyerBoeufsActifsInvalides()
+	{
+		for (int i = _boeufs.Count - 1; i >= 0; i--)
+		{
+			BoeufSauvage b = _boeufs[i];
+			if (!IsInstanceValid(b) || !b.IsInsideTree())
+				_boeufs.RemoveAt(i);
+		}
+	}
+
+	private static string ObtenirIdDepuisProfil(Godot.Collections.Dictionary profil, bool creerSiAbsent)
+	{
+		if (profil == null) return "";
+		if (profil.TryGetValue("id", out Variant idv))
+		{
+			string id = idv.AsString();
+			if (!string.IsNullOrWhiteSpace(id))
+				return id;
+		}
+		if (!creerSiAbsent) return "";
+		string nouveau = Guid.NewGuid().ToString("N");
+		profil["id"] = nouveau;
+		return nouveau;
+	}
+
+	private void EnregistrerProfilActifDansBanque(BoeufSauvage boeuf)
+	{
+		if (boeuf == null || !IsInstanceValid(boeuf) || !boeuf.IsInsideTree()) return;
+		Godot.Collections.Dictionary profil = boeuf.ExtraireProfilPersistant();
+		string id = ObtenirIdDepuisProfil(profil, true);
+		if (string.IsNullOrEmpty(id)) return;
+		_banqueFaune[id] = new EntreeFaunePersistante
+		{
+			EstFemelle = boeuf is VacheSauvage,
+			Profil = profil
+		};
+	}
+
+	private void MettreAJourBanqueDepuisActifs()
+	{
+		NettoyerBoeufsActifsInvalides();
+		foreach (BoeufSauvage boeuf in _boeufs)
+			EnregistrerProfilActifDansBanque(boeuf);
+	}
+
+	private int CalculerRayonActivationFauneChunks()
+	{
+		int render = Mathf.Max(1, _gestionnaireMonde?.RenderDistance ?? 1);
+		int marge = Mathf.Clamp(MargeSecuriteChunksSpawn, 0, Math.Max(0, render - 1));
+		return Mathf.Max(1, render - marge);
+	}
+
+	private static bool EssayerLirePositionProfil(Godot.Collections.Dictionary profil, out Vector3 pos)
+	{
+		pos = Vector3.Zero;
+		if (profil == null) return false;
+		if (!profil.TryGetValue("x", out Variant x) || !profil.TryGetValue("y", out Variant y) || !profil.TryGetValue("z", out Variant z))
+			return false;
+		pos = new Vector3(x.AsSingle(), y.AsSingle(), z.AsSingle());
+		return true;
+	}
+
+	private bool ProfilEstDansRayonActif(EntreeFaunePersistante entree, Vector2I chunkJoueur, int rayonActif)
+	{
+		if (entree?.Profil == null) return false;
+		if (!EssayerLirePositionProfil(entree.Profil, out Vector3 pos)) return false;
+		Vector2I chunk = Gestionnaire_Monde.WorldToChunkCoord(pos, _gestionnaireMonde.TailleChunk);
+		if (Mathf.Abs(chunk.X - chunkJoueur.X) > rayonActif || Mathf.Abs(chunk.Y - chunkJoueur.Y) > rayonActif)
+			return false;
+		return _gestionnaireMonde.ChunkEstCharge(chunk);
+	}
+
+	private BoeufSauvage InstancierBoeufDepuisEntree(EntreeFaunePersistante entree)
+	{
+		if (entree?.Profil == null) return null;
+		PackedScene scene = entree.EstFemelle ? ResoudreSceneFemelle() : SceneTaureau;
+		if (scene == null)
+			scene = ResoudreSceneFemelle() ?? SceneTaureau;
+		if (scene == null) return null;
+
+		Node inst = scene.Instantiate();
+		if (inst is not BoeufSauvage boeuf)
+		{
+			inst?.QueueFree();
+			return null;
+		}
+
+		Vector3 pos = Vector3.Zero;
+		EssayerLirePositionProfil(entree.Profil, out pos);
+		AddChild(boeuf);
+		boeuf.GlobalPosition = pos;
+		boeuf.Configurer(_gestionnaireMonde, _joueur, _gestionnaireMonde.SeedTerrain, pos);
+		boeuf.AppliquerProfilPersistant(entree.Profil);
+		return boeuf;
+	}
+
+	private void SynchroniserStreamingFaune()
+	{
+		if (_gestionnaireMonde == null || _joueur == null) return;
+		MettreAJourBanqueDepuisActifs();
+
+		Vector2I chunkJoueur = Gestionnaire_Monde.WorldToChunkCoord(_joueur.GlobalPosition, _gestionnaireMonde.TailleChunk);
+		int rayonActif = CalculerRayonActivationFauneChunks();
+
+		_scratchBoeufsADecharger.Clear();
+		for (int i = 0; i < _boeufs.Count; i++)
+		{
+			BoeufSauvage boeuf = _boeufs[i];
+			if (!IsInstanceValid(boeuf) || !boeuf.IsInsideTree()) continue;
+			Vector2I chunkBoeuf = Gestionnaire_Monde.WorldToChunkCoord(boeuf.GlobalPosition, _gestionnaireMonde.TailleChunk);
+			bool horsRayon = Mathf.Abs(chunkBoeuf.X - chunkJoueur.X) > rayonActif || Mathf.Abs(chunkBoeuf.Y - chunkJoueur.Y) > rayonActif;
+			bool chunkAbsent = !_gestionnaireMonde.ChunkEstCharge(chunkBoeuf);
+			if (horsRayon || chunkAbsent)
+				_scratchBoeufsADecharger.Add(boeuf);
+		}
+
+		int budgetDecharge = Mathf.Max(1, BudgetDechargementsFauneParCycle);
+		for (int i = 0; i < _scratchBoeufsADecharger.Count && i < budgetDecharge; i++)
+		{
+			BoeufSauvage boeuf = _scratchBoeufsADecharger[i];
+			EnregistrerProfilActifDansBanque(boeuf);
+			_boeufs.Remove(boeuf);
+			boeuf.QueueFree();
+		}
+
+		_idsActifs.Clear();
+		for (int i = 0; i < _boeufs.Count; i++)
+		{
+			BoeufSauvage boeuf = _boeufs[i];
+			if (!IsInstanceValid(boeuf) || !boeuf.IsInsideTree()) continue;
+			string idActif = boeuf.ObtenirIdentifiantIndividu();
+			if (!string.IsNullOrEmpty(idActif))
+				_idsActifs.Add(idActif);
+		}
+
+		_scratchIdsARecharger.Clear();
+		foreach (var kv in _banqueFaune)
+		{
+			if (_idsActifs.Contains(kv.Key)) continue;
+			if (!ProfilEstDansRayonActif(kv.Value, chunkJoueur, rayonActif)) continue;
+			_scratchIdsARecharger.Add(kv.Key);
+		}
+
+		int budgetRecharge = Mathf.Max(1, BudgetRechargementsFauneParCycle);
+		int recharges = 0;
+		for (int i = 0; i < _scratchIdsARecharger.Count && recharges < budgetRecharge; i++)
+		{
+			string id = _scratchIdsARecharger[i];
+			if (!_banqueFaune.TryGetValue(id, out EntreeFaunePersistante entree)) continue;
+			BoeufSauvage boeuf = InstancierBoeufDepuisEntree(entree);
+			if (boeuf == null) continue;
+			_boeufs.Add(boeuf);
+			recharges++;
 		}
 	}
 
