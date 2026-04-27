@@ -95,7 +95,8 @@ public partial class Monde_Serveur : Node
 	/// <summary>Tapis roulant décharge : au plus N chunks sauvegardés/déchargés par frame (évite lag).</summary>
 	[Export] public int MaxChunksDechargeParTick = 2;
 	[Export] public float BudgetMsDechargeParTick = 0.80f;
-	private List<Vector2I> _chunksEnAttenteDecharge = new List<Vector2I>();
+	private readonly Queue<Vector2I> _chunksEnAttenteDecharge = new Queue<Vector2I>();
+	private readonly HashSet<Vector2I> _chunksEnAttenteDechargeSet = new HashSet<Vector2I>();
 	private FastNoiseLite _noiseTemperatureArbres;
 	private int _noiseTemperatureArbresSeed = int.MinValue;
 	private FastNoiseLite _noiseHumiditeArbres;
@@ -110,6 +111,9 @@ public partial class Monde_Serveur : Node
 	private const int MagicArbresV6 = 0x5A4B3255;
 	private readonly List<Vector2I> _cycleAutosaveChunks = new List<Vector2I>();
 	private int _indexCycleAutosaveChunks;
+	private readonly Queue<Vector2I> _fileChunksDirtyAutosave = new Queue<Vector2I>();
+	private readonly HashSet<Vector2I> _setChunksDirtyAutosave = new HashSet<Vector2I>();
+	[Export] public int MultiplicateurScanDirtyAutosave = 6;
 
 	/// <summary>
 	/// Budget d’objets traités par tick (arbres, pierres, décharge chunks). Indépendant du FPS pour que le
@@ -239,6 +243,51 @@ public partial class Monde_Serveur : Node
 	public int SauvegarderChunksActifsProgressif(int maxChunks)
 	{
 		if (maxChunks <= 0 || _chunks.Count == 0) return 0;
+		int scans = Mathf.Max(maxChunks * Mathf.Max(2, MultiplicateurScanDirtyAutosave), 8);
+		AlimenterFileChunksDirtyAutosave(scans);
+		if (_fileChunksDirtyAutosave.Count == 0) return 0;
+
+		int sauvegardes = 0;
+		int tentative = _fileChunksDirtyAutosave.Count;
+		while (sauvegardes < maxChunks && tentative > 0 && _fileChunksDirtyAutosave.Count > 0)
+		{
+			tentative--;
+			Vector2I coord = _fileChunksDirtyAutosave.Dequeue();
+			_setChunksDirtyAutosave.Remove(coord);
+			if (SauvegarderChunkCoord(coord, uniquementSiModifie: true))
+				sauvegardes++;
+		}
+		return sauvegardes;
+	}
+
+	/// <summary>Retourne un backlog compact pour diagnostics autosave/décharge (profil perf).</summary>
+	public (int DirtyAutosave, int Decharge) ObtenirBacklogsPersistance()
+	{
+		return (_fileChunksDirtyAutosave.Count, _chunksEnAttenteDecharge.Count);
+	}
+
+	/// <summary>Flush explicite des chunks modifiés (quitter/sauvegarde forcée) avec budget optionnel.</summary>
+	public int ForcerSauvegardeChunksDirty(int maxChunks = int.MaxValue)
+	{
+		if (_chunks.Count == 0) return 0;
+		AlimenterFileChunksDirtyAutosave(_chunks.Count);
+		int budget = maxChunks <= 0 ? int.MaxValue : maxChunks;
+		int sauvegardes = 0;
+		int tentative = _fileChunksDirtyAutosave.Count;
+		while (sauvegardes < budget && tentative > 0 && _fileChunksDirtyAutosave.Count > 0)
+		{
+			tentative--;
+			Vector2I coord = _fileChunksDirtyAutosave.Dequeue();
+			_setChunksDirtyAutosave.Remove(coord);
+			if (SauvegarderChunkCoord(coord, uniquementSiModifie: true))
+				sauvegardes++;
+		}
+		return sauvegardes;
+	}
+
+	private void AlimenterFileChunksDirtyAutosave(int budgetScan)
+	{
+		if (_chunks.Count == 0 || budgetScan <= 0) return;
 		if (_cycleAutosaveChunks.Count != _chunks.Count)
 		{
 			_cycleAutosaveChunks.Clear();
@@ -246,27 +295,34 @@ public partial class Monde_Serveur : Node
 				_cycleAutosaveChunks.Add(coord);
 			_indexCycleAutosaveChunks = 0;
 		}
-		if (_cycleAutosaveChunks.Count == 0) return 0;
-
-		int sauvegardes = 0;
-		while (sauvegardes < maxChunks && _cycleAutosaveChunks.Count > 0)
+		int total = _cycleAutosaveChunks.Count;
+		if (total == 0) return;
+		int scans = Mathf.Clamp(budgetScan, 1, total);
+		for (int i = 0; i < scans; i++)
 		{
-			if (_indexCycleAutosaveChunks >= _cycleAutosaveChunks.Count)
+			if (_indexCycleAutosaveChunks >= total)
 				_indexCycleAutosaveChunks = 0;
-			Vector2I coord = _cycleAutosaveChunks[_indexCycleAutosaveChunks];
-			_indexCycleAutosaveChunks++;
-
-			if (!_chunks.TryGetValue(coord, out var chunk) || chunk == null)
-				continue;
-
-			ForcerInstanciationArbresEnAttente(coord);
-			chunk.SauvegarderChunkSurDisque();
-			SauvegarderFloreChunk(coord, chunk);
-			SauvegarderPierresChunk(coord);
-			SauvegarderArbresChunk(coord);
-			sauvegardes++;
+			Vector2I coord = _cycleAutosaveChunks[_indexCycleAutosaveChunks++];
+			if (_setChunksDirtyAutosave.Contains(coord)) continue;
+			if (!_chunks.TryGetValue(coord, out var chunk) || chunk == null) continue;
+			if (!chunk.EstModifie) continue;
+			_setChunksDirtyAutosave.Add(coord);
+			_fileChunksDirtyAutosave.Enqueue(coord);
 		}
-		return sauvegardes;
+	}
+
+	private bool SauvegarderChunkCoord(Vector2I coord, bool uniquementSiModifie)
+	{
+		if (!_chunks.TryGetValue(coord, out var chunk) || chunk == null)
+			return false;
+		if (uniquementSiModifie && !chunk.EstModifie)
+			return false;
+		ForcerInstanciationArbresEnAttente(coord);
+		chunk.SauvegarderChunkSurDisque();
+		SauvegarderFloreChunk(coord, chunk);
+		SauvegarderPierresChunk(coord);
+		SauvegarderArbresChunk(coord);
+		return true;
 	}
 
 	public override void _ExitTree()
@@ -1932,23 +1988,23 @@ public partial class Monde_Serveur : Node
 		Vector2I cj = Gestionnaire_Monde.WorldToChunkCoord(posJoueur, TailleChunk);
 		int cjX = cj.X;
 		int cjZ = cj.Y;
-
-		var aDecharger = new List<Vector2I>();
 		foreach (var kv in _chunks)
 		{
 			int dx = Mathf.Abs(kv.Key.X - cjX);
 			int dz = Mathf.Abs(kv.Key.Y - cjZ);
-			if (dx > RenderDistance || dz > RenderDistance)
-				aDecharger.Add(kv.Key);
+			if (dx <= RenderDistance && dz <= RenderDistance)
+				continue;
+			if (_chunksEnAttenteDechargeSet.Add(kv.Key))
+				_chunksEnAttenteDecharge.Enqueue(kv.Key);
 		}
-		// Enfiler sur le tapis roulant : le déchargement sera fait progressivement par ProcesserDechargeProgressive
-		_chunksEnAttenteDecharge = aDecharger;
 	}
 
 	/// <summary>Traite au plus MaxChunksDechargeParTick chunks : sauvegarde (voxels + pierres) puis décharge (retrait pierres, Remove chunk, notif client).</summary>
 	private void ProcesserDechargeProgressive()
 	{
 		if (_chunksEnAttenteDecharge.Count == 0 || _onOrdonnerDestructionChunk == null) return;
+		Vector3 posJoueur = _obtenirPositionJoueur?.Invoke() ?? Vector3.Zero;
+		Vector2I cj = Gestionnaire_Monde.WorldToChunkCoord(posJoueur, TailleChunk);
 		float facteurPression = CalculerFacteurPressionSpawn();
 		int budgetChunks = Mathf.Max(1, Mathf.RoundToInt(CalculerBudgetSpawnAdaptatif(Mathf.Max(1, MaxChunksDechargeParTick)) * Mathf.Clamp(facteurPression * 0.9f, 0.2f, 1f)));
 		ulong t0 = Time.GetTicksUsec();
@@ -1957,15 +2013,15 @@ public partial class Monde_Serveur : Node
 		while (traites < budgetChunks && _chunksEnAttenteDecharge.Count > 0)
 		{
 			if (Time.GetTicksUsec() - t0 >= budgetUs) break;
-			Vector2I coord = _chunksEnAttenteDecharge[0];
-			_chunksEnAttenteDecharge.RemoveAt(0);
-			if (_chunks.TryGetValue(coord, out var chunk))
+			Vector2I coord = _chunksEnAttenteDecharge.Dequeue();
+			_chunksEnAttenteDechargeSet.Remove(coord);
+			int dxJoueur = Mathf.Abs(coord.X - cj.X);
+			int dzJoueur = Mathf.Abs(coord.Y - cj.Y);
+			if (dxJoueur <= RenderDistance && dzJoueur <= RenderDistance)
+				continue;
+			if (_chunks.ContainsKey(coord))
 			{
-				chunk.SauvegarderChunkSurDisque();
-				SauvegarderFloreChunk(coord, chunk);
-				SauvegarderPierresChunk(coord);
-				ForcerInstanciationArbresEnAttente(coord);
-				SauvegarderArbresChunk(coord);
+				SauvegarderChunkCoord(coord, uniquementSiModifie: false);
 				RetirerPierresChunk(coord);
 				RetirerArbresChunk(coord);
 				_chunks.Remove(coord);

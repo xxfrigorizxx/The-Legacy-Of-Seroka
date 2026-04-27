@@ -106,6 +106,7 @@ public partial class Gestionnaire_Monde : Node3D
 	private int _indexDormanceObjetsDyn;
 	private Vector3 _dernieresCoordsAffichees = new Vector3(float.NaN, float.NaN, float.NaN);
 	private float _cooldownDrainProfilage = 0f;
+	private float _cooldownLogAutosaveDiag = 0f;
 	private readonly Dictionary<string, List<RigidBody3D>> _cacheRigidBodiesDormance = new Dictionary<string, List<RigidBody3D>>();
 	private float _cooldownRefreshCacheDormance;
 	private float _cooldownSurveillanceOrphans;
@@ -1045,7 +1046,10 @@ public partial class Gestionnaire_Monde : Node3D
 	public override void _Notification(int what)
 	{
 		if (what == Node.NotificationWMCloseRequest)
+		{
+			_mondeServeur?.ForcerSauvegardeChunksDirty();
 			SauvegarderManuelDepuisMenu();
+		}
 		base._Notification(what);
 	}
 
@@ -1064,7 +1068,10 @@ public partial class Gestionnaire_Monde : Node3D
 		// Inventaire / objets au sol : déjà gravés dans Joueur._ExitTree (le joueur quitte l’arbre avant ce nœud).
 		// Ici uniquement les chunks voxel + données serveur associées.
 		if (UseArchitectureReseau)
+		{
+			_mondeServeur?.ForcerSauvegardeChunksDirty();
 			_mondeServeur?.SauvegarderMondeEntier();
+		}
 		else
 		{
 			foreach (var kv in _chunks)
@@ -1141,7 +1148,10 @@ public partial class Gestionnaire_Monde : Node3D
 		if (_joueur is Joueur j)
 			j.SauvegarderEtatPersistantMonde(GetTree());
 		if (UseArchitectureReseau)
+		{
+			_mondeServeur?.ForcerSauvegardeChunksDirty();
 			_mondeServeur?.SauvegarderMondeEntier();
+		}
 		else
 		{
 			foreach (var kv in _chunks)
@@ -2044,6 +2054,7 @@ public partial class Gestionnaire_Monde : Node3D
 	public override void _Process(double delta)
 	{
 		ulong debutProcessUs = ActiverProfilagePerfGestionnaire ? PerfBudgetMonitor.Begin() : 0UL;
+		_cooldownLogAutosaveDiag = Mathf.Max(0f, _cooldownLogAutosaveDiag - (float)delta);
 		_cooldownDrainProfilage += (float)delta;
 		TraiterWarmupShadersProgressif((float)delta);
 		SurveillerDeriveRuntime((float)delta);
@@ -2274,8 +2285,13 @@ FinBlocOverlay:
 		{
 			int budget = Mathf.Max(1, MaxChunksAutosauvegardeParCycle);
 			int n = _mondeServeur?.SauvegarderChunksActifsProgressif(budget) ?? 0;
-			if (n > 0)
+			var backlog = _mondeServeur?.ObtenirBacklogsPersistance() ?? (0, 0);
+			if (n > 0 || (_cooldownLogAutosaveDiag <= 0f && (backlog.Item1 > 0 || backlog.Item2 > 0)))
+			{
 				GD.Print($"ZERO-K : Autosauvegarde progressive ({n} chunk(s)).");
+				GD.Print($"ZERO-K PERF: backlog persistance dirty={backlog.Item1} decharge={backlog.Item2} budget={budget}.");
+				_cooldownLogAutosaveDiag = 15f;
+			}
 		}
 		if (ActiverProfilagePerfGestionnaire)
 			PerfBudgetMonitor.End("GestionnaireMonde/Autosave", debutAutosaveUs);
@@ -2311,14 +2327,17 @@ FinBlocOverlay:
 		int iterations = Math.Min(Mathf.Max(1, budget), total);
 		for (int i = 0; i < iterations; i++)
 		{
+			total = noeuds.Count;
+			if (total <= 0) { indexCurseur = 0; return; }
 			if (indexCurseur >= total) indexCurseur = 0;
+			if ((uint)indexCurseur >= (uint)noeuds.Count) break;
 			RigidBody3D rb = noeuds[indexCurseur++];
 			if (rb == null || !GodotObject.IsInstanceValid(rb) || !rb.IsInsideTree())
 			{
 				int idxSuppr = Mathf.Clamp(indexCurseur - 1, 0, noeuds.Count - 1);
 				if (idxSuppr >= 0 && idxSuppr < noeuds.Count) noeuds.RemoveAt(idxSuppr);
 				total = noeuds.Count;
-				indexCurseur = Mathf.Clamp(indexCurseur - 1, 0, Math.Max(0, total));
+				indexCurseur = Mathf.Clamp(indexCurseur - 1, 0, Math.Max(0, total - 1));
 				if (total == 0) { indexCurseur = 0; return; }
 				continue;
 			}

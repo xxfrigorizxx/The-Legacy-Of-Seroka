@@ -1944,9 +1944,12 @@ public partial class Monde_Client : Node3D
 			basculesRestantes = Mathf.Max(basculesRestantes, total);
 		}
 		int evalues = 0;
-		while (evalues < chunksAEvaluer && total > 0)
+		while (evalues < chunksAEvaluer)
 		{
+			total = _cacheCoordsChunks.Count;
+			if (total <= 0) break;
 			if (_indexCullingScan >= total) _indexCullingScan = 0;
+			if ((uint)_indexCullingScan >= (uint)_cacheCoordsChunks.Count) break;
 			Vector2I coord = _cacheCoordsChunks[_indexCullingScan];
 			_indexCullingScan++;
 			evalues++;
@@ -2755,9 +2758,12 @@ public partial class Monde_Client : Node3D
 			maxEvaluations = Mathf.Max(limite * 3, 72);
 		if (ModeSurvieFpsAgressif && _fpsMoyenneAuto < 55f)
 			maxEvaluations = Mathf.Max(48, Mathf.RoundToInt(maxEvaluations * 0.75f));
-		while (evaluations < maxEvaluations && transitions < limite && total > 0)
+		while (evaluations < maxEvaluations && transitions < limite)
 		{
+			total = _cacheCoordsChunks.Count;
+			if (total <= 0) break;
 			if (_indexDormanceScan >= total) _indexDormanceScan = 0;
+			if ((uint)_indexDormanceScan >= (uint)_cacheCoordsChunks.Count) break;
 			Vector2I coord = _cacheCoordsChunks[_indexDormanceScan];
 			_indexDormanceScan++;
 			evaluations++;

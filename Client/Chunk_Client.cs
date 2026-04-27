@@ -726,7 +726,8 @@ public partial class Chunk_Client : Node3D
 		mm.UseColors = true;
 		mm.Mesh = meshGazon;
 		mm.InstanceCount = n;
-		for (int i = 0; i < n; i++)
+		int instancesAllouees = Mathf.Clamp(mm.InstanceCount, 0, n);
+		for (int i = 0; i < instancesAllouees; i++)
 		{
 			mm.SetInstanceTransform(i, instances[i].t);
 			mm.SetInstanceColor(i, instances[i].c);
@@ -744,7 +745,8 @@ public partial class Chunk_Client : Node3D
 		mm.UseColors = false;
 		mm.Mesh = meshBuisson;
 		mm.InstanceCount = n;
-		for (int i = 0; i < n; i++)
+		int instancesAllouees = Mathf.Clamp(mm.InstanceCount, 0, n);
+		for (int i = 0; i < instancesAllouees; i++)
 			mm.SetInstanceTransform(i, transforms[i]);
 	}
 
@@ -2350,14 +2352,29 @@ private static bool EstCorpsAuSol(PhysicsBody3D body)
 		return liste;
 	}
 
+	private static bool EssayerLireMateriauDepuisChunkData(ChunkData data, int lx, int ly, int lz, out byte idMateriau)
+	{
+		idMateriau = 0;
+		if (data?.MaterialsFlat == null) return false;
+		int tx = data.Tx > 0 ? data.Tx : data.TailleChunk + 1;
+		int ty = data.Ty > 0 ? data.Ty : data.HauteurMax + 1;
+		int tz = data.Tz > 0 ? data.Tz : data.TailleChunk + 1;
+		if (lx < 0 || lx >= tx || ly < 0 || ly >= ty || lz < 0 || lz >= tz)
+			return false;
+		int index = lx * ty * tz + ly * tz + lz;
+		if ((uint)index >= (uint)data.MaterialsFlat.Length)
+			return false;
+		idMateriau = data.MaterialsFlat[index];
+		return true;
+	}
+
 	private static Color ObtenirCouleurTerrainDepuisChunkData(ChunkData data, int xGlobal, int yGlobal, int zGlobal)
 	{
 		if (data?.MaterialsFlat == null || data.NoiseTemperature == null || data.NoiseHumidite == null) return new Color(0.5f, 0.6f, 0.5f);
 		int lx = xGlobal - data.Coordonnees.X * data.TailleChunk;
 		int lz = zGlobal - data.Coordonnees.Y * data.TailleChunk;
-		if (lx < 0 || lx > data.TailleChunk || yGlobal < 0 || yGlobal > data.HauteurMax || lz < 0 || lz > data.TailleChunk)
+		if (!EssayerLireMateriauDepuisChunkData(data, lx, yGlobal, lz, out byte idMat))
 			return new Color(0.5f, 0.6f, 0.5f);
-		byte idMat = data.MaterialsFlat[data.Idx(lx, yGlobal, lz)];
 		float temp = data.NoiseTemperature.GetNoise2D(xGlobal, zGlobal);
 		float hum = CalculerHumiditeGlobaleDepuisChunkData(data, xGlobal, zGlobal);
 		float facteurHum = Mathf.Clamp((hum + 1f) * 0.5f, 0f, 1f);
