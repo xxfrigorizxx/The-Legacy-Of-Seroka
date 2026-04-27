@@ -398,6 +398,13 @@ public partial class GestionnaireFauneBoeufs : Node3D
 	private void EnregistrerProfilActifDansBanque(BoeufSauvage boeuf)
 	{
 		if (boeuf == null || !IsInstanceValid(boeuf) || !boeuf.IsInsideTree()) return;
+		if (boeuf.DoitEtreExcluPersistanceFaune())
+		{
+			string idExistant = boeuf.ObtenirIdentifiantIndividu();
+			if (!string.IsNullOrEmpty(idExistant))
+				_banqueFaune.Remove(idExistant);
+			return;
+		}
 		Godot.Collections.Dictionary profil = boeuf.ExtraireProfilPersistant();
 		string id = ObtenirIdDepuisProfil(profil, true);
 		if (string.IsNullOrEmpty(id)) return;

@@ -1047,8 +1047,7 @@ public partial class Gestionnaire_Monde : Node3D
 	{
 		if (what == Node.NotificationWMCloseRequest)
 		{
-			_mondeServeur?.ForcerSauvegardeChunksDirty();
-			SauvegarderManuelDepuisMenu();
+			SauvegarderManuelDepuisMenu("WMCloseRequest");
 		}
 		base._Notification(what);
 	}
@@ -1069,8 +1068,7 @@ public partial class Gestionnaire_Monde : Node3D
 		// Ici uniquement les chunks voxel + données serveur associées.
 		if (UseArchitectureReseau)
 		{
-			_mondeServeur?.ForcerSauvegardeChunksDirty();
-			_mondeServeur?.SauvegarderMondeEntier();
+			_mondeServeur?.SauvegarderCritiqueAvantSortie("Gestionnaire_Monde._ExitTree");
 		}
 		else
 		{
@@ -1141,7 +1139,7 @@ public partial class Gestionnaire_Monde : Node3D
 	}
 
 	/// <summary>Même logique que le bouton Sauvegarder du menu pause et de l’inventaire (position + monde / chunks).</summary>
-	public void SauvegarderManuelDepuisMenu()
+	public void SauvegarderManuelDepuisMenu(string contexte = "menu")
 	{
 		if (_joueur != null)
 			GameState.Instance?.SauvegarderPositionJoueur(_joueur.GlobalPosition);
@@ -1149,8 +1147,7 @@ public partial class Gestionnaire_Monde : Node3D
 			j.SauvegarderEtatPersistantMonde(GetTree());
 		if (UseArchitectureReseau)
 		{
-			_mondeServeur?.ForcerSauvegardeChunksDirty();
-			_mondeServeur?.SauvegarderMondeEntier();
+			_mondeServeur?.SauvegarderCritiqueAvantSortie($"Gestionnaire_Monde.SauvegarderManuelDepuisMenu:{contexte}");
 		}
 		else
 		{
@@ -1185,7 +1182,7 @@ public partial class Gestionnaire_Monde : Node3D
 		btnResume.Pressed += () => { ToggleMenuPause(); };
 		vbox.AddChild(btnResume);
 		var btnSave = new Button { Text = "Sauvegarder" };
-		btnSave.Pressed += SauvegarderManuelDepuisMenu;
+		btnSave.Pressed += () => SauvegarderManuelDepuisMenu("BoutonPause");
 		vbox.AddChild(btnSave);
 		var btnGraphismes = new Button { Text = "Graphismes" };
 		btnGraphismes.Pressed += () =>

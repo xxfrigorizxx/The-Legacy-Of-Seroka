@@ -210,17 +210,20 @@ public partial class Monde_Serveur : Node
 	private const ulong FenetreDedoublonageSauvegardeMs = 2000UL;
 
 	/// <summary>Sauvegarde d'urgence : sauvegarde tous les chunks chargés (robuste même si un drapeau EstModifie a été raté).</summary>
-	public void SauvegarderMondeEntier()
+	public void SauvegarderMondeEntier(bool ignorerDedoublonage = false, string contexte = null)
 	{
 		ulong maintenantMs = Godot.Time.GetTicksMsec();
-		if (_derniereSauvegardeMondeEntierTickMs != 0UL && maintenantMs - _derniereSauvegardeMondeEntierTickMs < FenetreDedoublonageSauvegardeMs)
+		if (!ignorerDedoublonage
+			&& _derniereSauvegardeMondeEntierTickMs != 0UL
+			&& maintenantMs - _derniereSauvegardeMondeEntierTickMs < FenetreDedoublonageSauvegardeMs)
 		{
 			// Déjà sauvegardé il y a moins de 2s → on ignore pour éviter les cascades en cascade sur shutdown.
 			return;
 		}
 		_derniereSauvegardeMondeEntierTickMs = maintenantMs;
 
-		GD.Print("ZERO-K : Lancement du Râle d'Agonie. Sauvegarde des Chunks modifiés...");
+		string contexteInfo = string.IsNullOrWhiteSpace(contexte) ? "générique" : contexte;
+		GD.Print($"ZERO-K : Lancement du Râle d'Agonie ({contexteInfo}, ignorerDedoublonage={ignorerDedoublonage}). Sauvegarde des Chunks modifiés...");
 		ForcerInstanciationArbresEnAttente();
 		int chunksSauves = 0;
 		foreach (var kvp in _chunks)
@@ -234,6 +237,14 @@ public partial class Monde_Serveur : Node
 			chunksSauves++;
 		}
 		GD.Print($"ZERO-K : Râle d'Agonie terminé. {chunksSauves} Chunks gravés sur le disque.");
+	}
+
+	/// <summary>Flush critique à la sortie/menu : force dirty + full save, sans fenêtre anti-doublon.</summary>
+	public void SauvegarderCritiqueAvantSortie(string contexte)
+	{
+		int dirty = ForcerSauvegardeChunksDirty();
+		GD.Print($"ZERO-K : Flush critique '{contexte}' -> chunks dirty sauvés={dirty}.");
+		SauvegarderMondeEntier(ignorerDedoublonage: true, contexte: contexte);
 	}
 
 	/// <summary>
@@ -327,7 +338,7 @@ public partial class Monde_Serveur : Node
 
 	public override void _ExitTree()
 	{
-		SauvegarderMondeEntier();
+		SauvegarderMondeEntier(ignorerDedoublonage: true, contexte: "Monde_Serveur._ExitTree");
 	}
 
 	public override void _Notification(int what)
@@ -335,7 +346,7 @@ public partial class Monde_Serveur : Node
 		// Utilisation stricte de Node.NotificationWMCloseRequest (WM en majuscules)
 		if (what == Node.NotificationWMCloseRequest)
 		{
-			SauvegarderMondeEntier();
+			SauvegarderMondeEntier(ignorerDedoublonage: true, contexte: "Monde_Serveur.NotificationWMCloseRequest");
 			GetTree().Quit();
 		}
 	}
@@ -417,6 +428,8 @@ public partial class Monde_Serveur : Node
 						continue;
 					}
 					chunkActuel = ChargerChunkDepuisDisque(chunkCible);
+					if (chunkActuel == null)
+						GD.PrintErr($"ZERO-K DIAG : Fallback procédural pour {chunkCible} après échec de chargement disque.");
 					chargesDisque++;
 					// RÈGLE D'ARCHITECTURE : GenererTerrainDeBase, GenererCoucheSurface, GenererEau, GenererArbres
 					// ne sont JAMAIS appelés ici. Le chunk chargé est final.
@@ -611,12 +624,15 @@ public partial class Monde_Serveur : Node
 		if (_chunks.TryGetValue(coord, out var c)) return c;
 
 		Chunk_Serveur chunkActuel = null;
+		bool fichierExistant = FichierChunkExiste(coord);
 		// BRANCHE 1 : RÉSURRECTION — AUCUNE génération.
-		if (FichierChunkExiste(coord))
+		if (fichierExistant)
 			chunkActuel = ChargerChunkDepuisDisque(coord);
 		// BRANCHE 2 : CRÉATION PROCÉDURALE — TOUTES les passes ici.
 		if (chunkActuel == null)
 		{
+			if (fichierExistant)
+				GD.PrintErr($"ZERO-K DIAG : ObtenirOuCreerChunk fallback procédural pour {coord} (fichier présent mais lecture invalide).");
 			chunkActuel = CreerChunkServeur(coord);
 			chunkActuel.GenererDonneesVoxel(); // GenererTerrainDeBase, Surface, Eau — UNIQUEMENT pour chunks ex nihilo.
 		}
@@ -635,7 +651,12 @@ public partial class Monde_Serveur : Node
 		void SynchroniserBordureDepuisVoisin(Vector2I coordVoisin, int voisinX, int chunkX, int voisinZ, int chunkZ, bool axeX)
 		{
 			if (!_chunks.TryGetValue(coordVoisin, out var voisin) || voisin == null) return;
-			if (chunk.EstChargeDepuisDisque && !voisin.EstChargeDepuisDisque) return;
+			if (chunk.EstChargeDepuisDisque && !voisin.EstChargeDepuisDisque)
+			{
+				if (OS.IsDebugBuild())
+					GD.Print($"ZERO-K DIAG : Synchro frontière ignorée ({coord} <- {coordVoisin}) pour préserver un chunk disque.");
+				return;
+			}
 			for (int y = 0; y <= HauteurMax; y++)
 			{
 				if (axeX)
@@ -769,7 +790,7 @@ public partial class Monde_Serveur : Node
 		string cheminAbsolu = ProjectSettings.GlobalizePath(cheminGodot);
 		if (!File.Exists(cheminAbsolu))
 		{
-			GD.PrintErr($"ZERO-K REJET : Chunk {coord} — fichier inexistant.");
+			GD.PrintErr($"ZERO-K REJET : Chunk {coord} — fichier inexistant ({cheminGodot}).");
 			return null;
 		}
 		int voxelCount = (TailleChunk + 1) * (HauteurMax + 1) * (TailleChunk + 1);
@@ -782,13 +803,13 @@ public partial class Monde_Serveur : Node
 				byte version = reader.ReadByte();
 				if (version != 1)
 				{
-					GD.PrintErr($"ZERO-K REJET : Chunk {coord} — version {version} non supportée.");
+					GD.PrintErr($"ZERO-K REJET : Chunk {coord} — version {version} non supportée ({cheminGodot}).");
 					return null;
 				}
 				int tailleLu = reader.ReadInt32();
 				if (tailleLu != tailleAttendue)
 				{
-					GD.PrintErr($"ZERO-K REJET : Chunk {coord} corrompu (taille {tailleLu} ≠ {tailleAttendue}). Régénération forcée.");
+					GD.PrintErr($"ZERO-K REJET : Chunk {coord} corrompu (taille {tailleLu} ≠ {tailleAttendue}) ({cheminGodot}). Régénération forcée.");
 					return null;
 				}
 				donneesVoxels = reader.ReadBytes(tailleLu);
@@ -796,19 +817,19 @@ public partial class Monde_Serveur : Node
 		}
 		catch (Exception ex)
 		{
-			GD.PrintErr($"ZERO-K REJET : Chunk {coord} — erreur lecture : {ex.Message}");
+			GD.PrintErr($"ZERO-K REJET : Chunk {coord} — erreur lecture ({cheminGodot}) : {ex.Message}");
 			return null;
 		}
 		if (donneesVoxels == null || donneesVoxels.Length != tailleAttendue)
 		{
-			GD.PrintErr($"ZERO-K REJET : Chunk {coord} refusé ! Taille lue : {donneesVoxels?.Length ?? 0} | Attendue : {tailleAttendue}.");
+			GD.PrintErr($"ZERO-K REJET : Chunk {coord} refusé ! Taille lue : {donneesVoxels?.Length ?? 0} | Attendue : {tailleAttendue} ({cheminGodot}).");
 			return null;
 		}
 		GD.Print($"ZERO-K SUCCÈS : Chunk {coord} chargé depuis le disque ({donneesVoxels.Length} bytes).");
 		var chunk = CreerChunkServeur(coord);
 		if (!chunk.AppliquerTableauBytes(donneesVoxels))
 		{
-			GD.PrintErr($"ZERO-K REJET : Chunk {coord} — AppliquerTableauBytes a échoué. Régénération forcée.");
+			GD.PrintErr($"ZERO-K REJET : Chunk {coord} — AppliquerTableauBytes a échoué ({cheminGodot}). Régénération forcée.");
 			return null;
 		}
 		ChargerFloreChunk(coord, chunk);

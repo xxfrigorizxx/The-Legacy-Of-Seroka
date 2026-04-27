@@ -70,7 +70,7 @@ public partial class Chunk_Serveur : RefCounted
 	private Action<Vector3I, byte> _onVoxelModifie;
 	private Action<Vector2I, Dictionary<Vector3I, byte>> _onFlorePurgée;
 
-	/// <summary>Drapeau de souillure : true UNIQUEMENT quand DetruireVoxel ou CreerMatiere sont appelés. On ne sauvegarde JAMAIS un chunk intact.</summary>
+	/// <summary>Drapeau de souillure : true dès qu'un voxel persistant (sol/eau/air) change réellement.</summary>
 	private bool _estModifie;
 	/// <summary>True si chargé depuis disque. AUCUNE passe de génération ne doit jamais s'exécuter sur ce chunk.</summary>
 	private bool _chargeDepuisDisque;
@@ -577,8 +577,17 @@ public partial class Chunk_Serveur : RefCounted
 
 	private static float DeterministicRand(float x, float z)
 	{
-		uint h = (uint)(x * 73856093) ^ (uint)(z * 19349663);
-		return ((h % 10000) / 10000f);
+		// Hash cross-platform: évite les conversions float->uint hors plage (comportement non défini).
+		uint hx = unchecked((uint)BitConverter.SingleToInt32Bits(x));
+		uint hz = unchecked((uint)BitConverter.SingleToInt32Bits(z));
+		uint h = hx * 73856093u ^ hz * 19349663u ^ 0x9E3779B9u;
+		h ^= h >> 16;
+		h *= 0x7FEB352Du;
+		h ^= h >> 15;
+		h *= 0x846CA68Bu;
+		h ^= h >> 16;
+		// 24 bits utiles -> [0,1), distribution plus lisse que mod 10000.
+		return (h & 0x00FFFFFFu) / 16777216f;
 	}
 
 	private float CalculerHumiditeGlobale(float xGlobal, float zGlobal)
@@ -1321,25 +1330,40 @@ public bool RecolterBaiesBuisson(Vector3 pointImpactGlobal, float rayon, out int
 	public void DefinirVoxelEau(int x, int y, int z)
 	{
 		if (!EstDansLimitesChunk(x, y, z) || y <= 2) return;
+		bool modifie = false;
 		lock (_verrouVoxel)
 		{
+			bool etaitEau = _densitiesEau != null && _densitiesEau[x, y, z] > Isolevel;
+			bool dejaEau = etaitEau && _materials[x, y, z] == 4 && _densities[x, y, z] <= Isolevel;
 			_densities[x, y, z] = -10.0f;
 			_materials[x, y, z] = 4;
 			if (_densitiesEau != null) _densitiesEau[x, y, z] = 1.0f;
+			modifie = !dejaEau;
+			if (modifie)
+				_estModifie = true;
 		}
-		AuditerGraviteFlore();
+		if (modifie)
+			AuditerGraviteFlore();
 	}
 
 	public void DefinirVoxelAir(int x, int y, int z)
 	{
 		if (!EstDansLimitesChunk(x, y, z)) return;
+		bool modifie = false;
 		lock (_verrouVoxel)
 		{
+			bool etaitEau = _densitiesEau != null && _densitiesEau[x, y, z] > Isolevel;
+			bool etaitSolide = _densities[x, y, z] > Isolevel;
+			bool dejaAir = !etaitEau && !etaitSolide && _materials[x, y, z] == 0;
 			_densities[x, y, z] = -10.0f;
 			_materials[x, y, z] = 0;
 			if (_densitiesEau != null) _densitiesEau[x, y, z] = -1.0f;
+			modifie = !dejaAir;
+			if (modifie)
+				_estModifie = true;
 		}
-		AuditerGraviteFlore();
+		if (modifie)
+			AuditerGraviteFlore();
 	}
 
 	/// <summary>Met à jour un voxel aux coords locales (réplication du padding des voisins).</summary>

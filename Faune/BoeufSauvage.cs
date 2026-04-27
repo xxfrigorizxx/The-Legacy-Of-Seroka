@@ -642,6 +642,10 @@ public partial class BoeufSauvage : CharacterBody3D
 			{ "gene_audace_saut", _geneAudaceSaut },
 			{ "score_navigation", _scoreNavigationEvolutif },
 			{ "est_veau", _estVeauActif },
+			{ "etat", (int)_etat },
+			{ "cadavre_attend_depecage", _cadavreAttendDepecage },
+			{ "cadavre_loot_distribue", _cadavreLootDistribue },
+			{ "cadavre_coups_depecage", _coupsDepecageDagueValides },
 			{ "x", GlobalPosition.X },
 			{ "y", GlobalPosition.Y },
 			{ "z", GlobalPosition.Z },
@@ -689,11 +693,31 @@ public partial class BoeufSauvage : CharacterBody3D
 			_staminaCourante = Mathf.Max(0f, stV.AsSingle());
 		if (data.TryGetValue("vie", out Variant vieV))
 			_vieCourante = Mathf.Max(0f, vieV.AsSingle());
+		int etatSauvegarde = data.TryGetValue("etat", out Variant etatV)
+			? etatV.AsInt32()
+			: -1;
+		bool lootDistribue = data.TryGetValue("cadavre_loot_distribue", out Variant lootV) && lootV.AsBool();
+		bool attendDepecage = data.TryGetValue("cadavre_attend_depecage", out Variant attendV) ? attendV.AsBool() : true;
+		int coupsDepecage = data.TryGetValue("cadavre_coups_depecage", out Variant coupsV) ? Mathf.Max(0, coupsV.AsInt32()) : 0;
 		if (data.TryGetValue("ancre_x", out Variant ax) && data.TryGetValue("ancre_y", out Variant ay) && data.TryGetValue("ancre_z", out Variant az))
 			_ancreTroupeau = new Vector3(ax.AsSingle(), ay.AsSingle(), az.AsSingle());
 		MettreAJourStatsDerivees();
+		bool etatMortSauvegarde = etatSauvegarde == (int)EtatBoeuf.Mort;
+		if (etatMortSauvegarde || _vieCourante <= 0.0001f)
+			RestaurerEtatMortPersistant(attendDepecage, lootDistribue, coupsDepecage);
 		AppliquerGeneTailleVisuelleEtPhysique();
 		MettreAJourAffichageFaim3D();
+	}
+
+	private void RestaurerEtatMortPersistant(bool attendDepecage, bool lootDistribue, int coupsDepecage)
+	{
+		_etat = EtatBoeuf.Mort;
+		_vieCourante = 0f;
+		Velocity = Vector3.Zero;
+		_tempsMort = float.MaxValue;
+		_cadavreLootDistribue = lootDistribue;
+		_cadavreAttendDepecage = !lootDistribue && attendDepecage;
+		_coupsDepecageDagueValides = Mathf.Max(0, coupsDepecage);
 	}
 
 	private void InitialiserGenesNavigationSiNecessaire()
@@ -3050,6 +3074,7 @@ public partial class BoeufSauvage : CharacterBody3D
 	private void BasculerEnMort()
 	{
 		_etat = EtatBoeuf.Mort;
+		_vieCourante = 0f;
 		_cadavreAttendDepecage = true;
 		_cadavreLootDistribue = false;
 		_coupsDepecageDagueValides = 0;
@@ -3097,11 +3122,15 @@ public partial class BoeufSauvage : CharacterBody3D
 	/// <summary>Marque le cadavre comme traité et le retire de la scène (après spawn du loot).</summary>
 	public void FinaliserCadavreApresDepecage()
 	{
+		_vieCourante = 0f;
 		_cadavreLootDistribue = true;
 		_cadavreAttendDepecage = false;
 		if (IsInsideTree())
 			QueueFree();
 	}
+
+	/// <summary>Indique au streaming/persist que cet individu ne doit plus jamais être rechargé.</summary>
+	public bool DoitEtreExcluPersistanceFaune() => _cadavreLootDistribue;
 
 	/// <summary>Première texture d’albedo trouvée sur le mesh du bovin (cuir dérivé de la peau).</summary>
 	public Texture2D EssayerObtenirTexturePeauPourCuir()
