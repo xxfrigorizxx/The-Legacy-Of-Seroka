@@ -8,7 +8,7 @@ public partial class Joueur
     private static bool EstObjetAvecVisuel(int id)
     {
         if (id >= 1 && id <= 9) return true;
-        return ItemPhysique.EstIdRocheMatiere(id) || id == 10 || id == 11 || id == BlocChutant.ID_BRANCHE || id == 15 || id == 16 || id == 17 || id == 20 || id == 21 || id == Joueur.IdObjetCeinturePoches || id == Joueur.IdObjetCeintureSacoches || id == Joueur.IdObjetPochetteTier0 || id == Joueur.IdObjetSacTier0 || id == Joueur.IdObjetCarnetSavoir || id == Joueur.IdObjetSteakCru || id == Joueur.IdObjetOsBoeuf || id == Joueur.IdObjetCuirBoeuf || id == Joueur.IdObjetIntestinBoeuf || id == Joueur.IdObjetIntestinBoeufNettoye || id == 30 || id == 32 || id == 34 || id == Joueur.IdObjetBaie || id == 100 || id == 105 || id == 106 || id == Joueur.IdObjetPellePierreTier0 || id == Joueur.IdObjetPiochePierreTier0 || id == Joueur.IdObjetLancePierreTier0 || id == Joueur.IdObjetFauxPierreTier0 || id == 200 || id == Joueur.IdObjetRackBatons || id == Joueur.IdObjetRackBuches || id == Joueur.IdObjetCoffreBoisTier0 || id == Joueur.IdObjetPitFeu || id == Joueur.IdObjetAllumeFeu;
+        return ItemPhysique.EstIdRocheMatiere(id) || id == 10 || id == 11 || id == BlocChutant.ID_BRANCHE || id == 15 || id == 16 || id == 17 || id == 20 || id == 21 || id == Joueur.IdObjetCeinturePoches || id == Joueur.IdObjetCeintureSacoches || id == Joueur.IdObjetPochetteTier0 || id == Joueur.IdObjetSacTier0 || id == Joueur.IdObjetCarnetSavoir || id == Joueur.IdObjetSteakCru || id == Joueur.IdObjetSteakCuit || id == Joueur.IdObjetOsBoeuf || id == Joueur.IdObjetCuirBoeuf || id == Joueur.IdObjetIntestinBoeuf || id == Joueur.IdObjetIntestinBoeufNettoye || id == 30 || id == 32 || id == 34 || id == Joueur.IdObjetBaie || id == 100 || id == 105 || id == 106 || id == Joueur.IdObjetPellePierreTier0 || id == Joueur.IdObjetPiochePierreTier0 || id == Joueur.IdObjetLancePierreTier0 || id == Joueur.IdObjetFauxPierreTier0 || id == 200 || id == Joueur.IdObjetRackBatons || id == Joueur.IdObjetRackBuches || id == Joueur.IdObjetCoffreBoisTier0 || id == Joueur.IdObjetPitFeu || id == Joueur.IdObjetPitFeuRoche || id == Joueur.IdObjetAllumeFeu;
     }
 
     public static void NettoyerModelesEnfants(Node3D parent)
@@ -812,6 +812,58 @@ public partial class Joueur
         parent.AddChild(modele);
     }
 
+    /// <summary>Pit à feu roche : pit bois central + roches teintes aléatoires stables.</summary>
+    public static void InstancierModelePitFeuRoche(Node3D parent, SlotInventaire slot, float tailleMaxMetres = 0.95f, bool ancrerBaseAuSol = true)
+    {
+        PackedScene scene = GD.Load<PackedScene>("res://Modeles/survie/Pit_feu_roche.glb");
+        byte essenceBois = slot.IndexBotanique;
+        if (essenceBois == Joueur.TagVarianteLiane || essenceBois == Joueur.TagVarianteHerbeSolide || essenceBois == Joueur.TagVarianteIntestin || essenceBois == Joueur.TagVarianteIntestinSolide)
+            essenceBois = LSystem_Botanique.IndexChene;
+        if (scene == null)
+        {
+            InstancierModelePitFeu(parent, slot, tailleMaxMetres, ancrerBaseAuSol);
+            return;
+        }
+
+        Node3D modele = scene.Instantiate<Node3D>();
+        modele.Name = "ModeleArme";
+        var rng = new RandomNumberGenerator();
+        rng.Seed = unchecked((ulong)(uint)HashCode.Combine(slot.ID, slot.IndexBotanique, slot.IndexChimique, slot.IndexMorphologique));
+        int idxRocheCourant = rng.RandiRange(0, ItemPhysique.TableGeologique.Length - 1);
+
+        void ParcourirMeshes(Node n)
+        {
+            if (n is MeshInstance3D mi)
+            {
+                RemplacerMeshParNormalesFacettes(mi);
+                string nom = mi.Name.ToString().ToLowerInvariant();
+                bool estRoche = nom.Contains("rock")
+                    || nom.Contains("roche")
+                    || nom.Contains("stone")
+                    || nom.Contains("caill");
+                if (estRoche)
+                {
+                    idxRocheCourant = (idxRocheCourant + 3) % ItemPhysique.TableGeologique.Length;
+                    int idRoche = ItemPhysique.IdRocheMatiereMin + idxRocheCourant;
+                    AppliquerMaterielObjet(mi, idRoche, idxRocheCourant, 0, 0, slot.IndexBotanique);
+                }
+                else
+                {
+                    mi.MaterialOverride = ArbreVivant.ObtenirMaterielBoisTriplanar(essenceBois);
+                }
+            }
+            foreach (Node c in n.GetChildren())
+                ParcourirMeshes(c);
+        }
+
+        ParcourirMeshes(modele);
+        if (ancrerBaseAuSol)
+            NormaliserEchelleTableAtelierAuSol(modele, tailleMaxMetres);
+        else
+            NormaliserEchelleEtCentrerModeleArme(modele, tailleMaxMetres);
+        parent.AddChild(modele);
+    }
+
     /// <summary>Allume-feu préhistorique : modèle GLB avec matériau dépendant de la roche sulfureuse (marcassite/pyrite).</summary>
     public static void InstancierModeleAllumeFeu(Node3D parent, SlotInventaire slot, float tailleMaxMetres = 0.42f, bool ancrerBaseAuSol = false)
     {
@@ -1246,6 +1298,18 @@ public partial class Joueur
     public static void InstancierModeleSteakCru(Node3D parent, SlotInventaire slot, float tailleMaxMetres = 0.2f)
     {
         PackedScene scene = GD.Load<PackedScene>("res://Modeles/Nouriture/steak_cru.glb");
+        if (scene == null) return;
+        NettoyerModelesEnfants(parent);
+        Node3D modele = scene.Instantiate<Node3D>();
+        modele.Name = "ModeleArme";
+        NormaliserEchelleEtCentrerModeleArme(modele, tailleMaxMetres);
+        parent.AddChild(modele);
+    }
+
+    /// <summary>Steak cuit (GLB) — résultat cuisson pit roche.</summary>
+    public static void InstancierModeleSteakCuit(Node3D parent, SlotInventaire slot, float tailleMaxMetres = 0.2f)
+    {
+        PackedScene scene = GD.Load<PackedScene>("res://Modeles/Nouriture/steak+cuit.glb");
         if (scene == null) return;
         NettoyerModelesEnfants(parent);
         Node3D modele = scene.Instantiate<Node3D>();

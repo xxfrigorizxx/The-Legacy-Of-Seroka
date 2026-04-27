@@ -28,7 +28,9 @@ public partial class Joueur
 		/// <summary>Roche voxel brute (ID 2), utilisée pour débloquer la recette de façonnage vers petite roche matière (ID 47).</summary>
 		RocheVoxelBrute = 1 << 16,
 		Silex = 1 << 17,
-		RocheSulfuree = 1 << 18
+		RocheSulfuree = 1 << 18,
+		PitFeu = 1 << 19,
+		RocheMatiere = 1 << 20
 	}
 
 	private sealed class RecetteAnalysable
@@ -273,6 +275,15 @@ public partial class Joueur
 		},
 		new RecetteAnalysable
 		{
+			CleCraft = "id_122",
+			IdResultat = IdObjetPitFeuRoche,
+			Masque = CategorieAnalyse.RocheMatiere | CategorieAnalyse.PitFeu,
+			Titre = "Pit a feu roche",
+			LegendeSymboles = new[] { "Pf = Pit a feu", "R = Roches (x8 autour)" },
+			PatronCraft = new[] { "(R)(R)(R)", "(R)(Pf)(R)", "(R)(R)(R)" }
+		},
+		new RecetteAnalysable
+		{
 			CleCraft = "id_200",
 			IdResultat = 200,
 			Masque = CategorieAnalyse.DemiBuche | CategorieAnalyse.BuchePleine | CategorieAnalyse.RocheRonde | CategorieAnalyse.Corde,
@@ -407,8 +418,11 @@ public partial class Joueur
 			if (idxGeo == 10 || idxGeo == 11)
 				c |= CategorieAnalyse.RocheSulfuree;
 		}
+		if (s.ID == IdObjetPitFeu)
+			c |= CategorieAnalyse.PitFeu;
 		if (ItemPhysique.EstIdRocheMatiere(s.ID))
 		{
+			c |= CategorieAnalyse.RocheMatiere;
 			if (s.IndexMorphologique == 0) c |= CategorieAnalyse.RocheRonde;
 			else if (s.IndexMorphologique == 1) c |= CategorieAnalyse.RochePlate;
 			else if (s.IndexMorphologique == 2) c |= CategorieAnalyse.RocheOvale;

@@ -41,7 +41,8 @@ public partial class ItemPhysique : RigidBody3D
 		|| idObjet == Joueur.IdObjetRackBatons
 		|| idObjet == Joueur.IdObjetRackBuches
 		|| idObjet == Joueur.IdObjetCoffreBoisTier0
-		|| idObjet == Joueur.IdObjetPitFeu;
+		|| idObjet == Joueur.IdObjetPitFeu
+		|| idObjet == Joueur.IdObjetPitFeuRoche;
 
 	private const float SeuilMasseObjetLegerKg = 35f;
 	private const float SeuilHauteurObjetPetitMetres = 0.6f;
@@ -314,7 +315,14 @@ public partial class ItemPhysique : RigidBody3D
 	private readonly Vector3[] _echantillonsImmersionObjet = new Vector3[7];
 	private double _tempsImmersionIntestin;
 	private const double DureeCombustionPitFeuSec = 300.0;
+	private const double DureeCuissonPitFeuRocheSteakSec = 60.0;
+	private const int PitFeuRocheSlotCombustible = 0;
+	private const int PitFeuRocheSlotCuisson = 1;
+	private const int PitFeuRocheSlotResultat = 2;
 	private const string MetaPitFeuFinCombustionUnixMs = "PitFeuFinCombustionUnixMs";
+	private const string MetaPitFeuRocheStockCombustible = "PitFeuRocheStockCombustible";
+	private const string MetaPitFeuRocheFinCombustionUnixMs = "PitFeuRocheFinCombustionUnixMs";
+	private const string MetaPitFeuRocheProgressCuissonMs = "PitFeuRocheProgressCuissonMs";
 	private GpuParticles3D _pitFlammeParticles;
 	private Node3D _pitFlammeCroix;
 	private GpuParticles3D _pitFumeeParticles;
@@ -325,6 +333,10 @@ public partial class ItemPhysique : RigidBody3D
 	private static readonly Vector3 PitFumeeParticlesBasePosition = new Vector3(0f, 0.24f, 0f);
 	private double _pitFeuResteSec = 0d;
 	private double _pitFeuDernierSyncRestantSec = -1d;
+	private int _pitFeuRocheStockCombustible = 0;
+	private double _pitFeuRocheResteSec = 0d;
+	private double _pitFeuRocheDernierSyncRestantSec = -1d;
+	private double _pitFeuRocheProgressCuissonSec = 0d;
 
 	private Gestionnaire_Monde ObtenirGestionnaireMonde()
 	{
@@ -337,7 +349,7 @@ public partial class ItemPhysique : RigidBody3D
 
 	private void ActiverVisuelPitFeu(bool actif)
 	{
-		if (ID_Objet != Joueur.IdObjetPitFeu)
+		if (ID_Objet != Joueur.IdObjetPitFeu && ID_Objet != Joueur.IdObjetPitFeuRoche)
 			return;
 		if (_pitFlammeCroix == null || !GodotObject.IsInstanceValid(_pitFlammeCroix))
 		{
@@ -509,6 +521,23 @@ public partial class ItemPhysique : RigidBody3D
 		SetMeta(MetaPitFeuFinCombustionUnixMs, finMs);
 	}
 
+	private void SynchroniserGenomePitFeuRoche()
+	{
+		if (ID_Objet != Joueur.IdObjetPitFeuRoche)
+			return;
+		AssurerGrillePitFeuRoche3Slots();
+		_pitFeuRocheStockCombustible = CompterCombustiblePitFeuRocheDepuisGrille();
+		long finMs = _pitFeuRocheResteSec > 0.001d
+			? DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + (long)Mathf.Round((float)(_pitFeuRocheResteSec * 1000.0))
+			: 0L;
+		long progressCuissonMs = (long)Mathf.Round((float)Math.Max(0d, _pitFeuRocheProgressCuissonSec * 1000.0));
+		GenomeAssemblage = $"PITFEUROCHE:{_pitFeuRocheStockCombustible}:{finMs}:{progressCuissonMs}";
+		SetMeta(Joueur.MetaGenomeAssemblage, GenomeAssemblage);
+		SetMeta(MetaPitFeuRocheStockCombustible, _pitFeuRocheStockCombustible);
+		SetMeta(MetaPitFeuRocheFinCombustionUnixMs, finMs);
+		SetMeta(MetaPitFeuRocheProgressCuissonMs, progressCuissonMs);
+	}
+
 	private void ChargerEtatPitFeuDepuisGenome()
 	{
 		if (ID_Objet != Joueur.IdObjetPitFeu)
@@ -537,9 +566,61 @@ public partial class ItemPhysique : RigidBody3D
 		}
 	}
 
+	private void ChargerEtatPitFeuRocheDepuisGenome()
+	{
+		if (ID_Objet != Joueur.IdObjetPitFeuRoche)
+			return;
+		long maintenant = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+		long finMs = 0L;
+		long progressCuissonMs = 0L;
+		int stock = 0;
+		if (!string.IsNullOrEmpty(GenomeAssemblage) && GenomeAssemblage.StartsWith("PITFEUROCHE:", StringComparison.Ordinal))
+		{
+			string brut = GenomeAssemblage.Substring("PITFEUROCHE:".Length);
+			string[] morceaux = brut.Split(':');
+			if (morceaux.Length >= 2)
+			{
+				int.TryParse(morceaux[0], out stock);
+				long.TryParse(morceaux[1], out finMs);
+				if (morceaux.Length >= 3)
+					long.TryParse(morceaux[2], out progressCuissonMs);
+			}
+		}
+		else
+		{
+			if (HasMeta(MetaPitFeuRocheStockCombustible))
+				stock = Mathf.Max(0, GetMeta(MetaPitFeuRocheStockCombustible).AsInt32());
+			if (HasMeta(MetaPitFeuRocheFinCombustionUnixMs))
+				finMs = GetMeta(MetaPitFeuRocheFinCombustionUnixMs).AsInt64();
+			if (HasMeta(MetaPitFeuRocheProgressCuissonMs))
+				progressCuissonMs = Math.Max(0L, GetMeta(MetaPitFeuRocheProgressCuissonMs).AsInt64());
+		}
+		_pitFeuRocheStockCombustible = Mathf.Max(0, stock);
+		AssurerGrillePitFeuRoche3Slots();
+		if (_pitFeuRocheStockCombustible > 0 && CompterCombustiblePitFeuRocheDepuisGrille() <= 0)
+			AjouterCombustiblePitFeuRocheDansGrille(_pitFeuRocheStockCombustible, 32);
+		_pitFeuRocheStockCombustible = CompterCombustiblePitFeuRocheDepuisGrille();
+		_pitFeuRocheProgressCuissonSec = Math.Max(0d, progressCuissonMs / 1000.0);
+		if (finMs > maintenant)
+		{
+			_pitFeuRocheResteSec = (finMs - maintenant) / 1000.0;
+			_pitFeuRocheDernierSyncRestantSec = -1d;
+			ActiverVisuelPitFeu(true);
+		}
+		else
+		{
+			_pitFeuRocheResteSec = 0d;
+			ActiverVisuelPitFeu(false);
+		}
+	}
+
 	public bool EstPitFeuAllume()
 	{
-		return ID_Objet == Joueur.IdObjetPitFeu && _pitFeuResteSec > 0.001d;
+		if (ID_Objet == Joueur.IdObjetPitFeu)
+			return _pitFeuResteSec > 0.001d;
+		if (ID_Objet == Joueur.IdObjetPitFeuRoche)
+			return _pitFeuRocheResteSec > 0.001d;
+		return false;
 	}
 
 	public bool ActiverPitFeuAllume(double dureeSec = DureeCombustionPitFeuSec)
@@ -551,6 +632,282 @@ public partial class ItemPhysique : RigidBody3D
 		ActiverVisuelPitFeu(true);
 		SynchroniserGenomePitFeuDepuisReste();
 		return true;
+	}
+
+	private static bool EstSlotCombustiblePitFeuRoche(SlotInventaire s)
+	{
+		return !s.EstVide && (s.ID == 32 || s.ID == BlocChutant.ID_BRANCHE);
+	}
+
+	private static bool EstSlotCuissonPitFeuRoche(SlotInventaire s)
+	{
+		return !s.EstVide && s.ID == Joueur.IdObjetSteakCru;
+	}
+
+	private static bool EstSlotResultatPitFeuRoche(SlotInventaire s)
+	{
+		return !s.EstVide && s.ID == Joueur.IdObjetSteakCuit;
+	}
+
+	private void AssurerGrillePitFeuRoche3Slots()
+	{
+		if (ID_Objet != Joueur.IdObjetPitFeuRoche)
+			return;
+		if (GrillePlanTravailAtelier == null || GrillePlanTravailAtelier.Length < 9)
+		{
+			var ancienne = GrillePlanTravailAtelier;
+			GrillePlanTravailAtelier = new SlotInventaire[9];
+			if (ancienne != null)
+			{
+				int n = Mathf.Min(ancienne.Length, GrillePlanTravailAtelier.Length);
+				for (int i = 0; i < n; i++)
+					GrillePlanTravailAtelier[i] = ancienne[i];
+			}
+		}
+
+		int totalCombustible = 0;
+		int totalCru = 0;
+		int totalCuit = 0;
+		int nSlots = Mathf.Min(9, GrillePlanTravailAtelier.Length);
+		for (int i = 0; i < nSlots; i++)
+		{
+			SlotInventaire s = GrillePlanTravailAtelier[i];
+			if (EstSlotCombustiblePitFeuRoche(s))
+				totalCombustible += Joueur.ObtenirQuantiteSlot(s);
+			else if (EstSlotCuissonPitFeuRoche(s))
+				totalCru += Joueur.ObtenirQuantiteSlot(s);
+			else if (EstSlotResultatPitFeuRoche(s))
+				totalCuit += Joueur.ObtenirQuantiteSlot(s);
+		}
+
+		for (int i = 0; i < nSlots; i++)
+			GrillePlanTravailAtelier[i] = new SlotInventaire();
+
+		var combustible = new SlotInventaire { ID = 32, Quantite = 1, IndexBotanique = LSystem_Botanique.IndexChene };
+		int maxCombustible = Mathf.Max(1, Joueur.ObtenirPileMax(combustible));
+		combustible.Quantite = Mathf.Clamp(totalCombustible, 0, maxCombustible);
+		if (combustible.Quantite > 0)
+			GrillePlanTravailAtelier[PitFeuRocheSlotCombustible] = combustible;
+
+		var cru = new SlotInventaire { ID = Joueur.IdObjetSteakCru, Quantite = 1 };
+		int maxCru = Mathf.Max(1, Joueur.ObtenirPileMax(cru));
+		cru.Quantite = Mathf.Clamp(totalCru, 0, maxCru);
+		if (cru.Quantite > 0)
+			GrillePlanTravailAtelier[PitFeuRocheSlotCuisson] = cru;
+
+		var cuit = new SlotInventaire { ID = Joueur.IdObjetSteakCuit, Quantite = 1 };
+		int maxCuit = Mathf.Max(1, Joueur.ObtenirPileMax(cuit));
+		cuit.Quantite = Mathf.Clamp(totalCuit, 0, maxCuit);
+		if (cuit.Quantite > 0)
+			GrillePlanTravailAtelier[PitFeuRocheSlotResultat] = cuit;
+	}
+
+	private int CompterCombustiblePitFeuRocheDepuisGrille()
+	{
+		if (ID_Objet != Joueur.IdObjetPitFeuRoche || GrillePlanTravailAtelier == null)
+			return 0;
+		AssurerGrillePitFeuRoche3Slots();
+		SlotInventaire slot = GrillePlanTravailAtelier[PitFeuRocheSlotCombustible];
+		if (!EstSlotCombustiblePitFeuRoche(slot))
+			return 0;
+		return Mathf.Clamp(Joueur.ObtenirQuantiteSlot(slot), 0, 999);
+	}
+
+	private int AjouterCombustiblePitFeuRocheDansGrille(int quantite, int idCombustible)
+	{
+		if (ID_Objet != Joueur.IdObjetPitFeuRoche || GrillePlanTravailAtelier == null || quantite <= 0)
+			return 0;
+		AssurerGrillePitFeuRoche3Slots();
+		if (idCombustible != 32 && idCombustible != BlocChutant.ID_BRANCHE)
+			idCombustible = 32;
+		ref SlotInventaire slot = ref GrillePlanTravailAtelier[PitFeuRocheSlotCombustible];
+		if (!slot.EstVide && !EstSlotCombustiblePitFeuRoche(slot))
+			return 0;
+		if (!slot.EstVide && slot.ID != idCombustible)
+			return 0;
+
+		if (slot.EstVide)
+		{
+			slot = new SlotInventaire
+			{
+				ID = idCombustible,
+				Quantite = 0,
+				IndexBotanique = LSystem_Botanique.IndexChene
+			};
+		}
+		int maxPile = Mathf.Max(1, Joueur.ObtenirPileMax(slot));
+		int q = Joueur.ObtenirQuantiteSlot(slot);
+		int depose = Mathf.Min(Mathf.Max(0, maxPile - q), quantite);
+		if (depose <= 0)
+			return 0;
+		slot.Quantite = q + depose;
+		return depose;
+	}
+
+	private bool RetirerCombustiblePitFeuRocheDepuisGrille(int quantite)
+	{
+		if (ID_Objet != Joueur.IdObjetPitFeuRoche || GrillePlanTravailAtelier == null || quantite <= 0)
+			return false;
+		AssurerGrillePitFeuRoche3Slots();
+		ref SlotInventaire slot = ref GrillePlanTravailAtelier[PitFeuRocheSlotCombustible];
+		if (!EstSlotCombustiblePitFeuRoche(slot))
+			return false;
+		int q = Joueur.ObtenirQuantiteSlot(slot);
+		if (q < quantite)
+			return false;
+		int restant = q - quantite;
+		if (restant <= 0) slot = new SlotInventaire();
+		else slot.Quantite = restant;
+		return true;
+	}
+
+	private void ReinitialiserProgressCuissonPitFeuRoche()
+	{
+		if (_pitFeuRocheProgressCuissonSec <= 0.001d)
+		{
+			_pitFeuRocheProgressCuissonSec = 0d;
+			return;
+		}
+		_pitFeuRocheProgressCuissonSec = 0d;
+		SynchroniserGenomePitFeuRoche();
+	}
+
+	private void TraiterCuissonPitFeuRoche(double delta)
+	{
+		if (ID_Objet != Joueur.IdObjetPitFeuRoche || GrillePlanTravailAtelier == null || _pitFeuRocheResteSec <= 0.001d)
+			return;
+		AssurerGrillePitFeuRoche3Slots();
+
+		ref SlotInventaire slotCuisson = ref GrillePlanTravailAtelier[PitFeuRocheSlotCuisson];
+		ref SlotInventaire slotResultat = ref GrillePlanTravailAtelier[PitFeuRocheSlotResultat];
+
+		if (!EstSlotCuissonPitFeuRoche(slotCuisson))
+		{
+			ReinitialiserProgressCuissonPitFeuRoche();
+			return;
+		}
+
+		if (!slotResultat.EstVide)
+		{
+			if (!EstSlotResultatPitFeuRoche(slotResultat))
+			{
+				ReinitialiserProgressCuissonPitFeuRoche();
+				return;
+			}
+			int maxPileRes = Mathf.Max(1, Joueur.ObtenirPileMax(slotResultat));
+			if (Joueur.ObtenirQuantiteSlot(slotResultat) >= maxPileRes)
+			{
+				ReinitialiserProgressCuissonPitFeuRoche();
+				return;
+			}
+		}
+
+		_pitFeuRocheProgressCuissonSec += Math.Max(0d, delta);
+		bool conversion = false;
+		while (_pitFeuRocheProgressCuissonSec >= DureeCuissonPitFeuRocheSteakSec)
+		{
+			if (!EstSlotCuissonPitFeuRoche(slotCuisson))
+			{
+				ReinitialiserProgressCuissonPitFeuRoche();
+				break;
+			}
+
+			var steakCuit = slotCuisson;
+			steakCuit.ID = Joueur.IdObjetSteakCuit;
+			steakCuit.Quantite = 1;
+
+			if (slotResultat.EstVide)
+			{
+				slotResultat = steakCuit;
+			}
+			else
+			{
+				int maxPileRes = Mathf.Max(1, Joueur.ObtenirPileMax(slotResultat));
+				if (!Joueur.SontEmpilables(slotResultat, steakCuit) || Joueur.ObtenirQuantiteSlot(slotResultat) >= maxPileRes)
+					break;
+				slotResultat.Quantite = Joueur.ObtenirQuantiteSlot(slotResultat) + 1;
+			}
+
+			int qCru = Joueur.ObtenirQuantiteSlot(slotCuisson) - 1;
+			if (qCru <= 0) slotCuisson = new SlotInventaire();
+			else slotCuisson.Quantite = qCru;
+
+			_pitFeuRocheProgressCuissonSec -= DureeCuissonPitFeuRocheSteakSec;
+			conversion = true;
+		}
+
+		if (conversion)
+			SynchroniserGenomePitFeuRoche();
+	}
+
+	public int ObtenirStockCombustiblePitFeuRoche()
+	{
+		if (ID_Objet != Joueur.IdObjetPitFeuRoche)
+			return 0;
+		_pitFeuRocheStockCombustible = CompterCombustiblePitFeuRocheDepuisGrille();
+		return Mathf.Max(0, _pitFeuRocheStockCombustible);
+	}
+
+	public bool EstPitFeuRocheAllume()
+	{
+		return ID_Objet == Joueur.IdObjetPitFeuRoche && _pitFeuRocheResteSec > 0.001d;
+	}
+
+	public bool AjouterCombustiblePitFeuRoche(int quantite = 1, int idCombustible = 32)
+	{
+		if (ID_Objet != Joueur.IdObjetPitFeuRoche)
+			return false;
+		if (quantite <= 0)
+			return false;
+		int stockAvant = CompterCombustiblePitFeuRocheDepuisGrille();
+		int espace = Mathf.Max(0, 999 - stockAvant);
+		if (espace <= 0)
+			return false;
+		int ajoute = AjouterCombustiblePitFeuRocheDansGrille(Mathf.Min(espace, quantite), idCombustible);
+		if (ajoute <= 0)
+			return false;
+		_pitFeuRocheStockCombustible = CompterCombustiblePitFeuRocheDepuisGrille();
+		SynchroniserGenomePitFeuRoche();
+		return true;
+	}
+
+	public bool ActiverPitFeuRocheAllume(double dureeSec = DureeCombustionPitFeuSec)
+	{
+		if (ID_Objet != Joueur.IdObjetPitFeuRoche)
+			return false;
+		if (_pitFeuRocheResteSec > 0.001d)
+			return true;
+		_pitFeuRocheStockCombustible = CompterCombustiblePitFeuRocheDepuisGrille();
+		if (_pitFeuRocheStockCombustible <= 0)
+			return false;
+		if (!RetirerCombustiblePitFeuRocheDepuisGrille(1))
+			return false;
+		_pitFeuRocheStockCombustible = CompterCombustiblePitFeuRocheDepuisGrille();
+		_pitFeuRocheResteSec = Math.Max(1d, dureeSec);
+		_pitFeuRocheDernierSyncRestantSec = -1d;
+		ActiverVisuelPitFeu(true);
+		SynchroniserGenomePitFeuRoche();
+		return true;
+	}
+
+	public bool EteindrePitFeuRoche()
+	{
+		if (ID_Objet != Joueur.IdObjetPitFeuRoche)
+			return false;
+		_pitFeuRocheResteSec = 0d;
+		_pitFeuRocheDernierSyncRestantSec = -1d;
+		ActiverVisuelPitFeu(false);
+		SynchroniserGenomePitFeuRoche();
+		return true;
+	}
+
+	public void SynchroniserCombustiblePitFeuRocheDepuisGrille()
+	{
+		if (ID_Objet != Joueur.IdObjetPitFeuRoche)
+			return;
+		AssurerGrillePitFeuRoche3Slots();
+		_pitFeuRocheStockCombustible = CompterCombustiblePitFeuRocheDepuisGrille();
+		SynchroniserGenomePitFeuRoche();
 	}
 
 	private Vector3 ObtenirDemiExtentsApproxObjet()
@@ -709,6 +1066,22 @@ public partial class ItemPhysique : RigidBody3D
 			FreezeMode = FreezeModeEnum.Static;
 			ChargerEtatPitFeuDepuisGenome();
 			if (_pitFeuResteSec <= 0.001d)
+				ActiverVisuelPitFeu(false);
+			return;
+		}
+		if (ID_Objet == Joueur.IdObjetPitFeuRoche)
+		{
+			Mass = 34f;
+			GravityScale = 0f;
+			ResistanceActuelle = 48f;
+			Scale = Vector3.One;
+			LinearVelocity = Vector3.Zero;
+			AngularVelocity = Vector3.Zero;
+			Sleeping = true;
+			Freeze = true;
+			FreezeMode = FreezeModeEnum.Static;
+			ChargerEtatPitFeuRocheDepuisGenome();
+			if (_pitFeuRocheResteSec <= 0.001d)
 				ActiverVisuelPitFeu(false);
 			return;
 		}
@@ -970,11 +1343,15 @@ public partial class ItemPhysique : RigidBody3D
 				TransformerIntestinEnVersionNettoyee();
 			return;
 		}
-		if (ID_Objet == Joueur.IdObjetPitFeu)
+		if (ID_Objet == Joueur.IdObjetPitFeu || ID_Objet == Joueur.IdObjetPitFeuRoche)
 		{
-			if (_pitFeuResteSec <= 0.001d)
+			bool estRoche = ID_Objet == Joueur.IdObjetPitFeuRoche;
+			double resteSec = estRoche ? _pitFeuRocheResteSec : _pitFeuResteSec;
+			if (resteSec <= 0.001d)
 				return;
-			_pitFeuResteSec -= delta;
+			if (estRoche)
+				TraiterCuissonPitFeuRoche(delta);
+			resteSec -= delta;
 			float t = (float)Time.GetTicksMsec() * 0.001f;
 			float pulseFast = Mathf.Sin(t * 8.9f);
 			float pulseSlow = Mathf.Sin(t * 3.7f + 1.2f);
@@ -1008,16 +1385,46 @@ public partial class ItemPhysique : RigidBody3D
 			{
 				_pitFlammeLight.LightEnergy = 2.05f + 0.28f * Mathf.Sin(t * 9.6f) + 0.14f * pulseSlow;
 			}
-			if (_pitFeuResteSec <= 0.001d)
+			if (resteSec <= 0.001d)
 			{
-				ActiverVisuelPitFeu(false);
-				QueueFree();
-				return;
+				if (estRoche)
+				{
+					_pitFeuRocheStockCombustible = CompterCombustiblePitFeuRocheDepuisGrille();
+					if (_pitFeuRocheStockCombustible > 0 && RetirerCombustiblePitFeuRocheDepuisGrille(1))
+					{
+						_pitFeuRocheStockCombustible = CompterCombustiblePitFeuRocheDepuisGrille();
+						resteSec = DureeCombustionPitFeuSec;
+					}
+					else
+					{
+						resteSec = 0d;
+						ActiverVisuelPitFeu(false);
+					}
+				}
+				else
+				{
+					ActiverVisuelPitFeu(false);
+					QueueFree();
+					return;
+				}
 			}
-			if (_pitFeuDernierSyncRestantSec < 0d || Math.Abs(_pitFeuDernierSyncRestantSec - _pitFeuResteSec) >= 1.0d)
+			if (estRoche)
 			{
-				_pitFeuDernierSyncRestantSec = _pitFeuResteSec;
-				SynchroniserGenomePitFeuDepuisReste();
+				_pitFeuRocheResteSec = Math.Max(0d, resteSec);
+				if (_pitFeuRocheDernierSyncRestantSec < 0d || Math.Abs(_pitFeuRocheDernierSyncRestantSec - _pitFeuRocheResteSec) >= 1.0d)
+				{
+					_pitFeuRocheDernierSyncRestantSec = _pitFeuRocheResteSec;
+					SynchroniserGenomePitFeuRoche();
+				}
+			}
+			else
+			{
+				_pitFeuResteSec = Math.Max(0d, resteSec);
+				if (_pitFeuDernierSyncRestantSec < 0d || Math.Abs(_pitFeuDernierSyncRestantSec - _pitFeuResteSec) >= 1.0d)
+				{
+					_pitFeuDernierSyncRestantSec = _pitFeuResteSec;
+					SynchroniserGenomePitFeuDepuisReste();
+				}
 			}
 			return;
 		}
@@ -1117,7 +1524,7 @@ public partial class ItemPhysique : RigidBody3D
 	{
 		if (EstMatiereSilexParIdObjet(ID_Objet)) return 80f;
 		if (EstIdRocheMatiere(ID_Objet)) return 50f;
-		if (ID_Objet == 30 || ID_Objet == 32 || ID_Objet == BlocChutant.ID_BRANCHE || ID_Objet == Joueur.IdObjetPitFeu) return 40f; // Bois mort durci
+		if (ID_Objet == 30 || ID_Objet == 32 || ID_Objet == BlocChutant.ID_BRANCHE || ID_Objet == Joueur.IdObjetPitFeu || ID_Objet == Joueur.IdObjetPitFeuRoche) return 40f; // Bois mort durci
 		if (ID_Objet == Joueur.IdObjetAllumeFeu) return 44f;
 		return 10f; // Matières souples ou organiques
 	}
@@ -1137,7 +1544,7 @@ public partial class ItemPhysique : RigidBody3D
 			degats *= 0.060f;
 			capPourcent = 0.26f;
 		}
-		else if (ID_Objet == 30 || ID_Objet == 32 || ID_Objet == BlocChutant.ID_BRANCHE || ID_Objet == Joueur.IdObjetPitFeu)
+		else if (ID_Objet == 30 || ID_Objet == 32 || ID_Objet == BlocChutant.ID_BRANCHE || ID_Objet == Joueur.IdObjetPitFeu || ID_Objet == Joueur.IdObjetPitFeuRoche)
 		{
 			degats *= 0.080f;
 			capPourcent = 0.34f;

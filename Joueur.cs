@@ -120,6 +120,8 @@ public partial class Joueur : CharacterBody3D
     public const int IdObjetCarnetSavoir = 114;
     /// <summary>Steak cru (loot dépeçage bovin).</summary>
     public const int IdObjetSteakCru = 115;
+    /// <summary>Steak cuit (obtenu par cuisson au pit roche).</summary>
+    public const int IdObjetSteakCuit = 123;
     /// <summary>Os (loot dépeçage bovin).</summary>
     public const int IdObjetOsBoeuf = 116;
     /// <summary>Cuir de bœuf (loot dépeçage ; texture via <see cref="SlotInventaire.GenomeAssemblage"/> préfixe PEAU:).</summary>
@@ -132,6 +134,8 @@ public partial class Joueur : CharacterBody3D
     public const int IdObjetPitFeu = 120;
     /// <summary>Allume-feu préhistorique (silex + marcassite/pyrite).</summary>
     public const int IdObjetAllumeFeu = 121;
+    /// <summary>Pit à feu roche (pit à feu renforcé avec couronne de roches).</summary>
+    public const int IdObjetPitFeuRoche = 122;
     /// <summary>Objet posé au sol : quantité dans l’inventaire au ramassage (>1).</summary>
     public const string MetaQuantiteObjetPose = "QuantiteObjetPose";
     /// <summary>Rack Ã  bÃ¢tons (stockage dÃ©diÃ©).</summary>
@@ -150,6 +154,8 @@ public partial class Joueur : CharacterBody3D
         if (indexChimique >= BaieNombreCouleurs) return BaieNombreCouleurs - 1;
         return indexChimique;
     }
+
+    private static bool EstIdPitFeu(int id) => id == IdObjetPitFeu || id == IdObjetPitFeuRoche;
 
     /// <summary>Albedo procédural (main, sol, GLB teinté).</summary>
     public static Color ObtenirCouleurAlbedoBaie(int indexChimique)
@@ -489,6 +495,7 @@ public partial class Joueur : CharacterBody3D
     private const string MetaSignatureRack109 = "SigRack109";
     private const string MetaSignatureCoffre113 = "SigCoffre113";
     private const string MetaSignaturePitFeu120 = "SigPitFeu120";
+    private const string MetaSignaturePitFeuRoche122 = "SigPitFeuRoche122";
     private const string MetaSignatureAllumeFeu121 = "SigAllumeFeu121";
     private const string MetaSignatureCarnet114 = "SigCarnet114";
     private const string MetaSignatureBaie35 = "SigBaie35";
@@ -574,13 +581,13 @@ public partial class Joueur : CharacterBody3D
     private float _distanceCumuleeMetabolisteMetres;
     private const float FaimMaxJoueur = 100f;
     private const float EnduranceMaxJoueur = 100f;
-    private const float DrainFaimPassifParSeconde = 0.18f;
-    private const float DrainFaimEffortParSeconde = 0.75f;
-    private const float DrainFaimSprintParSeconde = 0.55f;
-    private const float DrainEnduranceActionParSeconde = 10f;
-    private const float DrainEnduranceSprintParSeconde = 22f;
+    private const float DrainFaimPassifParSeconde = 0.018f;
+    private const float DrainFaimEffortParSeconde = 0.075f;
+    private const float DrainFaimSprintParSeconde = 0.055f;
+    private const float DrainEnduranceActionParSeconde = 1f;
+    private const float DrainEnduranceSprintParSeconde = 2.2f;
     private const float RegenEnduranceParSeconde = 10f;
-    private const float CoutFaimParPointEndurance = 0.045f;
+    private const float CoutFaimParPointEndurance = 0.0045f;
     /// <summary>Multiplicateur sur la perte de faim (passif, effort, sprint, coût lié à la régénération d'énergie).</summary>
     private const float FacteurRalentissementDrainFaim = 0.5f;
     private const float MultiplicateurVitesseSprint = 1.65f;
@@ -772,6 +779,8 @@ public partial class Joueur : CharacterBody3D
 
     private const float GainFaimConsommationBaieRouge = 10f;
     private const float GainFaimConsommationBaieAutreCouleur = 1f;
+    private const float GainFaimConsommationSteakCru = 5f;
+    private const float GainFaimConsommationSteakCuit = 50f;
 
     /// <summary>+1 PV sur la zone corporelle la plus abîmée (baies).</summary>
     public void AppliquerSoinConsommationBaieUnePv()
@@ -815,6 +824,14 @@ public partial class Joueur : CharacterBody3D
         AppliquerSoinConsommationBaieUnePv();
         int idx = ClampIndexCouleurBaie(indexCouleurBaie);
         float gain = idx == 0 ? GainFaimConsommationBaieRouge : GainFaimConsommationBaieAutreCouleur;
+        _faimJoueur = Mathf.Min(FaimMaxJoueur, _faimJoueur + gain);
+        MettreAJourHudStatsSurvie();
+    }
+
+    /// <summary>Effets d'un steak mangé : cru +5 faim, cuit +50 faim.</summary>
+    public void AppliquerEffetsConsommationSteak(bool cuit)
+    {
+        float gain = cuit ? GainFaimConsommationSteakCuit : GainFaimConsommationSteakCru;
         _faimJoueur = Mathf.Min(FaimMaxJoueur, _faimJoueur + gain);
         MettreAJourHudStatsSurvie();
     }
@@ -2754,6 +2771,11 @@ public partial class Joueur : CharacterBody3D
 
             if (!mainActive.EstVide && PeutUtiliserFrappe(mainActive))
             {
+                if (EssayerEteindrePitFeuRocheSousVisee(mainActive))
+                {
+                    ReinitialiserMinageMainNueProgression();
+                    return;
+                }
                 ExecuterAction(1.0f, mouv);
                 JouerAnimationFrappe(mouv);
             }
@@ -2801,12 +2823,20 @@ public partial class Joueur : CharacterBody3D
             SlotInventaire mainActive = MainGaucheEstActive ? MainGauche : MainDroite;
             if (!mainActive.EstVide)
             {
+                // Priorité gameplay : clic droit sur pit à feu roche avec bâton/branche = ajout de combustible,
+                // même si le clic a été maintenu assez longtemps pour entrer en mode lancer.
+                if (EssayerAjouterCombustiblePitFeuRocheSousVisee(ref mainActive))
+                {
+                    _forceLancer = 0f;
+                    return;
+                }
+
                 // IDENTIFICATION DE LA MATIÃˆRE : Est-ce du terrain (Voxel) ?
                 bool estTerrainVoxel = mainActive.ID >= 1 && mainActive.ID <= 9;
                 bool estAtelierEnMain = mainActive.ID == 200;
                 bool estRackBatonsEnMain = mainActive.ID == IdObjetRackBatons || mainActive.ID == IdObjetRackBuches;
                 bool estCoffreEnMain = mainActive.ID == IdObjetCoffreBoisTier0;
-                bool estPitFeuEnMain = mainActive.ID == IdObjetPitFeu;
+                bool estPitFeuEnMain = EstIdPitFeu(mainActive.ID);
                 bool estBuissonEnMain = mainActive.ID == 10 || mainActive.ID == 11;
                 // Clic bref = poser. Maintien du clic = lancer (seuil 0,5 s).
                 // Atelier + rack (structures fixes) : jamais de lancer.
@@ -2832,6 +2862,15 @@ public partial class Joueur : CharacterBody3D
                         int couleurBaie = mainActive.IndexChimique;
                         ConsommerUneUniteMainActive();
                         AppliquerEffetsConsommationBaie(couleurBaie);
+                        RafraichirHUD();
+                        ReinitialiserRotationManuelle();
+                        GetViewport().SetInputAsHandled();
+                    }
+                    else if (mainActive.ID == IdObjetSteakCru || mainActive.ID == IdObjetSteakCuit)
+                    {
+                        bool steakCuit = mainActive.ID == IdObjetSteakCuit;
+                        ConsommerUneUniteMainActive();
+                        AppliquerEffetsConsommationSteak(steakCuit);
                         RafraichirHUD();
                         ReinitialiserRotationManuelle();
                         GetViewport().SetInputAsHandled();
@@ -3529,6 +3568,7 @@ public partial class Joueur : CharacterBody3D
         IdObjetSacTier0 => 0.16f,
         IdObjetCarnetSavoir => 0.24f,
         IdObjetSteakCru => 0.14f,
+        IdObjetSteakCuit => 0.14f,
         IdObjetOsBoeuf => 0.09f,
         IdObjetCuirBoeuf => 0.11f,
         IdObjetIntestinBoeuf => 0.12f,
@@ -3547,6 +3587,7 @@ public partial class Joueur : CharacterBody3D
         IdObjetRackBuches => 8.0f,
         IdObjetCoffreBoisTier0 => 42f,
         IdObjetPitFeu => 26f,
+        IdObjetPitFeuRoche => 34f,
         IdObjetAllumeFeu => 0.26f,
         _ => 0.5f
     };
@@ -3910,7 +3951,7 @@ public partial class Joueur : CharacterBody3D
         else if (id == 21) return null; // GLB res://Modeles/materials/tissu_tier0.glb via InstancierModeleTissuTier0
         else if (id == IdObjetSacTier0) return null; // GLB res://Modeles/Equipable/Sac_Tiere0.glb via InstancierModeleSacTier0
         else if (id == IdObjetCarnetSavoir) return null; // modèle procédural via InstancierModeleCarnetSavoir
-        else if (id == IdObjetSteakCru || id == IdObjetOsBoeuf || id == IdObjetCuirBoeuf || id == IdObjetIntestinBoeuf || id == IdObjetIntestinBoeufNettoye) return null; // GLB via InstancierModele* dans ModelInstantiationService
+        else if (id == IdObjetSteakCru || id == IdObjetSteakCuit || id == IdObjetOsBoeuf || id == IdObjetCuirBoeuf || id == IdObjetIntestinBoeuf || id == IdObjetIntestinBoeufNettoye) return null; // GLB via InstancierModele* dans ModelInstantiationService
         else if (id == IdObjetCeinturePoches || id == IdObjetCeintureSacoches) return null; // GLB ceinture / ceinture+pochettes via instanciation dÃ©diÃ©e
         else if (id == IdObjetPochetteTier0) return null; // GLB res://Modeles/materials/Pochette_Tiere0.glb via InstancierModelePochetteTier0
         else if (id == IdObjetPellePierreTier0) return null; // GLB res://Modeles/Equipements/Pelle_Pierre_tier0.glb via InstancierModeleArme
@@ -3920,6 +3961,7 @@ public partial class Joueur : CharacterBody3D
         else if (id == IdObjetRackBatons || id == IdObjetRackBuches) return null; // GLB rack (bÃ¢tons / bÃ»ches) via instanciation dÃ©diÃ©e
         else if (id == IdObjetCoffreBoisTier0) return null; // GLB coffre via InstancierModeleCoffreBoisTier0
         else if (id == IdObjetPitFeu) return null; // GLB pit à feu via InstancierModelePitFeu
+        else if (id == IdObjetPitFeuRoche) return null; // GLB pit à feu roche via InstancierModelePitFeuRoche
         else if (id == IdObjetAllumeFeu) return null; // GLB allume-feu via InstancierModeleAllumeFeu
         else if (id == 30 || id == 32)
         {
@@ -3991,7 +4033,7 @@ public partial class Joueur : CharacterBody3D
                 : ArbreVivant.ObtenirMaterielBoisTriplanar(indexBotanique);
             return;
         }
-        if (idObjet == IdObjetPitFeu)
+        if (idObjet == IdObjetPitFeu || idObjet == IdObjetPitFeuRoche)
         {
             visuel.MaterialOverride = ArbreVivant.ObtenirMaterielBoisTriplanar(indexBotanique);
             return;
@@ -4643,7 +4685,7 @@ public partial class Joueur : CharacterBody3D
             RestaurerContenuCoffreSurItem(item, cleCoffre);
             corps = item;
         }
-        else if (id == IdObjetPitFeu)
+        else if (id == IdObjetPitFeu || id == IdObjetPitFeuRoche)
         {
             var item = new ItemPhysique
             {
@@ -4660,7 +4702,10 @@ public partial class Joueur : CharacterBody3D
             if (!string.IsNullOrEmpty(item.GenomeAssemblage))
                 item.SetMeta(MetaGenomeAssemblage, item.GenomeAssemblage);
             var meshRoot = new Node3D { Name = "MeshInstance3D" };
-            InstancierModelePitFeu(meshRoot, mainActive, 0.92f, true);
+            if (id == IdObjetPitFeuRoche)
+                InstancierModelePitFeuRoche(meshRoot, mainActive, 0.96f, true);
+            else
+                InstancierModelePitFeu(meshRoot, mainActive, 0.92f, true);
             item.AddChild(meshRoot);
             var pilePit = new List<Node> { meshRoot };
             for (int i = 0; i < pilePit.Count; i++)
@@ -4687,7 +4732,12 @@ public partial class Joueur : CharacterBody3D
                 }
             }
             if (item.GetChildCount() <= 1)
-                item.AddChild(new CollisionShape3D { Shape = new BoxShape3D { Size = new Vector3(0.86f, 0.32f, 0.86f) }, Position = new Vector3(0f, 0.16f, 0f) });
+            {
+                Vector3 tailleBox = id == IdObjetPitFeuRoche
+                    ? new Vector3(0.94f, 0.34f, 0.94f)
+                    : new Vector3(0.86f, 0.32f, 0.86f);
+                item.AddChild(new CollisionShape3D { Shape = new BoxShape3D { Size = tailleBox }, Position = new Vector3(0f, 0.16f, 0f) });
+            }
             corps = item;
         }
         else if (id == 200)
@@ -5032,6 +5082,22 @@ public partial class Joueur : CharacterBody3D
             item.AddChild(new CollisionShape3D { Shape = new SphereShape3D { Radius = 0.07f } });
             corps = item;
         }
+        else if (id == IdObjetSteakCuit)
+        {
+            var item = new ItemPhysique
+            {
+                ID_Objet = id,
+                IndexChimique = 0,
+                IndexCacheMemoire = 0,
+                Name = "ItemPhysique",
+                ContinuousCd = true
+            };
+            var meshRoot = new Node3D { Name = "MeshInstance3D" };
+            InstancierModeleSteakCuit(meshRoot, mainActive, 0.2f);
+            item.AddChild(meshRoot);
+            item.AddChild(new CollisionShape3D { Shape = new SphereShape3D { Radius = 0.07f } });
+            corps = item;
+        }
         else if (id == IdObjetOsBoeuf)
         {
             var item = new ItemPhysique
@@ -5114,7 +5180,7 @@ public partial class Joueur : CharacterBody3D
         GetParent().AddChild(corps);
         // Placement pur : pas de translation Y supplÃ©mentaire (Ã©vite double offset / lÃ©vitation atelier).
         corps.GlobalPosition = pointDeChute;
-        if (id == IdObjetRackBatons || id == IdObjetRackBuches || id == IdObjetCoffreBoisTier0 || id == IdObjetPitFeu)
+        if (id == IdObjetRackBatons || id == IdObjetRackBuches || id == IdObjetCoffreBoisTier0 || EstIdPitFeu(id))
         {
             // Snap sol robuste pour le rack: corrige les cas oÃ¹ le raycast vise une surface dÃ©calÃ©e.
             var espace = GetWorld3D()?.DirectSpaceState;
@@ -5177,7 +5243,7 @@ public partial class Joueur : CharacterBody3D
                     rbPose.AngularDamp = 0.88f;
                 }
             }
-            else if (id == 30 || id == 32 || id == 200 || id == IdObjetRackBatons || id == IdObjetRackBuches || id == IdObjetCoffreBoisTier0 || id == IdObjetPitFeu)
+            else if (id == 30 || id == 32 || id == 200 || id == IdObjetRackBatons || id == IdObjetRackBuches || id == IdObjetCoffreBoisTier0 || EstIdPitFeu(id))
             {
                 rbPose.PhysicsMaterialOverride = _physMatBois;
                 rbPose.LinearDampMode = RigidBody3D.DampMode.Replace;
@@ -5203,9 +5269,9 @@ public partial class Joueur : CharacterBody3D
                     rbPose.GravityScale = 0f;
                     rbPose.Sleeping = true;
                 }
-                else if (id == IdObjetPitFeu)
+                else if (EstIdPitFeu(id))
                 {
-                    rbPose.Mass = 26f;
+                    rbPose.Mass = id == IdObjetPitFeuRoche ? 34f : 26f;
                     rbPose.GravityScale = 0f;
                     rbPose.Sleeping = true;
                 }
@@ -5228,14 +5294,14 @@ public partial class Joueur : CharacterBody3D
                 rbPose.AngularDamp = 1.0f;
             }
             else if (id == 20 || id == 21 || id == IdObjetCeinturePoches || id == IdObjetCeintureSacoches || id == IdObjetPochetteTier0 || id == IdObjetSacTier0 || id == IdObjetCarnetSavoir
-                || id == IdObjetSteakCru || id == IdObjetOsBoeuf || id == IdObjetCuirBoeuf || id == IdObjetIntestinBoeuf || id == IdObjetIntestinBoeufNettoye)
+                || id == IdObjetSteakCru || id == IdObjetSteakCuit || id == IdObjetOsBoeuf || id == IdObjetCuirBoeuf || id == IdObjetIntestinBoeuf || id == IdObjetIntestinBoeufNettoye)
             {
                 rbPose.PhysicsMaterialOverride = _physMatCorde;
                 rbPose.LinearDampMode = RigidBody3D.DampMode.Replace;
                 rbPose.AngularDampMode = RigidBody3D.DampMode.Replace;
                 rbPose.LinearDamp = 0.32f;
                 rbPose.AngularDamp = 0.95f;
-                if (id == IdObjetSteakCru || id == IdObjetOsBoeuf || id == IdObjetCuirBoeuf || id == IdObjetIntestinBoeuf || id == IdObjetIntestinBoeufNettoye)
+                if (id == IdObjetSteakCru || id == IdObjetSteakCuit || id == IdObjetOsBoeuf || id == IdObjetCuirBoeuf || id == IdObjetIntestinBoeuf || id == IdObjetIntestinBoeufNettoye)
                     rbPose.Mass = id == IdObjetOsBoeuf ? 0.55f : (id == IdObjetCuirBoeuf ? 0.25f : ((id == IdObjetIntestinBoeuf || id == IdObjetIntestinBoeufNettoye) ? 0.20f : 0.18f));
             }
             else if (id == 999)

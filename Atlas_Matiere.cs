@@ -636,6 +636,11 @@ public static class Atlas_Matiere
             string essence = slot.IndexBotanique switch { 0 => "Chêne", 1 => "Bouleau", 2 => "Pin", 3 => "Sapin", 4 => "Fromager", _ => "Bois" };
             return $"Pit à feu ({essence})";
         }
+        if (id == Joueur.IdObjetPitFeuRoche)
+        {
+            string essence = slot.IndexBotanique switch { 0 => "Chêne", 1 => "Bouleau", 2 => "Pin", 3 => "Sapin", 4 => "Fromager", _ => "Bois" };
+            return $"Pit à feu roche ({essence})";
+        }
         if (id == Joueur.IdObjetAllumeFeu)
         {
             string pierre = slot.IndexChimique switch { 10 => "Marcassite", 11 => "Pyrite", _ => "Sulfure" };
@@ -650,13 +655,14 @@ public static class Atlas_Matiere
         }
         if (id == Joueur.IdObjetCarnetSavoir)
             return "Carnet du savoir";
-        if (id == Joueur.IdObjetSteakCru || id == Joueur.IdObjetOsBoeuf || id == Joueur.IdObjetCuirBoeuf || id == Joueur.IdObjetIntestinBoeuf || id == Joueur.IdObjetIntestinBoeufNettoye)
+        if (id == Joueur.IdObjetSteakCru || id == Joueur.IdObjetSteakCuit || id == Joueur.IdObjetOsBoeuf || id == Joueur.IdObjetCuirBoeuf || id == Joueur.IdObjetIntestinBoeuf || id == Joueur.IdObjetIntestinBoeufNettoye)
         {
             int q = Joueur.ObtenirQuantiteSlot(slot);
             string nom = id == Joueur.IdObjetSteakCru ? "Steak cru"
+                : (id == Joueur.IdObjetSteakCuit ? "Steak cuit"
                 : (id == Joueur.IdObjetOsBoeuf ? "Os"
                 : (id == Joueur.IdObjetCuirBoeuf ? "Cuir"
-                : (id == Joueur.IdObjetIntestinBoeufNettoye ? "Intestin propre" : "Intestin")));
+                : (id == Joueur.IdObjetIntestinBoeufNettoye ? "Intestin propre" : "Intestin"))));
             return q > 1 ? $"{nom} x{q}" : nom;
         }
         return id switch
@@ -1069,6 +1075,42 @@ public static class Atlas_Matiere
                     IndexMorphologique = 0,
                     IndexTaille = 0,
                     NiveauFracture = Mathf.Max(Mathf.Max(c0.NiveauFracture, c1.NiveauFracture), Mathf.Max(c2.NiveauFracture, c3.NiveauFracture))
+                };
+            }
+        }
+
+        // RECETTE 3×3 atelier : Pit à feu roche (122) = pit à feu (120) au centre + 8 roches matière autour.
+        if (grilleCraft3x3Table && grille.Length >= 9
+            && !grille[4].EstVide && grille[4].ID == Joueur.IdObjetPitFeu)
+        {
+            bool rochesAutour = true;
+            for (int i = 0; i < 9; i++)
+            {
+                if (i == 4) continue;
+                SlotInventaire s = grille[i];
+                if (s.EstVide || !ItemPhysique.EstIdRocheMatiere(s.ID))
+                {
+                    rochesAutour = false;
+                    break;
+                }
+            }
+            if (rochesAutour)
+            {
+                int nf = grille[4].NiveauFracture;
+                for (int i = 0; i < 9; i++)
+                {
+                    if (i == 4) continue;
+                    nf = Mathf.Max(nf, grille[i].NiveauFracture);
+                }
+                return new SlotInventaire
+                {
+                    ID = Joueur.IdObjetPitFeuRoche,
+                    IndexBotanique = grille[4].IndexBotanique,
+                    IndexChimique = grille[4].IndexChimique,
+                    IndexMorphologique = grille[4].IndexMorphologique,
+                    IndexTaille = grille[4].IndexTaille,
+                    NiveauFracture = nf,
+                    EstUnEclat = false
                 };
             }
         }

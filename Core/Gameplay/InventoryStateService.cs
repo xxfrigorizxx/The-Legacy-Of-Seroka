@@ -17,7 +17,7 @@ public partial class Joueur
         if (s.ID == Joueur.IdObjetBaie) return 20;
         if (s.ID == 30 || s.ID == 32 || s.ID == BlocChutant.ID_BRANCHE) return 30;
         if (s.ID is 15 or 16 or 17 or 20 or 21) return 15;
-        if (s.ID == Joueur.IdObjetSteakCru || s.ID == Joueur.IdObjetOsBoeuf || s.ID == Joueur.IdObjetCuirBoeuf || s.ID == Joueur.IdObjetIntestinBoeuf || s.ID == Joueur.IdObjetIntestinBoeufNettoye) return 15;
+        if (s.ID == Joueur.IdObjetSteakCru || s.ID == Joueur.IdObjetSteakCuit || s.ID == Joueur.IdObjetOsBoeuf || s.ID == Joueur.IdObjetCuirBoeuf || s.ID == Joueur.IdObjetIntestinBoeuf || s.ID == Joueur.IdObjetIntestinBoeufNettoye) return 15;
         if (ItemPhysique.EstIdRocheMatiere(s.ID) && s.IndexTaille <= 1) return 5;
         return 1;
     }
@@ -291,6 +291,9 @@ public partial class Joueur
         !s.EstVide && (s.ID == 30 || s.ID == 32 || s.ID == BlocChutant.ID_BRANCHE);
 
     public static bool EstSlotStockableRackBuches(SlotInventaire s) => !s.EstVide && s.ID == 30;
+    public static bool EstSlotStockablePitFeuRoche(SlotInventaire s) => !s.EstVide && (s.ID == 32 || s.ID == BlocChutant.ID_BRANCHE);
+    public static bool EstSlotCuissonPitFeuRoche(SlotInventaire s) => !s.EstVide && s.ID == IdObjetSteakCru;
+    public static bool EstSlotResultatPitFeuRoche(SlotInventaire s) => !s.EstVide && s.ID == IdObjetSteakCuit;
 
     public bool RackOuvertEstBuches()
     {
@@ -300,10 +303,47 @@ public partial class Joueur
             && RackBatonsOuvert.ID_Objet == IdObjetRackBuches;
     }
 
-    public int ObtenirCapaciteRackOuvert() => RackOuvertEstBuches() ? 10 : 30;
+    public bool RackOuvertEstPitFeuRoche()
+    {
+        return StockageRackBatonsOuvert
+            && RackBatonsOuvert != null
+            && GodotObject.IsInstanceValid(RackBatonsOuvert)
+            && RackBatonsOuvert.ID_Objet == IdObjetPitFeuRoche;
+    }
+
+    public int ObtenirCapaciteRackOuvert()
+    {
+        if (RackOuvertEstBuches()) return 10;
+        if (RackOuvertEstPitFeuRoche()) return ObtenirCapacitePitFeuRocheCombustible();
+        return 30;
+    }
+
+    public static int ObtenirCapacitePitFeuRocheCombustible()
+    {
+        var s = new SlotInventaire { ID = 32, Quantite = 1 };
+        return Mathf.Max(1, ObtenirPileMax(s));
+    }
+
+    public bool EstIndexSlotPitFeuRoche(int idx) => RackOuvertEstPitFeuRoche() && idx >= 0 && idx <= 2;
+
+    public bool EstSlotSortiePitFeuRoche(int idx) => RackOuvertEstPitFeuRoche() && idx == 2;
+
+    public bool EstSlotStockableDansPitFeuRocheIndex(int idx, SlotInventaire s)
+    {
+        if (!RackOuvertEstPitFeuRoche()) return false;
+        if (s.EstVide) return false;
+        return idx switch
+        {
+            0 => EstSlotStockablePitFeuRoche(s),
+            1 => EstSlotCuissonPitFeuRoche(s),
+            _ => false
+        };
+    }
 
     public bool EstSlotStockableDansRackOuvert(SlotInventaire s)
     {
+        if (RackOuvertEstPitFeuRoche())
+            return EstSlotStockablePitFeuRoche(s);
         return RackOuvertEstBuches() ? EstSlotStockableRackBuches(s) : EstSlotStockableRackBatons(s);
     }
 
@@ -314,6 +354,12 @@ public partial class Joueur
         int capacite = ObtenirCapaciteRackOuvert();
         int total = 0;
         var g = RackBatonsOuvert.GrillePlanTravailAtelier;
+        if (RackOuvertEstPitFeuRoche())
+        {
+            if (g.Length > 0 && EstSlotStockablePitFeuRoche(g[0]))
+                total = ObtenirQuantiteSlot(g[0]);
+            return Mathf.Clamp(total, 0, capacite);
+        }
         int n = Mathf.Min(9, g.Length);
         for (int i = 0; i < n; i++)
         {

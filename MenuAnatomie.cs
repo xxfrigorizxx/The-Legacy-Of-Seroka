@@ -801,13 +801,15 @@ public partial class MenuAnatomie : Control
 				return;
             if (_joueurRef.StockageRackBatonsOuvert)
             {
-                TraiterClicRackBatons(ref _joueurRef.RefSlotCraft(craftIdx), clicGauche, clicDroit);
+                TraiterClicRackBatons(ref _joueurRef.RefSlotCraft(craftIdx), clicGauche, clicDroit, craftIdx);
                 if (_joueurRef.RackBatonsOuvert != null && GodotObject.IsInstanceValid(_joueurRef.RackBatonsOuvert))
                 {
                     if (_joueurRef.RackBatonsOuvert.ID_Objet == Joueur.IdObjetRackBatons)
                         _joueurRef.SynchroniserVisuelRackBatons(_joueurRef.RackBatonsOuvert);
                     else if (_joueurRef.RackBatonsOuvert.ID_Objet == Joueur.IdObjetRackBuches)
                         _joueurRef.SynchroniserVisuelRackBuches(_joueurRef.RackBatonsOuvert);
+                    else if (_joueurRef.RackBatonsOuvert.ID_Objet == Joueur.IdObjetPitFeuRoche)
+                        _joueurRef.RackBatonsOuvert.SynchroniserCombustiblePitFeuRocheDepuisGrille();
                 }
                 _joueurRef.VerifierRecettes();
                 GetViewport()?.SetInputAsHandled();
@@ -911,8 +913,86 @@ public partial class MenuAnatomie : Control
 		else _curseurMenu.Quantite = qCur - moveStack;
 	}
 
-	private void TraiterClicRackBatons(ref SlotInventaire slotRack, bool clicGauche, bool clicDroit)
+	private void DeposerDepuisCurseurVersSlotSimple(ref SlotInventaire destination, int quantiteSouhaitee)
 	{
+		if (_curseurMenu.EstVide) return;
+		int qCur = Joueur.ObtenirQuantiteSlot(_curseurMenu);
+		if (qCur <= 0) return;
+
+		if (destination.EstVide)
+		{
+			int maxPile = Mathf.Max(1, Joueur.ObtenirPileMax(_curseurMenu));
+			int move = Mathf.Min(Mathf.Min(qCur, quantiteSouhaitee), maxPile);
+			if (move <= 0) return;
+			destination = _curseurMenu;
+			destination.Quantite = move;
+			if (qCur - move <= 0) _curseurMenu = new SlotInventaire();
+			else _curseurMenu.Quantite = qCur - move;
+			return;
+		}
+
+		if (!Joueur.SontEmpilables(destination, _curseurMenu)) return;
+		int qDst = Joueur.ObtenirQuantiteSlot(destination);
+		int maxPileDst = Mathf.Max(1, Joueur.ObtenirPileMax(destination));
+		int moveStack = Mathf.Min(Mathf.Min(qCur, quantiteSouhaitee), Mathf.Max(0, maxPileDst - qDst));
+		if (moveStack <= 0) return;
+		destination.Quantite = qDst + moveStack;
+		if (qCur - moveStack <= 0) _curseurMenu = new SlotInventaire();
+		else _curseurMenu.Quantite = qCur - moveStack;
+	}
+
+	private void TraiterClicRackBatons(ref SlotInventaire slotRack, bool clicGauche, bool clicDroit, int rackIdx)
+	{
+		bool pitRoche = _joueurRef != null && _joueurRef.RackOuvertEstPitFeuRoche();
+		if (pitRoche)
+		{
+			if (clicGauche)
+			{
+				if (_curseurMenu.EstVide)
+				{
+					if (!slotRack.EstVide)
+					{
+						_curseurMenu = slotRack;
+						_curseurMenu.Quantite = Joueur.ObtenirQuantiteSlot(_curseurMenu);
+						slotRack = new SlotInventaire();
+					}
+				}
+				else
+				{
+					if (_joueurRef.EstSlotSortiePitFeuRoche(rackIdx))
+						return;
+					if (!_joueurRef.EstSlotStockableDansPitFeuRocheIndex(rackIdx, _curseurMenu))
+						return;
+					DeposerDepuisCurseurVersSlotSimple(ref slotRack, int.MaxValue);
+				}
+				return;
+			}
+
+			if (clicDroit)
+			{
+				if (_curseurMenu.EstVide)
+				{
+					if (!slotRack.EstVide)
+					{
+						int q = Joueur.ObtenirQuantiteSlot(slotRack);
+						_curseurMenu = slotRack;
+						_curseurMenu.Quantite = 1;
+						if (q <= 1) slotRack = new SlotInventaire();
+						else slotRack.Quantite = q - 1;
+					}
+				}
+				else
+				{
+					if (_joueurRef.EstSlotSortiePitFeuRoche(rackIdx))
+						return;
+					if (!_joueurRef.EstSlotStockableDansPitFeuRocheIndex(rackIdx, _curseurMenu))
+						return;
+					DeposerDepuisCurseurVersSlotSimple(ref slotRack, 1);
+				}
+			}
+			return;
+		}
+
 		// Rack dédié: capacité globale pilotée par le type de rack ouvert (bâtons/bûches).
 		if (clicGauche)
 		{
@@ -1624,6 +1704,10 @@ public partial class MenuAnatomie : Control
 			AssurerPreviewsCraft();
 			_joueurRef.VerifierRecettes();
 			var gCraft = _joueurRef.ObtenirGrilleCraftAffichee();
+			bool pitRoche = _joueurRef.StockageRackBatonsOuvert
+				&& _joueurRef.RackBatonsOuvert != null
+				&& GodotObject.IsInstanceValid(_joueurRef.RackBatonsOuvert)
+				&& _joueurRef.RackBatonsOuvert.ID_Objet == Joueur.IdObjetPitFeuRoche;
 			int nActives = _joueurRef.CraftGrille3x3AuTable ? 9 : 4;
 			for (int i = 0; i < 9; i++)
 			{
@@ -1657,6 +1741,12 @@ public partial class MenuAnatomie : Control
 				if (_lblCraft != null && i < _lblCraft.Length && _lblCraft[i] != null)
 				{
 					string nom = Atlas_Matiere.ObtenirNomObjet(s);
+					if (pitRoche && s.EstVide)
+					{
+						if (i == 0) nom = "Combustible";
+						else if (i == 1) nom = "Cuisson";
+						else if (i == 2) nom = "Resultat";
+					}
 					_lblCraft[i].Text = string.IsNullOrEmpty(nom) ? " " : nom;
 					_lblCraft[i].Visible = !vis || !vpOk;
 				}
@@ -1788,9 +1878,14 @@ public partial class MenuAnatomie : Control
 			bool rackBuches = _joueurRef.RackBatonsOuvert != null
 				&& GodotObject.IsInstanceValid(_joueurRef.RackBatonsOuvert)
 				&& _joueurRef.RackBatonsOuvert.ID_Objet == Joueur.IdObjetRackBuches;
-			_lblModeRack.Text = rackBuches
-				? $"Stockage Rack a buches  [{total}/{cap}]"
-				: $"Stockage Rack a batons  [{total}/{cap}]";
+            bool pitRoche = _joueurRef.RackBatonsOuvert != null
+                && GodotObject.IsInstanceValid(_joueurRef.RackBatonsOuvert)
+                && _joueurRef.RackBatonsOuvert.ID_Objet == Joueur.IdObjetPitFeuRoche;
+            _lblModeRack.Text = pitRoche
+                ? $"Pit roche | Combustible [{total}/{cap}] | Cuisson: slot 2 | Resultat: slot 3"
+                : (rackBuches
+                    ? $"Stockage Rack a buches  [{total}/{cap}]"
+                    : $"Stockage Rack a batons  [{total}/{cap}]");
 			_lblModeRack.Visible = true;
 		}
 		else
@@ -2704,6 +2799,8 @@ public partial class MenuAnatomie : Control
 				_joueurRef.SynchroniserVisuelRackBatons(_joueurRef.RackBatonsOuvert);
 			else if (_joueurRef.RackBatonsOuvert.ID_Objet == Joueur.IdObjetRackBuches)
 				_joueurRef.SynchroniserVisuelRackBuches(_joueurRef.RackBatonsOuvert);
+            else if (_joueurRef.RackBatonsOuvert.ID_Objet == Joueur.IdObjetPitFeuRoche)
+                _joueurRef.RackBatonsOuvert.SynchroniserCombustiblePitFeuRocheDepuisGrille();
 		}
 
 		if (ObtenirGrilleSac() is GridContainer grilleSac)
@@ -2763,14 +2860,18 @@ public partial class MenuAnatomie : Control
 		ResoudreGrilleAssemblage();
 		if (GrilleAssemblage == null || _joueurRef == null) return;
 		bool etabli = _joueurRef.CraftGrille3x3AuTable;
+		bool pitRoche = _joueurRef.StockageRackBatonsOuvert
+			&& _joueurRef.RackBatonsOuvert != null
+			&& GodotObject.IsInstanceValid(_joueurRef.RackBatonsOuvert)
+			&& _joueurRef.RackBatonsOuvert.ID_Objet == Joueur.IdObjetPitFeuRoche;
 		GrilleAssemblage.Columns = etabli ? 3 : 2;
 		for (int i = 0; i < GrilleAssemblage.GetChildCount(); i++)
 		{
 			if (GrilleAssemblage.GetChild(i) is Control c)
-				c.Visible = etabli || i < 4;
+				c.Visible = pitRoche ? i < 3 : (etabli || i < 4);
 		}
 		if (GrilleAssemblage.GetParent() is Panel cadre)
-			cadre.CustomMinimumSize = etabli ? new Vector2(240, 240) : new Vector2(168, 168);
+			cadre.CustomMinimumSize = pitRoche ? new Vector2(240, 96) : (etabli ? new Vector2(240, 240) : new Vector2(168, 168));
 	}
 
 	private void AppliquerBordureActive(Panel slot, bool estActif)
