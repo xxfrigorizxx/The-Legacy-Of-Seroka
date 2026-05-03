@@ -416,6 +416,9 @@ public partial class BoeufSauvage : CharacterBody3D
 	[Export] public bool ActiverProfilagePerfBovin = false;
 	[Export(PropertyHint.Range, "0.2,10,0.1")] public float IntervalleLogProfilageBovinSec = 2.0f;
 	[Export(PropertyHint.Range, "0.05,2,0.01")] public float CooldownReconfigurationAnimationTreeSec = 0.25f;
+	[ExportGroup("Diagnostic spawn")]
+	[Export] public bool ActiverDiagnosticSpawnBovin = false;
+	[Export(PropertyHint.Range, "1,120,1")] public int FramesDiagnosticSpawnBovin = 20;
 	private float _cooldownDrainProfilage;
 	private readonly Dictionary<string, StringName> _cacheStringNameAnimations = new(StringComparer.Ordinal);
 	private float _dernierBlendAnimation = float.NaN;
@@ -467,6 +470,9 @@ public partial class BoeufSauvage : CharacterBody3D
 	private static readonly Dictionary<int, string[]> _cacheBarresRatio = new Dictionary<int, string[]>();
 	private Cycle_Solaire _cycleSolaire;
 	private bool _abonneNouveauJour;
+	private int _framesDiagnosticSpawnRestantes;
+	private bool _diagnosticBlocageInitialisationDejaLogge;
+	private bool _diagnosticMortPersistanteDejaLogge;
 
 	public bool EstEnDetresse() => _etat == EtatBoeuf.Fuite || _faimCourante < SeuilRechercheHerbe * 0.65f;
 
@@ -542,6 +548,11 @@ public partial class BoeufSauvage : CharacterBody3D
 		_peutSuivre = false;
 		_peutAider = false;
 		_initialise = true;
+		_diagnosticBlocageInitialisationDejaLogge = false;
+		_diagnosticMortPersistanteDejaLogge = false;
+		_framesDiagnosticSpawnRestantes = ActiverDiagnosticSpawnBovin
+			? Mathf.Clamp(FramesDiagnosticSpawnBovin, 1, 120)
+			: 0;
 		MettreAJourStatsDerivees();
 		EvaluerDeblocages();
 		_faimCourante = _faimMaxActuelle;
@@ -718,6 +729,11 @@ public partial class BoeufSauvage : CharacterBody3D
 		_cadavreLootDistribue = lootDistribue;
 		_cadavreAttendDepecage = !lootDistribue && attendDepecage;
 		_coupsDepecageDagueValides = Mathf.Max(0, coupsDepecage);
+		if (ActiverDiagnosticSpawnBovin && !_diagnosticMortPersistanteDejaLogge)
+		{
+			_diagnosticMortPersistanteDejaLogge = true;
+			GD.Print($"ZERO-K Faune [DiagSpawn] {Name}: profil persistant charge en cadavre (attendDepecage={_cadavreAttendDepecage}, lootDistribue={_cadavreLootDistribue}, coups={_coupsDepecageDagueValides}).");
+		}
 	}
 
 	private void InitialiserGenesNavigationSiNecessaire()
@@ -1302,7 +1318,15 @@ public partial class BoeufSauvage : CharacterBody3D
 
 	public override void _PhysicsProcess(double delta)
 	{
-		if (!_initialise || _gestionnaire == null) return;
+		if (!_initialise || _gestionnaire == null)
+		{
+			if (ActiverDiagnosticSpawnBovin && !_diagnosticBlocageInitialisationDejaLogge)
+			{
+				_diagnosticBlocageInitialisationDejaLogge = true;
+				GD.Print($"ZERO-K Faune [DiagSpawn] {Name}: tick ignore car initialisation incomplete (initialise={_initialise}, gestionnaireNull={_gestionnaire == null}).");
+			}
+			return;
+		}
 		ulong debutFrameUs = ActiverProfilagePerfBovin ? PerfBudgetMonitor.Begin() : 0UL;
 		_cooldownDrainProfilage += (float)delta;
 		float dt = (float)delta;
@@ -1465,6 +1489,12 @@ public partial class BoeufSauvage : CharacterBody3D
 
 		Velocity = new Vector3(vHoriz.X, vy, vHoriz.Z);
 		MoveAndSlide();
+		if (ActiverDiagnosticSpawnBovin && _framesDiagnosticSpawnRestantes > 0)
+		{
+			_framesDiagnosticSpawnRestantes--;
+			Vector3 v = Velocity;
+			GD.Print($"ZERO-K Faune [DiagSpawn] {Name}: etat={_etat}, onFloor={IsOnFloor()}, vel=({v.X:F2},{v.Y:F2},{v.Z:F2}), pos=({GlobalPosition.X:F2},{GlobalPosition.Y:F2},{GlobalPosition.Z:F2}).");
+		}
 		if (!_dansEau
 			&& _cooldownEnjambementObstacle <= 0f
 			&& _verrouMouvementMorsure <= 0f

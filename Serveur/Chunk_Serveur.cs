@@ -10,6 +10,7 @@ public partial class Chunk_Serveur : RefCounted
 	public int TailleChunk { get; }
 	public int HauteurMax { get; }
 	public int ChunkOffsetX { get; }
+	public int ChunkOffsetY { get; }
 	public int ChunkOffsetZ { get; }
 	public Vector3 PositionMonde { get; }
 
@@ -17,6 +18,8 @@ public partial class Chunk_Serveur : RefCounted
 	private float[,,] _densitiesEau;
 	private byte[,,] _materials;
 	private readonly object _verrouVoxel = new object();
+	private readonly bool _generationAbysseActive;
+	private readonly string _dossierChunksSauvegarde;
 
 	private FastNoiseLite _noiseSurface;
 	private FastNoiseLite _noiseErosion;
@@ -31,13 +34,29 @@ public partial class Chunk_Serveur : RefCounted
 	private const float Isolevel = 0.0f;
 	private const int NiveauEau = 103;  // +1 m
 	private const int ProfondeurBase = 104;
-	private const int AmplitudeMontagne = 396;  // Max ~500 (très rare en haut)
+	private const int AmplitudeMontagne = 250;  // Montagnes adoucies (environ moitié de la hauteur précédente)
 	private const int NiveauPlage = 102;  // Sable jusqu'à 102, herbe à 103-104 (niveau eau inchangé)
 	private const int SeuilNeigeBase = 250;   // Neige 245-255 (bruit ±5)
 	private const int SeuilMontagneRoche = 207; // Roche 200-215 (bruit ±8)
+	private static readonly Vector3I[] DirPropagationEauInitiale = {
+		new Vector3I(1, 0, 0), new Vector3I(-1, 0, 0),
+		new Vector3I(0, 1, 0), new Vector3I(0, -1, 0),
+		new Vector3I(0, 0, 1), new Vector3I(0, 0, -1)
+	};
 	/// <summary>Limites altitude flore. Inclut la zone de spawn (herbe haute).</summary>
 	private const float NIVEAU_MIN_FLORE = 5f;
 	private const float NIVEAU_MAX_FLORE = 260f;
+	private const float AbyssRayonTrouNoir = 500f;
+	// Profil radial "atoll" calé visuellement sur la carte de référence:
+	// trou central large, plaine intérieure, muraille courte/violente,
+	// plaine extérieure, liseré sable, puis océan.
+	private const float AbyssRayonX = 900f;
+	private const float AbyssRayonY = 1100f;
+	private const float AbyssRayonZ = 1450f;
+	private const float AbyssRayonW = 1600f;
+	private const float AbyssFondAbsolu = ConstantesDimensionAbysse.FondAbsolu;
+	private const float AbyssAltitudeSanctuaire = 20f;
+	private const int AbyssNiveauEau = 19;
 
 	/// <summary>Registre flore: 0=gazon, puis couples buisson (impair=plein, pair=vide) pour variantes futures.</summary>
 	public Dictionary<Vector3I, byte> InventaireFlore { get; } = new Dictionary<Vector3I, byte>();
@@ -81,17 +100,21 @@ public partial class Chunk_Serveur : RefCounted
 	public void SetOnVoxelModifie(Action<Vector3I, byte> callback) => _onVoxelModifie = callback;
 	public void SetOnFlorePurgée(Action<Vector2I, Dictionary<Vector3I, byte>> callback) => _onFlorePurgée = callback;
 
-	public Chunk_Serveur(int chunkOffsetX, int chunkOffsetZ, int tailleChunk, int hauteurMax, int seed,
-		Action<Vector3, byte, bool, byte> callbackBlocChutant, Func<Vector2I, bool> chunkEstCharge, Action<Vector3> reveillerEau)
+	public Chunk_Serveur(int chunkOffsetX, int chunkOffsetY, int chunkOffsetZ, int tailleChunk, int hauteurMax, int seed,
+		Action<Vector3, byte, bool, byte> callbackBlocChutant, Func<Vector2I, bool> chunkEstCharge, Action<Vector3> reveillerEau,
+		bool generationAbysse = false, string dossierChunksSauvegarde = "")
 	{
 		ChunkOffsetX = chunkOffsetX;
+		ChunkOffsetY = chunkOffsetY;
 		ChunkOffsetZ = chunkOffsetZ;
 		TailleChunk = tailleChunk;
 		HauteurMax = hauteurMax;
-		PositionMonde = new Vector3(chunkOffsetX * tailleChunk, 0, chunkOffsetZ * tailleChunk);
+		PositionMonde = new Vector3(chunkOffsetX * tailleChunk, chunkOffsetY * hauteurMax, chunkOffsetZ * tailleChunk);
 		_callbackBlocChutant = callbackBlocChutant;
 		_chunkEstCharge = chunkEstCharge;
 		_reveillerEau = reveillerEau;
+		_generationAbysseActive = generationAbysse;
+		_dossierChunksSauvegarde = dossierChunksSauvegarde ?? "";
 
 		ConfigurerBruit(seed);
 	}
@@ -170,9 +193,16 @@ public partial class Chunk_Serveur : RefCounted
 		if (_chargeDepuisDisque) return; // GARDE ABSOLUE : chunk ressuscité du disque — aucune modification mathématique.
 		lock (_verrouVoxel)
 		{
+			if (_generationAbysseActive)
+				InventaireFlore.Clear();
 			_densities = new float[TailleChunk + 1, HauteurMax + 1, TailleChunk + 1];
 			_materials = new byte[TailleChunk + 1, HauteurMax + 1, TailleChunk + 1];
 			_densitiesEau = new float[TailleChunk + 1, HauteurMax + 1, TailleChunk + 1];
+			int[,] sommetSolide = new int[TailleChunk + 1, TailleChunk + 1];
+			bool activerGrottes = !_generationAbysseActive;
+			for (int x = 0; x <= TailleChunk; x++)
+				for (int z = 0; z <= TailleChunk; z++)
+					sommetSolide[x, z] = -1;
 
 			for (int x = 0; x <= TailleChunk; x++)
 			{
@@ -183,26 +213,32 @@ public partial class Chunk_Serveur : RefCounted
 						// Espace GLOBAL du monde — évite le tiling biomique (chaleur/humidité fracturée).
 						float xGlobal = ChunkOffsetX * TailleChunk + x;
 						float zGlobal = ChunkOffsetZ * TailleChunk + z;
-						float globalY = y;
+						float globalY = ChunkOffsetY * HauteurMax + y;
 
 						int hauteurSurface = CalculerHauteurTerrain((int)xGlobal, (int)zGlobal);
-						float temperature = _noiseTemperature.GetNoise2D(xGlobal, zGlobal);
-						float humidite = CalculerHumiditeGlobale(xGlobal, zGlobal);
+						float temperature = _generationAbysseActive ? 0f : _noiseTemperature.GetNoise2D(xGlobal, zGlobal);
+						float humidite = _generationAbysseActive ? 0f : CalculerHumiditeGlobale(xGlobal, zGlobal);
 
 						_densitiesEau[x, y, z] = -1.0f;
 
-						if (y <= 2)
+						bool socleZeroMonde = globalY >= 0f
+							&& globalY <= 2f
+							&& !EstDansTrouNoirAbysseMonde(xGlobal, zGlobal);
+						if (socleZeroMonde)
 						{
 							_densities[x, y, z] = 1000.0f;
 							_materials[x, y, z] = 2;
+							sommetSolide[x, z] = y;
 						}
 						else if (globalY == hauteurSurface)
 						{
 							byte mat = DeterminerMateriauCroûte((int)xGlobal, (int)zGlobal, (int)globalY, hauteurSurface, temperature, humidite);
 							_materials[x, y, z] = mat;
 							_densities[x, y, z] = 10.0f;
+							sommetSolide[x, z] = y;
 							// Gazon uniquement sur voxel herbe (ID 1), uniquement sur terrain plat
-							if (EstMateriauSupportGazon(mat)
+							if (!_generationAbysseActive
+								&& EstMateriauSupportGazon(mat)
 								&& TerrainAssezPlat((int)xGlobal, (int)zGlobal)
 								&& TerrainAvecMargeBord((int)xGlobal, (int)zGlobal))
 							{
@@ -217,8 +253,8 @@ public partial class Chunk_Serveur : RefCounted
 						}
 						else if (globalY < hauteurSurface && globalY >= hauteurSurface - 4)
 						{
-							float valeurGrotte = _noiseCavernes.GetNoise3D(xGlobal, globalY, zGlobal);
-							if (valeurGrotte > 0.75f)
+							float valeurGrotte = activerGrottes ? _noiseCavernes.GetNoise3D(xGlobal, globalY, zGlobal) : -1f;
+							if (activerGrottes && valeurGrotte > 0.75f)
 							{
 								_densities[x, y, z] = -10.0f;
 								_materials[x, y, z] = 0;
@@ -230,12 +266,13 @@ public partial class Chunk_Serveur : RefCounted
 								int seuilRocheLocal = SeuilMontagneRoche + (int)(_noiseNeige.GetNoise2D(xGlobal + 500f, zGlobal) * 8f);
 								int seuilNeigeLocal = SeuilNeigeBase + (int)(bruitN * 5f);
 								_materials[x, y, z] = (hauteurSurface >= seuilRocheLocal || hauteurSurface >= seuilNeigeLocal) ? (byte)2 : (humidite > 0.3f ? (byte)7 : (byte)6);
+								sommetSolide[x, z] = y;
 							}
 						}
 						else if (globalY < hauteurSurface - 4)
 						{
-							float valeurGrotte = _noiseCavernes.GetNoise3D(xGlobal, globalY, zGlobal);
-							if (valeurGrotte > 0.55f)
+							float valeurGrotte = activerGrottes ? _noiseCavernes.GetNoise3D(xGlobal, globalY, zGlobal) : -1f;
+							if (activerGrottes && valeurGrotte > 0.55f)
 							{
 								_densities[x, y, z] = -10.0f;
 								_materials[x, y, z] = 0;
@@ -244,13 +281,8 @@ public partial class Chunk_Serveur : RefCounted
 							{
 								_densities[x, y, z] = 10.0f;
 								_materials[x, y, z] = 2;
+								sommetSolide[x, z] = y;
 							}
-						}
-						else if (globalY > hauteurSurface && globalY <= NiveauEau)
-						{
-							_densities[x, y, z] = -10.0f;
-							_materials[x, y, z] = 0;
-							_densitiesEau[x, y, z] = (NiveauEau + 1.0f) - y;
 						}
 						else
 						{
@@ -260,6 +292,7 @@ public partial class Chunk_Serveur : RefCounted
 					}
 				}
 			}
+			InitialiserEauVolumetrique(sommetSolide);
 
 			// Pass L-System : injection des Chênes (voxels bois ID 30, feuilles ID 31)
 			InjecterArbresLSystem();
@@ -269,9 +302,78 @@ public partial class Chunk_Serveur : RefCounted
 		}
 	}
 
+	/// <summary>
+	/// Injection initiale d'eau volumétrique (une seule fois à la génération du chunk).
+	/// Un voxel devient eau uniquement s'il est connecté à une colonne ouverte au ciel sous le niveau d'eau.
+	/// </summary>
+	private void InitialiserEauVolumetrique(int[,] sommetSolide)
+	{
+		if (_densities == null || _densitiesEau == null || _materials == null) return;
+		int yMaxEau = Math.Min(ObtenirNiveauEauActif(), HauteurMax);
+		if (yMaxEau <= 2) return;
+
+		var file = new Queue<Vector3I>();
+		for (int x = 0; x <= TailleChunk; x++)
+		{
+			for (int z = 0; z <= TailleChunk; z++)
+			{
+				float xGlobal = ChunkOffsetX * TailleChunk + x;
+				float zGlobal = ChunkOffsetZ * TailleChunk + z;
+				// Le cœur abyssal doit rester un vide absolu, pas un puits rempli d'eau.
+				if (EstDansTrouNoirAbysseMonde(xGlobal, zGlobal))
+					continue;
+				int yDebut = Mathf.Clamp(sommetSolide[x, z] + 1, 3, yMaxEau);
+				for (int y = yDebut; y <= yMaxEau; y++)
+				{
+					if (!EstVoxelAirSansVerrou(x, y, z)) continue;
+					DefinirEauSansVerrou(x, y, z);
+					file.Enqueue(new Vector3I(x, y, z));
+				}
+			}
+		}
+
+		while (file.Count > 0)
+		{
+			Vector3I pos = file.Dequeue();
+			foreach (var d in DirPropagationEauInitiale)
+			{
+				int nx = pos.X + d.X;
+				int ny = pos.Y + d.Y;
+				int nz = pos.Z + d.Z;
+				if (nx < 0 || nx > TailleChunk || nz < 0 || nz > TailleChunk) continue;
+				if (ny <= 2 || ny > yMaxEau) continue;
+				if (!EstVoxelAirSansVerrou(nx, ny, nz)) continue;
+				DefinirEauSansVerrou(nx, ny, nz);
+				file.Enqueue(new Vector3I(nx, ny, nz));
+			}
+		}
+	}
+
+	private int ObtenirNiveauEauActif()
+	{
+		int niveauMonde = _generationAbysseActive ? AbyssNiveauEau : NiveauEau;
+		return niveauMonde - (ChunkOffsetY * HauteurMax);
+	}
+
+	private bool EstVoxelAirSansVerrou(int x, int y, int z)
+	{
+		bool sol = _densities[x, y, z] > Isolevel;
+		bool eau = _densitiesEau[x, y, z] > Isolevel;
+		return !sol && !eau;
+	}
+
+	private void DefinirEauSansVerrou(int x, int y, int z)
+	{
+		_densities[x, y, z] = -10.0f;
+		_materials[x, y, z] = 4;
+		_densitiesEau[x, y, z] = 1.0f;
+	}
+
 	/// <summary>Enregistre les positions d'arbres (ArbreVivant 3D) — sans injection voxel. Monde_Serveur les instancie.</summary>
 	private void InjecterArbresLSystem()
 	{
+		if (_generationAbysseActive)
+			return;
 		const float chanceArbre = 0.06f;
 		const int espacementMin = 4;
 		int xCentre = ChunkOffsetX * TailleChunk + TailleChunk / 2;
@@ -468,6 +570,8 @@ public partial class Chunk_Serveur : RefCounted
 
 	private void EssayerPromouvoirGazonEnBuisson(Vector3I posGlobale, float xGlobal, float zGlobal)
 	{
+		if (_generationAbysseActive)
+			return;
 		float chanceDePousse = CalculerChanceBuisson(xGlobal, zGlobal);
 		if (chanceDePousse <= 0f || DeterministicRand(xGlobal, zGlobal) >= chanceDePousse) return;
 		bool estJungle = EstZoneJungle(xGlobal, zGlobal);
@@ -482,6 +586,8 @@ public partial class Chunk_Serveur : RefCounted
 	/// <summary>Assure un minimum visuel : au moins un buisson s'il existe du gazon dans le chunk.</summary>
 	private void AssurerBuissonMinimalDansChunk()
 	{
+		if (_generationAbysseActive)
+			return;
 		if (InventaireFlore.Count == 0) return;
 		foreach (var kv in InventaireFlore)
 			if (EstTypeBuisson(kv.Value))
@@ -509,9 +615,12 @@ public partial class Chunk_Serveur : RefCounted
 
 	private int CalculerHauteurTerrain(int xGlobal, int zGlobal)
 	{
+		if (_generationAbysseActive)
+			return CalculerHauteurTerrainAbysse(xGlobal, zGlobal);
+
 		float bruitBrut = _noiseSurface.GetNoise2D(xGlobal, zGlobal);
 		float bruitNormalise = (bruitBrut + 1.0f) / 2.0f;
-		float relief = Mathf.Pow(bruitNormalise, 3.0f);  // Exposant 3 : plaine/collines/montagnes
+		float relief = Mathf.Pow(bruitNormalise, 2.3f);  // Relief plus progressif : moins de pics agressifs
 		float humiditeNorm = (CalculerHumiditeGlobale(xGlobal, zGlobal) + 1f) * 0.5f;
 
 		// Plaine : plaines basses 103-105 (biais fort vers 103) + plaine principale 105-118
@@ -532,8 +641,9 @@ public partial class Chunk_Serveur : RefCounted
 		// Tier 2 + Montagnes : plaine ~45%, tier2 ~30%, montagnes ~25%
 		float tTier2 = Mathf.Clamp((relief - 0.09f) / 0.33f, 0f, 1f);
 		float tMont = Mathf.Clamp((relief - 0.42f) / 0.58f, 0f, 1f);
-		float hTier2 = tTier2 * tTier2 * 82f;
-		float hMontagnes = tMont * tMont * 500f;  // Montagnes jusqu'à 700
+		float hTier2 = tTier2 * tTier2 * 42f;
+		float tMontLisse = tMont * tMont * (3f - 2f * tMont);
+		float hMontagnes = tMontLisse * tMontLisse * AmplitudeMontagne;
 
 		// Transition progressive base → tier2+montagnes (blend 0.05 → 0.20)
 		float poidsBase = 1f - Mathf.Clamp((relief - 0.05f) / 0.15f, 0f, 1f);
@@ -575,6 +685,132 @@ public partial class Chunk_Serveur : RefCounted
 		return hauteurBase - profondeurEau;
 	}
 
+	private int CalculerHauteurTerrainAbysse(int xGlobal, int zGlobal)
+	{
+		float dx = xGlobal;
+		float dz = zGlobal;
+		float distance = Mathf.Sqrt(dx * dx + dz * dz);
+		const float largeurTransition = 120f;
+		float angle = Mathf.Atan2(dz, dx);
+
+		// Décale radialement les frontières de zones pour casser l'anneau parfait
+		// et obtenir une muraille plus organique (bosses, creux, pointes irrégulières).
+		float modulationAngulaire =
+			Mathf.Sin(angle * 3.1f + 0.8f) * 62f +
+			Mathf.Sin(angle * 6.7f - 1.4f) * 34f;
+		float bruitMacroAnneau = _noiseSurface.GetNoise2D(xGlobal * 0.0018f + 2600f, zGlobal * 0.0018f + 2600f) * 92f;
+		float bruitWarpAnneau = _noiseErosion.GetNoise2D(xGlobal * 0.0034f - 3700f, zGlobal * 0.0034f - 3700f) * 48f;
+		float distanceProfil = distance + modulationAngulaire + bruitMacroAnneau + bruitWarpAnneau;
+
+		// 0..500 : trou noir vertical jusqu'au fond absolu.
+		if (distance <= AbyssRayonTrouNoir)
+			return (int)AbyssFondAbsolu;
+
+		float HauteurSanctuaire()
+		{
+			float tSanctuaire = Mathf.Clamp((distanceProfil - AbyssRayonTrouNoir) / Mathf.Max(1f, AbyssRayonX - AbyssRayonTrouNoir), 0f, 1f);
+			float baseSanctuaire = AbyssAltitudeSanctuaire + (tSanctuaire * 8f);
+			float bruitMacro = _noiseErosion.GetNoise2D(xGlobal * 0.0042f + 4200f, zGlobal * 0.0042f + 4200f) * 5.5f;
+			float bruitMicro = _noiseSurface.GetNoise2D(xGlobal * 0.013f + 8900f, zGlobal * 0.013f + 8900f) * 2.4f;
+			int hauteurSanctuaire = Mathf.RoundToInt(baseSanctuaire + bruitMacro + bruitMicro);
+			return Mathf.Max(20f, hauteurSanctuaire);
+		}
+
+		float HauteurMuraille()
+		{
+			float tMur = Mathf.Clamp((distanceProfil - AbyssRayonX) / Mathf.Max(1f, AbyssRayonY - AbyssRayonX), 0f, 1f);
+			float sCurve = tMur * tMur * (3f - 2f * tMur);
+			float baseMur = Mathf.Lerp(140f, 520f, sCurve);
+
+			float bruitMacro = _noiseSurface.GetNoise2D(xGlobal * 0.005f + 6100f, zGlobal * 0.005f + 6100f) * 115f;
+			float bruitMicro = _noiseErosion.GetNoise2D(xGlobal * 0.022f + 9100f, zGlobal * 0.022f + 9100f) * 48f;
+			float cretes = Mathf.Abs(_noiseCavernes.GetNoise2D(xGlobal * 0.034f + 13000f, zGlobal * 0.034f + 13000f)) * 210f;
+			float picsAigusBrut = (_noiseCavernes.GetNoise2D(xGlobal * 0.061f + 31000f, zGlobal * 0.061f + 31000f) + 1f) * 0.5f;
+			float picsAigus = Mathf.Pow(Mathf.Clamp(picsAigusBrut, 0f, 1f), 4.2f) * 190f;
+
+			float bruitFalaises = _noiseRivieres.GetNoise2D(xGlobal * 0.011f + 17000f, zGlobal * 0.011f + 17000f);
+			float masqueFalaises = Mathf.Clamp((bruitFalaises - 0.08f) * 2.35f, 0f, 1f);
+			float zoneFalaises = Mathf.Clamp(1f - (Mathf.Abs(tMur - 0.46f) / 0.42f), 0f, 1f);
+			zoneFalaises *= zoneFalaises;
+			float falaises = masqueFalaises * zoneFalaises * 260f;
+
+			// Entailles locales: crée des passages/creux dans la muraille au lieu d'une couronne parfaite.
+			float bruitEntaille = _noiseRivieres.GetNoise2D(xGlobal * 0.0065f + 21000f, zGlobal * 0.0065f + 21000f);
+			float masqueEntaille = Mathf.Clamp((0.14f - bruitEntaille) * 2.7f, 0f, 1f);
+			float entaille = masqueEntaille * (95f + (1f - sCurve) * 95f);
+
+			float attenuationSortie = Mathf.Clamp((tMur - 0.72f) / 0.28f, 0f, 1f);
+			float sortieRampe = Mathf.Lerp(0f, 240f, attenuationSortie * attenuationSortie);
+			float reductionSortie = sortieRampe * (0.45f + (1f - masqueFalaises) * 0.55f);
+
+			float hauteurMur = baseMur + bruitMacro + bruitMicro + cretes + picsAigus + falaises - reductionSortie - entaille;
+			return Mathf.Clamp(hauteurMur, 110f, 820f);
+		}
+
+		float HauteurPlaineExterieure()
+		{
+			float t = Mathf.Clamp((distanceProfil - AbyssRayonY) / Mathf.Max(1f, AbyssRayonZ - AbyssRayonY), 0f, 1f);
+			float basePlaine = Mathf.Lerp(145f, 34f, t);
+			float vallons = _noiseErosion.GetNoise2D(xGlobal * 0.0048f + 7000f, zGlobal * 0.0048f + 7000f) * 12f;
+			float reliefFin = _noiseSurface.GetNoise2D(xGlobal * 0.011f + 10100f, zGlobal * 0.011f + 10100f) * 6f;
+			return Mathf.Max(20f, basePlaine + vallons + reliefFin);
+		}
+
+		float HauteurFrontiereSable()
+		{
+			float t = Mathf.Clamp((distanceProfil - AbyssRayonZ) / Mathf.Max(1f, AbyssRayonW - AbyssRayonZ), 0f, 1f);
+			float baseFrontiere = Mathf.Lerp(28f, 0f, t);
+			float bruit = _noiseErosion.GetNoise2D(xGlobal * 0.009f + 11000f, zGlobal * 0.009f + 11000f) * 2.5f;
+			return baseFrontiere + bruit;
+		}
+
+		float HauteurOcean()
+		{
+			float t = (distanceProfil - AbyssRayonW) / 1100f;
+			float chute = Mathf.Clamp(t * t, 0f, 1f) * 180f;
+			float bruit = _noiseRivieres.GetNoise2D(xGlobal * 0.003f + 15000f, zGlobal * 0.003f + 15000f) * 4.2f;
+			return -8f - chute + bruit;
+		}
+
+		float Blend(float a, float b, float centre)
+		{
+			float debut = centre - largeurTransition;
+			float fin = centre + largeurTransition;
+			float t = Mathf.Clamp((distanceProfil - debut) / Mathf.Max(1f, fin - debut), 0f, 1f);
+			float s = t * t * (3f - 2f * t);
+			return Mathf.Lerp(a, b, s);
+		}
+
+		float h;
+		if (distanceProfil < AbyssRayonX - largeurTransition)
+			h = HauteurSanctuaire();
+		else if (distanceProfil < AbyssRayonX + largeurTransition)
+			h = Blend(HauteurSanctuaire(), HauteurMuraille(), AbyssRayonX);
+		else if (distanceProfil < AbyssRayonY - largeurTransition)
+			h = HauteurMuraille();
+		else if (distanceProfil < AbyssRayonY + largeurTransition)
+			h = Blend(HauteurMuraille(), HauteurPlaineExterieure(), AbyssRayonY);
+		else if (distanceProfil < AbyssRayonZ - largeurTransition)
+			h = HauteurPlaineExterieure();
+		else if (distanceProfil < AbyssRayonZ + largeurTransition)
+			h = Blend(HauteurPlaineExterieure(), HauteurFrontiereSable(), AbyssRayonZ);
+		else if (distanceProfil < AbyssRayonW - largeurTransition)
+			h = HauteurFrontiereSable();
+		else if (distanceProfil < AbyssRayonW + largeurTransition)
+			h = Blend(HauteurFrontiereSable(), HauteurOcean(), AbyssRayonW);
+		else
+			h = HauteurOcean();
+
+		return Mathf.RoundToInt(h);
+	}
+
+	private bool EstDansTrouNoirAbysseMonde(float xGlobal, float zGlobal)
+	{
+		if (!_generationAbysseActive) return false;
+		float distance = Mathf.Sqrt(xGlobal * xGlobal + zGlobal * zGlobal);
+		return distance <= AbyssRayonTrouNoir;
+	}
+
 	private static float DeterministicRand(float x, float z)
 	{
 		// Hash cross-platform: évite les conversions float->uint hors plage (comportement non défini).
@@ -592,6 +828,8 @@ public partial class Chunk_Serveur : RefCounted
 
 	private float CalculerHumiditeGlobale(float xGlobal, float zGlobal)
 	{
+		if (_generationAbysseActive)
+			return 0f;
 		float macro = _noiseHumidite.GetNoise2D(xGlobal, zGlobal);
 		float micro = _noiseHumiditeDetail != null ? _noiseHumiditeDetail.GetNoise2D(xGlobal, zGlobal) : 0f;
 		return Mathf.Clamp(macro * 0.85f + micro * 0.15f, -1f, 1f);
@@ -710,6 +948,17 @@ public partial class Chunk_Serveur : RefCounted
 
 	private byte DeterminerMateriauCroûte(int xGlobal, int zGlobal, int globalY, int hauteurSurface, float temperature, float humidite)
 	{
+		if (_generationAbysseActive)
+		{
+			float distance = Mathf.Sqrt(xGlobal * xGlobal + zGlobal * zGlobal);
+			if (distance <= AbyssRayonTrouNoir) return 2;      // Néant / roche sombre
+			if (distance <= AbyssRayonX) return 1;             // Plaine sanctuaire
+			if (distance <= AbyssRayonY) return 2;             // Muraille montagne
+			if (distance <= AbyssRayonZ) return 1;             // Plaine exterieure
+			if (distance <= AbyssRayonW) return 3;             // Frontiere sable
+			return 4;                                           // Ocean
+		}
+
 		float bruitNeige = _noiseNeige.GetNoise2D(xGlobal, zGlobal);
 		float bruitRoche = _noiseNeige.GetNoise2D(xGlobal + 500f, zGlobal);
 		float bruitDesert = _noiseHumiditeDetail.GetNoise2D(xGlobal * 1.9f + 17000f, zGlobal * 1.9f + 17000f);
@@ -790,10 +1039,11 @@ public partial class Chunk_Serveur : RefCounted
 	/// <summary>Sauvegarde binaire sur disque.</summary>
 	public void SauvegarderChunkSurDisque()
 	{
-		string nom = GameState.Instance?.NomMondeActuel ?? "MonMonde";
-		string dossierSave = ProjectSettings.GlobalizePath($"user://saves/{nom}/chunks/");
+		string dossierSave = string.IsNullOrWhiteSpace(_dossierChunksSauvegarde)
+			? ProjectSettings.GlobalizePath($"user://saves/{GameState.Instance?.NomMondeActuel ?? "MonMonde"}/chunks/")
+			: ProjectSettings.GlobalizePath(_dossierChunksSauvegarde.EndsWith("/") ? _dossierChunksSauvegarde : _dossierChunksSauvegarde + "/");
 		Directory.CreateDirectory(dossierSave);
-		string cheminFichier = Path.Combine(dossierSave, $"chunk_{ChunkOffsetX}_{ChunkOffsetZ}.bin");
+		string cheminFichier = Path.Combine(dossierSave, $"chunk_{ChunkOffsetX}_{ChunkOffsetY}_{ChunkOffsetZ}.bin");
 		byte[] donnees = ObtenirTableauBytes();
 		using (var writer = new BinaryWriter(File.Open(cheminFichier, FileMode.Create)))
 		{
@@ -837,6 +1087,11 @@ public partial class Chunk_Serveur : RefCounted
 	/// <summary>Flore fallback pour rétrocompatibilité si aucun fichier flore n’existe encore.</summary>
 	public void RegenererInventaireFloreDepuisSurface()
 	{
+		if (_generationAbysseActive)
+		{
+			InventaireFlore.Clear();
+			return;
+		}
 		InventaireFlore.Clear();
 		GenererInventaireFloreDepuisSurface();
 	}
@@ -844,6 +1099,8 @@ public partial class Chunk_Serveur : RefCounted
 	/// <summary>Migration douce: anciens chunks avec gazon seul -> injecte des buissons sans recréer toute la flore.</summary>
 	public void EnrichirBuissonsDepuisInventaireSiAbsents()
 	{
+		if (_generationAbysseActive)
+			return;
 		if (InventaireFlore.Count == 0) return;
 		foreach (var kv in InventaireFlore)
 			if (EstTypeBuisson(kv.Value))
@@ -863,6 +1120,8 @@ public partial class Chunk_Serveur : RefCounted
 	/// <summary>Scanne la surface chargée et remplit InventaireFlore (chunks du disque). Gazon partout sur ID 1.</summary>
 	private void GenererInventaireFloreDepuisSurface()
 	{
+		if (_generationAbysseActive)
+			return;
 		for (int x = 0; x < TailleChunk; x++)
 			for (int z = 0; z < TailleChunk; z++)
 			{
@@ -932,6 +1191,7 @@ public partial class Chunk_Serveur : RefCounted
 			var d = new DonneesChunk
 			{
 				CoordChunk = new Vector2I(ChunkOffsetX, ChunkOffsetZ),
+				CoordChunkY = ChunkOffsetY,
 				TailleChunk = TailleChunk,
 				HauteurMax = HauteurMax,
 				DensitiesQuantifiees = DonneesChunk.CompresserDensitesPourReseau(_densities, tx, ty, tz),

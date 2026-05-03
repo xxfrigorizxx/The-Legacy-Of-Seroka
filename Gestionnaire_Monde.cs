@@ -70,13 +70,43 @@ public partial class Gestionnaire_Monde : Node3D
 
 	private CharacterBody3D _joueur;
 	private Monde_Serveur _mondeServeur;
+	private Monde_Serveur _mondeServeurAlpha;
+	private Monde_Serveur _mondeServeurAbysse;
 	private Monde_Client _mondeClient;
 	private NetworkManager _networkManager;
+	private readonly Dictionary<int, Monde_Serveur> _serveurParDimension = new Dictionary<int, Monde_Serveur>();
+	private readonly Dictionary<long, int> _dimensionParPeer = new Dictionary<long, int>();
+	private readonly Dictionary<int, Dictionary<Vector3I, HashSet<long>>> _attenteChunksParDimension = new Dictionary<int, Dictionary<Vector3I, HashSet<long>>>();
+	private int _dimensionLocaleActive = (int)DimensionJeu.Alpha;
+	private const string FichierSessionJoueur = "player_session.dat";
+	private Node3D _racineDimensionAlpha;
+	private Node3D _racineDimensionAbysse;
+	private Node3D _arbresDimensionAlpha;
+	private Node3D _arbresDimensionAbysse;
 	private Label _labelCoords;
 	private CanvasLayer _repereCentreLayer;
 	/// <summary>Overlay "Chargement du monde..." affiché tant que la collision du chunk de spawn n'est pas prête.</summary>
 	private CanvasLayer _overlayChargement;
+	private Label _labelChargementPrincipal;
 	private double _secondesOverlayChargement;
+	private bool _chargementAbysseEnCours;
+	private double _secondesStabiliteAbyssePret;
+	private const double DureeStabiliteAbyssePretSec = 0.22;
+	private double _secondesVerrouAbysse;
+	private const double DureeMaxVerrouAbysseSec = 6.0;
+	private const double DureeTimeoutDurVerrouAbysseSec = 35.0;
+	private double _cooldownRearmementVerrouAbysse;
+	private const double CooldownRearmementVerrouAbysseSec = 10.0;
+	private bool _gateTpDimensionActif;
+	private double _secondesGateTpDimension;
+	private const double DureeMaxGateTpDimensionSec = 8.0;
+	private double _cooldownPulseReveilPierresTp;
+	private const double IntervallePulseReveilPierresTpSec = 0.30;
+	private bool _verrouMarcheAbysseActif;
+	private double _secondesVerrouMarcheAbysse;
+	private double _secondesStabiliteMarcheAbysse;
+	private const double DureeMaxVerrouMarcheAbysseSec = 2.5;
+	private const double DureeStabiliteSortieVerrouMarcheAbysseSec = 0.15;
 	private Vector3 _spawnInitialEnAttente;
 	private bool _spawnDoitEtreAligneAuSol;
 	private bool _spawnAligneAuSol;
@@ -92,6 +122,13 @@ public partial class Gestionnaire_Monde : Node3D
 	private const int RayonDormanceObjetsChunks = 5;
 	[Export] public int BudgetDormanceObjetsParCycle = 120;
 	[Export] public int RayonSecuriteTerrainObjetsChunks = 1;
+	[Export] public bool ActiverFiletSecuriteObjetsDynamiques = true;
+	[Export] public int BudgetFiletSecuriteObjetsParCycle = 72;
+	[Export] public float SeuilEnfouissementObjetsMetres = 1.2f;
+	[Export] public float MargeRemonteeObjetsMetres = 0.15f;
+	[Export] public bool ActiverDiagnosticCollisionAbysse = false;
+	private double _cooldownDiagnosticCollisionAbysse;
+	private const double IntervalleDiagnosticCollisionAbysseSec = 0.9;
 	private const float NiveauEauOcean = 103f;
 	private Area3D _oceanPhysique;
 	private Node3D _conteneurEffetsEau;
@@ -108,6 +145,17 @@ public partial class Gestionnaire_Monde : Node3D
 	private float _cooldownDrainProfilage = 0f;
 	private float _cooldownLogAutosaveDiag = 0f;
 	private readonly Dictionary<string, List<RigidBody3D>> _cacheRigidBodiesDormance = new Dictionary<string, List<RigidBody3D>>();
+
+	private readonly struct SessionJoueurSauvegardee
+	{
+		public readonly int DimensionId;
+		public readonly Vector3 Position;
+		public SessionJoueurSauvegardee(int dimensionId, Vector3 position)
+		{
+			DimensionId = dimensionId;
+			Position = position;
+		}
+	}
 	private float _cooldownRefreshCacheDormance;
 	private float _cooldownSurveillanceOrphans;
 	private int _dernierOrphanNodes = -1;
@@ -151,6 +199,44 @@ public partial class Gestionnaire_Monde : Node3D
 		localZ = worldCellZ - coordChunk.Y * tailleChunk;
 	}
 
+	private Monde_Serveur ObtenirServeurDimension(int dimensionId)
+	{
+		_serveurParDimension.TryGetValue(dimensionId, out Monde_Serveur serveur);
+		return serveur;
+	}
+
+	private int ObtenirDimensionPeer(long peerId)
+	{
+		if (_dimensionParPeer.TryGetValue(peerId, out int dimension))
+			return dimension;
+		return (int)DimensionJeu.Alpha;
+	}
+
+	private void DefinirDimensionPeer(long peerId, int dimensionId)
+	{
+		_dimensionParPeer[peerId] = dimensionId;
+	}
+
+	private void ReparenterNoeudDansDimension(Node3D noeud, int dimensionId)
+	{
+		CallDeferred(nameof(ReparenterNoeudDansDimensionDiffere), noeud, dimensionId);
+	}
+
+	private void ReparenterNoeudDansDimensionDiffere(Node3D noeud, int dimensionId)
+	{
+		if (noeud == null || !GodotObject.IsInstanceValid(noeud)) return;
+		Node3D cible = dimensionId == (int)DimensionJeu.Abysse ? _racineDimensionAbysse : _racineDimensionAlpha;
+		if (cible == null || !GodotObject.IsInstanceValid(cible)) return;
+		if (noeud.GetParent() == cible) return;
+		Vector3 posGlobale = noeud.GlobalPosition;
+		Node parent = noeud.GetParent();
+		if (parent != null)
+			parent.RemoveChild(noeud);
+		if (noeud.GetParent() != cible)
+			cible.AddChild(noeud);
+		noeud.GlobalPosition = posGlobale;
+	}
+
 	/// <summary>Vrai si le chunk sous les pieds du joueur a sa collision construite (évite chute libre au spawn).</summary>
 	public bool EstSpawnPret()
 	{
@@ -159,6 +245,8 @@ public partial class Gestionnaire_Monde : Node3D
 		if (UseArchitectureReseau)
 		{
 			if (_mondeClient == null) return false;
+			if (_dimensionLocaleActive == (int)DimensionJeu.Abysse)
+				return _mondeClient.AbyssePretPourDeplacement(pos);
 			Vector2I cReseau = WorldToChunkCoord(pos, TailleChunk);
 			return _mondeClient.ChunkCollisionActive(cReseau);
 		}
@@ -181,6 +269,59 @@ public partial class Gestionnaire_Monde : Node3D
 		if (ch == null) return false;
 		int sec = Mathf.FloorToInt(monde.Y / 16f);
 		return ch.SectionAPret(sec);
+	}
+
+	private string ObtenirCheminSessionJoueur()
+	{
+		return System.IO.Path.Combine(ProjectSettings.GlobalizePath($"user://saves/{GameState.Instance?.NomMondeActuel}"), FichierSessionJoueur);
+	}
+
+	private void SauvegarderSessionJoueur(int dimensionId, Vector3 position)
+	{
+		if (GameState.Instance == null || string.IsNullOrWhiteSpace(GameState.Instance.NomMondeActuel))
+			return;
+		try
+		{
+			string dossier = ProjectSettings.GlobalizePath($"user://saves/{GameState.Instance.NomMondeActuel}");
+			System.IO.Directory.CreateDirectory(dossier);
+			string chemin = ObtenirCheminSessionJoueur();
+			using var w = new System.IO.BinaryWriter(System.IO.File.Open(chemin, System.IO.FileMode.Create));
+			w.Write(1); // version
+			w.Write(dimensionId);
+			w.Write(position.X);
+			w.Write(position.Y);
+			w.Write(position.Z);
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"ZERO-K : Erreur sauvegarde session joueur ({dimensionId}) : {ex.Message}");
+		}
+	}
+
+	private SessionJoueurSauvegardee? ChargerSessionJoueur()
+	{
+		if (GameState.Instance == null || string.IsNullOrWhiteSpace(GameState.Instance.NomMondeActuel))
+			return null;
+		string chemin = ObtenirCheminSessionJoueur();
+		if (!System.IO.File.Exists(chemin))
+			return null;
+		try
+		{
+			using var r = new System.IO.BinaryReader(System.IO.File.Open(chemin, System.IO.FileMode.Open, System.IO.FileAccess.Read, System.IO.FileShare.Read));
+			int version = r.ReadInt32();
+			if (version != 1)
+				return null;
+			int dimensionId = r.ReadInt32();
+			float x = r.ReadSingle();
+			float y = r.ReadSingle();
+			float z = r.ReadSingle();
+			return new SessionJoueurSauvegardee(dimensionId, new Vector3(x, y, z));
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"ZERO-K : Erreur lecture session joueur : {ex.Message}");
+			return null;
+		}
 	}
 
 	/// <summary>Gèle le corps jusqu’à ce que le terrain soit streamé sous lui, puis dégel progressif dans <see cref="TraiterDepgelRigidBodiesRestaurationSol"/>.</summary>
@@ -242,6 +383,8 @@ public partial class Gestionnaire_Monde : Node3D
 	{
 		if (!UseArchitectureReseau) return true;
 		if (_mondeClient == null) return false;
+		if (_dimensionLocaleActive == (int)DimensionJeu.Abysse)
+			return _mondeClient.AbyssePretPourDeplacement(point);
 		Vector2I c = WorldToChunkCoord(point, TailleChunk);
 		if (!_mondeClient.ChunkCollisionActive(c)) return false;
 		if (!_mondeClient.ChunkCollisionActive(new Vector2I(c.X - 1, c.Y))) return false;
@@ -253,6 +396,44 @@ public partial class Gestionnaire_Monde : Node3D
 
 	/// <summary>Nouvelle partie : le joueur ne doit bouger en physique qu’après <see cref="FinaliserSpawnInitialAuSol"/> (sinon il tombe depuis Y=h+10 avant le raycast et peut traverser le sol).</summary>
 	public bool EstAlignementSpawnTermine() => !_spawnDoitEtreAligneAuSol || _spawnAligneAuSol;
+
+	/// <summary>Vrai si le verrou anti-chute Abysse force actuellement l'arrêt du mouvement joueur.</summary>
+	public bool EstVerrouSecuriteAbysseActif() => _gateTpDimensionActif;
+
+	public bool EstDimensionLocaleAbysse() => _dimensionLocaleActive == (int)DimensionJeu.Abysse;
+
+	/// <summary>Vrai si la zone locale du joueur est prête pour un déplacement physique sûr.</summary>
+	public bool EstDeplacementLocalPret()
+	{
+		if (!UseArchitectureReseau || _mondeClient == null || _joueur == null)
+			return true;
+		if (_dimensionLocaleActive == (int)DimensionJeu.Abysse)
+			return _mondeClient.AbysseCollisionLocaleActive(_joueur.GlobalPosition);
+		Vector2I c = WorldToChunkCoord(_joueur.GlobalPosition, TailleChunk);
+		return _mondeClient.ChunkCollisionActive(c);
+	}
+
+	private void JournaliserDiagnosticCollisionAbysse()
+	{
+		if (!ActiverDiagnosticCollisionAbysse || _dimensionLocaleActive != (int)DimensionJeu.Abysse || _joueur == null || _mondeClient == null)
+			return;
+		bool spawnPret = EstSpawnPret();
+		bool deplacementPret = EstDeplacementLocalPret();
+		bool collisionLocale = _mondeClient.AbysseCollisionLocaleActive(_joueur.GlobalPosition);
+		bool gateTp = _gateTpDimensionActif;
+		Vector2I chunk = WorldToChunkCoord(_joueur.GlobalPosition, TailleChunk);
+		GD.Print($"ZERO-K ABYSSE DIAG MONDE: chunk={chunk} spawnPret={spawnPret} deplacementPret={deplacementPret} collisionLocale={collisionLocale} gateTp={gateTp} overlay={(_overlayChargement?.Visible ?? false)}");
+	}
+
+	private bool CollisionLocalePretePourTpDimension()
+	{
+		if (!UseArchitectureReseau || _mondeClient == null || _joueur == null)
+			return true;
+		if (_dimensionLocaleActive == (int)DimensionJeu.Abysse)
+			return _mondeClient.AbysseCollisionLocaleActive(_joueur.GlobalPosition);
+		Vector2I c = WorldToChunkCoord(_joueur.GlobalPosition, TailleChunk);
+		return _mondeClient.ChunkCollisionActive(c);
+	}
 
 	/// <summary>Utilisé par Generateur_Voxel (legacy) et Monde_Serveur.</summary>
 	public bool ChunkEstCharge(Vector2I coord)
@@ -272,9 +453,7 @@ public partial class Gestionnaire_Monde : Node3D
 	private HashSet<Vector3I> _eauActive = new HashSet<Vector3I>();
 	private readonly Dictionary<Vector3I, (Vector3I retourInterdit, int tickExpiration)> _antiRetourEauLegacy = new Dictionary<Vector3I, (Vector3I, int)>();
 	private int _tickEauLegacy;
-	private float _tempsEcoulement;
-	private const float TICK_EAU = 0.05f;
-	private const int MaxEauParTick = 32;
+	private const int MaxEauParTick = 24;
 	private const int DureeBlocageRetourEauLegacyTicks = 5;
 	private static readonly Vector3I[] DirReveilEau = { new Vector3I(0, 1, 0), new Vector3I(0, -1, 0), new Vector3I(1, 0, 0), new Vector3I(-1, 0, 0), new Vector3I(0, 0, 1), new Vector3I(0, 0, -1) };
 	private static readonly Vector3I[] DirEauHorizLegacy = { new Vector3I(1, 0, 0), new Vector3I(-1, 0, 0), new Vector3I(0, 0, -1), new Vector3I(0, 0, 1) };
@@ -618,10 +797,22 @@ public partial class Gestionnaire_Monde : Node3D
 
 		// Position : chargée si monde existant, sinon spawn par défaut (terrain généré → joueur déposé)
 		Vector3 posSpawn = _joueur.GlobalPosition;
+		int dimensionReconnexion = (int)DimensionJeu.Alpha;
+		var sessionSauvegardee = ChargerSessionJoueur();
+		if (sessionSauvegardee.HasValue)
+		{
+			dimensionReconnexion = sessionSauvegardee.Value.DimensionId;
+			posSpawn = sessionSauvegardee.Value.Position;
+			GD.Print($"ZERO-K : Session joueur restaurée dimension={dimensionReconnexion} pos={posSpawn}");
+		}
 		var posSauvegardee = GameState.Instance?.ObtenirPositionJoueurSauvegardee();
-		_spawnDoitEtreAligneAuSol = !posSauvegardee.HasValue || ForcerAlignementSolAuChargement;
+		_spawnDoitEtreAligneAuSol = (!posSauvegardee.HasValue && !sessionSauvegardee.HasValue) || ForcerAlignementSolAuChargement;
 		_spawnAligneAuSol = !_spawnDoitEtreAligneAuSol;
-		if (posSauvegardee.HasValue)
+		if (sessionSauvegardee.HasValue)
+		{
+			GD.Print($"ZERO-K : Reconnexion joueur à {posSpawn} (dimension {dimensionReconnexion})");
+		}
+		else if (posSauvegardee.HasValue)
 		{
 			posSpawn = posSauvegardee.Value;
 			GD.Print($"ZERO-K : Joueur reconnecté à {posSpawn}");
@@ -641,6 +832,12 @@ public partial class Gestionnaire_Monde : Node3D
 		if (UseArchitectureReseau)
 		{
 			DemarrerArchitectureReseau();
+			if (sessionSauvegardee.HasValue
+				&& dimensionReconnexion == (int)DimensionJeu.Abysse
+				&& _serveurParDimension.ContainsKey(dimensionReconnexion))
+			{
+				AppliquerChangementDimensionLocale(dimensionReconnexion, posSpawn, "Reconnexion en Abysse.");
+			}
 		}
 		else
 		{
@@ -663,6 +860,7 @@ public partial class Gestionnaire_Monde : Node3D
 		panelChargement.AddThemeStyleboxOverride("panel", styleChargement);
 		var lblChargement = new Label { Text = "Chargement du monde...", HorizontalAlignment = HorizontalAlignment.Center };
 		lblChargement.AddThemeFontSizeOverride("font_size", 22);
+		_labelChargementPrincipal = lblChargement;
 		panelChargement.AddChild(lblChargement);
 		_overlayChargement.AddChild(panelChargement);
 		AddChild(_overlayChargement);
@@ -822,24 +1020,29 @@ public partial class Gestionnaire_Monde : Node3D
 		MargeChunksToujoursVisibles = o.MargeChunksToujoursVisibles;
 		MaxChunksParFrame = o.MaxChunksParFrame;
 
-		if (_mondeServeur != null)
+		if (_serveurParDimension.Count > 0)
 		{
-			_mondeServeur.RenderDistance = RenderDistance;
 			bool modeProtectionFps = o.ModeSurvieFpsAgressif;
-			if (modeProtectionFps)
+			foreach (var kv in _serveurParDimension)
 			{
-				_mondeServeur.MultiplicateurCharge = Mathf.Clamp(Mathf.RoundToInt(RenderDistance / 18f), 1, 3);
-				_mondeServeur.MaxDemandesChunksParTick = Mathf.Clamp(Mathf.RoundToInt(RenderDistance / 12f), 2, 10);
-				_mondeServeur.MaxIntegrationsWorkersParTick = Mathf.Clamp(Mathf.RoundToInt(RenderDistance / 18f), 2, 6);
-				_mondeServeur.MaxChunksEnvoiParTick = Mathf.Clamp(Mathf.RoundToInt(RenderDistance / 8f), 8, 20);
-			}
-			else
-			{
-				// Priorité joueur : laisse les grosses distances pousser réellement le streaming.
-				_mondeServeur.MultiplicateurCharge = Mathf.Clamp(Mathf.RoundToInt(RenderDistance / 10f), 2, 8);
-				_mondeServeur.MaxDemandesChunksParTick = Mathf.Clamp(Mathf.RoundToInt(RenderDistance / 2.5f), 8, 48);
-				_mondeServeur.MaxIntegrationsWorkersParTick = Mathf.Clamp(Mathf.RoundToInt(RenderDistance / 6f), 4, 16);
-				_mondeServeur.MaxChunksEnvoiParTick = Mathf.Clamp(Mathf.RoundToInt(RenderDistance / 1.5f), 12, 80);
+				Monde_Serveur serveur = kv.Value;
+				if (serveur == null) continue;
+				serveur.RenderDistance = RenderDistance;
+				if (modeProtectionFps)
+				{
+					serveur.MultiplicateurCharge = Mathf.Clamp(Mathf.RoundToInt(RenderDistance / 18f), 1, 3);
+					serveur.MaxDemandesChunksParTick = Mathf.Clamp(Mathf.RoundToInt(RenderDistance / 12f), 2, 10);
+					serveur.MaxIntegrationsWorkersParTick = Mathf.Clamp(Mathf.RoundToInt(RenderDistance / 18f), 2, 6);
+					serveur.MaxChunksEnvoiParTick = Mathf.Clamp(Mathf.RoundToInt(RenderDistance / 8f), 8, 20);
+				}
+				else
+				{
+					// Priorité joueur : laisse les grosses distances pousser réellement le streaming.
+					serveur.MultiplicateurCharge = Mathf.Clamp(Mathf.RoundToInt(RenderDistance / 10f), 2, 8);
+					serveur.MaxDemandesChunksParTick = Mathf.Clamp(Mathf.RoundToInt(RenderDistance / 2.5f), 8, 48);
+					serveur.MaxIntegrationsWorkersParTick = Mathf.Clamp(Mathf.RoundToInt(RenderDistance / 6f), 4, 16);
+					serveur.MaxChunksEnvoiParTick = Mathf.Clamp(Mathf.RoundToInt(RenderDistance / 1.5f), 12, 80);
+				}
 			}
 		}
 
@@ -1068,7 +1271,8 @@ public partial class Gestionnaire_Monde : Node3D
 		// Ici uniquement les chunks voxel + données serveur associées.
 		if (UseArchitectureReseau)
 		{
-			_mondeServeur?.SauvegarderCritiqueAvantSortie("Gestionnaire_Monde._ExitTree");
+			foreach (var kv in _serveurParDimension)
+				kv.Value?.SauvegarderCritiqueAvantSortie("Gestionnaire_Monde._ExitTree");
 		}
 		else
 		{
@@ -1142,12 +1346,21 @@ public partial class Gestionnaire_Monde : Node3D
 	public void SauvegarderManuelDepuisMenu(string contexte = "menu")
 	{
 		if (_joueur != null)
+		{
 			GameState.Instance?.SauvegarderPositionJoueur(_joueur.GlobalPosition);
+			SauvegarderSessionJoueur(_dimensionLocaleActive, _joueur.GlobalPosition);
+		}
 		if (_joueur is Joueur j)
-			j.SauvegarderEtatPersistantMonde(GetTree());
+		{
+			if (_restaurationPersistantObjetsSolFaite)
+				j.SauvegarderEtatPersistantMonde(GetTree());
+			else
+				j.SauvegarderEtatPersistantJoueurSeulement();
+		}
 		if (UseArchitectureReseau)
 		{
-			_mondeServeur?.SauvegarderCritiqueAvantSortie($"Gestionnaire_Monde.SauvegarderManuelDepuisMenu:{contexte}");
+			foreach (var kv in _serveurParDimension)
+				kv.Value?.SauvegarderCritiqueAvantSortie($"Gestionnaire_Monde.SauvegarderManuelDepuisMenu:{contexte}");
 		}
 		else
 		{
@@ -1571,16 +1784,49 @@ public partial class Gestionnaire_Monde : Node3D
 		_networkManager = new NetworkManager();
 		AddChild(_networkManager);
 		_networkManager.DemarrerHostSolo();
+		_networkManager.CommandeAdminDemandee += SurCommandeAdminDemandee;
+		_networkManager.InjectionItemCreatifDemandee += SurInjectionItemCreatifDemandee;
+		_networkManager.DemandeChunkDimensionDemandee += SurDemandeChunkDimensionDemandee;
 
-		_mondeServeur = new Monde_Serveur();
-		_mondeServeur.TailleChunk = TailleChunk;
-		_mondeServeur.HauteurMax = HauteurMax;
-		_mondeServeur.SeedTerrain = GetNode<GameState>("/root/GameState").SeedTerrainActuel;
-		_mondeServeur.RenderDistance = RenderDistance;
-		_mondeServeur.FuseauHoraireHeures = FuseauHoraireHeures;
-		_mondeServeur.ModeEssencesPartoutTemporaire = ModeEssencesPartoutTemporaire;
-		_mondeServeur.RatioJungleModeTest = RatioJungleModeTest;
-		_mondeServeur.MaterielTerrain = MaterielTerrain ?? GD.Load<Material>("res://Manteau_Planetaire.tres");
+		_serveurParDimension.Clear();
+		_attenteChunksParDimension.Clear();
+		_dimensionParPeer.Clear();
+		_racineDimensionAlpha = new Node3D { Name = "Dimension_Alpha" };
+		_racineDimensionAbysse = new Node3D { Name = "Dimension_Abysse" };
+		AddChild(_racineDimensionAlpha);
+		AddChild(_racineDimensionAbysse);
+
+		_mondeServeurAlpha = new Monde_Serveur();
+		_mondeServeurAlpha.NomDimension = "Dimension_Alpha";
+		_mondeServeurAlpha.ActiverGenerationAbysse = false;
+		_mondeServeurAlpha.TailleChunk = TailleChunk;
+		_mondeServeurAlpha.HauteurMax = HauteurMax;
+		_mondeServeurAlpha.SeedTerrain = GetNode<GameState>("/root/GameState").SeedTerrainActuel;
+		_mondeServeurAlpha.RenderDistance = RenderDistance;
+		_mondeServeurAlpha.FuseauHoraireHeures = FuseauHoraireHeures;
+		_mondeServeurAlpha.ModeEssencesPartoutTemporaire = ModeEssencesPartoutTemporaire;
+		_mondeServeurAlpha.RatioJungleModeTest = RatioJungleModeTest;
+		_mondeServeurAlpha.MaterielTerrain = MaterielTerrain ?? GD.Load<Material>("res://Manteau_Planetaire.tres");
+
+		_mondeServeurAbysse = new Gestionnaire_Abysse();
+		_mondeServeurAbysse.NomDimension = "Dimension_Abysse";
+		_mondeServeurAbysse.ActiverGenerationAbysse = true;
+		_mondeServeurAbysse.TailleChunk = TailleChunk;
+		_mondeServeurAbysse.HauteurMax = HauteurMax;
+		_mondeServeurAbysse.SeedTerrain = GetNode<GameState>("/root/GameState").SeedTerrainActuel + 9137;
+		_mondeServeurAbysse.RenderDistance = RenderDistance;
+		_mondeServeurAbysse.FuseauHoraireHeures = FuseauHoraireHeures + 6.0;
+		_mondeServeurAbysse.ModeEssencesPartoutTemporaire = ModeEssencesPartoutTemporaire;
+		_mondeServeurAbysse.RatioJungleModeTest = RatioJungleModeTest;
+		_mondeServeurAbysse.MaterielTerrain = MaterielTerrain ?? GD.Load<Material>("res://Manteau_Planetaire.tres");
+
+		_serveurParDimension[(int)DimensionJeu.Alpha] = _mondeServeurAlpha;
+		_serveurParDimension[(int)DimensionJeu.Abysse] = _mondeServeurAbysse;
+		_attenteChunksParDimension[(int)DimensionJeu.Alpha] = new Dictionary<Vector3I, HashSet<long>>();
+		_attenteChunksParDimension[(int)DimensionJeu.Abysse] = new Dictionary<Vector3I, HashSet<long>>();
+		_mondeServeur = _mondeServeurAlpha;
+		_dimensionLocaleActive = (int)DimensionJeu.Alpha;
+		DefinirDimensionPeer(Multiplayer.GetUniqueId(), _dimensionLocaleActive);
 
 		_mondeClient = new Monde_Client();
 		_mondeClient.TailleChunk = TailleChunk;
@@ -1602,37 +1848,24 @@ public partial class Gestionnaire_Monde : Node3D
 		_mondeClient.Initialiser(
 			_joueur,
 			GetNode<GameState>("/root/GameState").SeedTerrainActuel,
-			coord => _mondeServeur.EnregistrerDemandeChunk(coord),
+			coord =>
+			{
+				int coordY = Mathf.FloorToInt((_joueur?.GlobalPosition.Y ?? 0f) / Mathf.Max(1f, _mondeServeur?.HauteurMax ?? 1));
+				_mondeServeur?.EnregistrerDemandeChunk(coord, coordY, _joueur?.GlobalPosition ?? Vector3.Zero);
+			},
 			(pointImpact, rayon, forceDegats) => _mondeServeur.AppliquerDestructionGlobale(pointImpact, rayon, forceDegats),
 			(pointImpact, normale, rayon, idMatiere) => _mondeServeur.AppliquerCreationGlobale(pointImpact, normale, rayon, idMatiere)
 		);
+		_mondeClient.ConfigurerReseauChunks(_networkManager, _dimensionLocaleActive);
 		AppliquerOptionsGraphiques(CapturerOptionsGraphiquesCourantes(_optionsGraphiquesActuelles?.Preset ?? PresetGraphique.Personnalise), sauvegarder: false, synchroniserUi: false);
 
-		var nodeArbres = new Node3D { Name = "Arbres" };
-		AddChild(nodeArbres);
-
-		_mondeServeur.Initialiser(
-			this,
-			nodeArbres,
-			(coord, sections) => _mondeClient.RecevoirChunkModifie(coord, sections),
-			(coord, donnees) => _mondeClient.RecevoirDonneesChunk(coord, donnees),
-			(coord, inventaireFlore) => _mondeClient.RecevoirFloreModifie(coord, inventaireFlore),
-			(pos, id) =>
-			{
-				_mondeServeur.RepliquerPaddingVoisins(pos, id);
-				_mondeClient.AppliquerVoxel(pos, id);
-				if (Multiplayer.IsServer())
-					_mondeClient.Rpc(nameof(Monde_Client.AppliquerVoxelRPC), pos.X, pos.Y, pos.Z, (int)id);
-			},
-			(coord) =>
-			{
-				if (Multiplayer.IsServer())
-					_mondeClient.Rpc("OrdonnerDestructionChunkRPC", coord.X, coord.Y);
-			},
-			() => _joueur?.GlobalPosition ?? Vector3.Zero
-		);
-		AddChild(_mondeServeur);
+		InitialiserDimensionServeur(_mondeServeurAlpha, (int)DimensionJeu.Alpha);
+		InitialiserDimensionServeur(_mondeServeurAbysse, (int)DimensionJeu.Abysse);
+		MettreAJourVisibiliteArbresParDimension(_dimensionLocaleActive);
+		_racineDimensionAlpha?.AddChild(_mondeServeurAlpha);
+		_racineDimensionAbysse?.AddChild(_mondeServeurAbysse);
 		AddChild(_mondeClient);
+		ReparenterNoeudDansDimension(_joueur, (int)DimensionJeu.Alpha);
 
 		// Croissance des arbres + jour absolu au passage minuit
 		var cycleSolaire = GetParent()?.GetNodeOrNull<Cycle_Solaire>("CycleSolaire");
@@ -1642,7 +1875,8 @@ public partial class Gestionnaire_Monde : Node3D
 			cycleSolaire.Connect("NouveauJour", Callable.From(() =>
 			{
 				GameState.Instance?.IncrementerJourAbsolu();
-				_mondeServeur.FairePousserArbresDuJour();
+				foreach (var kv in _serveurParDimension)
+					kv.Value?.FairePousserArbresDuJour();
 			}));
 		}
 
@@ -1657,6 +1891,342 @@ public partial class Gestionnaire_Monde : Node3D
 		// Envoyer le fuseau horaire de la dimension au client (spawn / portail)
 		EnvoyerFuseauHoraireAuPeer(1); // Peer 1 = hôte local en Solo
 		Multiplayer.PeerConnected += EnvoyerFuseauHoraireAuPeer;
+		Multiplayer.PeerConnected += SurPeerConnecteDimensions;
+		Multiplayer.PeerDisconnected += SurPeerDeconnecteDimensions;
+	}
+
+	private void InitialiserDimensionServeur(Monde_Serveur serveur, int dimensionId)
+	{
+		if (serveur == null) return;
+		var nodeArbres = new Node3D { Name = $"Arbres_{dimensionId}" };
+		AddChild(nodeArbres);
+		if (dimensionId == (int)DimensionJeu.Abysse)
+			_arbresDimensionAbysse = nodeArbres;
+		else
+			_arbresDimensionAlpha = nodeArbres;
+		serveur.Initialiser(
+			this,
+			nodeArbres,
+			(coord, sections) =>
+			{
+				if (_dimensionLocaleActive == dimensionId)
+					_mondeClient.RecevoirChunkModifie(coord, sections);
+			},
+			(coord, donnees) => DistribuerChunkDimensionAuxPeers(dimensionId, coord, donnees),
+			(coord, inventaireFlore) =>
+			{
+				if (_dimensionLocaleActive == dimensionId)
+					_mondeClient.RecevoirFloreModifie(coord, inventaireFlore);
+			},
+			(pos, id) =>
+			{
+				serveur.RepliquerPaddingVoisins(pos, id);
+				if (_dimensionLocaleActive == dimensionId)
+					_mondeClient.AppliquerVoxel(pos, id);
+				if (Multiplayer.IsServer())
+					DiffuserVoxelDimension(dimensionId, pos, id);
+			},
+			(coord) =>
+			{
+				if (Multiplayer.IsServer())
+					DiffuserDestructionChunkDimension(dimensionId, coord);
+			},
+			() => _joueur?.GlobalPosition ?? Vector3.Zero,
+			() => _dimensionLocaleActive,
+			dimensionId
+		);
+	}
+
+	private void MettreAJourVisibiliteArbresParDimension(int dimensionIdActif)
+	{
+		if (_arbresDimensionAlpha != null)
+			_arbresDimensionAlpha.Visible = dimensionIdActif == (int)DimensionJeu.Alpha;
+		if (_arbresDimensionAbysse != null)
+			_arbresDimensionAbysse.Visible = dimensionIdActif == (int)DimensionJeu.Abysse;
+	}
+
+	private void SurPeerConnecteDimensions(long peerId)
+	{
+		DefinirDimensionPeer(peerId, (int)DimensionJeu.Alpha);
+	}
+
+	private void SurPeerDeconnecteDimensions(long peerId)
+	{
+		_dimensionParPeer.Remove(peerId);
+		foreach (var kv in _attenteChunksParDimension)
+		{
+			foreach (var entree in kv.Value)
+				entree.Value.Remove(peerId);
+		}
+	}
+
+	private void SurDemandeChunkDimensionDemandee(int coordX, int coordY, int coordZ, int dimensionId, float obsX, float obsY, float obsZ, long peerId)
+	{
+		if (!UseArchitectureReseau || !Multiplayer.IsServer()) return;
+		Monde_Serveur serveur = ObtenirServeurDimension(dimensionId);
+		if (serveur == null) return;
+		DefinirDimensionPeer(peerId, dimensionId);
+		Vector2I coord = new Vector2I(coordX, coordZ);
+		Vector3I coord3D = new Vector3I(coordX, coordY, coordZ);
+		if (!_attenteChunksParDimension.TryGetValue(dimensionId, out var attentes))
+		{
+			attentes = new Dictionary<Vector3I, HashSet<long>>();
+			_attenteChunksParDimension[dimensionId] = attentes;
+		}
+		if (!attentes.TryGetValue(coord3D, out var peers))
+		{
+			peers = new HashSet<long>();
+			attentes[coord3D] = peers;
+		}
+		peers.Add(peerId);
+		serveur.EnregistrerDemandeChunk(coord, coordY, new Vector3(obsX, obsY, obsZ));
+	}
+
+	private void DistribuerChunkDimensionAuxPeers(int dimensionId, Vector2I coord, DonneesChunk donnees)
+	{
+		if (!_attenteChunksParDimension.TryGetValue(dimensionId, out var attentes)) return;
+		Vector3I cleExacte = new Vector3I(coord.X, donnees?.CoordChunkY ?? 0, coord.Y);
+		HashSet<long> peers = null;
+		if (!attentes.TryGetValue(cleExacte, out peers))
+			return;
+		if (peers == null || peers.Count == 0) return;
+		var destinataires = new List<long>(peers);
+		attentes.Remove(cleExacte);
+		foreach (long peerId in destinataires)
+		{
+			if (ObtenirDimensionPeer(peerId) != dimensionId)
+				continue;
+			if (peerId == Multiplayer.GetUniqueId())
+			{
+				if (_dimensionLocaleActive == dimensionId)
+					_mondeClient?.RecevoirDonneesChunk(coord, donnees);
+				continue;
+			}
+			RpcId((int)peerId, nameof(RecevoirChunkDimensionRPC), dimensionId,
+				coord.X, donnees?.CoordChunkY ?? 0, coord.Y, donnees.TailleChunk, donnees.HauteurMax,
+				donnees.DensitiesQuantifiees ?? Array.Empty<byte>(),
+				donnees.MaterialsFlat ?? Array.Empty<byte>(),
+				donnees.DensitiesEauQuantifiees ?? Array.Empty<byte>());
+		}
+	}
+
+	[Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = false)]
+	private void RecevoirChunkDimensionRPC(int dimensionId, int coordX, int coordY, int coordZ, int tailleChunk, int hauteurMax, byte[] densitiesPlates, byte[] materialsFlat, byte[] densitiesEauPlates)
+	{
+		if (_dimensionLocaleActive != dimensionId || _mondeClient == null) return;
+		_mondeClient.RecevoirChunkDuServeurRPC(coordX, coordY, coordZ, tailleChunk, hauteurMax, densitiesPlates, materialsFlat, densitiesEauPlates);
+	}
+
+	private void DiffuserVoxelDimension(int dimensionId, Vector3I pos, byte id)
+	{
+		foreach (var kv in _dimensionParPeer)
+		{
+			long peerId = kv.Key;
+			if (kv.Value != dimensionId) continue;
+			if (peerId == Multiplayer.GetUniqueId())
+				continue;
+			_mondeClient?.RpcId((int)peerId, nameof(Monde_Client.AppliquerVoxelRPC), pos.X, pos.Y, pos.Z, (int)id);
+		}
+	}
+
+	private void DiffuserDestructionChunkDimension(int dimensionId, Vector2I coord)
+	{
+		foreach (var kv in _dimensionParPeer)
+		{
+			long peerId = kv.Key;
+			if (kv.Value != dimensionId) continue;
+			if (peerId == Multiplayer.GetUniqueId())
+			{
+				if (_dimensionLocaleActive == dimensionId)
+					_mondeClient?.OrdonnerDestructionChunkRPC(coord.X, coord.Y);
+				continue;
+			}
+			_mondeClient?.RpcId((int)peerId, nameof(Monde_Client.OrdonnerDestructionChunkRPC), coord.X, coord.Y);
+		}
+	}
+
+	private Vector3 ObtenirPointTeleportDimension(int dimensionId)
+	{
+		if (dimensionId == (int)DimensionJeu.Abysse)
+		{
+			// Rebord de l'ile abyssale (frontière sable proche ocean).
+			return new Vector3(1520f, 190f, 0f);
+		}
+		return new Vector3(0f, 170f, 0f);
+	}
+
+	public bool EnvoyerCommandeAdminChat(string commande)
+	{
+		if (!UseArchitectureReseau || _networkManager == null) return false;
+		string cmd = (commande ?? "").Trim();
+		if (string.IsNullOrEmpty(cmd)) return false;
+		_networkManager.EnvoyerCommandeAdminAuServeur(cmd);
+		return true;
+	}
+
+	public bool DemanderInjectionItemCreatif(SlotInventaire slot)
+	{
+		if (!UseArchitectureReseau || _networkManager == null || slot.EstVide) return false;
+		_networkManager.EnvoyerDemandeInjectionItemCreatif(slot);
+		return true;
+	}
+
+	private void SurCommandeAdminDemandee(string commande, long peerId)
+	{
+		if (!UseArchitectureReseau || !Multiplayer.IsServer()) return;
+		string cmd = (commande ?? "").Trim();
+		if (string.Equals(cmd, "/DIMANASIO APISARA", StringComparison.OrdinalIgnoreCase))
+		{
+			TransfererPeerVersDimension(peerId, (int)DimensionJeu.Abysse, ObtenirPointTeleportDimension((int)DimensionJeu.Abysse), "Transfert vers l'Abysse.");
+			return;
+		}
+		if (string.Equals(cmd, "/DIMANASIO ARAPA", StringComparison.OrdinalIgnoreCase))
+		{
+			TransfererPeerVersDimension(peerId, (int)DimensionJeu.Alpha, ObtenirPointTeleportDimension((int)DimensionJeu.Alpha), "Retour vers Alpha.");
+			return;
+		}
+		Monde_Serveur serveurCourant = ObtenirServeurDimension(ObtenirDimensionPeer(peerId)) ?? _mondeServeur;
+		if (serveurCourant == null) return;
+		if (!serveurCourant.EssayerTraiterCommandeAdmin(peerId, commande, out bool modeCreatif, out bool noclip, out string messageServeur))
+			return;
+
+		if (peerId == Multiplayer.GetUniqueId())
+			AppliquerEtatModeCreatifLocal(modeCreatif, noclip, messageServeur);
+		else
+		{
+			// Réponse autoritaire vers le client émetteur (remote uniquement).
+			RpcId((int)peerId, nameof(RecevoirEtatModeCreatifRPC), modeCreatif ? 1 : 0, noclip ? 1 : 0, messageServeur ?? "");
+		}
+	}
+
+	[Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = false)]
+	private void RecevoirEtatModeCreatifRPC(int modeCreatif, int noclip, string messageServeur)
+	{
+		AppliquerEtatModeCreatifLocal(modeCreatif != 0, noclip != 0, messageServeur);
+	}
+
+	private void AppliquerEtatModeCreatifLocal(bool actif, bool noclip, string messageServeur)
+	{
+		if (_joueur is Joueur j)
+			j.DefinirModeCreatifDepuisServeur(actif, noclip);
+		if (!string.IsNullOrWhiteSpace(messageServeur))
+			Joueur.AlerteSqueletteBoiteNoire(messageServeur);
+	}
+
+	private void SurInjectionItemCreatifDemandee(int id, int indexMorphologique, int indexChimique, int indexTaille, int indexBotanique, long peerId)
+	{
+		if (!UseArchitectureReseau || !Multiplayer.IsServer()) return;
+		Monde_Serveur serveurCourant = ObtenirServeurDimension(ObtenirDimensionPeer(peerId)) ?? _mondeServeur;
+		if (serveurCourant == null) return;
+		if (!serveurCourant.EssayerConstruireSlotInjectionCreatif(peerId, id, indexMorphologique, indexChimique, indexTaille, indexBotanique, out SlotInventaire slot, out string messageServeur))
+			return;
+
+		if (peerId == Multiplayer.GetUniqueId())
+			AppliquerInjectionItemCreatifLocale(slot, messageServeur);
+		else
+		{
+			RpcId((int)peerId, nameof(RecevoirInjectionItemCreatifRPC),
+				slot.ID, slot.IndexMorphologique, slot.IndexChimique, slot.IndexTaille, (int)slot.IndexBotanique,
+				slot.IndexTailleLameRoche, slot.Quantite, messageServeur ?? "");
+		}
+	}
+
+	[Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = false)]
+	private void RecevoirInjectionItemCreatifRPC(int id, int indexMorphologique, int indexChimique, int indexTaille, int indexBotanique, int indexTailleLameRoche, int quantite, string messageServeur)
+	{
+		SlotInventaire slot = new SlotInventaire
+		{
+			ID = id,
+			IndexMorphologique = indexMorphologique,
+			IndexChimique = indexChimique,
+			IndexTaille = indexTaille,
+			IndexBotanique = (byte)Mathf.Clamp(indexBotanique, 0, 255),
+			IndexTailleLameRoche = indexTailleLameRoche,
+			Quantite = quantite
+		};
+		AppliquerInjectionItemCreatifLocale(slot, messageServeur);
+	}
+
+	private void AppliquerInjectionItemCreatifLocale(SlotInventaire slot, string messageServeur)
+	{
+		if (_joueur is Joueur j)
+			j.InjecterSlotCreatifAdmin(slot);
+		if (!string.IsNullOrWhiteSpace(messageServeur))
+			Joueur.AlerteSqueletteBoiteNoire(messageServeur);
+	}
+
+	private void TransfererPeerVersDimension(long peerId, int dimensionCible, Vector3 positionCible, string messageServeur)
+	{
+		if (!Multiplayer.IsServer()) return;
+		int dimensionActuelle = ObtenirDimensionPeer(peerId);
+		if (peerId == Multiplayer.GetUniqueId())
+		{
+			GameState.Instance?.SauvegarderPositionJoueur(_joueur?.GlobalPosition ?? positionCible);
+			SauvegarderSessionJoueur(dimensionActuelle, _joueur?.GlobalPosition ?? positionCible);
+			if (_joueur is Joueur j)
+			{
+				if (dimensionActuelle == (int)DimensionJeu.Alpha)
+					j.SauvegarderEtatPersistantMonde(GetTree());
+				else
+					j.SauvegarderEtatPersistantJoueurSeulement();
+			}
+		}
+		DefinirDimensionPeer(peerId, dimensionCible);
+		if (peerId == Multiplayer.GetUniqueId())
+		{
+			AppliquerChangementDimensionLocale(dimensionCible, positionCible, messageServeur);
+			return;
+		}
+		RpcId((int)peerId, nameof(RecevoirTransfertDimensionRPC), dimensionCible, positionCible.X, positionCible.Y, positionCible.Z, messageServeur ?? "");
+	}
+
+	[Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = false)]
+	private void RecevoirTransfertDimensionRPC(int dimensionId, float posX, float posY, float posZ, string messageServeur)
+	{
+		AppliquerChangementDimensionLocale(dimensionId, new Vector3(posX, posY, posZ), messageServeur);
+	}
+
+	private void AppliquerChangementDimensionLocale(int dimensionId, Vector3 positionCible, string messageServeur)
+	{
+		_dimensionLocaleActive = dimensionId;
+		DefinirDimensionPeer(Multiplayer.GetUniqueId(), dimensionId);
+		_mondeServeur = ObtenirServeurDimension(dimensionId) ?? _mondeServeurAlpha;
+		_mondeServeur?.ForcerPulseReveilPierres();
+		_mondeClient?.DefinirDimensionReseauActive(dimensionId);
+		_mondeClient?.ReinitialiserTousLesChunksLocaux();
+		MettreAJourVisibiliteArbresParDimension(dimensionId);
+		ReparenterNoeudDansDimension(_joueur, dimensionId);
+		if (_joueur != null)
+		{
+			_joueur.GlobalPosition = positionCible;
+			_joueur.Velocity = Vector3.Zero;
+		}
+		_chargementAbysseEnCours = dimensionId == (int)DimensionJeu.Abysse;
+		_chargementAbysseEnCours = false; // Abysse suit le chargement Alpha (pas de verrou dédié).
+		_secondesStabiliteAbyssePret = 0.0;
+		_secondesVerrouAbysse = 0.0;
+		_cooldownRearmementVerrouAbysse = 0.0;
+		_gateTpDimensionActif = true;
+		_secondesGateTpDimension = 0.0;
+		_cooldownPulseReveilPierresTp = 0.0;
+		_verrouMarcheAbysseActif = false;
+		_secondesVerrouMarcheAbysse = 0.0;
+		_secondesStabiliteMarcheAbysse = 0.0;
+		if (_overlayChargement != null)
+		{
+			_overlayChargement.Visible = true;
+			_secondesOverlayChargement = 0.0;
+		}
+		if (_labelChargementPrincipal != null)
+			_labelChargementPrincipal.Text = "Chargement du monde...";
+		if (_mondeClient != null)
+		{
+			Vector2I chunkSpawn = WorldToChunkCoord(positionCible, TailleChunk);
+			_mondeClient.ReserverChunkSpawnPrioritaire(chunkSpawn);
+		}
+		EnvoyerFuseauHoraireAuPeer(Multiplayer.GetUniqueId());
+		if (!string.IsNullOrWhiteSpace(messageServeur))
+			Joueur.AlerteSqueletteBoiteNoire(messageServeur);
 	}
 
 	/// <summary>Volume océan dédié à la détection (remous/éclaboussures), sans override physique global.</summary>
@@ -1690,6 +2260,7 @@ public partial class Gestionnaire_Monde : Node3D
 	private void SurCorpsEntreOcean(Node3D corps)
 	{
 		if (corps == null || !GodotObject.IsInstanceValid(corps)) return;
+		if (!CorpsAuContactEauVoxel(corps)) return;
 
 		ulong id = corps.GetInstanceId();
 		if (!_corpsDansOcean.Add(id)) return;
@@ -1801,7 +2372,8 @@ public partial class Gestionnaire_Monde : Node3D
 				vitesseHoriz = Mathf.Sqrt(v.X * v.X + v.Z * v.Z);
 			}
 
-			bool actif = vitesseHoriz > 0.45f && corps.GlobalPosition.Y <= ObtenirNiveauSurfaceEau() + 1.0f;
+			bool auContactEau = CorpsAuContactEauVoxel(corps);
+			bool actif = vitesseHoriz > 0.45f && auContactEau;
 			p.GlobalPosition = new Vector3(corps.GlobalPosition.X, ySurface, corps.GlobalPosition.Z);
 			p.AmountRatio = actif ? Mathf.Clamp((vitesseHoriz - 0.45f) / 3.8f, 0.08f, 0.72f) : 0f;
 			p.Emitting = actif;
@@ -1809,6 +2381,17 @@ public partial class Gestionnaire_Monde : Node3D
 
 		for (int i = 0; i < _tmpRemousASupprimer.Count; i++)
 			RetirerEffetRemousSuivi(_tmpRemousASupprimer[i]);
+	}
+
+	/// <summary>Vérité gameplay : le corps est dans l'eau uniquement si ses voxels de contact détectent l'eau.</summary>
+	private bool CorpsAuContactEauVoxel(Node3D corps)
+	{
+		if (corps == null || !GodotObject.IsInstanceValid(corps)) return false;
+		Vector3 pos = corps.GlobalPosition;
+		// Échantillons pieds + centre bas pour éviter les faux positifs en grottes sèches sous le niveau de mer.
+		return EstPointDansEau(pos + new Vector3(0f, -0.95f, 0f))
+			|| EstPointDansEau(pos + new Vector3(0f, -0.55f, 0f))
+			|| EstPointDansEau(pos + new Vector3(0f, -0.15f, 0f));
 	}
 
 	private StandardMaterial3D ObtenirMaterielEclaboussureEau()
@@ -1880,8 +2463,11 @@ public partial class Gestionnaire_Monde : Node3D
 		if (!Multiplayer.IsServer()) return;
 		var soleil = GetParent()?.GetNodeOrNull<Cycle_Solaire>("CycleSolaire");
 		if (soleil == null) return;
-		double offset = _mondeServeur?.FuseauHoraireHeures ?? 0.0;
+		int dimension = ObtenirDimensionPeer(peerId);
+		double offset = ObtenirServeurDimension(dimension)?.FuseauHoraireHeures ?? 0.0;
 		soleil.RpcId(peerId, nameof(Cycle_Solaire.DefinirDecalageHoraire), offset);
+		bool forcerJour = dimension == (int)DimensionJeu.Abysse;
+		soleil.RpcId(peerId, nameof(Cycle_Solaire.ConfigurerHeureFixeDimension), forcerJour ? 1 : 0, 13.5);
 	}
 
 	/// <summary>Évite <c>Contains("1060")</c> qui peut matcher d’autres GPU (ex. chaînes contenant « 1060 » hors GTX 1060).</summary>
@@ -2052,6 +2638,7 @@ public partial class Gestionnaire_Monde : Node3D
 	{
 		ulong debutProcessUs = ActiverProfilagePerfGestionnaire ? PerfBudgetMonitor.Begin() : 0UL;
 		_cooldownLogAutosaveDiag = Mathf.Max(0f, _cooldownLogAutosaveDiag - (float)delta);
+		_cooldownDiagnosticCollisionAbysse = Math.Max(0.0, _cooldownDiagnosticCollisionAbysse - delta);
 		_cooldownDrainProfilage += (float)delta;
 		TraiterWarmupShadersProgressif((float)delta);
 		SurveillerDeriveRuntime((float)delta);
@@ -2075,20 +2662,106 @@ public partial class Gestionnaire_Monde : Node3D
 			_joueur.Visible = false;
 		}
 
+		// Garde-fou profondeur extrême Abysse : stabilise l'état physique au fond absolu.
+		if (_joueur != null && _dimensionLocaleActive == (int)DimensionJeu.Abysse)
+		{
+			const float fondAbsolu = ConstantesDimensionAbysse.FondAbsolu;
+			if (_joueur.GlobalPosition.Y <= fondAbsolu)
+			{
+				_joueur.GlobalPosition = new Vector3(_joueur.GlobalPosition.X, fondAbsolu, _joueur.GlobalPosition.Z);
+				_joueur.Velocity = Vector3.Zero;
+			}
+		}
+
 		bool spawnPretActuel = EstSpawnPret();
 		bool spawnPretEtAligneActuel = spawnPretActuel && (!_spawnDoitEtreAligneAuSol || _spawnAligneAuSol);
 		Vector3 pointRefSpawn = ObtenirPointReferenceSpawn();
 		bool cardinauxPrets = ChunkEtVoisinsCardinauxPretsAuPoint(pointRefSpawn);
+		if (_dimensionLocaleActive == (int)DimensionJeu.Abysse && _cooldownDiagnosticCollisionAbysse <= 0.0)
+		{
+			JournaliserDiagnosticCollisionAbysse();
+			_cooldownDiagnosticCollisionAbysse = IntervalleDiagnosticCollisionAbysseSec;
+		}
+		if (_gateTpDimensionActif)
+		{
+			_secondesGateTpDimension += delta;
+			_cooldownPulseReveilPierresTp = Math.Max(0.0, _cooldownPulseReveilPierresTp - delta);
+			if (_cooldownPulseReveilPierresTp <= 0.0)
+			{
+				_mondeServeur?.ForcerPulseReveilPierres();
+				_cooldownPulseReveilPierresTp = IntervallePulseReveilPierresTpSec;
+			}
+			if (CollisionLocalePretePourTpDimension() || _secondesGateTpDimension >= DureeMaxGateTpDimensionSec)
+			{
+				_gateTpDimensionActif = false;
+				_secondesGateTpDimension = 0.0;
+			}
+			else if (_overlayChargement != null)
+			{
+				_overlayChargement.Visible = true;
+			}
+		}
+		if (_dimensionLocaleActive == (int)DimensionJeu.Abysse && UseArchitectureReseau && _joueur != null && _mondeClient != null && !_gateTpDimensionActif)
+		{
+			bool pretMarcheAbysse = _mondeClient.AbyssePretPourDeplacement(_joueur.GlobalPosition);
+			if (!pretMarcheAbysse)
+			{
+				_verrouMarcheAbysseActif = true;
+				_secondesStabiliteMarcheAbysse = 0.0;
+				_secondesVerrouMarcheAbysse += delta;
+				if (_secondesVerrouMarcheAbysse >= DureeMaxVerrouMarcheAbysseSec)
+				{
+					// Filet anti-soft-lock: on relâche même si la croix n'est pas encore prête.
+					_verrouMarcheAbysseActif = false;
+					_secondesVerrouMarcheAbysse = 0.0;
+					_secondesStabiliteMarcheAbysse = 0.0;
+				}
+			}
+			else if (_verrouMarcheAbysseActif)
+			{
+				_secondesVerrouMarcheAbysse += delta;
+				_secondesStabiliteMarcheAbysse += delta;
+				if (_secondesStabiliteMarcheAbysse >= DureeStabiliteSortieVerrouMarcheAbysseSec
+					|| _secondesVerrouMarcheAbysse >= DureeMaxVerrouMarcheAbysseSec)
+				{
+					_verrouMarcheAbysseActif = false;
+					_secondesVerrouMarcheAbysse = 0.0;
+					_secondesStabiliteMarcheAbysse = 0.0;
+				}
+			}
+			else
+			{
+				_secondesVerrouMarcheAbysse = 0.0;
+				_secondesStabiliteMarcheAbysse = 0.0;
+			}
+		}
+		else
+		{
+			_verrouMarcheAbysseActif = false;
+			_secondesVerrouMarcheAbysse = 0.0;
+			_secondesStabiliteMarcheAbysse = 0.0;
+		}
+		_chargementAbysseEnCours = false;
+		_secondesStabiliteAbyssePret = 0.0;
+		_secondesVerrouAbysse = 0.0;
+		_cooldownRearmementVerrouAbysse = 0.0;
 		// Le cycle solaire ne doit être neutralisé que pendant le bootstrap strict du spawn.
 		// IMPORTANT: ne pas lier le ciel aux cardinaux, sinon le cycle peut rester figé alors que le joueur est déjà jouable.
 		bool chargementVisuelActif = _overlayChargement != null
 			&& _overlayChargement.Visible
-			&& !spawnPretEtAligneActuel;
+			&& (!spawnPretEtAligneActuel || _gateTpDimensionActif);
 		MettreAJourEtatCycleSolaire(chargementVisuelActif);
 
 		// Masquer l'overlay quand le sol minimal sous les pieds est prêt, ou après timeout (évite chargement infini si file / grille trop large).
 		if (_overlayChargement != null && _overlayChargement.Visible)
 		{
+			if (_labelChargementPrincipal != null && _labelChargementPrincipal.Text != "Chargement du monde...")
+				_labelChargementPrincipal.Text = "Chargement du monde...";
+			if (_gateTpDimensionActif)
+			{
+				_secondesOverlayChargement += delta;
+				goto FinBlocOverlay;
+			}
 			_secondesOverlayChargement += delta;
 			bool spawnPret = spawnPretActuel;
 			// Nouveau monde: on attend que la zone soit réellement prête avant raycast de pose au sol.
@@ -2138,7 +2811,8 @@ FinBlocOverlay:
 			_synchronisationDisquePostRestaurationSolEffectuee = true;
 			CallDeferred(nameof(LancerSynchronisationDisquePostRestaurationSolDifferee));
 		}
-		TraiterDepgelRigidBodiesRestaurationSol(64);
+		int budgetDepgelSol = Mathf.Clamp(64 + _rigidBodiesAttenteCollisionSolRestauration.Count / 2, 64, 256);
+		TraiterDepgelRigidBodiesRestaurationSol(budgetDepgelSol);
 
 		// Mise à jour des coordonnées affichées en haut à droite
 		if (_labelCoords != null && _joueur != null && _joueur.IsInsideTree())
@@ -2210,11 +2884,9 @@ FinBlocOverlay:
 			n++;
 		}
 
-		// Eau dynamique (legacy)
-		_tempsEcoulement += (float)delta;
-		if (_tempsEcoulement >= TICK_EAU)
+		// Eau runtime purement événementielle (legacy) : uniquement file des voxels réveillés.
+		if (_fileEau.Count > 0)
 		{
-			_tempsEcoulement = 0;
 			_tickEauLegacy++;
 			int eauCount = Math.Min(_fileEau.Count, MaxEauParTick);
 			for (int i = 0; i < eauCount; i++)
@@ -2274,19 +2946,35 @@ FinBlocOverlay:
 	{
 		ulong debutAutosaveUs = ActiverProfilagePerfGestionnaire ? PerfBudgetMonitor.Begin() : 0UL;
 		if (_joueur != null)
+		{
 			GameState.Instance?.SauvegarderPositionJoueur(_joueur.GlobalPosition);
+			SauvegarderSessionJoueur(_dimensionLocaleActive, _joueur.GlobalPosition);
+		}
 		if (_joueur is Joueur j)
-			j.SauvegarderEtatPersistantMonde(GetTree());
+		{
+			if (_restaurationPersistantObjetsSolFaite)
+				j.SauvegarderEtatPersistantMonde(GetTree());
+			else
+				j.SauvegarderEtatPersistantJoueurSeulement();
+		}
 
 		if (UseArchitectureReseau)
 		{
 			int budget = Mathf.Max(1, MaxChunksAutosauvegardeParCycle);
-			int n = _mondeServeur?.SauvegarderChunksActifsProgressif(budget) ?? 0;
-			var backlog = _mondeServeur?.ObtenirBacklogsPersistance() ?? (0, 0);
-			if (n > 0 || (_cooldownLogAutosaveDiag <= 0f && (backlog.Item1 > 0 || backlog.Item2 > 0)))
+			int n = 0;
+			int backlogDirty = 0;
+			int backlogDecharge = 0;
+			foreach (var kv in _serveurParDimension)
+			{
+				n += kv.Value?.SauvegarderChunksActifsProgressif(budget) ?? 0;
+				var b = kv.Value?.ObtenirBacklogsPersistance() ?? (0, 0);
+				backlogDirty += b.Item1;
+				backlogDecharge += b.Item2;
+			}
+			if (n > 0 || (_cooldownLogAutosaveDiag <= 0f && (backlogDirty > 0 || backlogDecharge > 0)))
 			{
 				GD.Print($"ZERO-K : Autosauvegarde progressive ({n} chunk(s)).");
-				GD.Print($"ZERO-K PERF: backlog persistance dirty={backlog.Item1} decharge={backlog.Item2} budget={budget}.");
+				GD.Print($"ZERO-K PERF: backlog persistance dirty={backlogDirty} decharge={backlogDecharge} budget={budget}.");
 				_cooldownLogAutosaveDiag = 15f;
 			}
 		}
@@ -2306,11 +2994,14 @@ FinBlocOverlay:
 		int budgetTotal = Mathf.Max(16, BudgetDormanceObjetsParCycle);
 		int budgetBlocs = Mathf.Max(1, Mathf.RoundToInt(budgetTotal * 0.65f));
 		int budgetDyn = Mathf.Max(1, budgetTotal - budgetBlocs);
-		TraiterDormanceGroupe("BlocsPoses", ref _indexDormanceBlocsPoses, budgetBlocs, chunkJoueur, rayon, useGardeTerrain, rayonSecuriteTerrain, ignorerRacks: true);
-		TraiterDormanceGroupe("ObjetsDormantsDynamiques", ref _indexDormanceObjetsDyn, budgetDyn, chunkJoueur, rayon, useGardeTerrain, rayonSecuriteTerrain, ignorerRacks: false);
+		int budgetFiletSecurite = ActiverFiletSecuriteObjetsDynamiques
+			? Mathf.Clamp(BudgetFiletSecuriteObjetsParCycle, 1, budgetTotal)
+			: 0;
+		TraiterDormanceGroupe("BlocsPoses", ref _indexDormanceBlocsPoses, budgetBlocs, chunkJoueur, rayon, useGardeTerrain, rayonSecuriteTerrain, ignorerRacks: true, ref budgetFiletSecurite);
+		TraiterDormanceGroupe("ObjetsDormantsDynamiques", ref _indexDormanceObjetsDyn, budgetDyn, chunkJoueur, rayon, useGardeTerrain, rayonSecuriteTerrain, ignorerRacks: false, ref budgetFiletSecurite);
 	}
 
-	private void TraiterDormanceGroupe(string nomGroupe, ref int indexCurseur, int budget, Vector2I chunkJoueur, int rayon, bool useGardeTerrain, int rayonSecuriteTerrain, bool ignorerRacks)
+	private void TraiterDormanceGroupe(string nomGroupe, ref int indexCurseur, int budget, Vector2I chunkJoueur, int rayon, bool useGardeTerrain, int rayonSecuriteTerrain, bool ignorerRacks, ref int budgetFiletSecurite)
 	{
 		if (!_cacheRigidBodiesDormance.TryGetValue(nomGroupe, out List<RigidBody3D> noeuds))
 		{
@@ -2340,24 +3031,36 @@ FinBlocOverlay:
 			}
 			if (ignorerRacks && rb is ItemPhysique ip && ItemPhysique.EstMeublePoseStatique(ip.ID_Objet))
 				continue;
-			AppliquerDormanceRigidBody(rb, chunkJoueur, rayon, useGardeTerrain, rayonSecuriteTerrain);
+			AppliquerDormanceRigidBody(rb, chunkJoueur, rayon, useGardeTerrain, rayonSecuriteTerrain, ref budgetFiletSecurite);
 		}
 	}
 
-	private void AppliquerDormanceRigidBody(RigidBody3D rb, Vector2I chunkJoueur, int rayon, bool useGardeTerrain, int rayonSecuriteTerrain)
+	private void AppliquerDormanceRigidBody(RigidBody3D rb, Vector2I chunkJoueur, int rayon, bool useGardeTerrain, int rayonSecuriteTerrain, ref int budgetFiletSecurite)
 	{
 		Vector2I c = WorldToChunkCoord(rb.GlobalPosition, TailleChunk);
 		bool dansRayon = Mathf.Abs(c.X - chunkJoueur.X) <= rayon && Mathf.Abs(c.Y - chunkJoueur.Y) <= rayon;
 		bool terrainPret = !useGardeTerrain || _mondeClient.CollisionTerrainActiveAutourPoint(rb.GlobalPosition, rayonSecuriteTerrain);
 		bool itemLegerPetit = ItemPhysique.EstRigidBodyLegerEtPetitReactif(rb);
+		bool structureStatique = rb is ItemPhysique ipStatique && ItemPhysique.EstMeublePoseStatique(ipStatique.ID_Objet);
+
+		if (!structureStatique && budgetFiletSecurite > 0)
+		{
+			budgetFiletSecurite--;
+			EssayerRecalerRigidBodySousSol(rb, terrainPret);
+		}
 
 		if (itemLegerPetit && _joueur != null && GodotObject.IsInstanceValid(_joueur))
 		{
 			float dist2 = rb.GlobalPosition.DistanceSquaredTo(_joueur.GlobalPosition);
 			if (dist2 <= 6f * 6f)
 			{
-				if (rb.Freeze) rb.Freeze = false;
-				if (rb.Sleeping) rb.Sleeping = false;
+				if (!terrainPret)
+					FigerRigidBodyDormance(rb);
+				else
+				{
+					if (rb.Freeze) rb.Freeze = false;
+					if (rb.Sleeping) rb.Sleeping = false;
+				}
 				return;
 			}
 		}
@@ -2365,8 +3068,13 @@ FinBlocOverlay:
 		// Priorité gameplay: un objet proche du joueur ne doit jamais rester figé en l'air.
 		if (dansRayon)
 		{
-			if (rb.Freeze) rb.Freeze = false;
-			if (rb.Sleeping) rb.Sleeping = false;
+			if (!terrainPret)
+				FigerRigidBodyDormance(rb);
+			else
+			{
+				if (rb.Freeze) rb.Freeze = false;
+				if (rb.Sleeping) rb.Sleeping = false;
+			}
 			return;
 		}
 
@@ -2377,11 +3085,39 @@ FinBlocOverlay:
 		}
 		if (!terrainPret || (!rb.Freeze || !rb.Sleeping))
 		{
-			rb.LinearVelocity = Vector3.Zero;
-			rb.AngularVelocity = Vector3.Zero;
-			rb.Sleeping = true;
-			rb.Freeze = true;
+			FigerRigidBodyDormance(rb);
 		}
+	}
+
+	private static void FigerRigidBodyDormance(RigidBody3D rb)
+	{
+		rb.LinearVelocity = Vector3.Zero;
+		rb.AngularVelocity = Vector3.Zero;
+		rb.Sleeping = true;
+		rb.Freeze = true;
+	}
+
+	private void EssayerRecalerRigidBodySousSol(RigidBody3D rb, bool terrainPret)
+	{
+		if (!terrainPret)
+			return;
+		float yObjet = rb.GlobalPosition.Y;
+		int h = Generateur_Voxel.ObtenirHauteurTerrainMonde(
+			Mathf.FloorToInt(rb.GlobalPosition.X),
+			Mathf.FloorToInt(rb.GlobalPosition.Z),
+			SeedTerrain);
+		float ySurface = h + 1.0f;
+		float seuil = ySurface - Mathf.Max(0.35f, SeuilEnfouissementObjetsMetres);
+		if (yObjet >= seuil)
+			return;
+
+		float yCorrige = ySurface + Mathf.Max(0.02f, MargeRemonteeObjetsMetres);
+		rb.GlobalPosition = new Vector3(rb.GlobalPosition.X, yCorrige, rb.GlobalPosition.Z);
+		rb.LinearVelocity = Vector3.Zero;
+		rb.AngularVelocity = Vector3.Zero;
+		rb.Sleeping = true;
+		if (rb.Freeze)
+			rb.Freeze = false;
 	}
 
 	private Vector2I ObtenirCoordonneesChunkJoueur()

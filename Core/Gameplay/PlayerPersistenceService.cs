@@ -125,6 +125,11 @@ public partial class Joueur
         SauvegarderCarnetSavoirMonde();
     }
 
+    public void SauvegarderEtatPersistantJoueurSeulement()
+    {
+        SauvegarderFichiersJoueurHorsObjetsAuSol();
+    }
+
     /// <summary>Compat : n’exécute que la phase joueur (inventaire, progression, carnet). Les objets au sol sont chargés par <see cref="ChargerEtatPersistantPhaseObjetsAuSolEtFaune"/>.</summary>
     public void ChargerEtatPersistantMonde() => ChargerEtatPersistantPhaseJoueur();
 
@@ -501,6 +506,22 @@ public partial class Joueur
         return copie;
     }
 
+    private static int LireNombreObjetsPosesDepuisFichier(string chemin)
+    {
+        try
+        {
+            using var r = new BinaryReader(File.Open(chemin, FileMode.Open, System.IO.FileAccess.Read, FileShare.Read));
+            int version = r.ReadInt32();
+            if (version < 1 || version > VersionPersistenceObjetsPoses)
+                return -1;
+            return Mathf.Max(0, r.ReadInt32());
+        }
+        catch
+        {
+            return -1;
+        }
+    }
+
     private void SauvegarderObjetsPosesMonde(SceneTree tree)
     {
         try
@@ -545,6 +566,16 @@ public partial class Joueur
             }
             GD.Print($"ZERO-K : Sauvegarde objets posés → placed_objects.dat : {aSauver.Count} objet(s) " +
                 $"(atelier craft 200={nbAtelier200}, racks={nbRack}, coffres={nbCoffre}, autres={nbAutres}) — monde {GameState.Instance?.NomMondeActuel ?? "?"}");
+
+            if (aSauver.Count == 0 && !_persistantObjetsSolCharges && File.Exists(chemin))
+            {
+                int ancienNombre = LireNombreObjetsPosesDepuisFichier(chemin);
+                if (ancienNombre > 0)
+                {
+                    GD.Print("ZERO-K : Sauvegarde objets posés annulée (protection anti-écrasement vide avant restauration initiale).");
+                    return;
+                }
+            }
 
             using var w = new BinaryWriter(File.Open(chemin, FileMode.Create));
             w.Write(VersionPersistenceObjetsPoses);

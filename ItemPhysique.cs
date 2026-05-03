@@ -42,7 +42,11 @@ public partial class ItemPhysique : RigidBody3D
 		|| idObjet == Joueur.IdObjetRackBuches
 		|| idObjet == Joueur.IdObjetCoffreBoisTier0
 		|| idObjet == Joueur.IdObjetPitFeu
-		|| idObjet == Joueur.IdObjetPitFeuRoche;
+		|| idObjet == Joueur.IdObjetPitFeuRoche
+		|| idObjet == Joueur.IdObjetFondationBois
+		|| idObjet == Joueur.IdObjetFondationRoche
+		|| idObjet == Joueur.IdObjetFondationBoisSoleRoche
+		|| idObjet == Joueur.IdObjetFondationRocheSoleBois;
 
 	private const float SeuilMasseObjetLegerKg = 35f;
 	private const float SeuilHauteurObjetPetitMetres = 0.6f;
@@ -1083,6 +1087,24 @@ public partial class ItemPhysique : RigidBody3D
 			ChargerEtatPitFeuRocheDepuisGenome();
 			if (_pitFeuRocheResteSec <= 0.001d)
 				ActiverVisuelPitFeu(false);
+			return;
+		}
+		if (ID_Objet == Joueur.IdObjetFondationBois
+			|| ID_Objet == Joueur.IdObjetFondationRoche
+			|| ID_Objet == Joueur.IdObjetFondationBoisSoleRoche
+			|| ID_Objet == Joueur.IdObjetFondationRocheSoleBois)
+		{
+			Mass = ID_Objet == Joueur.IdObjetFondationBois ? 38f
+				: (ID_Objet == Joueur.IdObjetFondationRoche ? 62f
+				: (ID_Objet == Joueur.IdObjetFondationBoisSoleRoche ? 54f : 58f));
+			GravityScale = 0f;
+			ResistanceActuelle = 90f;
+			Scale = Vector3.One;
+			LinearVelocity = Vector3.Zero;
+			AngularVelocity = Vector3.Zero;
+			Sleeping = true;
+			Freeze = true;
+			FreezeMode = FreezeModeEnum.Static;
 			return;
 		}
 		if (ID_Objet == Joueur.IdObjetAllumeFeu)

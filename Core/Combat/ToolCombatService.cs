@@ -10,11 +10,15 @@ public partial class Joueur
     private const float DureeRecuperationAtelierHachette = 2.85f;
     private const float DureeRecuperationRackMainNue = 2.8f;
     private const float DureeRecuperationRackHachette = 1.25f;
+    private const float DureeRecuperationFondationBoisHachette = 15.0f;
+    private const float DureeRecuperationFondationRochePioche = 15.0f;
+    private const float DureeRecuperationFondationMixteOutil = 15.0f;
     private const float IntervalleParticulesRecuperationAtelier = 0.14f;
     private float _progressionMinageMainNue;
     private float _cooldownParticulesMinageMainNue;
     private float _progressionRecuperationAtelier;
     private float _cooldownParticulesRecuperationAtelier;
+    private float _cooldownMessageRecuperationFondation;
     private ItemPhysique _atelierCibleRecuperation;
     private const float DureeRecolteBuissonOutilSecondes = 3.0f;
     private const float DureeRecolteLianeDagueSecondes = 2.0f;
@@ -35,6 +39,7 @@ public partial class Joueur
     private Vector3 _pointRecolteBuisson;
     private Vector3 _pointRecolteLiane;
     private Vector3 _pointDepecageCadavre;
+
     private Vector3I _posBuissonRecolte;
     private bool _aCibleBuissonRecolte;
     private ArbreVivant _arbreCibleLiane;
@@ -91,6 +96,7 @@ public partial class Joueur
         _cooldownParticulesMinageMainNue = 0f;
         _progressionRecuperationAtelier = 0f;
         _cooldownParticulesRecuperationAtelier = 0f;
+        _cooldownMessageRecuperationFondation = 0f;
         _atelierCibleRecuperation = null;
         _progressionRecolteBuisson = 0f;
         _cooldownParticulesMinageBuisson = 0f;
@@ -469,9 +475,7 @@ public partial class Joueur
         pointImpact = _rayon.GetCollisionPoint();
         normaleImpact = _rayon.GetCollisionNormal();
         Node objetTouche = NoeudDepuisColliderRaycast(_rayon.GetCollider());
-        var item = objetTouche as ItemPhysique
-            ?? (objetTouche as Node)?.GetParent() as ItemPhysique
-            ?? (objetTouche as Node)?.GetNodeOrNull<ItemPhysique>("ItemPhysique");
+        var item = ResoudreItemPhysiqueDepuisNoeudRaycast(objetTouche);
         if (item == null || (item.ID_Objet != 200 && item.ID_Objet != IdObjetRackBatons && item.ID_Objet != IdObjetRackBuches)) return false;
         atelier = item;
         return true;
@@ -491,6 +495,83 @@ public partial class Joueur
             Quantite = 1,
             CleConteneur = (atelier != null && atelier.HasMeta("CleConteneur")) ? atelier.GetMeta("CleConteneur").AsString() : ""
         };
+    }
+
+    private bool EssayerObtenirFondationSousVisee(out ItemPhysique fondation, out Vector3 pointImpact, out Vector3 normaleImpact)
+    {
+        fondation = null;
+        pointImpact = Vector3.Zero;
+        normaleImpact = Vector3.Up;
+        _rayon.ForceRaycastUpdate();
+        if (!_rayon.IsColliding()) return false;
+        pointImpact = _rayon.GetCollisionPoint();
+        normaleImpact = _rayon.GetCollisionNormal();
+        Node objetTouche = NoeudDepuisColliderRaycast(_rayon.GetCollider());
+        var item = ResoudreItemPhysiqueDepuisNoeudRaycast(objetTouche);
+        if (item == null || !EstIdFondation(item.ID_Objet)) return false;
+        fondation = item;
+        return true;
+    }
+
+    private static ItemPhysique ResoudreItemPhysiqueDepuisNoeudRaycast(Node noeud)
+    {
+        for (Node cur = noeud; cur != null; cur = cur.GetParent())
+        {
+            if (cur is ItemPhysique ip)
+                return ip;
+            if (cur is Node3D n3)
+            {
+                ItemPhysique enfant = n3.GetNodeOrNull<ItemPhysique>("ItemPhysique");
+                if (enfant != null)
+                    return enfant;
+            }
+        }
+        return null;
+    }
+
+    private void AfficherMessageRecuperationFondation(string message)
+    {
+        if (_cooldownMessageRecuperationFondation > 0f)
+            return;
+        _cooldownMessageRecuperationFondation = 0.8f;
+        GD.Print(message);
+    }
+
+    private static SlotInventaire ConstruireSlotFondation(ItemPhysique fondation)
+    {
+        return new SlotInventaire
+        {
+            ID = fondation != null ? fondation.ID_Objet : IdObjetFondationBois,
+            IndexBotanique = fondation != null ? fondation.IndexBotanique : LSystem_Botanique.IndexChene,
+            IndexMorphologique = fondation != null ? fondation.IndexCacheMemoire : 0,
+            IndexChimique = fondation != null ? fondation.IndexChimique : 0,
+            IndexTaille = 0,
+            ScaleEclat = Vector3.One,
+            EstUnEclat = false,
+            Quantite = 1,
+            GenomeAssemblage = fondation?.GenomeAssemblage ?? "",
+            CleConteneur = (fondation != null && fondation.HasMeta("CleConteneur")) ? fondation.GetMeta("CleConteneur").AsString() : ""
+        };
+    }
+
+    private static bool OutilValideRecuperationFondation(int idFondation, bool hachette, bool pioche)
+    {
+        if (idFondation == IdObjetFondationBois)
+            return hachette;
+        if (idFondation == IdObjetFondationRoche)
+            return pioche;
+        if (idFondation == IdObjetFondationBoisSoleRoche || idFondation == IdObjetFondationRocheSoleBois)
+            return hachette || pioche;
+        return false;
+    }
+
+    private static float ObtenirDureeRecuperationFondation(int idFondation)
+    {
+        if (idFondation == IdObjetFondationBois)
+            return DureeRecuperationFondationBoisHachette;
+        if (idFondation == IdObjetFondationRoche)
+            return DureeRecuperationFondationRochePioche;
+        return DureeRecuperationFondationMixteOutil;
     }
 
     private bool PeutRecevoirDansSlot(SlotInventaire destination, SlotInventaire source)
@@ -523,14 +604,31 @@ public partial class Joueur
     private bool EssayerAjouterDansInventaire(SlotInventaire slot)
     {
         slot.Quantite = ObtenirQuantiteSlot(slot);
+        if (ASacEquipe())
+        {
+            for (int i = 0; i < GrilleSacStockage.Length; i++)
+            {
+                ref SlotInventaire s = ref RefSlotSac(i);
+                if (TenterEmpilementComplet(ref s, slot)) return true;
+            }
+        }
+        if (ACeintureSacochesEquipe())
+        {
+            for (int i = 0; i < GrilleCeintureStockage.Length; i++)
+            {
+                ref SlotInventaire s = ref RefSlotCeintureStockage(i);
+                if (TenterEmpilementComplet(ref s, slot)) return true;
+            }
+        }
         if (TenterEmpilementComplet(ref MainGauche, slot)) return true;
         if (TenterEmpilementComplet(ref MainDroite, slot)) return true;
+
         if (ASacEquipe())
         {
             for (int i = 0; i < GrilleSacStockage.Length; i++)
             {
                 ref SlotInventaire s = ref RefSlotSac(i);
-                if (TenterEmpilementComplet(ref s, slot)) return true;
+                if (s.EstVide) { s = slot; return true; }
             }
         }
         if (ACeintureSacochesEquipe())
@@ -538,28 +636,11 @@ public partial class Joueur
             for (int i = 0; i < GrilleCeintureStockage.Length; i++)
             {
                 ref SlotInventaire s = ref RefSlotCeintureStockage(i);
-                if (TenterEmpilementComplet(ref s, slot)) return true;
+                if (s.EstVide) { s = slot; return true; }
             }
         }
-
         if (MainGauche.EstVide) { MainGauche = slot; return true; }
         if (MainDroite.EstVide) { MainDroite = slot; return true; }
-        if (ASacEquipe())
-        {
-            for (int i = 0; i < GrilleSacStockage.Length; i++)
-            {
-                ref SlotInventaire s = ref RefSlotSac(i);
-                if (s.EstVide) { s = slot; return true; }
-            }
-        }
-        if (ACeintureSacochesEquipe())
-        {
-            for (int i = 0; i < GrilleCeintureStockage.Length; i++)
-            {
-                ref SlotInventaire s = ref RefSlotCeintureStockage(i);
-                if (s.EstVide) { s = slot; return true; }
-            }
-        }
         return false;
     }
 
@@ -628,6 +709,7 @@ public partial class Joueur
 
     private void MettreAJourMinageMainNueOuAtelier(float dt, SlotInventaire mainActive)
     {
+        _cooldownMessageRecuperationFondation = Mathf.Max(0f, _cooldownMessageRecuperationFondation - dt);
         bool mainVide = mainActive.EstVide;
         bool hachette = mainActive.ID == 106;
         bool dague = mainActive.ID == 105 || mainActive.ID == IdObjetFauxPierreTier0;
@@ -689,6 +771,60 @@ public partial class Joueur
             return;
         }
 
+        if (EssayerObtenirFondationSousVisee(out ItemPhysique fondation, out Vector3 pFondation, out Vector3 nFondation))
+        {
+            if (!OutilValideRecuperationFondation(fondation.ID_Objet, hachette, pioche))
+            {
+                AfficherMessageRecuperationFondation("ZERO-K : Outil invalide pour cette fondation (hachette/ pioche selon matériau).");
+                ReinitialiserMinageMainNueProgression();
+                return;
+            }
+
+            var slotFondation = ConstruireSlotFondation(fondation);
+            if (!ADeLaPlacePourSlotInventaire(slotFondation))
+            {
+                AfficherMessageRecuperationFondation("ZERO-K : Inventaire plein, impossible de récupérer la fondation.");
+                ReinitialiserMinageMainNueProgression();
+                return;
+            }
+
+            if (_atelierCibleRecuperation != fondation)
+            {
+                _atelierCibleRecuperation = fondation;
+                _progressionRecuperationAtelier = 0f;
+                _cooldownParticulesRecuperationAtelier = 0f;
+            }
+
+            _progressionRecuperationAtelier += dt;
+            _cooldownParticulesRecuperationAtelier -= dt;
+            if (_cooldownParticulesRecuperationAtelier <= 0f)
+            {
+                _cooldownParticulesRecuperationAtelier = IntervalleParticulesRecuperationAtelier;
+                EmmettreParticulesRecuperationAtelier(pFondation, nFondation);
+            }
+
+            float duree = ObtenirDureeRecuperationFondation(fondation.ID_Objet);
+            if (_progressionRecuperationAtelier < duree)
+                return;
+
+            if (!EssayerAjouterDansInventaire(slotFondation))
+            {
+                ReinitialiserMinageMainNueProgression();
+                return;
+            }
+            AppliquerUsureOutilMainActive(fondation.ID_Objet == IdObjetFondationRoche ? 0.95f : 0.7f);
+            fondation.QueueFree();
+            RafraichirHUD();
+            GD.Print(fondation.ID_Objet switch
+            {
+                IdObjetFondationBois => "ZERO-K : Fondation bois récupérée (hachette).",
+                IdObjetFondationRoche => "ZERO-K : Fondation roche récupérée (pioche).",
+                _ => "ZERO-K : Fondation mixte récupérée."
+            });
+            ReinitialiserMinageMainNueProgression();
+            return;
+        }
+
         _progressionRecuperationAtelier = 0f;
         _cooldownParticulesRecuperationAtelier = 0f;
         _atelierCibleRecuperation = null;
@@ -742,21 +878,13 @@ public partial class Joueur
     {
         if (!EstMatiereMinableMainNue(idExtrait) && !EstMatiereMinablePioche(idExtrait))
             return;
-        if (MainGaucheEstActive && !MainGauche.EstVide && !MainDroite.EstVide) return;
-        if (!MainGaucheEstActive && !MainDroite.EstVide && !MainGauche.EstVide) return;
+        var nouveauSlot = new SlotInventaire { ID = idExtrait, IndexMorphologique = 0, IndexChimique = 0, Quantite = 1 };
+        if (!ADeLaPlacePourSlotInventaire(nouveauSlot))
+            return;
 
         _gestionnaireMonde?.AppliquerDestructionGlobale(pointImpactVoxel, RAYON_SCULPTURE, 5.0f);
-        var nouveauSlot = new SlotInventaire { ID = idExtrait, IndexMorphologique = 0, IndexChimique = 0 };
-        if (MainGaucheEstActive)
-        {
-            if (MainGauche.EstVide) MainGauche = nouveauSlot;
-            else MainDroite = nouveauSlot;
-        }
-        else
-        {
-            if (MainDroite.EstVide) MainDroite = nouveauSlot;
-            else MainGauche = nouveauSlot;
-        }
+        if (!EssayerAjouterDansInventaire(nouveauSlot))
+            return;
         RafraichirHUD();
     }
 
@@ -1101,6 +1229,7 @@ public partial class Joueur
         }
 
         Node objetTouche = NoeudDepuisColliderRaycast(_rayon.GetCollider());
+        BoeufSauvage boeufSousVisee = ObtenirBoeufDepuisCollider(objetTouche);
         Vector3 pointImpact = _rayon.GetCollisionPoint();
 
         Vector3 directionMouvement = -_camera.GlobalTransform.Basis.Z.Normalized();
@@ -1111,7 +1240,7 @@ public partial class Joueur
 
         var (effHache, effPelle, masseOutil) = AnalyserOutilCAO(directionMouvement);
 
-        if (EstSolViseParRayon(_rayon, objetTouche))
+        if (boeufSousVisee == null && EstSolViseParRayon(_rayon, objetTouche))
         {
             if (mainActive.ID == IdObjetLancePierreTier0)
             {
@@ -1139,7 +1268,9 @@ public partial class Joueur
             return;
 
         Node objetTouche = NoeudDepuisColliderRaycast(_rayon.GetCollider());
-        if (objetTouche == null || EstSolViseParRayon(_rayon, objetTouche))
+        if (objetTouche == null)
+            return;
+        if (ObtenirBoeufDepuisCollider(objetTouche) == null && EstSolViseParRayon(_rayon, objetTouche))
             return;
 
         Vector3 pointImpact = _rayon.GetCollisionPoint();

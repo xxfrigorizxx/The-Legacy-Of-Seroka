@@ -699,7 +699,7 @@ public partial class Generateur_Voxel : Node3D
 
 		float bruitBrut = noiseSurface.GetNoise2D(worldX, worldZ);
 		float bruitNormalise = (bruitBrut + 1.0f) / 2.0f;
-		float relief = Mathf.Pow(bruitNormalise, 3.0f);
+		float relief = Mathf.Pow(bruitNormalise, 2.3f);
 
 		// Plaine : plaines basses 103-105 (biais fort vers 103) + plaine principale 105-118
 		// TEST INVERSION AXES : si on utilise GetNoise2D(worldZ * ..., worldX * ...) et que le terrain s'aligne,
@@ -722,8 +722,9 @@ public partial class Generateur_Voxel : Node3D
 		// Tier 2 + Montagnes : relief 0.09→0.42 (tier2), 0.42→1.0 (montagnes). % : plaine ~45%, tier2 ~30%, montagnes ~25%
 		float tTier2 = Mathf.Clamp((relief - 0.09f) / 0.33f, 0f, 1f);
 		float tMont = Mathf.Clamp((relief - 0.42f) / 0.58f, 0f, 1f);
-		float hTier2 = tTier2 * tTier2 * 82f;
-		float hMontagnes = tMont * tMont * 500f;  // Montagnes jusqu'à 700
+		float hTier2 = tTier2 * tTier2 * 42f;
+		float tMontLisse = tMont * tMont * (3f - 2f * tMont);
+		float hMontagnes = tMontLisse * tMontLisse * 250f;
 
 		// Transition progressive base → tier2+montagnes (blend 0.05 → 0.20)
 		float poidsBase = 1f - Mathf.Clamp((relief - 0.05f) / 0.15f, 0f, 1f);
@@ -731,13 +732,7 @@ public partial class Generateur_Voxel : Node3D
 		float hauteurHaut = 118f + hTier2 + hMontagnes;
 		int hauteurBase = (int)(rampBase * poidsBase + hauteurHaut * (1f - poidsBase));
 		float crevasseBrute = noiseRivieres.GetNoise2D(worldX, worldZ);
-		int profondeurEau = 0;
-		if (crevasseBrute > 0.12f)
-		{
-			float intensiteRiviera = (crevasseBrute - 0.12f) / 0.88f;
-			float tSmooth = intensiteRiviera * intensiteRiviera * (3f - 2f * intensiteRiviera);  // Descente très douce vers l'eau
-			profondeurEau = (int)(tSmooth * 22.0f);
-		}
+		int profondeurEau = CalculerProfondeurEau(crevasseBrute);
 
 		return hauteurBase - profondeurEau;
 	}
@@ -749,7 +744,7 @@ public partial class Generateur_Voxel : Node3D
 		float bruitBrut = _noiseSurface.GetNoise2D(xGlobal, zGlobal);
 		float bruitNormalise = (bruitBrut + 1.0f) / 2.0f;
 
-		float relief = Mathf.Pow(bruitNormalise, 3.0f);  // Exposant 3 : plaine/collines/montagnes
+		float relief = Mathf.Pow(bruitNormalise, 2.3f);  // Relief plus progressif : moins de pics agressifs
 
 		// Plaine : plaines basses 103-105 (biais fort vers 103) + plaine principale 105-118
 		// TEST INVERSION : GetNoise2D(zGlobal, xGlobal) — si le terrain s'aligne, la grille / index 1D lisait X sur Z.
@@ -771,8 +766,9 @@ public partial class Generateur_Voxel : Node3D
 		// Tier 2 + Montagnes : plaine ~45%, tier2 ~30%, montagnes ~25%
 		float tTier2 = Mathf.Clamp((relief - 0.09f) / 0.33f, 0f, 1f);
 		float tMont = Mathf.Clamp((relief - 0.42f) / 0.58f, 0f, 1f);
-		float hTier2 = tTier2 * tTier2 * 82f;
-		float hMontagnes = tMont * tMont * 500f;
+		float hTier2 = tTier2 * tTier2 * 42f;
+		float tMontLisse = tMont * tMont * (3f - 2f * tMont);
+		float hMontagnes = tMontLisse * tMontLisse * 250f;
 
 		// Transition progressive base → tier2+montagnes (blend 0.05 → 0.20)
 		float poidsBase = 1f - Mathf.Clamp((relief - 0.05f) / 0.15f, 0f, 1f);
@@ -782,13 +778,7 @@ public partial class Generateur_Voxel : Node3D
 
 		// --- 2. L'ENDIGUEMENT HYDROLOGIQUE (Berges en pente douce) ---
 		float crevasseBrute = _noiseRivieres.GetNoise2D(xGlobal, zGlobal);
-		int profondeurEau = 0;
-		if (crevasseBrute > 0.12f)
-		{
-			float intensiteRiviera = (crevasseBrute - 0.12f) / 0.88f;
-			float tSmooth = intensiteRiviera * intensiteRiviera * (3f - 2f * intensiteRiviera);  // Descente très douce vers l'eau
-			profondeurEau = (int)(tSmooth * 22.0f);
-		}
+		int profondeurEau = CalculerProfondeurEau(crevasseBrute);
 
 		// --- 3. RENDU FINAL ---
 		return hauteurBase - profondeurEau;
@@ -797,6 +787,17 @@ public partial class Generateur_Voxel : Node3D
 	private const int NiveauPlage = 102;  // Sable jusqu'à 102, herbe à 103-104 (niveau eau inchangé)
 	private const int SeuilNeigeBase = 250;   // Neige 245-255 (bruit ±5)
 	private const int SeuilMontagneRoche = 207; // Roche 200-215 (bruit ±8)
+	private const int LargeurTransitionLittorale = 3;
+
+	private static int CalculerProfondeurEau(float crevasseBrute)
+	{
+		float intensiteRiviere = Mathf.Clamp((crevasseBrute - 0.02f) / 0.90f, 0f, 1f);
+		float tSmooth = intensiteRiviere * intensiteRiviere * (3f - 2f * intensiteRiviere);
+		float adoucissementBerge = Mathf.Clamp((crevasseBrute + 0.08f) / 0.30f, 0f, 1f);
+		adoucissementBerge = adoucissementBerge * adoucissementBerge * (3f - 2f * adoucissementBerge);
+		float profondeurCible = Mathf.Lerp(tSmooth * 5.0f, tSmooth * 22.0f, adoucissementBerge);
+		return Mathf.RoundToInt(profondeurCible);
+	}
 
 	private byte DeterminerMateriauCroûte(float globalX, float globalZ, int globalY, int hauteurSurface, float temperature, float humidite)
 	{
@@ -814,7 +815,16 @@ public partial class Generateur_Voxel : Node3D
 		bool fondEau = hauteurSurface <= NiveauEau - 1;
 		if (climatJungleArgile && bordEau && bruitArgileRive > 0.83f) return 8;
 		if (climatJungleArgile && fondEau && bruitArgileFond > 0.965f) return 8;
-		if (globalY <= NiveauPlage) return (humidite > 0.2f) ? (byte)7 : (byte)3;  // Plage : seuil doux
+		int deltaLittoral = hauteurSurface - NiveauPlage;
+		if (deltaLittoral <= LargeurTransitionLittorale)
+		{
+			float bruitLittoral = (_noiseErosion.GetNoise2D(globalX * 0.018f + 1700f, globalZ * 0.018f - 900f) + 1f) * 0.5f;
+			if (deltaLittoral <= 0) return (humidite > 0.2f) ? (byte)7 : (byte)3;
+			float tTransition = Mathf.Clamp(deltaLittoral / (float)LargeurTransitionLittorale, 0f, 1f);
+			float seuilSable = Mathf.Lerp(0.18f, 0.72f, tTransition);
+			if (bruitLittoral > seuilSable)
+				return (humidite > 0.3f) ? (byte)7 : (byte)3;
+		}
 		// Sable UNIQUEMENT quand très sec ET très chaud (temp + humidité liés logiquement)
 		if (temperature > 0.5f && humidite < -0.5f) return 3;  // Désert : sable
 		// Plusieurs stades temp/hum avec seuils progressifs (transitions lentes)
@@ -917,7 +927,7 @@ public partial class Generateur_Voxel : Node3D
 					else if (globalY > hauteurSurface && globalY <= NiveauEau)
 					{
 						_densities[x, y, z] = -10.0f;
-						_materials[x, y, z] = 0;
+						_materials[x, y, z] = 4;
 						_densitiesEau[x, y, z] = (NiveauEau + 1.0f) - y;
 					}
 					else
@@ -969,6 +979,12 @@ public partial class Generateur_Voxel : Node3D
 		noiseSurface.FractalType = FastNoiseLite.FractalTypeEnum.Fbm;
 		noiseSurface.FractalOctaves = 5;
 		noiseSurface.Frequency = 0.002f;
+
+		var noiseErosion = new FastNoiseLite();
+		noiseErosion.NoiseType = FastNoiseLite.NoiseTypeEnum.Simplex;
+		noiseErosion.Seed = seed + 1;
+		noiseErosion.FractalOctaves = 5;
+		noiseErosion.Frequency = 0.002f;
 
 		var noiseTemperature = new FastNoiseLite();
 		noiseTemperature.NoiseType = FastNoiseLite.NoiseTypeEnum.Perlin;
@@ -1023,7 +1039,7 @@ public partial class Generateur_Voxel : Node3D
 					}
 					else if (globalY == hauteurSurface)
 					{
-						materials[x, y, z] = DeterminerMateriauCroûteStatique(globalX, globalZ, (int)globalY, hauteurSurface, temperature, humidite, noiseNeige, SeuilNeigeBase);
+						materials[x, y, z] = DeterminerMateriauCroûteStatique(globalX, globalZ, (int)globalY, hauteurSurface, temperature, humidite, noiseNeige, noiseErosion, SeuilNeigeBase);
 						densities[x, y, z] = 10.0f;
 					}
 					else if (globalY < hauteurSurface && globalY >= hauteurSurface - 4)
@@ -1060,7 +1076,7 @@ public partial class Generateur_Voxel : Node3D
 					else if (globalY > hauteurSurface && globalY <= NiveauEau)
 					{
 						densities[x, y, z] = -10.0f;
-						materials[x, y, z] = 0;
+						materials[x, y, z] = 4;
 					}
 					else if (globalY > hauteurSurface)
 					{
@@ -1078,11 +1094,12 @@ public partial class Generateur_Voxel : Node3D
 		return (densities, materials);
 	}
 
-	private static byte DeterminerMateriauCroûteStatique(float globalX, float globalZ, int globalY, int hauteurSurface, float temperature, float humidite, FastNoiseLite noiseNeige, int seuilNeigeBase)
+	private static byte DeterminerMateriauCroûteStatique(float globalX, float globalZ, int globalY, int hauteurSurface, float temperature, float humidite, FastNoiseLite noiseNeige, FastNoiseLite noiseErosion, int seuilNeigeBase)
 	{
 		const int NiveauPlage = 102;  // Sable jusqu'à 102, herbe à 103-104
 		const int NiveauEau = 103;  // +1 m
 		const int SeuilMontagneRoche = 207; // Roche 200-215 (bruit ±8)
+		const int LargeurTransitionLittorale = 3;
 		float bruitNeige = noiseNeige.GetNoise2D(globalX, globalZ);
 		float bruitRoche = noiseNeige.GetNoise2D(globalX + 500f, globalZ);
 		float bruitArgileRive = noiseNeige.GetNoise2D(globalX * 2.15f + 3100f, globalZ * 2.15f - 2700f);
@@ -1096,7 +1113,16 @@ public partial class Generateur_Voxel : Node3D
 		bool fondEau = hauteurSurface <= NiveauEau - 1;
 		if (climatJungleArgile && bordEau && bruitArgileRive > 0.83f) return 8;
 		if (climatJungleArgile && fondEau && bruitArgileFond > 0.965f) return 8;
-		if (globalY <= NiveauPlage) return (humidite > 0.2f) ? (byte)7 : (byte)3;
+		int deltaLittoral = hauteurSurface - NiveauPlage;
+		if (deltaLittoral <= LargeurTransitionLittorale)
+		{
+			float bruitLittoral = (noiseErosion.GetNoise2D(globalX * 0.018f + 1700f, globalZ * 0.018f - 900f) + 1f) * 0.5f;
+			if (deltaLittoral <= 0) return (humidite > 0.2f) ? (byte)7 : (byte)3;
+			float tTransition = Mathf.Clamp(deltaLittoral / (float)LargeurTransitionLittorale, 0f, 1f);
+			float seuilSable = Mathf.Lerp(0.18f, 0.72f, tTransition);
+			if (bruitLittoral > seuilSable)
+				return (humidite > 0.3f) ? (byte)7 : (byte)3;
+		}
 		// Sable UNIQUEMENT quand très sec ET très chaud (temp + humidité liés)
 		if (temperature > 0.5f && humidite < -0.5f) return 3;  // Désert : sable
 		// Plusieurs stades temp/hum avec seuils progressifs (transitions lentes)

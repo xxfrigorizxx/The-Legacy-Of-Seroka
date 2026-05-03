@@ -641,6 +641,14 @@ public static class Atlas_Matiere
             string essence = slot.IndexBotanique switch { 0 => "Chêne", 1 => "Bouleau", 2 => "Pin", 3 => "Sapin", 4 => "Fromager", _ => "Bois" };
             return $"Pit à feu roche ({essence})";
         }
+        if (id == Joueur.IdObjetFondationBois)
+            return "Fondation bois";
+        if (id == Joueur.IdObjetFondationRoche)
+            return "Fondation roche";
+        if (id == Joueur.IdObjetFondationBoisSoleRoche)
+            return "Fondation bois sole roche";
+        if (id == Joueur.IdObjetFondationRocheSoleBois)
+            return "Fondation roche sole bois";
         if (id == Joueur.IdObjetAllumeFeu)
         {
             string pierre = slot.IndexChimique switch { 10 => "Marcassite", 11 => "Pyrite", _ => "Sulfure" };
@@ -1110,6 +1118,144 @@ public static class Atlas_Matiere
                     IndexMorphologique = grille[4].IndexMorphologique,
                     IndexTaille = grille[4].IndexTaille,
                     NiveauFracture = nf,
+                    EstUnEclat = false
+                };
+            }
+        }
+
+        if (grilleCraft3x3Table && grille.Length >= 9)
+        {
+            static bool EstDemiBucheStandardFondation(SlotInventaire s) =>
+                !s.EstVide && s.ID == 30 && s.IndexMorphologique == 1 && s.IndexTaille == 1;
+            static bool EstRocheMatiereFondation(SlotInventaire s) =>
+                !s.EstVide && ItemPhysique.EstIdRocheMatiere(s.ID) && s.IndexTaille == 1;
+            static int TypeRocheFondation(SlotInventaire s) =>
+                ItemPhysique.IndexChimiqueDepuisIdRoche(s.ID);
+
+            static int MaxFractureSlots(SlotInventaire[] g)
+            {
+                int max = 0;
+                for (int i = 0; i < 9; i++)
+                    max = Mathf.Max(max, g[i].NiveauFracture);
+                return max;
+            }
+
+            bool fondationBois = true;
+            byte essenceFondationBois = grille[0].IndexBotanique;
+            for (int i = 0; i < 9; i++)
+            {
+                SlotInventaire s = grille[i];
+                if (!EstDemiBucheStandardFondation(s) || s.IndexBotanique != essenceFondationBois)
+                {
+                    fondationBois = false;
+                    break;
+                }
+            }
+            if (fondationBois)
+            {
+                return new SlotInventaire
+                {
+                    ID = Joueur.IdObjetFondationBois,
+                    IndexBotanique = essenceFondationBois,
+                    IndexChimique = 0,
+                    IndexMorphologique = 0,
+                    IndexTaille = 0,
+                    NiveauFracture = MaxFractureSlots(grille),
+                    EstUnEclat = false
+                };
+            }
+
+            bool fondationRoche = true;
+            int chimieRefRoche = TypeRocheFondation(grille[0]);
+            for (int i = 0; i < 9; i++)
+            {
+                SlotInventaire s = grille[i];
+                if (!EstRocheMatiereFondation(s) || TypeRocheFondation(s) != chimieRefRoche)
+                {
+                    fondationRoche = false;
+                    break;
+                }
+            }
+            if (fondationRoche)
+            {
+                return new SlotInventaire
+                {
+                    ID = Joueur.IdObjetFondationRoche,
+                    IndexBotanique = 0,
+                    IndexChimique = chimieRefRoche,
+                    IndexMorphologique = 0,
+                    IndexTaille = 0,
+                    NiveauFracture = MaxFractureSlots(grille),
+                    EstUnEclat = false
+                };
+            }
+
+            bool fondationBoisSoleRoche = true;
+            byte essenceMixteA = grille[0].IndexBotanique;
+            int chimieMixteA = TypeRocheFondation(grille[6]);
+            for (int i = 0; i < 6; i++)
+            {
+                SlotInventaire s = grille[i];
+                if (!EstDemiBucheStandardFondation(s) || s.IndexBotanique != essenceMixteA)
+                {
+                    fondationBoisSoleRoche = false;
+                    break;
+                }
+            }
+            for (int i = 6; i < 9 && fondationBoisSoleRoche; i++)
+            {
+                SlotInventaire s = grille[i];
+                if (!EstRocheMatiereFondation(s) || TypeRocheFondation(s) != chimieMixteA)
+                {
+                    fondationBoisSoleRoche = false;
+                    break;
+                }
+            }
+            if (fondationBoisSoleRoche)
+            {
+                return new SlotInventaire
+                {
+                    ID = Joueur.IdObjetFondationBoisSoleRoche,
+                    IndexBotanique = essenceMixteA,
+                    IndexChimique = chimieMixteA,
+                    IndexMorphologique = 0,
+                    IndexTaille = 0,
+                    NiveauFracture = MaxFractureSlots(grille),
+                    EstUnEclat = false
+                };
+            }
+
+            bool fondationRocheSoleBois = true;
+            int chimieMixteB = TypeRocheFondation(grille[0]);
+            byte essenceMixteB = grille[6].IndexBotanique;
+            for (int i = 0; i < 6; i++)
+            {
+                SlotInventaire s = grille[i];
+                if (!EstRocheMatiereFondation(s) || TypeRocheFondation(s) != chimieMixteB)
+                {
+                    fondationRocheSoleBois = false;
+                    break;
+                }
+            }
+            for (int i = 6; i < 9 && fondationRocheSoleBois; i++)
+            {
+                SlotInventaire s = grille[i];
+                if (!EstDemiBucheStandardFondation(s) || s.IndexBotanique != essenceMixteB)
+                {
+                    fondationRocheSoleBois = false;
+                    break;
+                }
+            }
+            if (fondationRocheSoleBois)
+            {
+                return new SlotInventaire
+                {
+                    ID = Joueur.IdObjetFondationRocheSoleBois,
+                    IndexBotanique = essenceMixteB,
+                    IndexChimique = chimieMixteB,
+                    IndexMorphologique = 0,
+                    IndexTaille = 0,
+                    NiveauFracture = MaxFractureSlots(grille),
                     EstUnEclat = false
                 };
             }

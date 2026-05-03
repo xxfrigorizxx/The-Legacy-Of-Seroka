@@ -8,13 +8,27 @@ using System;
 /// </summary>
 public partial class Joueur
 {
+    private static readonly string[] CommandesChatConnues =
+    {
+        "/ADIUTO",
+        "/MODUSA RUDI 0",
+        "/MODUSA RUDI 1",
+        "/MODUSA RUDI 3",
+        "/DIMANASIO APISARA",
+        "/DIMANASIO ARAPA"
+    };
+
     private static Joueur _joueurFilSquelette;
     private CanvasLayer _coucheFilSquelette;
     private Control _racineChat;
     private RichTextLabel _richFilSquelette;
     private LineEdit _ligneSaisieChat;
+    private Label _labelSuggestionsChat;
     private Timer _timerMasquageChatPassif;
     private bool _chatEditionOuverte;
+    private string[] _suggestionsCommandesActives = Array.Empty<string>();
+    private int _indexSuggestionCommande = -1;
+    private bool _miseAJourTexteSuggestionInterne;
     private const int MaxLignesFilSquelette = 18;
     private const float DelaiMasquageChatPassifSec = 15f;
 
@@ -96,7 +110,19 @@ public partial class Joueur
         };
         _ligneSaisieChat.AddThemeFontSizeOverride("font_size", 14);
         _ligneSaisieChat.TextSubmitted += OnTexteChatSoumis;
+        _ligneSaisieChat.TextChanged += OnTexteChatModifie;
+        _ligneSaisieChat.GuiInput += OnGuiInputLigneSaisieChat;
         vbox.AddChild(_ligneSaisieChat);
+
+        _labelSuggestionsChat = new Label
+        {
+            Name = "LabelSuggestionsCommandesChat",
+            Visible = false,
+            AutowrapMode = TextServer.AutowrapMode.WordSmart
+        };
+        _labelSuggestionsChat.AddThemeFontSizeOverride("font_size", 12);
+        _labelSuggestionsChat.AddThemeColorOverride("font_color", new Color(0.74f, 0.88f, 0.95f));
+        vbox.AddChild(_labelSuggestionsChat);
 
         _timerMasquageChatPassif = new Timer
         {
@@ -125,11 +151,184 @@ public partial class Joueur
             _ligneSaisieChat?.ReleaseFocus();
             return;
         }
+        if (string.Equals(t, "/ADIUTO", StringComparison.OrdinalIgnoreCase))
+        {
+            AfficherAideCommandesChat();
+            MasquerSuggestionsCommandesChat();
+            if (_ligneSaisieChat != null && GodotObject.IsInstanceValid(_ligneSaisieChat))
+                _ligneSaisieChat.Text = "";
+            _ligneSaisieChat?.CallDeferred(LineEdit.MethodName.GrabFocus);
+            return;
+        }
+        if (t.StartsWith("/MODUSA", StringComparison.OrdinalIgnoreCase))
+        {
+            bool envoye = _gestionnaireMonde != null && _gestionnaireMonde.EnvoyerCommandeAdminChat(t);
+            if (envoye)
+                PousserLigneChatHistorique("[Commande admin envoyee] " + t, prefixerSquelette: false);
+            else
+                PousserLigneChatHistorique("[Erreur] commande admin impossible hors mode reseau serveur.", prefixerSquelette: false);
+            MasquerSuggestionsCommandesChat();
+            if (_ligneSaisieChat != null && GodotObject.IsInstanceValid(_ligneSaisieChat))
+                _ligneSaisieChat.Text = "";
+            _ligneSaisieChat?.CallDeferred(LineEdit.MethodName.GrabFocus);
+            return;
+        }
+        if (t.StartsWith("/DIMANASIO", StringComparison.OrdinalIgnoreCase))
+        {
+            bool envoye = _gestionnaireMonde != null && _gestionnaireMonde.EnvoyerCommandeAdminChat(t);
+            if (envoye)
+                PousserLigneChatHistorique("[Commande dimension envoyee] " + t, prefixerSquelette: false);
+            else
+                PousserLigneChatHistorique("[Erreur] commande dimension impossible hors mode reseau serveur.", prefixerSquelette: false);
+            MasquerSuggestionsCommandesChat();
+            if (_ligneSaisieChat != null && GodotObject.IsInstanceValid(_ligneSaisieChat))
+                _ligneSaisieChat.Text = "";
+            _ligneSaisieChat?.CallDeferred(LineEdit.MethodName.GrabFocus);
+            return;
+        }
         PousserLigneChatHistorique("[Moi] " + t, prefixerSquelette: false);
         GD.Print($"ZERO-K Chat joueur : {t}");
+        MasquerSuggestionsCommandesChat();
         if (_ligneSaisieChat != null && GodotObject.IsInstanceValid(_ligneSaisieChat))
             _ligneSaisieChat.Text = "";
         _ligneSaisieChat?.CallDeferred(LineEdit.MethodName.GrabFocus);
+    }
+
+    private void AfficherAideCommandesChat()
+    {
+        PousserLigneChatHistorique("[Aide] Commandes chat:", prefixerSquelette: false);
+        PousserLigneChatHistorique("[Aide] /ADIUTO -> affiche cette aide.", prefixerSquelette: false);
+        PousserLigneChatHistorique("[Aide] /MODUSA RUDI 0 -> desactive mode creatif + noclip.", prefixerSquelette: false);
+        PousserLigneChatHistorique("[Aide] /MODUSA RUDI 1 -> active mode creatif.", prefixerSquelette: false);
+        PousserLigneChatHistorique("[Aide] /MODUSA RUDI 3 -> active mode creatif + noclip.", prefixerSquelette: false);
+        PousserLigneChatHistorique("[Aide] /DIMANASIO APISARA -> transfere vers l'Abysse.", prefixerSquelette: false);
+        PousserLigneChatHistorique("[Aide] /DIMANASIO ARAPA -> retour vers Alpha.", prefixerSquelette: false);
+    }
+
+    private void OnTexteChatModifie(string texte)
+    {
+        if (_miseAJourTexteSuggestionInterne)
+            return;
+        MettreAJourSuggestionsCommandesChat(texte, reinitialiserSelection: true);
+    }
+
+    private void OnGuiInputLigneSaisieChat(InputEvent @event)
+    {
+        if (@event is not InputEventKey keyEvent || !keyEvent.Pressed || keyEvent.Echo)
+            return;
+
+        if (keyEvent.Keycode == Key.Up)
+        {
+            if (EssayerSelectionnerSuggestionCommande(direction: -1))
+                _ligneSaisieChat?.AcceptEvent();
+            return;
+        }
+
+        if (keyEvent.Keycode == Key.Down)
+        {
+            if (EssayerSelectionnerSuggestionCommande(direction: 1))
+                _ligneSaisieChat?.AcceptEvent();
+            return;
+        }
+    }
+
+    private bool EssayerSelectionnerSuggestionCommande(int direction)
+    {
+        if (_ligneSaisieChat == null || !GodotObject.IsInstanceValid(_ligneSaisieChat))
+            return false;
+
+        if (_suggestionsCommandesActives.Length == 0)
+            MettreAJourSuggestionsCommandesChat(_ligneSaisieChat.Text, reinitialiserSelection: true);
+        if (_suggestionsCommandesActives.Length == 0)
+            return false;
+
+        int n = _suggestionsCommandesActives.Length;
+        if (_indexSuggestionCommande < 0)
+            _indexSuggestionCommande = direction < 0 ? n - 1 : 0;
+        else
+            _indexSuggestionCommande = (_indexSuggestionCommande + direction + n) % n;
+
+        string suggestion = _suggestionsCommandesActives[_indexSuggestionCommande];
+        _miseAJourTexteSuggestionInterne = true;
+        _ligneSaisieChat.Text = suggestion;
+        _ligneSaisieChat.CaretColumn = _ligneSaisieChat.Text.Length;
+        _miseAJourTexteSuggestionInterne = false;
+
+        RafraichirLabelSuggestionsCommandesChat();
+        return true;
+    }
+
+    private void MettreAJourSuggestionsCommandesChat(string texteCourant, bool reinitialiserSelection)
+    {
+        if (string.IsNullOrWhiteSpace(texteCourant) || !texteCourant.StartsWith('/'))
+        {
+            MasquerSuggestionsCommandesChat();
+            return;
+        }
+
+        string prefixe = texteCourant.Trim();
+        int nb = 0;
+        for (int i = 0; i < CommandesChatConnues.Length; i++)
+        {
+            if (CommandesChatConnues[i].StartsWith(prefixe, StringComparison.OrdinalIgnoreCase))
+                nb++;
+        }
+        if (nb == 0)
+        {
+            MasquerSuggestionsCommandesChat();
+            return;
+        }
+
+        _suggestionsCommandesActives = new string[nb];
+        int j = 0;
+        for (int i = 0; i < CommandesChatConnues.Length; i++)
+        {
+            if (CommandesChatConnues[i].StartsWith(prefixe, StringComparison.OrdinalIgnoreCase))
+                _suggestionsCommandesActives[j++] = CommandesChatConnues[i];
+        }
+
+        if (reinitialiserSelection)
+            _indexSuggestionCommande = -1;
+
+        RafraichirLabelSuggestionsCommandesChat();
+    }
+
+    private void RafraichirLabelSuggestionsCommandesChat()
+    {
+        if (_labelSuggestionsChat == null || !GodotObject.IsInstanceValid(_labelSuggestionsChat))
+            return;
+        if (_suggestionsCommandesActives.Length == 0)
+        {
+            _labelSuggestionsChat.Visible = false;
+            _labelSuggestionsChat.Text = "";
+            return;
+        }
+
+        _labelSuggestionsChat.Visible = true;
+        string texte = "Suggestions commandes (Fleche Haut/Bas puis Entree): ";
+        int maxAffichage = Math.Min(_suggestionsCommandesActives.Length, 4);
+        for (int i = 0; i < maxAffichage; i++)
+        {
+            bool selectionnee = i == _indexSuggestionCommande;
+            if (i > 0)
+                texte += " | ";
+            texte += selectionnee ? "[" + _suggestionsCommandesActives[i] + "]" : _suggestionsCommandesActives[i];
+        }
+        if (_suggestionsCommandesActives.Length > maxAffichage)
+            texte += " | ...";
+
+        _labelSuggestionsChat.Text = texte;
+    }
+
+    private void MasquerSuggestionsCommandesChat()
+    {
+        _suggestionsCommandesActives = Array.Empty<string>();
+        _indexSuggestionCommande = -1;
+        if (_labelSuggestionsChat != null && GodotObject.IsInstanceValid(_labelSuggestionsChat))
+        {
+            _labelSuggestionsChat.Visible = false;
+            _labelSuggestionsChat.Text = "";
+        }
     }
 
     private void RedemarrerTimerMasquagePassif()
@@ -208,6 +407,10 @@ public partial class Joueur
             return false;
         if (_chatEditionOuverte)
             return false;
+        if (UiJoueurBloquanteHorsChatOuverte())
+            return false;
+        if (SaisieTexteUiEnCours())
+            return false;
         bool estT = ek.Keycode == Key.T || ek.PhysicalKeycode == Key.T;
         if (!estT)
             return false;
@@ -230,6 +433,7 @@ public partial class Joueur
         if (_ligneSaisieChat != null)
         {
             _ligneSaisieChat.Visible = true;
+            MettreAJourSuggestionsCommandesChat(_ligneSaisieChat.Text, reinitialiserSelection: true);
             _ligneSaisieChat.CallDeferred(LineEdit.MethodName.GrabFocus);
         }
         Input.MouseMode = Input.MouseModeEnum.Visible;
@@ -243,6 +447,7 @@ public partial class Joueur
             _ligneSaisieChat.Visible = false;
             _ligneSaisieChat.ReleaseFocus();
         }
+        MasquerSuggestionsCommandesChat();
         Input.MouseMode = Input.MouseModeEnum.Captured;
         _timerMasquageChatPassif?.Stop();
         if (_racineChat != null && GodotObject.IsInstanceValid(_racineChat))
@@ -251,4 +456,26 @@ public partial class Joueur
 
     /// <summary>À appeler depuis les branches UI qui bloquent le clavier (menu Q, menu K) pour que T ouvre quand même le chat.</summary>
     public bool EssayerOuvrirChatDepuisToucheT(InputEvent @event) => EssayerBasculerChatInGameDepuisInput(@event);
+
+    private bool UiJoueurBloquanteHorsChatOuverte()
+    {
+        return (_modelisateur != null && _modelisateur.EstOuvert)
+            || (_menuFutureState != null && _menuFutureState.EstOuvert)
+            || (_menuAnatomie != null && _menuAnatomie.EstOuvert)
+            || CarnetSavoirOuvert();
+    }
+
+    private bool SaisieTexteUiEnCours()
+    {
+        Control focus = GetViewport()?.GuiGetFocusOwner();
+        if (focus == null || !GodotObject.IsInstanceValid(focus))
+            return false;
+        if (focus == _ligneSaisieChat)
+            return false;
+        if (focus is LineEdit ligne)
+            return ligne.Editable;
+        if (focus is TextEdit zone)
+            return zone.Editable;
+        return false;
+    }
 }

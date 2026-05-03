@@ -85,6 +85,13 @@ public partial class Chunk_Client : Node3D
 	private Dictionary<Vector3I, byte> _inventaireFloreCache;
 	private ChunkFlorePayload _payloadFloreCache;
 	private int _frameFlore;
+	private readonly List<(Transform3D T, int CouleurIdx)> _tamponPleins = new List<(Transform3D T, int CouleurIdx)>(64);
+	private readonly List<Transform3D> _tamponVides = new List<Transform3D>(64);
+	private readonly List<(Transform3D t, Color c)> _tamponGazon = new List<(Transform3D t, Color c)>(512);
+	private readonly List<Transform3D>[] _tamponBuissonsParCouleur = new List<Transform3D>[Joueur.BaieNombreCouleurs];
+	private MultiMesh _cacheMultiMeshGazon;
+	private MultiMesh _cacheMultiMeshBuissonVide;
+	private readonly MultiMesh[] _cacheMultiMeshBuissonPleinParCouleur = new MultiMesh[Joueur.BaieNombreCouleurs];
 	/// <summary>Rayon en chunks : seul le gazon (grass.glb) est visible dans cette zone autour du joueur. Les buissons restent visibles partout.</summary>
 	private const int RAYON_GAZON_CHUNKS = 1;
 	/// <summary>Au-delà de ce rayon (en chunks), le chunk reste affiché mais est "dormant" : pas de physique ni collision.</summary>
@@ -96,6 +103,8 @@ public partial class Chunk_Client : Node3D
 	{
 		SetProcess(true);
 		SetPhysicsProcess(false);
+		for (int i = 0; i < _tamponBuissonsParCouleur.Length; i++)
+			_tamponBuissonsParCouleur[i] = new List<Transform3D>(32);
 
 		_sectionsTerrain = new MeshInstance3D[NB_SECTIONS];
 		_sectionsEau = new MeshInstance3D[NB_SECTIONS];
@@ -766,7 +775,8 @@ public partial class Chunk_Client : Node3D
 
 		Mesh meshGazon = _cacheMeshGazon;
 
-		var mm = new MultiMesh();
+		_cacheMultiMeshGazon ??= new MultiMesh();
+		var mm = _cacheMultiMeshGazon;
 		ConfigurerMultiMeshGazonAvecInstances(mm, meshGazon, gazonInstances);
 		if (mm.InstanceCount <= 0)
 		{
@@ -796,19 +806,20 @@ public partial class Chunk_Client : Node3D
 		ViderMultimeshBuissonsPleinsClient();
 		if (_mmBuissonPleinParCouleur != null && pleinsColores != null && pleinsColores.Count > 0)
 		{
-			var parCouleur = new List<Transform3D>[Joueur.BaieNombreCouleurs];
-			for (int i = 0; i < parCouleur.Length; i++)
-				parCouleur[i] = new List<Transform3D>();
+			for (int i = 0; i < _tamponBuissonsParCouleur.Length; i++)
+				_tamponBuissonsParCouleur[i].Clear();
 			foreach (var p in pleinsColores)
-				parCouleur[Joueur.ClampIndexCouleurBaie(p.CouleurIdx)].Add(p.T);
+				_tamponBuissonsParCouleur[Joueur.ClampIndexCouleurBaie(p.CouleurIdx)].Add(p.T);
 			for (int c = 0; c < _mmBuissonPleinParCouleur.Length; c++)
 			{
 				Mesh meshPlein = ObtenirMeshBuissonProcedural(true, c);
-				if (meshPlein == null || parCouleur[c].Count <= 0)
+				List<Transform3D> instancesCouleur = _tamponBuissonsParCouleur[c];
+				if (meshPlein == null || instancesCouleur.Count <= 0)
 					continue;
-				var mm = new MultiMesh();
-				ConfigurerMultiMeshBuissonAvecTransforms(mm, meshPlein, parCouleur[c]);
-				mm.CustomAabb = CalculerAabbFusionneMultimesh(meshPlein, parCouleur[c]);
+				_cacheMultiMeshBuissonPleinParCouleur[c] ??= new MultiMesh();
+				var mm = _cacheMultiMeshBuissonPleinParCouleur[c];
+				ConfigurerMultiMeshBuissonAvecTransforms(mm, meshPlein, instancesCouleur);
+				mm.CustomAabb = CalculerAabbFusionneMultimesh(meshPlein, instancesCouleur);
 				_mmBuissonPleinParCouleur[c].Multimesh = mm;
 				_mmBuissonPleinParCouleur[c].MaterialOverride = matBuisson;
 				_mmBuissonPleinParCouleur[c].Visible = true;
@@ -817,7 +828,8 @@ public partial class Chunk_Client : Node3D
 		Mesh meshVide = _cacheMeshVide;
 		if (meshVide != null && vides != null && vides.Count > 0)
 		{
-			var mm = new MultiMesh();
+			_cacheMultiMeshBuissonVide ??= new MultiMesh();
+			var mm = _cacheMultiMeshBuissonVide;
 			ConfigurerMultiMeshBuissonAvecTransforms(mm, meshVide, vides);
 			mm.CustomAabb = CalculerAabbFusionneMultimesh(meshVide, vides);
 			_mmBuissonVide.Multimesh = mm;
@@ -879,9 +891,9 @@ public partial class Chunk_Client : Node3D
 				return;
 			}
 		Vector3 chunkOrigin = GlobalPosition;
-		var pleins = new List<(Transform3D T, int CouleurIdx)>();
-		var vides = new List<Transform3D>();
-		var gazonInstances = new List<(Transform3D t, Color c)>();
+		_tamponPleins.Clear();
+		_tamponVides.Clear();
+		_tamponGazon.Clear();
 		Vector3 posObs = (GetParent() as Monde_Client)?.ObtenirPositionObservation() ?? chunkOrigin;
 		// Utilise le rayon public configurable pour que l'herbe reste visible jusqu'à la distance paramétrée.
 		int rayonChunksGazon = Mathf.Max(1, RayonVisibiliteGazonChunks);
@@ -910,7 +922,7 @@ public partial class Chunk_Client : Node3D
 					tGazon.Origin = positionLocale + new Vector3(offsetX, 0, offsetZ);
 					float baseEchelle = EchelleGazon * echelleAlea;
 					tGazon.Basis = Basis.Identity.Scaled(new Vector3(baseEchelle * facteurLargeur, baseEchelle * facteurHauteur, baseEchelle * facteurLargeur)).Rotated(Vector3.Up, angleBrin);
-					gazonInstances.Add((tGazon, couleurHerbe));
+					_tamponGazon.Add((tGazon, couleurHerbe));
 				}
 			}
 			if (Chunk_Serveur.EstTypeBuisson(kv.Value))
@@ -923,13 +935,13 @@ public partial class Chunk_Client : Node3D
 				if (Chunk_Serveur.EstBuissonPlein(kv.Value))
 				{
 					int idxCouleur = Joueur.ClampIndexCouleurBaie(Chunk_Serveur.ObtenirVarianteBuisson(kv.Value) % Joueur.BaieNombreCouleurs);
-					pleins.Add((tBuis, idxCouleur));
+					_tamponPleins.Add((tBuis, idxCouleur));
 				}
-				else vides.Add(tBuis);
+				else _tamponVides.Add(tBuis);
 			}
 		}
-		RemplirMultiMeshGazon(gazonInstances);
-		RemplirMultiMeshBuissons(pleins, vides);
+		RemplirMultiMeshGazon(_tamponGazon);
+		RemplirMultiMeshBuissons(_tamponPleins, _tamponVides);
 		}
 		catch (ObjectDisposedException) { /* Chunk déjà supprimé */ }
 	}

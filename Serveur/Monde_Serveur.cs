@@ -3,6 +3,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
+using System.Text.Json;
 using System.Threading.Tasks;
 using FileAccess = Godot.FileAccess;
 
@@ -14,6 +15,8 @@ public partial class Monde_Serveur : Node
 	[Export] public int SeedTerrain = 19847;
 	[Export] public int RayonMondeChunks = 1000;
 	[Export] public int RenderDistance = 200;
+	[Export] public string NomDimension = "Dimension_Alpha";
+	[Export] public bool ActiverGenerationAbysse = false;
 
 	/// <summary>Matériel du terrain pour les débris (BlocChutant). Assigné par Gestionnaire_Monde.</summary>
 	public Material MaterielTerrain;
@@ -22,13 +25,12 @@ public partial class Monde_Serveur : Node
 	[Export] public double FuseauHoraireHeures = 0.0;
 
 	private Dictionary<Vector2I, Chunk_Serveur> _chunks = new Dictionary<Vector2I, Chunk_Serveur>();
+	private readonly Dictionary<int, Dictionary<Vector2I, Chunk_Serveur>> _chunksAbysseParStage2D = new Dictionary<int, Dictionary<Vector2I, Chunk_Serveur>>();
 	private Queue<Vector3I> _fileEau = new Queue<Vector3I>();
 	private HashSet<Vector3I> _eauActive = new HashSet<Vector3I>();
 	private readonly Dictionary<Vector3I, (Vector3I retourInterdit, int tickExpiration)> _antiRetourEau = new Dictionary<Vector3I, (Vector3I, int)>();
 	private int _tickEauCourant;
-	private float _tempsEcoulement;
-	private const float TICK_EAU = 0.05f;
-	private const int MaxEauParTick = 32;
+	private const int MaxEauParTick = 24;
 	private const int DureeBlocageRetourEauTicks = 5;
 	private static readonly Vector3I[] DirEauHoriz = { new Vector3I(1, 0, 0), new Vector3I(-1, 0, 0), new Vector3I(0, 0, -1), new Vector3I(0, 0, 1) };
 	private static readonly Vector3I[] DirVoisins = { new Vector3I(0, 1, 0), new Vector3I(1, 0, 0), new Vector3I(-1, 0, 0), new Vector3I(0, 0, -1), new Vector3I(0, 0, 1) };
@@ -42,10 +44,19 @@ public partial class Monde_Serveur : Node
 	private Action<Vector3I, byte> _onVoxelModifie;
 	private Action<Vector2I> _onOrdonnerDestructionChunk;
 	private Func<Vector3> _obtenirPositionJoueur;
+	private Func<int> _obtenirDimensionActive;
+	private int _dimensionServeurId = (int)DimensionJeu.Alpha;
+	private readonly HashSet<long> _adminPeerIds = new HashSet<long>();
+	private readonly Dictionary<long, bool> _modeCreatifParPeer = new Dictionary<long, bool>();
+	private readonly Dictionary<long, bool> _noclipParPeer = new Dictionary<long, bool>();
+	private const string CheminAdminWhitelist = "user://admin_whitelist.json";
 
-	private List<Vector2I> _chunksEnAttenteEnvoi = new List<Vector2I>();
+	private readonly List<DemandeChunk> _chunksEnAttenteEnvoi = new List<DemandeChunk>();
+	private readonly List<Vector3I> _clesChunksAbysseARetirerTemp = new List<Vector3I>();
+	private readonly HashSet<Vector3I> _demandesForceesSansPurge = new HashSet<Vector3I>();
+	private readonly HashSet<Vector3I> _demandesEnAttenteSet = new HashSet<Vector3I>();
 	private Queue<ColisChunk> _fileEnvoiReseau = new Queue<ColisChunk>();
-	private HashSet<Vector2I> _chunksEnCoursGeneration = new HashSet<Vector2I>();
+	private readonly HashSet<Vector3I> _chunksEnCoursGeneration = new HashSet<Vector3I>();
 	private int _chunksEnGenerationActive;
 	private static readonly int MaxThreadsGeneration = 4;
 	[Export] public int MultiplicateurCharge = 2; // Réduit la tempête de tâches pour éviter l'overload CPU.
@@ -64,17 +75,29 @@ public partial class Monde_Serveur : Node
 	[Export] public int MaxIntegrationsWorkersParTick = 2;
 	/// <summary>Budget anti micro-freeze : limite de demandes chunks traitées par frame.</summary>
 	[Export] public int MaxDemandesChunksParTick = 2;
+	[Export] public int MaxDemandesChunksAbysseParTick = 4;
+	[Export] public int MaxDemandesAbysseEnFile = 2400;
 	/// <summary>Budget anti micro-freeze : limite de chargements disque synchrones par frame.</summary>
 	private const int MaxChargesDisqueParTick = 1;
 	[Export] public int MaxChunksEnvoiParTick = 8;
 	private bool _modificationEnCours;
 	private readonly object _verrouGeneration = new object();
-	private ConcurrentQueue<(Vector2I coord, Chunk_Serveur chunk, DonneesChunk donnees)> _chunksGeneres = new ConcurrentQueue<(Vector2I, Chunk_Serveur, DonneesChunk)>();
+	private readonly ConcurrentQueue<(Vector2I coord, int coordY, Chunk_Serveur chunk, DonneesChunk donnees)> _chunksGeneres = new ConcurrentQueue<(Vector2I, int, Chunk_Serveur, DonneesChunk)>();
 
 	private struct ColisChunk
 	{
 		public Vector2I Coord;
 		public DonneesChunk Donnees;
+	}
+
+	private struct DemandeChunk
+	{
+		public Vector2I Coord;
+		public int CoordY;
+		public Vector3 Observation;
+		public bool EstAbysse;
+
+		public Vector3I Cle3D => new Vector3I(Coord.X, CoordY, Coord.Y);
 	}
 
 	/// <summary>Pierres chargées depuis disque → instanciation goutte-à-goutte (quand chunk dessiné à l'écran).</summary>
@@ -148,7 +171,7 @@ public partial class Monde_Serveur : Node
 	private readonly uint[,,] _poolSeedsArbres = new uint[PoolEspecesArbre, PoolAgesPregenArbre, PoolVariantesArbreParAge];
 	private int _seedPoolArbres = int.MinValue;
 
-	public void Initialiser(Node parentPourBlocsChutants, Node parentPourArbres, Action<Vector2I, List<int>> onChunkModifie, Action<Vector2I, DonneesChunk> onEnvoyerChunk = null, Action<Vector2I, Dictionary<Vector3I, byte>> onFloreModifie = null, Action<Vector3I, byte> onVoxelModifie = null, Action<Vector2I> onOrdonnerDestructionChunk = null, Func<Vector3> obtenirPositionJoueur = null)
+	public void Initialiser(Node parentPourBlocsChutants, Node parentPourArbres, Action<Vector2I, List<int>> onChunkModifie, Action<Vector2I, DonneesChunk> onEnvoyerChunk = null, Action<Vector2I, Dictionary<Vector3I, byte>> onFloreModifie = null, Action<Vector3I, byte> onVoxelModifie = null, Action<Vector2I> onOrdonnerDestructionChunk = null, Func<Vector3> obtenirPositionJoueur = null, Func<int> obtenirDimensionActive = null, int dimensionServeurId = (int)DimensionJeu.Alpha)
 	{
 		_parentPourBlocsChutants = parentPourBlocsChutants;
 		_parentPourArbres = parentPourArbres;
@@ -158,11 +181,149 @@ public partial class Monde_Serveur : Node
 		_onVoxelModifie = onVoxelModifie;
 		_onOrdonnerDestructionChunk = onOrdonnerDestructionChunk;
 		_obtenirPositionJoueur = obtenirPositionJoueur;
-		string nom = GameState.Instance?.NomMondeActuel ?? "MonMonde";
-		DirAccess.MakeDirRecursiveAbsolute($"user://saves/{nom}/chunks");
-		GD.Print($"ZERO-K : Dossier chunks actif = user://saves/{nom}/chunks/ (lecture ET écriture)");
+		_obtenirDimensionActive = obtenirDimensionActive;
+		_dimensionServeurId = dimensionServeurId;
+		DirAccess.MakeDirRecursiveAbsolute(ObtenirDossierChunksRelatif());
+		GD.Print($"ZERO-K : Dossier chunks actif = {ObtenirDossierChunksRelatif()}/ (lecture ET écriture) [{NomDimension}]");
+		ChargerAdminWhitelist();
 		AssurerPoolSeedsArbresPregen();
 		CreerPoolsRochesParTaille();
+	}
+
+	private void ChargerAdminWhitelist()
+	{
+		_adminPeerIds.Clear();
+		// Hôte local autorisé par défaut pour dev/administration.
+		_adminPeerIds.Add(1L);
+		if (!FileAccess.FileExists(CheminAdminWhitelist))
+		{
+			GD.Print($"ZERO-K ADMIN : whitelist absente ({CheminAdminWhitelist}), fallback hôte local (peer 1).");
+			return;
+		}
+
+		try
+		{
+			using var file = FileAccess.Open(CheminAdminWhitelist, FileAccess.ModeFlags.Read);
+			if (file == null) return;
+			string contenu = file.GetAsText();
+			if (string.IsNullOrWhiteSpace(contenu)) return;
+			using var doc = JsonDocument.Parse(contenu);
+			if (!doc.RootElement.TryGetProperty("admin_peer_ids", out JsonElement admins) || admins.ValueKind != JsonValueKind.Array)
+				return;
+			foreach (JsonElement e in admins.EnumerateArray())
+			{
+				if (e.ValueKind == JsonValueKind.Number && e.TryGetInt64(out long id) && id > 0)
+					_adminPeerIds.Add(id);
+			}
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"ZERO-K ADMIN : lecture whitelist impossible ({CheminAdminWhitelist}) -> {ex.Message}");
+		}
+	}
+
+	public bool EstPeerAdmin(long peerId) => peerId > 0 && _adminPeerIds.Contains(peerId);
+
+	public bool EstModeCreatifPeer(long peerId) =>
+		_modeCreatifParPeer.TryGetValue(peerId, out bool actif) && actif;
+
+	public bool EstNoclipPeer(long peerId) =>
+		_noclipParPeer.TryGetValue(peerId, out bool actif) && actif;
+
+	public bool EssayerTraiterCommandeAdmin(long peerId, string commandeBrute, out bool modeCreatif, out bool noclip, out string messageServeur)
+	{
+		modeCreatif = EstModeCreatifPeer(peerId);
+		noclip = EstNoclipPeer(peerId);
+		messageServeur = "Commande admin invalide.";
+
+		string commande = (commandeBrute ?? "").Trim();
+		if (string.IsNullOrEmpty(commande)) return false;
+		if (!EstPeerAdmin(peerId))
+		{
+			GD.PrintErr($"ZERO-K ADMIN SECURITE : tentative non autorisée peer={peerId} cmd='{commande}'.");
+			messageServeur = "Accès refusé: vous n'êtes pas admin.";
+			return false;
+		}
+
+		string[] t = commande.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+		if (t.Length != 3 || !string.Equals(t[0], "/MODUSA", StringComparison.OrdinalIgnoreCase))
+			return false;
+		if (string.Equals(t[1], "RUDI", StringComparison.OrdinalIgnoreCase))
+		{
+			if (!int.TryParse(t[2], out int niveauRudi) || (niveauRudi != 0 && niveauRudi != 1 && niveauRudi != 3))
+				return false;
+
+			bool creatifActif = niveauRudi != 0;
+			bool noclipActif = niveauRudi == 3;
+			_modeCreatifParPeer[peerId] = creatifActif;
+			_noclipParPeer[peerId] = noclipActif;
+			modeCreatif = creatifActif;
+			noclip = noclipActif;
+			if (niveauRudi == 0)
+				messageServeur = "Mode creatif desactive.";
+			else if (niveauRudi == 1)
+				messageServeur = "Mode creatif active.";
+			else
+				messageServeur = "Mode creatif + noclip admin active.";
+			GD.Print($"ZERO-K ADMIN : peer={peerId} -> RUDI={niveauRudi} (creatif={(modeCreatif ? 1 : 0)}, noclip={(noclip ? 1 : 0)}).");
+			return true;
+		}
+		if (string.Equals(t[1], "NOCLIP", StringComparison.OrdinalIgnoreCase))
+		{
+			if (!int.TryParse(t[2], out int etatInt) || (etatInt != 0 && etatInt != 1))
+				return false;
+			bool etat = etatInt == 1;
+			if (!EstModeCreatifPeer(peerId) && etat)
+			{
+				messageServeur = "Noclip nécessite d'abord /MODUSA RUDI 1.";
+				return true;
+			}
+			_noclipParPeer[peerId] = etat;
+			modeCreatif = EstModeCreatifPeer(peerId);
+			noclip = etat && modeCreatif;
+			messageServeur = noclip ? "Noclip admin active." : "Noclip admin desactive.";
+			GD.Print($"ZERO-K ADMIN : peer={peerId} -> noclip={(noclip ? 1 : 0)}.");
+			return true;
+		}
+
+		return false;
+	}
+
+	public bool EssayerConstruireSlotInjectionCreatif(long peerId, int id, int indexMorphologique, int indexChimique, int indexTaille, int indexBotanique, out SlotInventaire slot, out string messageServeur)
+	{
+		slot = new SlotInventaire();
+		messageServeur = "Injection creatif refusée.";
+		if (!EstPeerAdmin(peerId))
+		{
+			GD.PrintErr($"ZERO-K ADMIN SECURITE : injection non autorisée peer={peerId} id={id}.");
+			messageServeur = "Accès refusé: admin requis.";
+			return false;
+		}
+		if (!EstModeCreatifPeer(peerId))
+		{
+			messageServeur = "Mode creatif requis (/MODUSA RUDI 1).";
+			return false;
+		}
+		if (id <= 0)
+		{
+			messageServeur = "ID objet invalide.";
+			return false;
+		}
+
+		slot.ID = id;
+		slot.IndexMorphologique = Mathf.Clamp(indexMorphologique, 0, 255);
+		slot.IndexChimique = Mathf.Clamp(indexChimique, 0, Mathf.Max(0, ItemPhysique.TableGeologique.Length - 1));
+		slot.IndexTaille = Mathf.Clamp(indexTaille, 0, 4);
+		slot.IndexBotanique = (byte)Mathf.Clamp(indexBotanique, 0, 255);
+
+		// Roches matières : la chimie est imposée par l'ID objet (40-51).
+		if (ItemPhysique.EstIdRocheMatiere(id))
+			slot.IndexChimique = ItemPhysique.IndexChimiqueDepuisIdRoche(id);
+
+		Atlas_Matiere.InitialiserDurabiliteOutilSiBesoin(ref slot);
+		slot.Quantite = Mathf.Max(1, Joueur.ObtenirPileMax(slot));
+		messageServeur = $"Injection autorisée: {Atlas_Matiere.ObtenirNomObjet(slot)} x{slot.Quantite}.";
+		return true;
 	}
 
 	private static uint MelangerPool(uint x)
@@ -351,11 +512,111 @@ public partial class Monde_Serveur : Node
 		}
 	}
 
-	/// <summary>Enregistre une demande de chunk. Tri par proximité du joueur (Préemption Absolue).</summary>
-	public void EnregistrerDemandeChunk(Vector2I coord)
+	private static int CoordYDepuisMondeY(float yMonde, int hauteurMax)
 	{
-		if (!_chunksEnAttenteEnvoi.Contains(coord))
-			_chunksEnAttenteEnvoi.Add(coord);
+		int h = Mathf.Max(1, hauteurMax);
+		return Mathf.FloorToInt(yMonde / h);
+	}
+
+	private int ObtenirIndexPalierAbysse(float yMonde)
+	{
+		return ConstantesDimensionAbysse.ObtenirIndexStageDepuisYMonde(yMonde);
+	}
+
+	private void ObtenirPlageCoordYPalierAbysse(int indexPalier, out int coordYMin, out int coordYMax)
+	{
+		ConstantesDimensionAbysse.ObtenirPlageCoordYChunkDuStage(indexPalier, HauteurMax, out coordYMin, out coordYMax);
+	}
+
+	private bool EstCoordYDansFenetrePaliersAbysse(int coordY, Vector3 observation)
+	{
+		float hauteur = Mathf.Max(1f, HauteurMax);
+		float centreChunkY = coordY * hauteur + hauteur * 0.5f;
+		int palierChunk = ObtenirIndexPalierAbysse(centreChunkY);
+		int palierObservation = ObtenirIndexPalierAbysse(observation.Y);
+		int ecart = Mathf.Abs(palierChunk - palierObservation);
+		return ecart <= Mathf.Max(0, ConstantesDimensionAbysse.DemiFenetrePaliersActifs);
+	}
+
+	private static int LocalYDepuisMondeY(int yMonde, int hauteurMax)
+	{
+		int h = Mathf.Max(1, hauteurMax);
+		int local = yMonde % h;
+		if (local < 0) local += h;
+		return local;
+	}
+
+	private static Vector3I ConstruireCleChunk3D(Vector2I coord, int coordY) => new Vector3I(coord.X, coordY, coord.Y);
+
+	private int NormaliserCoordYAbysse(int coordY)
+	{
+		int indexStage = ConstantesDimensionAbysse.ObtenirIndexStageDepuisCoordYChunk(coordY, HauteurMax);
+		return ConstantesDimensionAbysse.ObtenirCoordYChunkRepresentatifDuStage(indexStage, HauteurMax);
+	}
+
+	private Dictionary<Vector2I, Chunk_Serveur> ObtenirOuCreerStageAbysse(int indexStage)
+	{
+		if (!_chunksAbysseParStage2D.TryGetValue(indexStage, out var stage))
+		{
+			stage = new Dictionary<Vector2I, Chunk_Serveur>();
+			_chunksAbysseParStage2D[indexStage] = stage;
+		}
+		return stage;
+	}
+
+	private bool TryGetChunkRuntime(Vector2I coord, int coordY, out Chunk_Serveur chunk)
+	{
+		if (ActiverGenerationAbysse)
+		{
+			int coordYNormalise = NormaliserCoordYAbysse(coordY);
+			int indexStage = ConstantesDimensionAbysse.ObtenirIndexStageDepuisCoordYChunk(coordYNormalise, HauteurMax);
+			if (_chunksAbysseParStage2D.TryGetValue(indexStage, out var stage))
+				return stage.TryGetValue(coord, out chunk);
+			chunk = null;
+			return false;
+		}
+		return _chunks.TryGetValue(coord, out chunk);
+	}
+
+	private void DefinirChunkRuntime(Vector2I coord, int coordY, Chunk_Serveur chunk)
+	{
+		if (chunk == null) return;
+		if (ActiverGenerationAbysse)
+		{
+			int coordYNormalise = NormaliserCoordYAbysse(coordY);
+			int indexStage = ConstantesDimensionAbysse.ObtenirIndexStageDepuisCoordYChunk(coordYNormalise, HauteurMax);
+			ObtenirOuCreerStageAbysse(indexStage)[coord] = chunk;
+		}
+		_chunks[coord] = chunk;
+	}
+
+	/// <summary>Enregistre une demande de chunk. En Abysse, la coordonnée Y est réellement exploitée.</summary>
+	public void EnregistrerDemandeChunk(Vector2I coord, int coordY = 0, Vector3? observation = null)
+	{
+		bool estAbysse = ActiverGenerationAbysse;
+		int cibleY = estAbysse ? NormaliserCoordYAbysse(coordY) : 0;
+		Vector3 obs = observation ?? (_obtenirPositionJoueur?.Invoke() ?? Vector3.Zero);
+		if (estAbysse && !EstCoordYDansFenetrePaliersAbysse(cibleY, obs))
+			return;
+		Vector3I cle = new Vector3I(coord.X, cibleY, coord.Y);
+		if (estAbysse
+			&& !_demandesEnAttenteSet.Contains(cle)
+			&& _chunksEnAttenteEnvoi.Count >= Mathf.Max(512, MaxDemandesAbysseEnFile))
+		{
+			// Garde-fou anti-file infinie: on refuse de grossir la file quand elle est saturée.
+			return;
+		}
+		var demande = new DemandeChunk
+		{
+			Coord = coord,
+			CoordY = cibleY,
+			Observation = obs,
+			EstAbysse = estAbysse
+		};
+		cle = demande.Cle3D;
+		if (_demandesEnAttenteSet.Add(cle))
+			_chunksEnAttenteEnvoi.Add(demande);
+		_demandesForceesSansPurge.Add(cle);
 	}
 
 	public override void _PhysicsProcess(double delta)
@@ -368,13 +629,15 @@ public partial class Monde_Serveur : Node
 		int integrationsWorkers = 0;
 		while (integrationsWorkers < MaxIntegrationsWorkersParTick && _chunksGeneres.TryDequeue(out var result))
 		{
-			_chunksEnCoursGeneration.Remove(result.coord);
+			var cleGeneree = new Vector3I(result.coord.X, result.coordY, result.coord.Y);
+			_chunksEnCoursGeneration.Remove(cleGeneree);
 			_chunksEnGenerationActive--;
-			if (_chunks.TryGetValue(result.coord, out var existant) && existant.EstChargeDepuisDisque)
+			if (TryGetChunkRuntime(result.coord, result.coordY, out var existant) && existant.EstChargeDepuisDisque)
 				continue; // Chunk déjà ressuscité du disque — ignorer le résultat procédural.
-			if (!_chunks.ContainsKey(result.coord))
-				_chunks[result.coord] = result.chunk;
-			SynchroniserFrontieresAvecVoisinsCharges(result.coord, _chunks[result.coord]);
+			// Toujours intégrer la tranche générée : en Abysse, les couches Y doivent pouvoir se remplacer proprement
+			// autour de la position courante sans rester bloquées sur une ancienne couche.
+			DefinirChunkRuntime(result.coord, result.coordY, result.chunk);
+			SynchroniserFrontieresAvecVoisinsCharges(result.coord, result.chunk);
 			SpawnerArbresChunkAvecPrioriteSauvegarde(result.coord, result.chunk);
 			// Envoi client uniquement APRÈS stase remplie, sinon LibererRochesChunk trouve une liste vide
 			DeclencherEnsemencement(result.coord, result.chunk, TailleChunk, (coord, ch) =>
@@ -386,31 +649,46 @@ public partial class Monde_Serveur : Node
 		if (!hadModifications)
 		{
 			Vector3 posObs = _obtenirPositionJoueur?.Invoke() ?? Vector3.Zero;
+			if (ActiverGenerationAbysse)
+				PurgerRuntimeAbysseHorsFenetre(posObs);
 			float rayonMaxCarrePurge = (RenderDistance + 1) * (RenderDistance + 1);
 			_chunksEnAttenteEnvoi.RemoveAll(c =>
 			{
+				if (c.EstAbysse && !EstCoordYDansFenetrePaliersAbysse(c.CoordY, posObs))
+					return true;
+				if (_demandesForceesSansPurge.Contains(c.Cle3D))
+					return false;
 				float d2 = DistanceCarreeAuJoueur(c, posObs);
 				return d2 > rayonMaxCarrePurge;
 			});
 			Vector3 posObservation = posObs;
 			int demandesTraitees = 0;
 			int chargesDisque = 0;
-			while (_chunksEnAttenteEnvoi.Count > 0 && _chunksEnGenerationActive < LancerMaxTaches && demandesTraitees < MaxDemandesChunksParTick)
+			int budgetDemandes = ActiverGenerationAbysse
+				? Mathf.Max(1, MaxDemandesChunksAbysseParTick)
+				: Mathf.Max(1, MaxDemandesChunksParTick);
+			while (_chunksEnAttenteEnvoi.Count > 0 && _chunksEnGenerationActive < LancerMaxTaches && demandesTraitees < budgetDemandes)
 			{
 				demandesTraitees++;
-				Vector2I chunkCible = ExtraireChunkLePlusProche(_chunksEnAttenteEnvoi, posObservation);
+				DemandeChunk demande = ExtraireChunkLePlusProche(_chunksEnAttenteEnvoi, posObservation);
+				Vector2I chunkCible = demande.Coord;
+				int coordYCible = demande.CoordY;
+				Vector3I cleDemande = demande.Cle3D;
+				_demandesEnAttenteSet.Remove(cleDemande);
+				bool demandeForcee = _demandesForceesSansPurge.Remove(cleDemande);
 
-				float distCarree = DistanceCarreeAuJoueur(chunkCible, posObservation);
+				float distCarree = DistanceCarreeAuJoueur(demande, posObservation);
 				float rayonMaxCarre = (RenderDistance + 1) * (RenderDistance + 1);
-				if (distCarree > rayonMaxCarre)
+				if (!demandeForcee && distCarree > rayonMaxCarre)
 				{
 					// Même logique que le client : ExtraireChunkLePlusProche a retiré l’entrée — la remettre en file
 					// sinon la demande disparaît à jamais (trou / monde qui n’atteint jamais RenderDistance).
-					_chunksEnAttenteEnvoi.Add(chunkCible);
+					_chunksEnAttenteEnvoi.Add(demande);
+					_demandesEnAttenteSet.Add(cleDemande);
 					continue;
 				}
 
-				if (_chunks.TryGetValue(chunkCible, out var existant))
+				if (TryGetChunkRuntime(chunkCible, coordYCible, out var existant))
 				{
 					_fileEnvoiReseau.Enqueue(new ColisChunk { Coord = chunkCible, Donnees = existant.ObtenirDonneesPourClient() });
 					continue;
@@ -419,15 +697,16 @@ public partial class Monde_Serveur : Node
 				Chunk_Serveur chunkActuel = null;
 
 				// BRANCHE 1 : RÉSURRECTION PURE — AUCUN appel de génération. Le chunk part directement au Mesh.
-				if (FichierChunkExiste(chunkCible))
+				if (FichierChunkExiste(chunkCible, coordYCible))
 				{
 					if (chargesDisque >= MaxChargesDisqueParTick)
 					{
 						// On refile la demande pour la frame suivante afin d'éviter un pic I/O + désérialisation.
-						_chunksEnAttenteEnvoi.Add(chunkCible);
+						_chunksEnAttenteEnvoi.Add(demande);
+						_demandesEnAttenteSet.Add(cleDemande);
 						continue;
 					}
-					chunkActuel = ChargerChunkDepuisDisque(chunkCible);
+					chunkActuel = ChargerChunkDepuisDisque(chunkCible, coordYCible);
 					if (chunkActuel == null)
 						GD.PrintErr($"ZERO-K DIAG : Fallback procédural pour {chunkCible} après échec de chargement disque.");
 					chargesDisque++;
@@ -440,24 +719,25 @@ public partial class Monde_Serveur : Node
 				{
 					lock (_verrouGeneration)
 					{
-						if (!_chunksEnCoursGeneration.Add(chunkCible))
+						if (!_chunksEnCoursGeneration.Add(cleDemande))
 							continue;
 						_chunksEnGenerationActive++;
 					}
 					Vector2I coord = chunkCible;
+					int yChunk = coordYCible;
 					Task.Run(() =>
 					{
-						var chunk = CreerChunkServeur(coord);
+						var chunk = CreerChunkServeur(coord, yChunk);
 						// TOUTES les passes : GenererTerrainDeBase, GenererCoucheSurface, GenererEau — encapsulées dans GenererDonneesVoxel.
 						chunk.GenererDonneesVoxel();
 						var donnees = chunk.ObtenirDonneesPourClient();
-						_chunksGeneres.Enqueue((coord, chunk, donnees));
+						_chunksGeneres.Enqueue((coord, yChunk, chunk, donnees));
 					});
 					continue;
 				}
 
 				// BRANCHE COMMUNE : Chunk ressuscité. Pierres + Arbres. Spawn quand chunk demandé (visible écran).
-				_chunks[chunkCible] = chunkActuel;
+				DefinirChunkRuntime(chunkCible, coordYCible, chunkActuel);
 				SynchroniserFrontieresAvecVoisinsCharges(chunkCible, chunkActuel);
 				RepousserBorduresChunkDisqueVersVoisinsProceduraux(chunkCible, chunkActuel);
 				SpawnerArbresChunkAvecPrioriteSauvegarde(chunkCible, chunkActuel);
@@ -524,11 +804,6 @@ public partial class Monde_Serveur : Node
 			nPierres++;
 		}
 
-		_tempsEcoulement += (float)delta;
-		if (_tempsEcoulement < TICK_EAU) return;
-		_tempsEcoulement = 0;
-		_tickEauCourant++;
-
 		_tempsDepuisVerifDecharge += (float)delta;
 		if (_tempsDepuisVerifDecharge >= IntervalleEvaluationTectonique)
 		{
@@ -539,6 +814,9 @@ public partial class Monde_Serveur : Node
 		// Tapis roulant décharge : N chunks par frame (sauvegarde + décharge progressifs)
 		ProcesserDechargeProgressive();
 
+		// Eau runtime purement événementielle : on ne traite que la file des voxels réveillés par modification locale.
+		if (_fileEau.Count == 0) return;
+		_tickEauCourant++;
 		int n = Math.Min(_fileEau.Count, MaxEauParTick);
 		for (int i = 0; i < n; i++)
 		{
@@ -617,26 +895,37 @@ public partial class Monde_Serveur : Node
 			if (EstVoxelEau(basePos + d)) ActiverEau(basePos + d);
 	}
 
-	public bool ChunkEstCharge(Vector2I coord) => _chunks.ContainsKey(coord);
+	public bool ChunkEstCharge(Vector2I coord)
+	{
+		if (ActiverGenerationAbysse)
+		{
+			foreach (var stage in _chunksAbysseParStage2D.Values)
+			{
+				if (stage.ContainsKey(coord))
+					return true;
+			}
+		}
+		return _chunks.ContainsKey(coord);
+	}
 
 	public Chunk_Serveur ObtenirOuCreerChunk(Vector2I coord)
 	{
-		if (_chunks.TryGetValue(coord, out var c)) return c;
+		if (TryGetChunkRuntime(coord, 0, out var c)) return c;
 
 		Chunk_Serveur chunkActuel = null;
-		bool fichierExistant = FichierChunkExiste(coord);
+		bool fichierExistant = FichierChunkExiste(coord, 0);
 		// BRANCHE 1 : RÉSURRECTION — AUCUNE génération.
 		if (fichierExistant)
-			chunkActuel = ChargerChunkDepuisDisque(coord);
+			chunkActuel = ChargerChunkDepuisDisque(coord, 0);
 		// BRANCHE 2 : CRÉATION PROCÉDURALE — TOUTES les passes ici.
 		if (chunkActuel == null)
 		{
 			if (fichierExistant)
 				GD.PrintErr($"ZERO-K DIAG : ObtenirOuCreerChunk fallback procédural pour {coord} (fichier présent mais lecture invalide).");
-			chunkActuel = CreerChunkServeur(coord);
+			chunkActuel = CreerChunkServeur(coord, 0);
 			chunkActuel.GenererDonneesVoxel(); // GenererTerrainDeBase, Surface, Eau — UNIQUEMENT pour chunks ex nihilo.
 		}
-		_chunks[coord] = chunkActuel;
+		DefinirChunkRuntime(coord, 0, chunkActuel);
 		SynchroniserFrontieresAvecVoisinsCharges(coord, chunkActuel);
 		RepousserBorduresChunkDisqueVersVoisinsProceduraux(coord, chunkActuel);
 		return chunkActuel;
@@ -647,6 +936,8 @@ public partial class Monde_Serveur : Node
 	private void SynchroniserFrontieresAvecVoisinsCharges(Vector2I coord, Chunk_Serveur chunk)
 	{
 		if (chunk == null) return;
+		if (ActiverGenerationAbysse)
+			return; // En Abysse multi-couches, cette synchro 2D peut recoller des tranches Y incohérentes.
 
 		void SynchroniserBordureDepuisVoisin(Vector2I coordVoisin, int voisinX, int chunkX, int voisinZ, int chunkZ, bool axeX)
 		{
@@ -703,6 +994,8 @@ public partial class Monde_Serveur : Node
 	private void RepousserBorduresChunkDisqueVersVoisinsProceduraux(Vector2I coord, Chunk_Serveur chunk)
 	{
 		if (chunk == null || !chunk.EstChargeDepuisDisque) return;
+		if (ActiverGenerationAbysse)
+			return; // Évite de pousser des bordures 2D sur des couches verticales différentes.
 
 		void PousserBordureVersVoisin(Vector2I coordVoisin, int chunkX, int voisinX, int chunkZ, int voisinZ, bool axeX)
 		{
@@ -769,12 +1062,28 @@ public partial class Monde_Serveur : Node
 		_fileEnvoiReseau.Enqueue(new ColisChunk { Coord = coord, Donnees = ch.ObtenirDonneesPourClient() });
 	}
 
-	private static bool FichierChunkExiste(Vector2I coord)
+	private string ObtenirNomDimensionNormalise()
 	{
-		return File.Exists(ProjectSettings.GlobalizePath(DonneesChunk.ObtenirCheminChunk(coord)));
+		string brut = string.IsNullOrWhiteSpace(NomDimension) ? "Dimension_Alpha" : NomDimension.Trim();
+		return brut.Replace("/", "_").Replace("\\", "_").Replace(" ", "_");
 	}
 
-	private static string ObtenirCheminSauvegarde(Vector2I coord) => DonneesChunk.ObtenirCheminChunk(coord);
+	private string ObtenirDossierChunksRelatif()
+	{
+		string nom = GameState.Instance?.NomMondeActuel ?? "MonMonde";
+		string suffixeDimension = ObtenirNomDimensionNormalise();
+		return $"user://saves/{nom}/chunks_{suffixeDimension}";
+	}
+
+	private string ObtenirCheminChunkRelatif(Vector2I coord, int coordY)
+		=> $"{ObtenirDossierChunksRelatif()}/chunk_{coord.X}_{coordY}_{coord.Y}.bin";
+
+	private bool FichierChunkExiste(Vector2I coord, int coordY)
+	{
+		return File.Exists(ProjectSettings.GlobalizePath(ObtenirCheminChunkRelatif(coord, coordY)));
+	}
+
+	private string ObtenirCheminSauvegarde(Vector2I coord, int coordY) => ObtenirCheminChunkRelatif(coord, coordY);
 
 	/// <summary>Délègue au chunk la sauvegarde binaire. NE sauvegarde QUE si EstModifie.</summary>
 	private void SauvegarderChunkSurDisque(Vector2I coord, Chunk_Serveur chunk)
@@ -783,10 +1092,10 @@ public partial class Monde_Serveur : Node
 	}
 
 	/// <summary>Résurrection : chargement binaire via BinaryReader. Si fichier absent ou corrompu → régénération procédurale.</summary>
-	private Chunk_Serveur ChargerChunkDepuisDisque(Vector2I coord)
+	private Chunk_Serveur ChargerChunkDepuisDisque(Vector2I coord, int coordY)
 	{
 		GD.Print($"ZERO-K DIAG : Tentative chargement Chunk {coord}...");
-		string cheminGodot = ObtenirCheminSauvegarde(coord);
+		string cheminGodot = ObtenirCheminSauvegarde(coord, coordY);
 		string cheminAbsolu = ProjectSettings.GlobalizePath(cheminGodot);
 		if (!File.Exists(cheminAbsolu))
 		{
@@ -826,7 +1135,7 @@ public partial class Monde_Serveur : Node
 			return null;
 		}
 		GD.Print($"ZERO-K SUCCÈS : Chunk {coord} chargé depuis le disque ({donneesVoxels.Length} bytes).");
-		var chunk = CreerChunkServeur(coord);
+		var chunk = CreerChunkServeur(coord, coordY);
 		if (!chunk.AppliquerTableauBytes(donneesVoxels))
 		{
 			GD.PrintErr($"ZERO-K REJET : Chunk {coord} — AppliquerTableauBytes a échoué ({cheminGodot}). Régénération forcée.");
@@ -840,10 +1149,10 @@ public partial class Monde_Serveur : Node
 	private void SauvegarderFloreChunk(Vector2I coord, Chunk_Serveur chunk)
 	{
 		if (chunk == null) return;
-		string nom = GameState.Instance?.NomMondeActuel ?? "MonMonde";
-		string dossier = ProjectSettings.GlobalizePath($"user://saves/{nom}/chunks/");
+		string dossier = ProjectSettings.GlobalizePath(ObtenirDossierChunksRelatif() + "/");
 		Directory.CreateDirectory(dossier);
-		string chemin = Path.Combine(dossier, $"chunk_{coord.X}_{coord.Y}_flore.bin");
+		int coordY = chunk?.ChunkOffsetY ?? 0;
+		string chemin = Path.Combine(dossier, $"chunk_{coord.X}_{coordY}_{coord.Y}_flore.bin");
 		try
 		{
 			using (var w = new BinaryWriter(File.Open(chemin, FileMode.Create)))
@@ -866,8 +1175,7 @@ public partial class Monde_Serveur : Node
 	private void ChargerFloreChunk(Vector2I coord, Chunk_Serveur chunk)
 	{
 		if (chunk == null) return;
-		string nom = GameState.Instance?.NomMondeActuel ?? "MonMonde";
-		string chemin = ProjectSettings.GlobalizePath($"user://saves/{nom}/chunks/chunk_{coord.X}_{coord.Y}_flore.bin");
+		string chemin = Path.Combine(ProjectSettings.GlobalizePath(ObtenirDossierChunksRelatif()), $"chunk_{coord.X}_{chunk.ChunkOffsetY}_{coord.Y}_flore.bin");
 		if (!File.Exists(chemin))
 		{
 			chunk.RegenererInventaireFloreDepuisSurface();
@@ -901,13 +1209,15 @@ public partial class Monde_Serveur : Node
 		}
 	}
 
-	private Chunk_Serveur CreerChunkServeur(Vector2I coord)
+	private Chunk_Serveur CreerChunkServeur(Vector2I coord, int coordY = 0)
 	{
 		var chunk = new Chunk_Serveur(
-			coord.X, coord.Y, TailleChunk, HauteurMax, SeedTerrain,
+			coord.X, coordY, coord.Y, TailleChunk, HauteurMax, SeedTerrain,
 			(pos, mat, brancheTailléeBuisson, indexCouleurBaie) => { SpawnBlocChutant(pos, mat, brancheTailléeBuisson, indexCouleurBaie); },
 			ChunkEstCharge,
-			ReveillerEauAdjacente
+			ReveillerEauAdjacente,
+			ActiverGenerationAbysse,
+			ObtenirDossierChunksRelatif()
 		);
 		chunk.SetOnVoxelModifie((pos, id) => _onVoxelModifie?.Invoke(pos, id));
 		chunk.SetOnFlorePurgée((c, inventaire) =>
@@ -1116,6 +1426,7 @@ public partial class Monde_Serveur : Node
 			_parentPourBlocsChutants.AddChild(rb);
 			rb.GlobalPosition = position;
 			rb.Freeze = true; // Dormance : gravité seulement à 2 chunks du joueur (évite chute dans le vide)
+			rb.SetMeta("DimensionId", _dimensionServeurId);
 		}
 		catch (Exception ex)
 		{
@@ -1172,10 +1483,17 @@ public partial class Monde_Serveur : Node
 	{
 		if (_parentPourBlocsChutants == null || _obtenirPositionJoueur == null) return;
 		Vector3 posJoueur = _obtenirPositionJoueur();
+		int dimensionActive = _obtenirDimensionActive?.Invoke() ?? _dimensionServeurId;
 		float rayonCarre = RayonActivationPierres * RayonActivationPierres;
 		foreach (Node child in _parentPourBlocsChutants.GetChildren())
 		{
 			if (child is not RigidBody3D rb) continue;
+			if (rb.HasMeta("DimensionId"))
+			{
+				int dimRb = rb.GetMeta("DimensionId").AsInt32();
+				if (dimRb != dimensionActive)
+					continue;
+			}
 			int id = 0;
 			if (rb is ItemPhysique item)
 				id = item.ID_Objet;
@@ -1209,6 +1527,11 @@ public partial class Monde_Serveur : Node
 					rb.Freeze = true;
 			}
 		}
+	}
+
+	public void ForcerPulseReveilPierres()
+	{
+		ReveillerPierresDansRayon();
 	}
 
 	/// <summary>Évite l’erreur Godot <c>!is_inside_tree()</c> sur GlobalPosition (ex. sauvegarde pendant <c>_ExitTree</c>).</summary>
@@ -1249,10 +1572,9 @@ public partial class Monde_Serveur : Node
 			if (pos.X >= xMin && pos.X < xMax && pos.Z >= zMin && pos.Z < zMax)
 				pierres.Add((pos, id, Mathf.Clamp(item.IndexCacheMemoire, 0, 3), Mathf.Clamp(item.IndexTailleRoche, 0, 4)));
 		}
-		string nom = GameState.Instance?.NomMondeActuel ?? "MonMonde";
-		string dossier = ProjectSettings.GlobalizePath($"user://saves/{nom}/chunks/");
+		string dossier = ProjectSettings.GlobalizePath(ObtenirDossierChunksRelatif() + "/");
 		Directory.CreateDirectory(dossier);
-		string chemin = Path.Combine(dossier, $"chunk_{coord.X}_{coord.Y}_items.bin");
+		string chemin = Path.Combine(dossier, $"chunk_{coord.X}_0_{coord.Y}_items.bin");
 		try
 		{
 			using (var w = new BinaryWriter(File.Open(chemin, FileMode.Create)))
@@ -1275,8 +1597,7 @@ public partial class Monde_Serveur : Node
 	private bool ChargerEtSpawnerPierresChunk(Vector2I coord)
 	{
 		if (_parentPourBlocsChutants == null) return false;
-		string nom = GameState.Instance?.NomMondeActuel ?? "MonMonde";
-		string chemin = ProjectSettings.GlobalizePath($"user://saves/{nom}/chunks/chunk_{coord.X}_{coord.Y}_items.bin");
+		string chemin = Path.Combine(ProjectSettings.GlobalizePath(ObtenirDossierChunksRelatif()), $"chunk_{coord.X}_0_{coord.Y}_items.bin");
 		if (!File.Exists(chemin)) return false;
 		try
 		{
@@ -1316,6 +1637,8 @@ public partial class Monde_Serveur : Node
 	/// <summary>Sauvegarde les ArbreVivant dans ce chunk. Fichier chunk_X_Y_arbres.bin.</summary>
 	private void SauvegarderArbresChunk(Vector2I coord)
 	{
+		if (ActiverGenerationAbysse)
+			return;
 		// Pendant la fermeture, cette méthode peut être rappelée alors que le parent d'arbres
 		// n'est plus dans l'arbre de scène. Dans cet état, la collecte retourne 0 et
 		// écrase les fichiers *_arbres.bin avec un inventaire vide.
@@ -1336,10 +1659,9 @@ public partial class Monde_Serveur : Node
 			if (p.X >= xMin && p.X < xMax && p.Z >= zMin && p.Z < zMax)
 				arbres.Add((p, arbre.AgeEnJours, arbre.IndexBotanique, arbre.Seed));
 		}
-		string nom = GameState.Instance?.NomMondeActuel ?? "MonMonde";
-		string dossier = ProjectSettings.GlobalizePath($"user://saves/{nom}/chunks/");
+		string dossier = ProjectSettings.GlobalizePath(ObtenirDossierChunksRelatif() + "/");
 		Directory.CreateDirectory(dossier);
-		string chemin = Path.Combine(dossier, $"chunk_{coord.X}_{coord.Y}_arbres.bin");
+		string chemin = Path.Combine(dossier, $"chunk_{coord.X}_0_{coord.Y}_arbres.bin");
 		try
 		{
 			using (var w = new BinaryWriter(File.Open(chemin, FileMode.Create)))
@@ -1448,6 +1770,8 @@ public partial class Monde_Serveur : Node
 	/// <summary>Spawn les ArbreVivant 3D pour ce chunk (procédural ou chargé).</summary>
 	private void SpawnerArbresChunk(Vector2I coord, Chunk_Serveur chunk)
 	{
+		if (ActiverGenerationAbysse)
+			return;
 		if (_parentPourArbres == null || chunk.InventaireArbres.Count == 0) return;
 		AssurerPoolSeedsArbresPregen();
 		foreach (var kv in chunk.InventaireArbres)
@@ -1467,6 +1791,8 @@ public partial class Monde_Serveur : Node
 	/// <summary>Priorité au disque: si un save arbres existe, on le charge; sinon fallback procédural du chunk.</summary>
 	private void SpawnerArbresChunkAvecPrioriteSauvegarde(Vector2I coord, Chunk_Serveur chunk)
 	{
+		if (ActiverGenerationAbysse)
+			return;
 		if (!ChargerArbresChunk(coord, chunk))
 			SpawnerArbresChunk(coord, chunk);
 	}
@@ -1490,9 +1816,10 @@ public partial class Monde_Serveur : Node
 	/// <summary>Charge et spawn les arbres depuis disque. Rattrape la croissance du temps passé hors-ligne.</summary>
 	private bool ChargerArbresChunk(Vector2I coord, Chunk_Serveur chunk)
 	{
+		if (ActiverGenerationAbysse)
+			return false;
 		if (_parentPourArbres == null) return false;
-		string nom = GameState.Instance?.NomMondeActuel ?? "MonMonde";
-		string chemin = ProjectSettings.GlobalizePath($"user://saves/{nom}/chunks/chunk_{coord.X}_{coord.Y}_arbres.bin");
+		string chemin = Path.Combine(ProjectSettings.GlobalizePath(ObtenirDossierChunksRelatif()), $"chunk_{coord.X}_0_{coord.Y}_arbres.bin");
 		if (!File.Exists(chemin)) return false;
 		try
 		{
@@ -1851,12 +2178,14 @@ public partial class Monde_Serveur : Node
 
 	private (Chunk_Serveur chunk, Vector3I local)? ObtenirChunkEtLocal(Vector3I pos)
 	{
-		if (pos.Y < 0 || pos.Y > HauteurMax) return null;
 		Gestionnaire_Monde.WorldToChunkAndLocal(pos.X, pos.Z, TailleChunk, out Vector2I c, out int lx, out int lz);
-		Vector2I coord = new Vector2I(c.X, c.Y);
-		if (!_chunks.TryGetValue(coord, out var ch)) return null;
 		if (lx < 0 || lx > TailleChunk || lz < 0 || lz > TailleChunk) return null;
-		return (ch, new Vector3I(lx, pos.Y, lz));
+		int coordYLocal = CoordYDepuisMondeY(pos.Y, HauteurMax);
+		Vector2I coord = new Vector2I(c.X, c.Y);
+		if (!TryGetChunkRuntime(coord, coordYLocal, out var ch))
+			return null;
+		int localY = LocalYDepuisMondeY(pos.Y, HauteurMax);
+		return (ch, new Vector3I(lx, localY, lz));
 	}
 
 	private bool EstVoxelEau(Vector3I pos)
@@ -1901,22 +2230,24 @@ public partial class Monde_Serveur : Node
 		int cx = c.X;
 		int cz = c.Y;
 
-		if (localX == 0 && _chunks.TryGetValue(new Vector2I(cx - 1, cz), out var vx))
-			vx.SetVoxelLocal(TailleChunk, posGlobal.Y, localZ, id);
-		if (localX == TailleChunk - 1 && _chunks.TryGetValue(new Vector2I(cx + 1, cz), out var vxp))
-			vxp.SetVoxelLocal(0, posGlobal.Y, localZ, id);
-		if (localZ == 0 && _chunks.TryGetValue(new Vector2I(cx, cz - 1), out var vz))
-			vz.SetVoxelLocal(localX, posGlobal.Y, TailleChunk, id);
-		if (localZ == TailleChunk - 1 && _chunks.TryGetValue(new Vector2I(cx, cz + 1), out var vzp))
-			vzp.SetVoxelLocal(localX, posGlobal.Y, 0, id);
-		if (localX == 0 && localZ == 0 && _chunks.TryGetValue(new Vector2I(cx - 1, cz - 1), out var vxz))
-			vxz.SetVoxelLocal(TailleChunk, posGlobal.Y, TailleChunk, id);
-		if (localX == TailleChunk - 1 && localZ == 0 && _chunks.TryGetValue(new Vector2I(cx + 1, cz - 1), out var vxpz))
-			vxpz.SetVoxelLocal(0, posGlobal.Y, TailleChunk, id);
-		if (localX == 0 && localZ == TailleChunk - 1 && _chunks.TryGetValue(new Vector2I(cx - 1, cz + 1), out var vxzp))
-			vxzp.SetVoxelLocal(TailleChunk, posGlobal.Y, 0, id);
-		if (localX == TailleChunk - 1 && localZ == TailleChunk - 1 && _chunks.TryGetValue(new Vector2I(cx + 1, cz + 1), out var vxpzp))
-			vxpzp.SetVoxelLocal(0, posGlobal.Y, 0, id);
+		int chunkY = CoordYDepuisMondeY(posGlobal.Y, HauteurMax);
+		int localY = LocalYDepuisMondeY(posGlobal.Y, HauteurMax);
+		if (localX == 0 && _chunks.TryGetValue(new Vector2I(cx - 1, cz), out var vx) && vx.ChunkOffsetY == chunkY)
+			vx.SetVoxelLocal(TailleChunk, localY, localZ, id);
+		if (localX == TailleChunk - 1 && _chunks.TryGetValue(new Vector2I(cx + 1, cz), out var vxp) && vxp.ChunkOffsetY == chunkY)
+			vxp.SetVoxelLocal(0, localY, localZ, id);
+		if (localZ == 0 && _chunks.TryGetValue(new Vector2I(cx, cz - 1), out var vz) && vz.ChunkOffsetY == chunkY)
+			vz.SetVoxelLocal(localX, localY, TailleChunk, id);
+		if (localZ == TailleChunk - 1 && _chunks.TryGetValue(new Vector2I(cx, cz + 1), out var vzp) && vzp.ChunkOffsetY == chunkY)
+			vzp.SetVoxelLocal(localX, localY, 0, id);
+		if (localX == 0 && localZ == 0 && _chunks.TryGetValue(new Vector2I(cx - 1, cz - 1), out var vxz) && vxz.ChunkOffsetY == chunkY)
+			vxz.SetVoxelLocal(TailleChunk, localY, TailleChunk, id);
+		if (localX == TailleChunk - 1 && localZ == 0 && _chunks.TryGetValue(new Vector2I(cx + 1, cz - 1), out var vxpz) && vxpz.ChunkOffsetY == chunkY)
+			vxpz.SetVoxelLocal(0, localY, TailleChunk, id);
+		if (localX == 0 && localZ == TailleChunk - 1 && _chunks.TryGetValue(new Vector2I(cx - 1, cz + 1), out var vxzp) && vxzp.ChunkOffsetY == chunkY)
+			vxzp.SetVoxelLocal(TailleChunk, localY, 0, id);
+		if (localX == TailleChunk - 1 && localZ == TailleChunk - 1 && _chunks.TryGetValue(new Vector2I(cx + 1, cz + 1), out var vxpzp) && vxpzp.ChunkOffsetY == chunkY)
+			vxpzp.SetVoxelLocal(0, localY, 0, id);
 	}
 
 	private void DemanderMiseAJourMesh(Vector3I pos)
@@ -1926,7 +2257,8 @@ public partial class Monde_Serveur : Node
 		Gestionnaire_Monde.WorldToChunkAndLocal(pos.X, pos.Z, TailleChunk, out Vector2I c, out int lx, out int lz);
 		int cx = c.X;
 		int cz = c.Y;
-		int sec = Mathf.Clamp(Mathf.FloorToInt(pos.Y / 16f), 0, 44);  // 45 sections (0-44) pour HauteurMax 720
+		int localY = LocalYDepuisMondeY(pos.Y, HauteurMax);
+		int sec = Mathf.Clamp(Mathf.FloorToInt(localY / 16f), 0, 44);  // section locale dans la tranche verticale active
 		_onChunkModifie?.Invoke(new Vector2I(cx, cz), new List<int> { sec });
 		if (lx == 0) _onChunkModifie?.Invoke(new Vector2I(cx - 1, cz), new List<int> { sec });
 		if (lx == TailleChunk - 1) _onChunkModifie?.Invoke(new Vector2I(cx + 1, cz), new List<int> { sec });
@@ -1972,34 +2304,86 @@ public partial class Monde_Serveur : Node
 		return trouveSolide ? matiereTrouvee : 1;
 	}
 
-	private float DistanceCarreeAuJoueur(Vector2I chunk, Vector3 posObservation)
+	private float DistanceCarreeAuJoueur(DemandeChunk chunk, Vector3 posObservation)
 	{
 		Vector2I obs = Gestionnaire_Monde.WorldToChunkCoord(posObservation, TailleChunk);
-		int dx = chunk.X - obs.X, dz = chunk.Y - obs.Y;
-		return dx * dx + dz * dz;
+		int dx = chunk.Coord.X - obs.X;
+		int dz = chunk.Coord.Y - obs.Y;
+		if (!chunk.EstAbysse)
+			return dx * dx + dz * dz;
+		int dy = chunk.CoordY - CoordYDepuisMondeY(posObservation.Y, HauteurMax);
+		return dx * dx + dz * dz + (dy * dy);
 	}
 
 	/// <summary>Extraction radiale : le chunk à distance minimale de l'épicentre. DistanceSquaredTo évite la racine carrée.</summary>
-	private Vector2I ExtraireChunkLePlusProche(List<Vector2I> liste, Vector3 positionObservation)
+	private DemandeChunk ExtraireChunkLePlusProche(List<DemandeChunk> liste, Vector3 positionObservation)
 	{
-		if (liste.Count == 0) return Vector2I.Zero;
+		if (liste.Count == 0) return default;
 		Vector2 posObsV2 = new Vector2(positionObservation.X / (float)TailleChunk, positionObservation.Z / (float)TailleChunk);
-		Vector2I chunkCible = liste[0];
+		DemandeChunk chunkCible = liste[0];
 		float distanceMin = float.MaxValue;
 		int indexASupprimer = 0;
 		for (int i = 0; i < liste.Count; i++)
 		{
-			Vector2 posChunk = new Vector2(liste[i].X, liste[i].Y);
+			DemandeChunk entree = liste[i];
+			Vector2 posChunk = new Vector2(entree.Coord.X, entree.Coord.Y);
 			float dist = posObsV2.DistanceSquaredTo(posChunk);
+			if (entree.EstAbysse)
+			{
+				int dy = entree.CoordY - CoordYDepuisMondeY(positionObservation.Y, HauteurMax);
+				dist += dy * dy;
+			}
 			if (dist < distanceMin)
 			{
 				distanceMin = dist;
-				chunkCible = liste[i];
+				chunkCible = entree;
 				indexASupprimer = i;
 			}
 		}
 		liste.RemoveAt(indexASupprimer);
 		return chunkCible;
+	}
+
+	private void PurgerRuntimeAbysseHorsFenetre(Vector3 positionObservation)
+	{
+		if (!ActiverGenerationAbysse || _chunksAbysseParStage2D.Count == 0)
+			return;
+
+		Vector2I obs = Gestionnaire_Monde.WorldToChunkCoord(positionObservation, TailleChunk);
+		float seuilDistCarree = (RenderDistance + 2) * (RenderDistance + 2);
+		int stageObservation = ConstantesDimensionAbysse.ObtenirIndexStageDepuisYMonde(positionObservation.Y);
+		int stageMin = stageObservation - Mathf.Max(0, ConstantesDimensionAbysse.DemiFenetrePaliersActifs);
+		int stageMax = stageObservation + Mathf.Max(0, ConstantesDimensionAbysse.DemiFenetrePaliersActifs);
+		var stagesASupprimer = new List<int>();
+		foreach (var kvStage in _chunksAbysseParStage2D)
+		{
+			int stage = kvStage.Key;
+			if (stage < stageMin || stage > stageMax)
+			{
+				stagesASupprimer.Add(stage);
+				continue;
+			}
+			var coordsASupprimer = new List<Vector2I>();
+			foreach (var kvChunk in kvStage.Value)
+			{
+				int dx = kvChunk.Key.X - obs.X;
+				int dz = kvChunk.Key.Y - obs.Y;
+				float dist2 = dx * dx + dz * dz;
+				if (dist2 > seuilDistCarree)
+					coordsASupprimer.Add(kvChunk.Key);
+			}
+			foreach (var coord in coordsASupprimer)
+			{
+				if (!kvStage.Value.TryGetValue(coord, out var chunk)) continue;
+				kvStage.Value.Remove(coord);
+				if (_chunks.TryGetValue(coord, out var proxy) && ReferenceEquals(proxy, chunk))
+					_chunks.Remove(coord);
+			}
+			if (kvStage.Value.Count == 0)
+				stagesASupprimer.Add(stage);
+		}
+		foreach (int stage in stagesASupprimer)
+			_chunksAbysseParStage2D.Remove(stage);
 	}
 
 	private void EvaluerDechargementChunks()
@@ -2045,6 +2429,13 @@ public partial class Monde_Serveur : Node
 				SauvegarderChunkCoord(coord, uniquementSiModifie: false);
 				RetirerPierresChunk(coord);
 				RetirerArbresChunk(coord);
+				if (ActiverGenerationAbysse)
+				{
+					foreach (var stage in _chunksAbysseParStage2D.Values)
+					{
+						stage.Remove(coord);
+					}
+				}
 				_chunks.Remove(coord);
 				_onOrdonnerDestructionChunk(coord);
 				traites++;

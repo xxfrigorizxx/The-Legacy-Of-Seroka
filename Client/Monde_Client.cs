@@ -138,6 +138,7 @@ public partial class Monde_Client : Node3D
 	[ExportGroup("Diagnostic performance")]
 	[Export] public bool ActiverProfilagePerfMondeClient = false;
 	[Export(PropertyHint.Range, "0.2,10,0.1")] public float IntervalleLogProfilageSec = 2.0f;
+	[Export] public bool ActiverDiagnosticCollisionAbysse = false;
 
 	private ConcurrentQueue<Action> _misesAJourMainThread = new ConcurrentQueue<Action>();
 	public ConcurrentQueue<Action> _misesAJourUrgentes = new ConcurrentQueue<Action>();
@@ -163,6 +164,7 @@ public partial class Monde_Client : Node3D
 
 	/// <summary>Chunks au format Data-Oriented (RID). Plus de Node pour le terrain.</summary>
 	private Dictionary<Vector2I, ChunkData> _chunksData = new Dictionary<Vector2I, ChunkData>();
+	private readonly Dictionary<Vector3I, ChunkData> _chunksDataAbysse3D = new Dictionary<Vector3I, ChunkData>();
 	/// <summary>File d'attente de solidification physique : un chunk par frame pour éviter les pics PhysicsServer3D (dilution physique).</summary>
 	private List<ChunkData> _fileAttenteSolidification = new List<ChunkData>();
 	/// <summary>Présence O(1) de la file standard pour éviter les Contains/Remove inutiles.</summary>
@@ -191,6 +193,7 @@ public partial class Monde_Client : Node3D
 	private readonly List<Vector2I> _prioritaireListTemp = new List<Vector2I>();
 	private readonly HashSet<Vector2I> _chunksUniquesTemp = new HashSet<Vector2I>();
 	private readonly List<Vector2I> _chunksATuerTemp = new List<Vector2I>();
+	private readonly List<Vector3I> _clesChunksAbysseARetirerTemp = new List<Vector3I>();
 	private bool _radarEnCours;
 	private HashSet<(int cx, int cz, int section)> _sectionsAReconstruire = new HashSet<(int, int, int)>();
 	private CharacterBody3D _joueur;
@@ -252,6 +255,26 @@ public partial class Monde_Client : Node3D
 	private Action<Vector3, float, float> _demanderDestruction;
 	private Action<Vector3, Vector3, float, int> _demanderCreation;
 	private int _seedTerrain;
+	private NetworkManager _networkManager;
+	private int _dimensionReseauActive = (int)DimensionJeu.Alpha;
+	private readonly HashSet<int> _coordYActifsAbysseTravail = new HashSet<int>();
+	private readonly HashSet<int> _coordYCollisionAbysseTravail = new HashSet<int>();
+	private readonly List<int> _coordYActifsAbysseListeTravail = new List<int>(8);
+	private readonly Dictionary<Vector3I, ulong> _demandesAbysseFrameDerniereEmission = new Dictionary<Vector3I, ulong>();
+	private readonly List<Vector3I> _clesDemandesAbysseExpireesTemp = new List<Vector3I>();
+	private float _timerTrimAbysse = 0f;
+	private const float IntervalleTrimAbysseSec = 0.35f;
+	private float _cooldownDiagCoherenceAbysse = 0f;
+	private const float IntervalleDiagCoherenceAbysseSec = 1.25f;
+	private float _cooldownLogDiagnosticCollisionAbysse = 0f;
+	private const float IntervalleDiagnosticCollisionAbysseSec = 0.80f;
+	private const int MaxFileDemandesChunksAbysse = 2600;
+	private MeshInstance3D _voileTransitionPalierAbysse;
+	private ShaderMaterial _materiauVoileTransitionPalierAbysse;
+	private const float EpaisseurVoileAbysse = 12f;
+	private const float DemiHauteurTransitionNuageAbysse = 3f; // 6m total de traversée
+	private CanvasLayer _overlayPassageNuageAbysse;
+	private ColorRect _overlayPassageNuageAbysseRect;
 
 	private Camera3D ObtenirCameraObservation()
 	{
@@ -270,6 +293,22 @@ public partial class Monde_Client : Node3D
 		return null;
 	}
 
+	private int ObtenirRayonSecuriteSolActif()
+	{
+		int rayon = Mathf.Max(1, RayonDormancePhysique);
+		if (_dimensionReseauActive == (int)DimensionJeu.Abysse)
+			rayon = Mathf.Max(5, rayon);
+		return rayon;
+	}
+
+	private int ObtenirRayonUrgenceCollisionActif()
+	{
+		int rayon = Mathf.Max(1, RayonPrioriteCollisionJoueur);
+		if (_dimensionReseauActive == (int)DimensionJeu.Abysse)
+			rayon = Mathf.Max(5, rayon);
+		return rayon;
+	}
+
 	// Références vers l'UI
 	private Panel _slotGauche;
 	private Panel _slotDroite;
@@ -280,6 +319,8 @@ public partial class Monde_Client : Node3D
 		_slotGauche = GetNode<Panel>("../HUD_Inventaire/Conteneur_Ancrage/Boite_Slots/Slot_Main_Gauche");
 		_slotDroite = GetNode<Panel>("../HUD_Inventaire/Conteneur_Ancrage/Boite_Slots/Slot_Main_Droite");
 		InitialiserHorizonLointain();
+		InitialiserVoileTransitionAbysse();
+		InitialiserOverlayPassageNuageAbysse();
 	}
 
 	private int RayonDetailChunksActif()
@@ -500,6 +541,29 @@ public partial class Monde_Client : Node3D
 		_timerProgressionForceeRayon = IntervalleProgressionForceeRayonSec;
 		_intervalleRadarImmobileDyn = IntervalleRafraichissementRadarImmobile;
 		AppliquerParametresLodTextureTerrain();
+	}
+
+	public void ConfigurerReseauChunks(NetworkManager networkManager, int dimensionActive)
+	{
+		_networkManager = networkManager;
+		_dimensionReseauActive = dimensionActive;
+		_timerTrimAbysse = 0f;
+		_demandesAbysseFrameDerniereEmission.Clear();
+		if (dimensionActive != (int)DimensionJeu.Abysse && _voileTransitionPalierAbysse != null)
+			_voileTransitionPalierAbysse.Visible = false;
+		if (dimensionActive != (int)DimensionJeu.Abysse && _overlayPassageNuageAbysseRect != null)
+			_overlayPassageNuageAbysseRect.Visible = false;
+	}
+
+	public void DefinirDimensionReseauActive(int dimensionId)
+	{
+		_dimensionReseauActive = dimensionId;
+		_timerTrimAbysse = 0f;
+		_demandesAbysseFrameDerniereEmission.Clear();
+		if (dimensionId != (int)DimensionJeu.Abysse && _voileTransitionPalierAbysse != null)
+			_voileTransitionPalierAbysse.Visible = false;
+		if (dimensionId != (int)DimensionJeu.Abysse && _overlayPassageNuageAbysseRect != null)
+			_overlayPassageNuageAbysseRect.Visible = false;
 	}
 
 	/// <summary>
@@ -849,7 +913,8 @@ public partial class Monde_Client : Node3D
 		// RÈGLE CAS B (espace local) : les sommets du mesh sont en [0, TailleChunk] x [0, HauteurMax] x [0, TailleChunk].
 		// Une SEULE application du décalage chunk : position monde = origine parent + (coordChunk * TailleChunk).
 		// Pas de double translation (ne pas ajouter d'offset si les vertices étaient déjà en monde).
-		Vector3 positionVraie = GlobalPosition + new Vector3(data.Coordonnees.X * TailleChunk, 0, data.Coordonnees.Y * TailleChunk);
+		float offsetYMonde = data.CoordChunkY * HauteurMax;
+		Vector3 positionVraie = GlobalPosition + new Vector3(data.Coordonnees.X * TailleChunk, offsetYMonde, data.Coordonnees.Y * TailleChunk);
 		Transform3D transformChunk = new Transform3D(Basis.Identity, positionVraie);
 
 		// 2. RenderingServer : instance visuelle sans Node
@@ -1045,20 +1110,40 @@ public partial class Monde_Client : Node3D
 
 	private void EnfilerSolidificationUrgenteAutour(Vector3 pointMonde, int rayonChunks)
 	{
-		int rayon = Mathf.Clamp(rayonChunks, 0, 3);
+		int rayonMax = _dimensionReseauActive == (int)DimensionJeu.Abysse ? 6 : 3;
+		int rayon = Mathf.Clamp(rayonChunks, 0, rayonMax);
 		Vector2I c = Gestionnaire_Monde.WorldToChunkCoord(pointMonde, TailleChunk);
 		for (int dx = -rayon; dx <= rayon; dx++)
 		{
 			for (int dz = -rayon; dz <= rayon; dz++)
 			{
 				Vector2I cc = new Vector2I(c.X + dx, c.Y + dz);
-				if (!_chunksData.TryGetValue(cc, out var data)) continue;
-				if (data.PhysicsBodyRID.IsValid && !data.Dormant && !data.EstEnFileSolidification) continue;
-				if (data.EstEnFileSolidification)
-					RetirerDeFileSolidification(data);
+				if (_dimensionReseauActive == (int)DimensionJeu.Abysse)
+				{
+					_coordYActifsAbysseTravail.Clear();
+					_coordYActifsAbysseTravail.Add(CoordYStageAbysseDepuisYMonde(pointMonde.Y));
+					foreach (int y in _coordYActifsAbysseTravail)
+					{
+						if (!_chunksDataAbysse3D.TryGetValue(new Vector3I(cc.X, y, cc.Y), out var data) || data == null)
+							continue;
+						if (data.PhysicsBodyRID.IsValid && !data.Dormant && !data.EstEnFileSolidification) continue;
+						if (data.EstEnFileSolidification)
+							RetirerDeFileSolidification(data);
+						else
+							data.EstEnFileSolidification = true;
+						EnfilerSolidificationUrgenteUnique(data);
+					}
+				}
 				else
-					data.EstEnFileSolidification = true;
-				EnfilerSolidificationUrgenteUnique(data);
+				{
+					if (!_chunksData.TryGetValue(cc, out var data)) continue;
+					if (data.PhysicsBodyRID.IsValid && !data.Dormant && !data.EstEnFileSolidification) continue;
+					if (data.EstEnFileSolidification)
+						RetirerDeFileSolidification(data);
+					else
+						data.EstEnFileSolidification = true;
+					EnfilerSolidificationUrgenteUnique(data);
+				}
 			}
 		}
 	}
@@ -1070,13 +1155,31 @@ public partial class Monde_Client : Node3D
 		ulong debutFramePerfUs = ActiverProfilagePerfMondeClient ? PerfBudgetMonitor.Begin() : 0UL;
 		_cooldownRebuildRadar = Mathf.Max(0f, _cooldownRebuildRadar - dt);
 		_cooldownServicesLointains = Mathf.Max(0f, _cooldownServicesLointains - dt);
+		_cooldownDiagCoherenceAbysse = Mathf.Max(0f, _cooldownDiagCoherenceAbysse - dt);
+		_cooldownLogDiagnosticCollisionAbysse = Mathf.Max(0f, _cooldownLogDiagnosticCollisionAbysse - dt);
 		_cooldownDrainProfilage += dt;
 		TraiterAnimationsEmergence(dt);
 		Camera3D cameraActive = ObtenirCameraObservation();
 		Vector3 positionObservation = cameraActive != null ? cameraActive.GlobalPosition : (_joueur?.GlobalPosition ?? Vector3.Zero);
+		Vector3 positionJoueur = _joueur?.GlobalPosition ?? positionObservation;
 		Vector3 directionObservation = cameraActive != null ? (-cameraActive.GlobalTransform.Basis.Z).Normalized() :
 			(_joueur != null ? (-_joueur.GlobalTransform.Basis.Z).Normalized() : Vector3.Forward);
 		Vector2I chunkObservationActuel = Gestionnaire_Monde.WorldToChunkCoord(positionObservation, TailleChunk);
+		MettreAJourVoileTransitionAbysse(positionObservation);
+		if (_dimensionReseauActive == (int)DimensionJeu.Abysse)
+		{
+			_timerTrimAbysse -= dt;
+			if (_timerTrimAbysse <= 0f)
+			{
+				_timerTrimAbysse = IntervalleTrimAbysseSec;
+				PurgerChunksAbysseHorsFenetre(positionObservation, positionJoueur);
+			}
+			if (ActiverDiagnosticCollisionAbysse && _joueur != null && _cooldownLogDiagnosticCollisionAbysse <= 0f)
+			{
+				JournaliserDiagnosticCollisionAbysse(positionObservation);
+				_cooldownLogDiagnosticCollisionAbysse = IntervalleDiagnosticCollisionAbysseSec;
+			}
+		}
 		MettreAJourAutoDiagnostic(dt);
 		int niveauUrgence = _niveauUrgencePerf;
 		float budgetFrameMs = Mathf.Clamp(BudgetFrameCibleMs, 8f, 25f);
@@ -1094,7 +1197,8 @@ public partial class Monde_Client : Node3D
 		bool prioriteJoueur = vitesseJoueurXZ >= SeuilVitessePrioriteJoueur;
 		if (_joueur != null)
 		{
-			EnfilerSolidificationUrgenteAutour(_joueur.GlobalPosition, RayonPrioriteCollisionJoueur);
+			int rayonUrgenceCollision = ObtenirRayonUrgenceCollisionActif();
+			EnfilerSolidificationUrgenteAutour(_joueur.GlobalPosition, rayonUrgenceCollision);
 			if (prioriteJoueur)
 			{
 				Vector3 vel = _joueur.Velocity;
@@ -1102,7 +1206,7 @@ public partial class Monde_Client : Node3D
 				if (velXZ.LengthSquared() > 0.25f)
 				{
 					Vector3 pointAnticipe = _joueur.GlobalPosition + velXZ * Mathf.Max(0.35f, SecondesAnticipationCollision);
-					EnfilerSolidificationUrgenteAutour(pointAnticipe, RayonPrioriteCollisionJoueur);
+					EnfilerSolidificationUrgenteAutour(pointAnticipe, rayonUrgenceCollision);
 				}
 			}
 		}
@@ -1160,6 +1264,11 @@ public partial class Monde_Client : Node3D
 		{
 			maxIntegrations = Mathf.Max(maxIntegrations, 3);
 			budgetVerticesDyn = Mathf.Max(budgetVerticesDyn, 22000);
+			if (_dimensionReseauActive == (int)DimensionJeu.Abysse)
+			{
+				maxIntegrations = Mathf.Max(maxIntegrations, 5);
+				budgetVerticesDyn = Mathf.Max(budgetVerticesDyn, 34000);
+			}
 		}
 		// GATE FPS STRICT : hors zone critique, gel total si FPS < seuil, puis ramp-up 1→budget.
 		maxIntegrations = AppliquerGateEtRampUp(maxIntegrations, doitGarantirProcheJoueur, 1);
@@ -1202,6 +1311,8 @@ public partial class Monde_Client : Node3D
 		if (_fileAttenteSolidificationUrgente.Count > 0 || _fileAttenteSolidification.Count > 0)
 		{
 			Vector2I coordObsSolidif = chunkObservationActuel;
+			if (_dimensionReseauActive == (int)DimensionJeu.Abysse && _joueur != null)
+				coordObsSolidif = Gestionnaire_Monde.WorldToChunkCoord(_joueur.GlobalPosition, TailleChunk);
 			int baseSolidifications = enChargement ? 3 : Mathf.Max(1, MaxSolidificationsParFrameExploration);
 			int maxSolidifications = Mathf.Clamp(Mathf.RoundToInt(baseSolidifications * Mathf.Lerp(0.60f, 1.12f, _ratioChargeAuto) * facteurAntiSpikeBacklog), 1, Mathf.Max(1, baseSolidifications + 2));
 			if (prioriteJoueur)
@@ -1216,7 +1327,15 @@ public partial class Monde_Client : Node3D
 				maxSolidifications = Mathf.Min(maxSolidifications, 3);
 			// Plancher anti-chute : si le sol proche joueur n'est pas prêt, garantir au moins 4 solidifications par frame.
 			if (doitGarantirProcheJoueur)
+			{
 				maxSolidifications = Mathf.Max(maxSolidifications, 4);
+				if (_dimensionReseauActive == (int)DimensionJeu.Abysse)
+				{
+					maxSolidifications = Mathf.Max(maxSolidifications, 12);
+					if (joueurEnChute)
+						maxSolidifications = Mathf.Max(maxSolidifications, 16);
+				}
+			}
 			// GATE FPS STRICT : hors zone critique, 0 si gelé, puis ramp-up.
 			maxSolidifications = AppliquerGateEtRampUp(maxSolidifications, doitGarantirProcheJoueur, 1);
 			// Plafond CreateTrimeshShape / frame (mémoire temporaire Jolt) hors zone critique déjà couverte par doitGarantirProcheJoueur.
@@ -1371,6 +1490,15 @@ public partial class Monde_Client : Node3D
 
 		bool hadModifications = _sectionsAReconstruire.Count > 0;
 		_modificationEnCours = false;
+
+		// En Abysse, on force les requêtes proches du joueur à chaque frame:
+		// sinon elles ne partent qu'en mode "phase fond coupée" et des trous apparaissent en marche.
+		if (_dimensionReseauActive == (int)DimensionJeu.Abysse && _joueur != null)
+		{
+			Vector3 posJoueur = _joueur.GlobalPosition;
+			Vector2I chunkJoueur = Gestionnaire_Monde.WorldToChunkCoord(posJoueur, TailleChunk);
+			GarantirRequetesChunksProcheJoueur(posJoueur, chunkJoueur);
+		}
 
 		// 1. PRIORITÉ ABSOLUE : Reconstruire les chunks modifiés (minage/pose) pour que le terrain se mette à jour
 		if (hadModifications)
@@ -1552,7 +1680,7 @@ public partial class Monde_Client : Node3D
 				for (int dz = -rayonDemi; dz <= rayonDemi; dz++)
 				{
 					var v = new Vector2I(centre.X + dx, centre.Y + dz);
-					if (!_chunksData.ContainsKey(v)) _prioritaireSetTemp.Add(v);
+					if (!ChunkDisponiblePourObservation(v, positionObservation)) _prioritaireSetTemp.Add(v);
 				}
 		}
 		AjouterAnneauManquant(chunkPieds, rayonPriorite);
@@ -1588,7 +1716,7 @@ public partial class Monde_Client : Node3D
 
 		// 3. Requêtes : extraction radiale + purge obsolètes. Si le chunk sous les pieds n'est pas chargé, on demande plus de chunks (catch-up côté client).
 		PurgerChunksObsolètesDeLaFile(positionObservation);
-		bool chunkPiedsManquant = !_chunksData.ContainsKey(chunkPieds);
+		bool chunkPiedsManquant = !ChunkDisponiblePourObservation(chunkPieds, positionObservation);
 		int backlog = CompterBacklog();
 		int rayonChargementCibleChunks = RayonChargementChunksActif();
 		int nbRequetes = chunkPiedsManquant ? Mathf.Min(_maxRequetesDyn * 2, 20) : _maxRequetesDyn;
@@ -1701,7 +1829,7 @@ public partial class Monde_Client : Node3D
 
 		Transform3D transformChunk = new Transform3D(
 			Basis.Identity,
-			GlobalPosition + new Vector3(data.Coordonnees.X * TailleChunk, 0, data.Coordonnees.Y * TailleChunk));
+			GlobalPosition + new Vector3(data.Coordonnees.X * TailleChunk, data.CoordChunkY * HauteurMax, data.Coordonnees.Y * TailleChunk));
 
 		Rid shapeRid = shape.GetRid();
 		Rid bodyRid = PhysicsServer3D.Singleton.BodyCreate();
@@ -2227,6 +2355,11 @@ public partial class Monde_Client : Node3D
 			if (d2 > rayonMaxCarre)
 				_chunksACharger.RemoveAt(i);
 		}
+		if (_dimensionReseauActive == (int)DimensionJeu.Abysse && _chunksACharger.Count > MaxFileDemandesChunksAbysse)
+		{
+			int surplus = _chunksACharger.Count - MaxFileDemandesChunksAbysse;
+			_chunksACharger.RemoveRange(Mathf.Max(0, _chunksACharger.Count - surplus), surplus);
+		}
 	}
 
 	/// <summary>Sénescence : retire de la mémoire les chunks au-delà du rayon + hystérésis. Libère les RIDs (RenderingServer/PhysicsServer3D).</summary>
@@ -2235,6 +2368,18 @@ public partial class Monde_Client : Node3D
 		int rayonDetail = RayonChargementChunksActif();
 		// Seuil unique : libère la mémoire de façon homogène (l’ancien écart avant/arrière gardait trop longtemps l’arc avant).
 		float seuilEvictionCarree = (rayonDetail + 2) * (rayonDetail + 2);
+		if (_dimensionReseauActive == (int)DimensionJeu.Abysse)
+		{
+			// IMPORTANT : en Abysse, le lifecycle est piloté par la map 3D.
+			// Toute libération doit passer par RetirerChunkDataAbysse pour éviter un RID libéré côté cache 2D.
+			PurgerChunksAbysseHorsFenetre(positionObservation, _joueur?.GlobalPosition ?? positionObservation);
+			if (_cooldownDiagCoherenceAbysse <= 0f)
+			{
+				VerifierCoherenceCachesAbysse();
+				_cooldownDiagCoherenceAbysse = IntervalleDiagCoherenceAbysseSec;
+			}
+			return;
+		}
 		_chunksATuerTemp.Clear();
 		foreach (var kv in _chunksData)
 		{
@@ -2256,6 +2401,47 @@ public partial class Monde_Client : Node3D
 				NettoyerRegistreReconstruction(coord);
 			}
 		}
+	}
+
+	private void VerifierCoherenceCachesAbysse()
+	{
+		if (!OS.IsDebugBuild() || _dimensionReseauActive != (int)DimensionJeu.Abysse)
+			return;
+		if (_chunksDataAbysse3D.Count == 0)
+			return;
+		foreach (var kv in _chunksData)
+		{
+			ChunkData data = kv.Value;
+			if (data == null)
+				continue;
+			Vector3I cle = new Vector3I(data.Coordonnees.X, data.CoordChunkY, data.Coordonnees.Y);
+			if (_chunksDataAbysse3D.TryGetValue(cle, out var data3D) && ReferenceEquals(data3D, data))
+				continue;
+			GD.PrintErr($"ZERO-K ABYSSE DIAG : cache 2D incohérent sur {data.Coordonnees} -> coucheY={data.CoordChunkY} absente du cache 3D.");
+		}
+	}
+
+	private void JournaliserDiagnosticCollisionAbysse(Vector3 positionObservation)
+	{
+		if (_joueur == null)
+			return;
+		Vector3 pos = _joueur.GlobalPosition;
+		Vector2I chunk = Gestionnaire_Monde.WorldToChunkCoord(pos, TailleChunk);
+		bool chunkSousPiedsPret = ChunkSousPiedsAPret();
+		bool collisionCroixPrete = AbyssePretPourDeplacement(pos);
+		bool collisionLocalePrete = AbysseCollisionLocaleActive(pos);
+		_coordYCollisionAbysseTravail.Clear();
+		RemplirCoordYCollisionAutourPointMonde(pos.Y, _coordYCollisionAbysseTravail);
+		var etats = new List<string>(4);
+		foreach (int coordY in _coordYCollisionAbysseTravail)
+		{
+			Vector3I cle = new Vector3I(chunk.X, coordY, chunk.Y);
+			bool present = _chunksDataAbysse3D.TryGetValue(cle, out var data) && data != null;
+			bool ridActif = present && data.PhysicsBodyRID.IsValid && !data.Dormant && !data.EstEnFileSolidification;
+			etats.Add($"{coordY}:{(present ? "present" : "absent")}/{(ridActif ? "actif" : "inactif")}");
+		}
+		string resumeY = etats.Count > 0 ? string.Join(", ", etats) : "aucune";
+		GD.Print($"ZERO-K ABYSSE DIAG CLIENT: pos=({pos.X:F1},{pos.Y:F1},{pos.Z:F1}) chunk={chunk} sousPieds={chunkSousPiedsPret} croix={collisionCroixPrete} local={collisionLocalePrete} y={resumeY} chunks3D={_chunksDataAbysse3D.Count} obsY={positionObservation.Y:F1}");
 	}
 
 	private void RetirerChunksDeLaFile(HashSet<Vector2I> aRetirer)
@@ -2415,56 +2601,58 @@ public partial class Monde_Client : Node3D
 		Gestionnaire_Monde.WorldToChunkAndLocal(posGlobal.X, posGlobal.Z, TailleChunk, out Vector2I c, out int localX, out int localZ);
 		int cx = c.X;
 		int cz = c.Y;
-		int sec = Mathf.FloorToInt(posGlobal.Y / 16f);
-		int localY = posGlobal.Y - sec * 16;
+		int coordY = CoordYDepuisMondeY(posGlobal.Y);
+		int localVoxelY = LocalYDepuisMondeY(posGlobal.Y);
+		int sec = Mathf.FloorToInt(localVoxelY / 16f);
+		int localYSection = localVoxelY - sec * 16;
 
-		if (!_chunksData.TryGetValue(new Vector2I(cx, cz), out var data)) return;
-		data.SetVoxelLocal(localX, (int)posGlobal.Y, localZ, id);
+		if (!TryGetChunkDataPourCoordY(new Vector2I(cx, cz), coordY, out var data)) return;
+		data.SetVoxelLocal(localX, localVoxelY, localZ, id);
 
-		if (localX == 0 && _chunksData.TryGetValue(new Vector2I(cx - 1, cz), out var vx))
+		if (localX == 0 && TryGetChunkDataPourCoordY(new Vector2I(cx - 1, cz), coordY, out var vx))
 		{
-			vx.SetVoxelLocal(TailleChunk, (int)posGlobal.Y, localZ, id);
+			vx.SetVoxelLocal(TailleChunk, localVoxelY, localZ, id);
 			_sectionsAReconstruire.Add((cx - 1, cz, sec));
 		}
-		if (localX == TailleChunk - 1 && _chunksData.TryGetValue(new Vector2I(cx + 1, cz), out var vxp))
+		if (localX == TailleChunk - 1 && TryGetChunkDataPourCoordY(new Vector2I(cx + 1, cz), coordY, out var vxp))
 		{
-			vxp.SetVoxelLocal(0, (int)posGlobal.Y, localZ, id);
+			vxp.SetVoxelLocal(0, localVoxelY, localZ, id);
 			_sectionsAReconstruire.Add((cx + 1, cz, sec));
 		}
-		if (localZ == 0 && _chunksData.TryGetValue(new Vector2I(cx, cz - 1), out var vz))
+		if (localZ == 0 && TryGetChunkDataPourCoordY(new Vector2I(cx, cz - 1), coordY, out var vz))
 		{
-			vz.SetVoxelLocal(localX, (int)posGlobal.Y, TailleChunk, id);
+			vz.SetVoxelLocal(localX, localVoxelY, TailleChunk, id);
 			_sectionsAReconstruire.Add((cx, cz - 1, sec));
 		}
-		if (localZ == TailleChunk - 1 && _chunksData.TryGetValue(new Vector2I(cx, cz + 1), out var vzp))
+		if (localZ == TailleChunk - 1 && TryGetChunkDataPourCoordY(new Vector2I(cx, cz + 1), coordY, out var vzp))
 		{
-			vzp.SetVoxelLocal(localX, (int)posGlobal.Y, 0, id);
+			vzp.SetVoxelLocal(localX, localVoxelY, 0, id);
 			_sectionsAReconstruire.Add((cx, cz + 1, sec));
 		}
-		if (localX == 0 && localZ == 0 && _chunksData.TryGetValue(new Vector2I(cx - 1, cz - 1), out var vxz))
+		if (localX == 0 && localZ == 0 && TryGetChunkDataPourCoordY(new Vector2I(cx - 1, cz - 1), coordY, out var vxz))
 		{
-			vxz.SetVoxelLocal(TailleChunk, (int)posGlobal.Y, TailleChunk, id);
+			vxz.SetVoxelLocal(TailleChunk, localVoxelY, TailleChunk, id);
 			_sectionsAReconstruire.Add((cx - 1, cz - 1, sec));
 		}
-		if (localX == TailleChunk - 1 && localZ == 0 && _chunksData.TryGetValue(new Vector2I(cx + 1, cz - 1), out var vxpz))
+		if (localX == TailleChunk - 1 && localZ == 0 && TryGetChunkDataPourCoordY(new Vector2I(cx + 1, cz - 1), coordY, out var vxpz))
 		{
-			vxpz.SetVoxelLocal(0, (int)posGlobal.Y, TailleChunk, id);
+			vxpz.SetVoxelLocal(0, localVoxelY, TailleChunk, id);
 			_sectionsAReconstruire.Add((cx + 1, cz - 1, sec));
 		}
-		if (localX == 0 && localZ == TailleChunk - 1 && _chunksData.TryGetValue(new Vector2I(cx - 1, cz + 1), out var vxzp))
+		if (localX == 0 && localZ == TailleChunk - 1 && TryGetChunkDataPourCoordY(new Vector2I(cx - 1, cz + 1), coordY, out var vxzp))
 		{
-			vxzp.SetVoxelLocal(TailleChunk, (int)posGlobal.Y, 0, id);
+			vxzp.SetVoxelLocal(TailleChunk, localVoxelY, 0, id);
 			_sectionsAReconstruire.Add((cx - 1, cz + 1, sec));
 		}
-		if (localX == TailleChunk - 1 && localZ == TailleChunk - 1 && _chunksData.TryGetValue(new Vector2I(cx + 1, cz + 1), out var vxpzp))
+		if (localX == TailleChunk - 1 && localZ == TailleChunk - 1 && TryGetChunkDataPourCoordY(new Vector2I(cx + 1, cz + 1), coordY, out var vxpzp))
 		{
-			vxpzp.SetVoxelLocal(0, (int)posGlobal.Y, 0, id);
+			vxpzp.SetVoxelLocal(0, localVoxelY, 0, id);
 			_sectionsAReconstruire.Add((cx + 1, cz + 1, sec));
 		}
 
 		if (sec >= 0 && sec < 45) _sectionsAReconstruire.Add((cx, cz, sec));
-		if (localY == 0 && posGlobal.Y > 0 && sec - 1 >= 0) _sectionsAReconstruire.Add((cx, cz, sec - 1));
-		if (localY == 15 && sec + 1 < 45) _sectionsAReconstruire.Add((cx, cz, sec + 1));
+		if (localYSection == 0 && localVoxelY > 0 && sec - 1 >= 0) _sectionsAReconstruire.Add((cx, cz, sec - 1));
+		if (localYSection == 15 && sec + 1 < 45) _sectionsAReconstruire.Add((cx, cz, sec + 1));
 		if (localX == TailleChunk - 1) _sectionsAReconstruire.Add((cx + 1, cz, sec));
 		if (localZ == TailleChunk - 1) _sectionsAReconstruire.Add((cx, cz + 1, sec));
 	}
@@ -2480,10 +2668,36 @@ public partial class Monde_Client : Node3D
 	public void OrdonnerDestructionChunkRPC(int coordX, int coordZ)
 	{
 		var coord = new Vector2I(coordX, coordZ);
+		bool modeAbysse = _dimensionReseauActive == (int)DimensionJeu.Abysse;
+		if (modeAbysse && _chunksDataAbysse3D.Count > 0)
+		{
+			_clesChunksAbysseARetirerTemp.Clear();
+			foreach (var kv in _chunksDataAbysse3D)
+			{
+				if (kv.Key.X == coord.X && kv.Key.Z == coord.Y)
+					_clesChunksAbysseARetirerTemp.Add(kv.Key);
+			}
+			for (int i = 0; i < _clesChunksAbysseARetirerTemp.Count; i++)
+			{
+				Vector3I cle = _clesChunksAbysseARetirerTemp[i];
+				if (_chunksDataAbysse3D.TryGetValue(cle, out var dataAbysse) && dataAbysse != null)
+					RetirerChunkDataAbysse(cle, dataAbysse);
+			}
+		}
 		if (_chunksData.TryGetValue(coord, out var data))
 		{
-			_chunksData.Remove(coord);
-			data.LibérerRids();
+			if (modeAbysse)
+			{
+				// En Abysse, la destruction est pilotée par RetirerChunkDataAbysse (source de vérité 3D).
+				// Ici on purge seulement un éventuel résidu 2D sans relibérer un RID.
+				if (TrouverCoucheAbysseColonne(coord) == null)
+					_chunksData.Remove(coord);
+			}
+			else
+			{
+				_chunksData.Remove(coord);
+				data.LibérerRids();
+			}
 			NettoyerRegistreReconstruction(coord);
 		}
 	}
@@ -2498,11 +2712,12 @@ public partial class Monde_Client : Node3D
 
 	/// <summary>RPC : le serveur envoie chunk en byte[] uniquement. Ne jamais lancer Marching Cubes ici — Task.Run immédiat.</summary>
 	[Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = false)]
-	public void RecevoirChunkDuServeurRPC(int coordX, int coordZ, int tailleChunk, int hauteurMax, byte[] densitiesPlates, byte[] materialsFlat, byte[] densitiesEauPlates)
+	public void RecevoirChunkDuServeurRPC(int coordX, int coordY, int coordZ, int tailleChunk, int hauteurMax, byte[] densitiesPlates, byte[] materialsFlat, byte[] densitiesEauPlates)
 	{
 		var donnees = new DonneesChunk
 		{
 			CoordChunk = new Vector2I(coordX, coordZ),
+			CoordChunkY = coordY,
 			TailleChunk = tailleChunk,
 			HauteurMax = hauteurMax,
 			DensitiesQuantifiees = densitiesPlates,
@@ -2514,9 +2729,27 @@ public partial class Monde_Client : Node3D
 
 	public void RecevoirDonneesChunk(Vector2I coordChunk, DonneesChunk donnees)
 	{
-		// Architecture AAA : ChunkData (RID) uniquement, plus de Node.
-		if (_chunksData.TryGetValue(coordChunk, out var existing))
+		int coordY = donnees?.CoordChunkY ?? 0;
+		bool modeAbysse = _dimensionReseauActive == (int)DimensionJeu.Abysse;
+		int coordYCle = modeAbysse ? NormaliserCoordYAbysse(coordY) : coordY;
+		Vector3I cle3D = new Vector3I(coordChunk.X, coordY, coordChunk.Y);
+		Vector3I cle3DNormalisee = new Vector3I(coordChunk.X, coordYCle, coordChunk.Y);
+		if (modeAbysse)
 		{
+			_demandesAbysseFrameDerniereEmission.Remove(cle3D);
+			_demandesAbysseFrameDerniereEmission.Remove(cle3DNormalisee);
+		}
+		// Architecture AAA : ChunkData (RID) uniquement, plus de Node.
+		if (modeAbysse && _chunksDataAbysse3D.TryGetValue(cle3DNormalisee, out var existingAbysse))
+		{
+			existingAbysse.CoordChunkY = coordYCle;
+			EnqueueChunkGeneration(existingAbysse, donnees);
+			_chunksData[coordChunk] = existingAbysse; // vue 2D = couche la plus récente demandée
+			return;
+		}
+		if (!modeAbysse && _chunksData.TryGetValue(coordChunk, out var existing))
+		{
+			existing.CoordChunkY = coordY;
 			EnqueueChunkGeneration(existing, donnees);
 			return;
 		}
@@ -2524,11 +2757,14 @@ public partial class Monde_Client : Node3D
 		var data = new ChunkData
 		{
 			Coordonnees = coordChunk,
+			CoordChunkY = coordYCle,
 			TailleChunk = TailleChunk,
 			HauteurMax = HauteurMax
 		};
 		data.ConfigurerBruitClimat(_seedTerrain);
 		_chunksData[coordChunk] = data;
+		if (modeAbysse)
+			_chunksDataAbysse3D[cle3DNormalisee] = data;
 		EnqueueChunkGeneration(data, donnees);
 	}
 
@@ -2648,6 +2884,44 @@ public partial class Monde_Client : Node3D
 		World3D world = GetWorld3D();
 		if (world == null) return;
 		Rid space = world.Space;
+		if (_dimensionReseauActive == (int)DimensionJeu.Abysse)
+		{
+			// En Abysse multi-couches, on évite d'endormir agressivement par vue 2D:
+			// cela peut désactiver la mauvaise couche Y et provoquer des chutes.
+			Vector3 obsMonde = _joueur?.GlobalPosition ?? ObtenirPositionObservation();
+			Vector2I cpAbysse = Gestionnaire_Monde.WorldToChunkCoord(obsMonde, TailleChunk);
+			_coordYActifsAbysseTravail.Clear();
+			RemplirCoordYPrioritairesAbysse(obsMonde, _coordYActifsAbysseTravail);
+			int rayon = ObtenirRayonSecuriteSolActif();
+			foreach (int y in _coordYActifsAbysseTravail)
+			{
+				for (int dx = -rayon; dx <= rayon; dx++)
+				{
+					for (int dz = -rayon; dz <= rayon; dz++)
+					{
+						Vector3I cle = new Vector3I(cpAbysse.X + dx, y, cpAbysse.Y + dz);
+						if (!_chunksDataAbysse3D.TryGetValue(cle, out var d) || d == null) continue;
+						if (d.PhysicsBodyRID.IsValid)
+						{
+							if (d.Dormant)
+							{
+								d.Dormant = false;
+								PhysicsServer3D.Singleton.BodySetSpace(d.PhysicsBodyRID, space);
+								if (d.EstEnFileSolidification)
+									RetirerDeFileSolidification(d);
+							}
+						}
+						else if (!d.EstEnFileSolidification)
+						{
+							RetirerDeFileSolidification(d);
+							EnfilerSolidificationUrgenteUnique(d);
+							d.EstEnFileSolidification = true;
+						}
+					}
+				}
+			}
+			return;
+		}
 
 		// Indispensable : le budget « transitions » peut laisser le chunk sous les PIEDS du corps dormant
 		// alors que la caméra TPS / radar a déjà réveillé le décor lointain → joueur qui « vole » au-dessus du voxel visible.
@@ -2778,7 +3052,441 @@ public partial class Monde_Client : Node3D
 
 	private void DemanderChunk(Vector2I coord)
 	{
+		if (_networkManager != null)
+		{
+			Vector3 obs = ObtenirPositionObservation();
+			ulong frame = Engine.GetProcessFrames();
+			if (_dimensionReseauActive == (int)DimensionJeu.Abysse)
+			{
+				_coordYActifsAbysseTravail.Clear();
+				RemplirCoordYActifsAbysse(obs, _coordYActifsAbysseTravail);
+				_coordYActifsAbysseListeTravail.Clear();
+				var setCoordYNorm = new HashSet<int>();
+				foreach (int coordY in _coordYActifsAbysseTravail)
+					setCoordYNorm.Add(NormaliserCoordYAbysse(coordY));
+				foreach (int coordYNorm in setCoordYNorm)
+					_coordYActifsAbysseListeTravail.Add(coordYNorm);
+				int coordYCentre = CoordYStageAbysseDepuisYMonde(obs.Y);
+				float vitesseY = _joueur?.Velocity.Y ?? 0f;
+				_coordYActifsAbysseListeTravail.Sort((a, b) =>
+				{
+					int da = Mathf.Abs(a - coordYCentre);
+					int db = Mathf.Abs(b - coordYCentre);
+					if (da != db) return da.CompareTo(db);
+					// Priorité profondeur: en descente, charger d'abord dessous; en montée, dessus.
+					if (vitesseY < -0.25f) return a.CompareTo(b);
+					if (vitesseY > 0.25f) return b.CompareTo(a);
+					return a.CompareTo(b);
+				});
+				foreach (int coordYActif in _coordYActifsAbysseListeTravail)
+				{
+					if (ChunkDisponiblePourY(coord, coordYActif))
+						continue;
+					var cle = new Vector3I(coord.X, coordYActif, coord.Y);
+					if (_demandesAbysseFrameDerniereEmission.TryGetValue(cle, out ulong derniereFrame)
+						&& frame - derniereFrame < 8)
+						continue;
+					_demandesAbysseFrameDerniereEmission[cle] = frame;
+					_networkManager.EnvoyerDemandeChunkDimensionAuServeur(coord, coordYActif, _dimensionReseauActive, obs);
+				}
+				// Purge incrémentale de l'anti-spam pour éviter une map de demandes infinie.
+				if (_demandesAbysseFrameDerniereEmission.Count > 0 && frame % 45UL == 0UL)
+				{
+					_clesDemandesAbysseExpireesTemp.Clear();
+					foreach (var kv in _demandesAbysseFrameDerniereEmission)
+					{
+						if (frame - kv.Value > 360UL)
+							_clesDemandesAbysseExpireesTemp.Add(kv.Key);
+					}
+					for (int i = 0; i < _clesDemandesAbysseExpireesTemp.Count; i++)
+						_demandesAbysseFrameDerniereEmission.Remove(_clesDemandesAbysseExpireesTemp[i]);
+				}
+			}
+			else
+			{
+				int coordY = Mathf.FloorToInt(obs.Y / Mathf.Max(1f, HauteurMax));
+				_networkManager.EnvoyerDemandeChunkDimensionAuServeur(coord, coordY, _dimensionReseauActive, obs);
+			}
+			return;
+		}
 		_enregistrerDemandeChunk?.Invoke(coord);
+	}
+
+	private bool ChunkDisponiblePourY(Vector2I coord, int coordY)
+	{
+		if (_dimensionReseauActive == (int)DimensionJeu.Abysse)
+			return _chunksDataAbysse3D.ContainsKey(new Vector3I(coord.X, NormaliserCoordYAbysse(coordY), coord.Y));
+		if (!_chunksData.TryGetValue(coord, out var data) || data == null)
+			return false;
+		return data.CoordChunkY == coordY;
+	}
+
+	private bool TryGetChunkDataPourCoordY(Vector2I coord, int coordY, out ChunkData data)
+	{
+		data = null;
+		if (_dimensionReseauActive == (int)DimensionJeu.Abysse)
+			return _chunksDataAbysse3D.TryGetValue(new Vector3I(coord.X, NormaliserCoordYAbysse(coordY), coord.Y), out data);
+		if (!_chunksData.TryGetValue(coord, out data) || data == null)
+			return false;
+		return data.CoordChunkY == coordY;
+	}
+
+	private bool ChunkDisponiblePourObservation(Vector2I coord, Vector3 observation)
+	{
+		if (_dimensionReseauActive == (int)DimensionJeu.Abysse)
+		{
+			// Règle critique anti-chute: la disponibilité pour le déplacement doit cibler
+			// le stage courant (pas "n'importe quel stage voisin").
+			int coordYStageCourant = CoordYStageAbysseDepuisYMonde(observation.Y);
+			return ChunkDisponiblePourY(coord, coordYStageCourant);
+		}
+
+		int coordYLocal = CoordYDepuisMondeY((int)Mathf.Floor(observation.Y));
+		return ChunkDisponiblePourY(coord, coordYLocal);
+	}
+
+	private int CoordYDepuisMondeY(int yMonde)
+	{
+		int h = Mathf.Max(1, HauteurMax);
+		return Mathf.FloorToInt(yMonde / (float)h);
+	}
+
+	private int NormaliserCoordYAbysse(int coordY)
+	{
+		int indexStage = ConstantesDimensionAbysse.ObtenirIndexStageDepuisCoordYChunk(coordY, HauteurMax);
+		return ConstantesDimensionAbysse.ObtenirCoordYChunkRepresentatifDuStage(indexStage, HauteurMax);
+	}
+
+	private int CoordYStageAbysseDepuisYMonde(float yMonde)
+	{
+		int indexStage = ConstantesDimensionAbysse.ObtenirIndexStageDepuisYMonde(yMonde);
+		return ConstantesDimensionAbysse.ObtenirCoordYChunkRepresentatifDuStage(indexStage, HauteurMax);
+	}
+
+	private int LocalYDepuisMondeY(int yMonde)
+	{
+		int h = Mathf.Max(1, HauteurMax);
+		int local = yMonde % h;
+		if (local < 0) local += h;
+		return local;
+	}
+
+	private void RemplirCoordYCollisionAutourPointMonde(float yMonde, HashSet<int> sortie)
+	{
+		if (sortie == null)
+			return;
+		sortie.Clear();
+		int stageCourant = ObtenirIndexPalierAbysse(yMonde);
+		sortie.Add(ConstantesDimensionAbysse.ObtenirCoordYChunkRepresentatifDuStage(stageCourant, HauteurMax));
+		// Quand on frôle une frontière d'étage, on autorise aussi le voisin immédiat.
+		float taillePalier = Mathf.Max(1f, ConstantesDimensionAbysse.TaillePalierMetres);
+		float yDansStage = yMonde - (stageCourant * taillePalier);
+		if (yDansStage <= 8f)
+			sortie.Add(ConstantesDimensionAbysse.ObtenirCoordYChunkRepresentatifDuStage(stageCourant - 1, HauteurMax));
+		if ((taillePalier - yDansStage) <= 8f)
+			sortie.Add(ConstantesDimensionAbysse.ObtenirCoordYChunkRepresentatifDuStage(stageCourant + 1, HauteurMax));
+	}
+
+	private int ObtenirIndexPalierAbysse(float yMonde)
+	{
+		return ConstantesDimensionAbysse.ObtenirIndexStageDepuisYMonde(yMonde);
+	}
+
+	private void ObtenirPlageCoordYPalierAbysse(int indexPalier, out int coordYMin, out int coordYMax)
+	{
+		ConstantesDimensionAbysse.ObtenirPlageCoordYChunkDuStage(indexPalier, HauteurMax, out coordYMin, out coordYMax);
+	}
+
+	private void AjouterCoordYPalierAbysse(int indexPalier, HashSet<int> sortie)
+	{
+		sortie.Add(ConstantesDimensionAbysse.ObtenirCoordYChunkRepresentatifDuStage(indexPalier, HauteurMax));
+	}
+
+	private void RemplirCoordYActifsAbysse(Vector3 observation, HashSet<int> sortie)
+	{
+		if (sortie == null)
+			return;
+		sortie.Clear();
+		int palierCourant = ObtenirIndexPalierAbysse(observation.Y);
+		// Mode 2D par étages: fenêtre fixe courant ±N.
+		AjouterCoordYPalierAbysse(palierCourant, sortie);
+		int demiFenetre = Mathf.Max(0, ConstantesDimensionAbysse.DemiFenetrePaliersActifs);
+		for (int i = 1; i <= demiFenetre; i++)
+		{
+			AjouterCoordYPalierAbysse(palierCourant - i, sortie);
+			AjouterCoordYPalierAbysse(palierCourant + i, sortie);
+		}
+	}
+
+	private void RemplirCoordYPrioritairesAbysse(Vector3 observation, HashSet<int> sortie)
+	{
+		if (sortie == null)
+			return;
+		RemplirCoordYActifsAbysse(observation, sortie);
+		_coordYCollisionAbysseTravail.Clear();
+		RemplirCoordYCollisionAutourPointMonde(observation.Y, _coordYCollisionAbysseTravail);
+		foreach (int yCollision in _coordYCollisionAbysseTravail)
+			sortie.Add(yCollision);
+	}
+
+	private bool EstCoordYDansFenetrePaliersAbysse(int coordY, Vector3 observation)
+	{
+		int palierChunk = ConstantesDimensionAbysse.ObtenirIndexStageDepuisCoordYChunk(coordY, HauteurMax);
+		int palierObservation = ObtenirIndexPalierAbysse(observation.Y);
+		int ecart = Mathf.Abs(palierChunk - palierObservation);
+		return ecart <= Mathf.Max(0, ConstantesDimensionAbysse.DemiFenetrePaliersActifs);
+	}
+
+	private ChunkData TrouverCoucheAbysseColonne(Vector2I coord)
+	{
+		foreach (var kv in _chunksDataAbysse3D)
+		{
+			if (kv.Key.X == coord.X && kv.Key.Z == coord.Y)
+				return kv.Value;
+		}
+		return null;
+	}
+
+	private void RetirerChunkDataAbysse(Vector3I cle, ChunkData data)
+	{
+		_chunksDataAbysse3D.Remove(cle);
+		RetirerDeFileSolidification(data);
+		_setSolidificationUrgente.Remove(data);
+		_setSolidificationNormale.Remove(data);
+		lock (_lockFileAttenteMaths)
+			_fileAttenteMathsData.RemoveAll(entree => ReferenceEquals(entree.data, data));
+		if (_chunksData.TryGetValue(data.Coordonnees, out var courant2D) && ReferenceEquals(courant2D, data))
+		{
+			ChunkData remplacement = TrouverCoucheAbysseColonne(data.Coordonnees);
+			if (remplacement != null)
+				_chunksData[data.Coordonnees] = remplacement;
+			else
+			{
+				_chunksData.Remove(data.Coordonnees);
+				_chunksACharger.Remove(data.Coordonnees);
+				_setFloreDifferee.Remove(data.Coordonnees);
+				_fileFloreDifferee.Remove(data.Coordonnees);
+				_frameEnqueueFlore.Remove(data.Coordonnees);
+				NettoyerRegistreReconstruction(data.Coordonnees);
+			}
+		}
+		data.LibérerRids();
+	}
+
+	private void PurgerChunksAbysseHorsFenetre(Vector3 positionObservation, Vector3 positionJoueur)
+	{
+		if (_chunksDataAbysse3D.Count == 0)
+			return;
+
+		int rayonDetail = RayonChargementChunksActif();
+		float seuilEvictionCarree = (rayonDetail + 2) * (rayonDetail + 2);
+		int rayonProtection = ObtenirRayonSecuriteSolActif();
+		float seuilProtectionCarree = rayonProtection * rayonProtection;
+		_coordYCollisionAbysseTravail.Clear();
+		RemplirCoordYCollisionAutourPointMonde(positionJoueur.Y, _coordYCollisionAbysseTravail);
+		_clesChunksAbysseARetirerTemp.Clear();
+		foreach (var kv in _chunksDataAbysse3D)
+		{
+			Vector2I coordXZ = new Vector2I(kv.Key.X, kv.Key.Z);
+			float dist2 = DistanceCarreeAuJoueur(coordXZ, positionJoueur);
+			if (dist2 <= seuilProtectionCarree)
+				continue;
+			bool yDansFenetre = EstCoordYDansFenetrePaliersAbysse(kv.Key.Y, positionObservation)
+				|| EstCoordYDansFenetrePaliersAbysse(kv.Key.Y, positionJoueur)
+				|| _coordYCollisionAbysseTravail.Contains(kv.Key.Y);
+			if (dist2 > seuilEvictionCarree || !yDansFenetre)
+			{
+				if (ActiverDiagnosticCollisionAbysse && _coordYCollisionAbysseTravail.Contains(kv.Key.Y))
+					GD.Print($"ZERO-K ABYSSE DIAG PURGE: suppression potentielle couche collision y={kv.Key.Y} coord=({kv.Key.X},{kv.Key.Z}) dist2={dist2:F1}");
+				_clesChunksAbysseARetirerTemp.Add(kv.Key);
+			}
+		}
+
+		for (int i = 0; i < _clesChunksAbysseARetirerTemp.Count; i++)
+		{
+			Vector3I cle = _clesChunksAbysseARetirerTemp[i];
+			if (_chunksDataAbysse3D.TryGetValue(cle, out var data) && data != null)
+				RetirerChunkDataAbysse(cle, data);
+		}
+	}
+
+	private void InitialiserVoileTransitionAbysse()
+	{
+		if (_voileTransitionPalierAbysse != null)
+			return;
+		_voileTransitionPalierAbysse = new MeshInstance3D { Name = "VoileTransitionPalierAbysse", Visible = false };
+		var volumeNuage = new BoxMesh
+		{
+			Size = new Vector3(10000f, EpaisseurVoileAbysse, 10000f)
+		};
+		_voileTransitionPalierAbysse.Mesh = volumeNuage;
+		var shaderNuage = new Shader();
+		shaderNuage.Code = @"
+shader_type spatial;
+render_mode unshaded, cull_disabled, blend_mix;
+
+uniform vec4 cloud_color : source_color = vec4(0.86, 0.90, 0.97, 1.0);
+uniform float alpha_strength : hint_range(0.0, 1.0) = 0.85;
+uniform float noise_scale : hint_range(0.0002, 0.01) = 0.0017;
+uniform float speed : hint_range(0.0, 0.2) = 0.016;
+uniform float cut : hint_range(0.0, 1.0) = 0.34;
+uniform float half_thickness = 140.0;
+varying vec3 world_pos;
+
+float hash(vec2 p)
+{
+	p = fract(p * vec2(123.34, 345.45));
+	p += dot(p, p + 34.345);
+	return fract(p.x * p.y);
+}
+
+float noise2(vec2 p)
+{
+	vec2 i = floor(p);
+	vec2 f = fract(p);
+	float a = hash(i);
+	float b = hash(i + vec2(1.0, 0.0));
+	float c = hash(i + vec2(0.0, 1.0));
+	float d = hash(i + vec2(1.0, 1.0));
+	vec2 u = f * f * (3.0 - 2.0 * f);
+	return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+
+float fbm(vec2 p)
+{
+	float v = 0.0;
+	float a = 0.5;
+	for (int i = 0; i < 5; i++)
+	{
+		v += a * noise2(p);
+		p = p * 2.03 + vec2(17.1, 9.2);
+		a *= 0.5;
+	}
+	return v;
+}
+
+void vertex()
+{
+	world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+}
+
+void fragment()
+{
+	vec3 wp = world_pos;
+	float n1 = fbm(wp.xz * noise_scale + vec2(TIME * speed, -TIME * speed * 0.73));
+	float n2 = fbm((wp.xz + wp.yy * 0.34) * (noise_scale * 1.8) + vec2(-TIME * speed * 0.5, TIME * speed * 0.31));
+	float densite = clamp(n1 * 0.68 + n2 * 0.32, 0.0, 1.0);
+	float formeNuage = smoothstep(cut, 1.0, densite);
+
+	float h = clamp(abs(VERTEX.y) / max(1.0, half_thickness), 0.0, 1.0);
+	float masqueVertical = 1.0 - smoothstep(0.55, 1.0, h);
+
+	float alpha = alpha_strength * formeNuage * masqueVertical;
+	ALBEDO = cloud_color.rgb;
+	ALPHA = alpha;
+}";
+		_materiauVoileTransitionPalierAbysse = new ShaderMaterial();
+		_materiauVoileTransitionPalierAbysse.Shader = shaderNuage;
+		_materiauVoileTransitionPalierAbysse.SetShaderParameter("half_thickness", EpaisseurVoileAbysse * 0.5f);
+		_voileTransitionPalierAbysse.MaterialOverride = _materiauVoileTransitionPalierAbysse;
+		AddChild(_voileTransitionPalierAbysse);
+	}
+
+	private void InitialiserOverlayPassageNuageAbysse()
+	{
+		if (_overlayPassageNuageAbysse != null)
+			return;
+		_overlayPassageNuageAbysse = new CanvasLayer
+		{
+			Name = "OverlayPassageNuageAbysse",
+			Layer = 90
+		};
+		_overlayPassageNuageAbysseRect = new ColorRect
+		{
+			Name = "NuageBlanc",
+			Color = new Color(1f, 1f, 1f, 0f),
+			MouseFilter = Control.MouseFilterEnum.Ignore,
+			Visible = false
+		};
+		_overlayPassageNuageAbysseRect.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+		_overlayPassageNuageAbysseRect.OffsetLeft = 0f;
+		_overlayPassageNuageAbysseRect.OffsetTop = 0f;
+		_overlayPassageNuageAbysseRect.OffsetRight = 0f;
+		_overlayPassageNuageAbysseRect.OffsetBottom = 0f;
+		_overlayPassageNuageAbysse.AddChild(_overlayPassageNuageAbysseRect);
+		AddChild(_overlayPassageNuageAbysse);
+	}
+
+	private void MettreAJourVoileTransitionAbysse(Vector3 positionObservation)
+	{
+		if (_voileTransitionPalierAbysse == null || _materiauVoileTransitionPalierAbysse == null)
+			return;
+		if (_dimensionReseauActive != (int)DimensionJeu.Abysse)
+		{
+			_voileTransitionPalierAbysse.Visible = false;
+			if (_overlayPassageNuageAbysseRect != null)
+				_overlayPassageNuageAbysseRect.Visible = false;
+			return;
+		}
+
+		float taillePalier = Mathf.Max(1f, ConstantesDimensionAbysse.TaillePalierMetres);
+		float yCible = Mathf.Round(positionObservation.Y / taillePalier) * taillePalier;
+		// La première couche doit être à -1000m, jamais à 0.
+		if (yCible > -taillePalier)
+			yCible = -taillePalier;
+		float distanceFrontiere = Mathf.Abs(positionObservation.Y - yCible);
+
+		// Traversée courte: 5-6 m de hauteur de nuage autour de la frontière.
+		float t = Mathf.Clamp(1f - (distanceFrontiere / Mathf.Max(0.01f, DemiHauteurTransitionNuageAbysse)), 0f, 1f);
+		float alphaNuage = t * t * 0.98f;
+		_materiauVoileTransitionPalierAbysse.SetShaderParameter("alpha_strength", alphaNuage);
+		_voileTransitionPalierAbysse.Visible = alphaNuage > 0.01f;
+		_voileTransitionPalierAbysse.GlobalPosition = new Vector3(0f, yCible, 0f);
+		if (_overlayPassageNuageAbysseRect != null)
+		{
+			float alphaOverlay = t * t * 0.72f;
+			_overlayPassageNuageAbysseRect.Visible = alphaOverlay > 0.01f;
+			Color c = _overlayPassageNuageAbysseRect.Color;
+			c.A = alphaOverlay;
+			_overlayPassageNuageAbysseRect.Color = c;
+		}
+	}
+
+	public void ReinitialiserTousLesChunksLocaux()
+	{
+		var dejaLibere = new HashSet<ChunkData>();
+		foreach (var kv in _chunksData)
+		{
+			if (kv.Value != null && dejaLibere.Add(kv.Value))
+				kv.Value.LibérerRids();
+		}
+		foreach (var kv in _chunksDataAbysse3D)
+		{
+			if (kv.Value != null && dejaLibere.Add(kv.Value))
+				kv.Value.LibérerRids();
+		}
+		_chunksData.Clear();
+		_chunksDataAbysse3D.Clear();
+		_chunksACharger.Clear();
+		_sectionsAReconstruire.Clear();
+		_fileAttenteSolidification.Clear();
+		_setSolidificationNormale.Clear();
+		_fileAttenteSolidificationUrgente.Clear();
+		_setSolidificationUrgente.Clear();
+		_fileFloreDifferee.Clear();
+		_setFloreDifferee.Clear();
+		_frameEnqueueFlore.Clear();
+		_fileAttenteMathsData.Clear();
+		_curseurSelectionRequetes = 0;
+		_curseurSelectionSolidification = 0;
+		_indexCullingScan = 0;
+		_indexDormanceScan = 0;
+		_timerTrimAbysse = 0f;
+		_demandesAbysseFrameDerniereEmission.Clear();
+		if (_voileTransitionPalierAbysse != null)
+			_voileTransitionPalierAbysse.Visible = false;
+		if (_overlayPassageNuageAbysseRect != null)
+			_overlayPassageNuageAbysseRect.Visible = false;
 	}
 
 	/// <summary>
@@ -2787,26 +3495,34 @@ public partial class Monde_Client : Node3D
 	/// </summary>
 	private void GarantirRequetesChunksProcheJoueur(Vector3 positionObservation, Vector2I chunkObservationActuel)
 	{
+		bool modeAbysse = _dimensionReseauActive == (int)DimensionJeu.Abysse;
+		float vitesseXZ = 0f;
+		if (_joueur != null)
+		{
+			Vector3 v = _joueur.Velocity;
+			vitesseXZ = Mathf.Sqrt(v.X * v.X + v.Z * v.Z);
+		}
 		// Rayon minimal : couvre au moins le RayonGrilleMinSpawnPret + anticipation courte dans la direction de déplacement.
-		int rayonMin = Mathf.Clamp(RayonGrilleMinSpawnPret + 1, 1, RayonDormancePhysique);
-		int budgetRequetesForce = 6; // jamais plus de 6 par frame : micro-burst contrôlé.
+		int bonusVitesse = (modeAbysse && vitesseXZ >= 4.0f) ? 1 : 0;
+		int rayonMin = Mathf.Clamp(RayonGrilleMinSpawnPret + (modeAbysse ? 2 : 1) + bonusVitesse, 1, Mathf.Max(1, RayonDormancePhysique + 2));
+		int budgetRequetesForce = modeAbysse ? (vitesseXZ >= 4.0f ? 24 : 16) : 6; // Abysse: burst plus large pour éviter les trous en déplacement.
 		int emises = 0;
 		for (int dx = -rayonMin; dx <= rayonMin && emises < budgetRequetesForce; dx++)
 		{
 			for (int dz = -rayonMin; dz <= rayonMin && emises < budgetRequetesForce; dz++)
 			{
 				Vector2I cible = new Vector2I(chunkObservationActuel.X + dx, chunkObservationActuel.Y + dz);
-				if (_chunksData.ContainsKey(cible)) continue;
+				if (ChunkDisponiblePourObservation(cible, positionObservation)) continue;
 				DemanderChunk(cible);
 				emises++;
 			}
 		}
-		// Anticipation chute : si le joueur tombe, pousser aussi le chunk sous sa trajectoire.
+		// Anticipation chute : si le joueur se déplace vite, pousser aussi le chunk sous sa trajectoire.
 		if (_joueur != null && _joueur.Velocity.LengthSquared() > 1f && emises < budgetRequetesForce)
 		{
 			Vector3 cibleAnticipee = positionObservation + _joueur.Velocity.Normalized() * TailleChunk;
 			Vector2I chunkAnticipe = Gestionnaire_Monde.WorldToChunkCoord(cibleAnticipee, TailleChunk);
-			if (!_chunksData.ContainsKey(chunkAnticipe))
+			if (!ChunkDisponiblePourObservation(chunkAnticipe, positionObservation))
 			{
 				DemanderChunk(chunkAnticipe);
 			}
@@ -2817,22 +3533,32 @@ public partial class Monde_Client : Node3D
 	public (float valeur, bool trouve) ObtenirDensiteGlobaleEx(Vector3I posGlobale)
 	{
 		Gestionnaire_Monde.WorldToChunkAndLocal(posGlobale.X, posGlobale.Z, TailleChunk, out Vector2I c, out int lx, out int lz);
-		if (!_chunksData.TryGetValue(c, out var data)) return (-10f, false);
-		return (data.ObtenirDensiteLocale(lx, posGlobale.Y, lz), true);
+		int coordY = CoordYDepuisMondeY(posGlobale.Y);
+		if (!TryGetChunkDataPourCoordY(c, coordY, out var data)) return (-10f, false);
+		int localY = LocalYDepuisMondeY(posGlobale.Y);
+		return (data.ObtenirDensiteLocale(lx, localY, lz), true);
 	}
 
 	/// <summary>Vrai si une grille réduite sous les pieds a ses collisions actives (le rayon complet de dormance se remplit ensuite en jeu).</summary>
 	public bool ChunkSousPiedsAPret()
 	{
 		if (_joueur == null) return false;
-		Vector2I c = Gestionnaire_Monde.WorldToChunkCoord(_joueur.GlobalPosition, TailleChunk);
+		Vector3 pos = _joueur.GlobalPosition;
+		Vector2I c = Gestionnaire_Monde.WorldToChunkCoord(pos, TailleChunk);
 		int rg = Mathf.Clamp(RayonGrilleMinSpawnPret, 0, RayonDormancePhysique);
 		for (int dx = -rg; dx <= rg; dx++)
 			for (int dz = -rg; dz <= rg; dz++)
 			{
 				var v = new Vector2I(c.X + dx, c.Y + dz);
-				if (!_chunksData.TryGetValue(v, out var data)) return false;
-				if (!data.PhysicsBodyRID.IsValid || data.Dormant || data.EstEnFileSolidification) return false;
+				if (_dimensionReseauActive == (int)DimensionJeu.Abysse)
+				{
+					if (!ChunkCollisionActiveAbyssePourObservation(v, pos)) return false;
+				}
+				else
+				{
+					if (!_chunksData.TryGetValue(v, out var data)) return false;
+					if (!data.PhysicsBodyRID.IsValid || data.Dormant || data.EstEnFileSolidification) return false;
+				}
 			}
 		return true;
 	}
@@ -2840,6 +3566,11 @@ public partial class Monde_Client : Node3D
 	/// <summary>Vrai si le chunk a une collision active (body valide, non dormant, hors file de solidification).</summary>
 	public bool ChunkCollisionActive(Vector2I coord)
 	{
+		if (_dimensionReseauActive == (int)DimensionJeu.Abysse)
+		{
+			Vector3 obs = _joueur?.GlobalPosition ?? ObtenirPositionObservation();
+			return ChunkCollisionActiveAbyssePourObservation(coord, obs);
+		}
 		if (!_chunksData.TryGetValue(coord, out var data)) return false;
 		return data.PhysicsBodyRID.IsValid && !data.Dormant && !data.EstEnFileSolidification;
 	}
@@ -2848,7 +3579,17 @@ public partial class Monde_Client : Node3D
 	public bool ChunkSousPiedsEtVoisinsCardinauxPrets()
 	{
 		if (_joueur == null) return false;
-		Vector2I c = Gestionnaire_Monde.WorldToChunkCoord(_joueur.GlobalPosition, TailleChunk);
+		Vector3 pos = _joueur.GlobalPosition;
+		Vector2I c = Gestionnaire_Monde.WorldToChunkCoord(pos, TailleChunk);
+		if (_dimensionReseauActive == (int)DimensionJeu.Abysse)
+		{
+			if (!ChunkCollisionActiveAbyssePourObservation(c, pos)) return false;
+			if (!ChunkCollisionActiveAbyssePourObservation(new Vector2I(c.X - 1, c.Y), pos)) return false;
+			if (!ChunkCollisionActiveAbyssePourObservation(new Vector2I(c.X + 1, c.Y), pos)) return false;
+			if (!ChunkCollisionActiveAbyssePourObservation(new Vector2I(c.X, c.Y - 1), pos)) return false;
+			if (!ChunkCollisionActiveAbyssePourObservation(new Vector2I(c.X, c.Y + 1), pos)) return false;
+			return true;
+		}
 		if (!ChunkCollisionActive(c)) return false;
 		if (!ChunkCollisionActive(new Vector2I(c.X - 1, c.Y))) return false;
 		if (!ChunkCollisionActive(new Vector2I(c.X + 1, c.Y))) return false;
@@ -2861,11 +3602,62 @@ public partial class Monde_Client : Node3D
 	public bool CollisionTerrainActiveAutourPoint(Vector3 pointMonde, int rayonChunks = 0)
 	{
 		Vector2I c = Gestionnaire_Monde.WorldToChunkCoord(pointMonde, TailleChunk);
-		int rayon = Mathf.Clamp(rayonChunks, 0, 2);
+		int rayonMax = _dimensionReseauActive == (int)DimensionJeu.Abysse ? 5 : 2;
+		int rayon = Mathf.Clamp(rayonChunks, 0, rayonMax);
+		if (_dimensionReseauActive == (int)DimensionJeu.Abysse)
+		{
+			for (int dx = -rayon; dx <= rayon; dx++)
+				for (int dz = -rayon; dz <= rayon; dz++)
+					if (!ChunkCollisionActiveAbyssePourObservation(new Vector2I(c.X + dx, c.Y + dz), pointMonde))
+						return false;
+			return true;
+		}
 		for (int dx = -rayon; dx <= rayon; dx++)
 			for (int dz = -rayon; dz <= rayon; dz++)
 				if (!ChunkCollisionActive(new Vector2I(c.X + dx, c.Y + dz)))
 					return false;
 		return true;
+	}
+
+	private bool ChunkCollisionActiveAbyssePourObservation(Vector2I coord, Vector3 observation)
+	{
+		// Sécurité anti-chute: en priorité stricte, on valide la collision du stage courant
+		// (pas un stage voisin), sinon on peut marcher sur une couche absente.
+		int coordYCourant = CoordYStageAbysseDepuisYMonde(observation.Y);
+		if (_chunksDataAbysse3D.TryGetValue(new Vector3I(coord.X, coordYCourant, coord.Y), out var dataCourant)
+			&& dataCourant != null
+			&& dataCourant.PhysicsBodyRID.IsValid
+			&& !dataCourant.Dormant
+			&& !dataCourant.EstEnFileSolidification)
+		{
+			return true;
+		}
+		return false;
+	}
+
+	/// <summary>
+	/// Condition stricte anti-chute pour l'Abysse: collision active sur le chunk courant
+	/// et les 4 voisins cardinaux, dans la fenêtre de paliers active.
+	/// </summary>
+	public bool AbyssePretPourDeplacement(Vector3 pointMonde)
+	{
+		if (_dimensionReseauActive != (int)DimensionJeu.Abysse)
+			return ChunkSousPiedsEtVoisinsCardinauxPrets();
+		Vector2I c = Gestionnaire_Monde.WorldToChunkCoord(pointMonde, TailleChunk);
+		if (!ChunkCollisionActiveAbyssePourObservation(c, pointMonde)) return false;
+		if (!ChunkCollisionActiveAbyssePourObservation(new Vector2I(c.X - 1, c.Y), pointMonde)) return false;
+		if (!ChunkCollisionActiveAbyssePourObservation(new Vector2I(c.X + 1, c.Y), pointMonde)) return false;
+		if (!ChunkCollisionActiveAbyssePourObservation(new Vector2I(c.X, c.Y - 1), pointMonde)) return false;
+		if (!ChunkCollisionActiveAbyssePourObservation(new Vector2I(c.X, c.Y + 1), pointMonde)) return false;
+		return true;
+	}
+
+	/// <summary>Prêt minimal local en Abysse: collision active sur le chunk courant (sans exiger les 4 voisins).</summary>
+	public bool AbysseCollisionLocaleActive(Vector3 pointMonde)
+	{
+		Vector2I c = Gestionnaire_Monde.WorldToChunkCoord(pointMonde, TailleChunk);
+		if (_dimensionReseauActive != (int)DimensionJeu.Abysse)
+			return ChunkCollisionActive(c);
+		return ChunkCollisionActiveAbyssePourObservation(c, pointMonde);
 	}
 }

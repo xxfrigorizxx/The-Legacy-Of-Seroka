@@ -242,8 +242,8 @@ public partial class GestionnaireFauneBoeufs : Node3D
 			Vector2I c = new Vector2I(chunkJoueur.X + dx, chunkJoueur.Y + dz);
 			if (_chunksEvaluesSpawnFaune.Contains(c))
 				continue;
-			if (!_gestionnaireMonde.ChunkEstCharge(c))
-				continue; // Le dé n'est pas lancé avant la génération/chargement du chunk.
+			if (!ChunkPretPourFaune(c, ExigerChunksVoisinsChargesPourSpawn))
+				continue; // Le dé n'est pas lancé avant collision terrain réellement active.
 
 			_chunksEvaluesSpawnFaune.Add(c);
 			if (!ChunkSemblePlaineID1(c))
@@ -429,6 +429,38 @@ public partial class GestionnaireFauneBoeufs : Node3D
 		return Mathf.Max(1, render - marge);
 	}
 
+	private bool ChunkPretPourFaune(Vector2I chunk, bool exigerVoisinsCardinaux)
+	{
+		if (_gestionnaireMonde == null)
+			return false;
+		if (!_gestionnaireMonde.ChunkEstCharge(chunk))
+			return false;
+		int tc = Mathf.Max(1, _gestionnaireMonde.TailleChunk);
+		float yRef = _joueur != null ? _joueur.GlobalPosition.Y : 0f;
+		Vector3 centre = new Vector3(chunk.X * tc + tc * 0.5f, yRef, chunk.Y * tc + tc * 0.5f);
+		if (!_gestionnaireMonde.EstCollisionTerrainChunkPretPourPoint(centre))
+			return false;
+		if (!exigerVoisinsCardinaux)
+			return true;
+		Vector2I[] voisins =
+		{
+			new Vector2I(chunk.X - 1, chunk.Y),
+			new Vector2I(chunk.X + 1, chunk.Y),
+			new Vector2I(chunk.X, chunk.Y - 1),
+			new Vector2I(chunk.X, chunk.Y + 1),
+		};
+		for (int i = 0; i < voisins.Length; i++)
+		{
+			Vector2I v = voisins[i];
+			if (!_gestionnaireMonde.ChunkEstCharge(v))
+				return false;
+			Vector3 centreVoisin = new Vector3(v.X * tc + tc * 0.5f, yRef, v.Y * tc + tc * 0.5f);
+			if (!_gestionnaireMonde.EstCollisionTerrainChunkPretPourPoint(centreVoisin))
+				return false;
+		}
+		return true;
+	}
+
 	private static bool EssayerLirePositionProfil(Godot.Collections.Dictionary profil, out Vector3 pos)
 	{
 		pos = Vector3.Zero;
@@ -446,7 +478,8 @@ public partial class GestionnaireFauneBoeufs : Node3D
 		Vector2I chunk = Gestionnaire_Monde.WorldToChunkCoord(pos, _gestionnaireMonde.TailleChunk);
 		if (Mathf.Abs(chunk.X - chunkJoueur.X) > rayonActif || Mathf.Abs(chunk.Y - chunkJoueur.Y) > rayonActif)
 			return false;
-		return _gestionnaireMonde.ChunkEstCharge(chunk);
+		return ChunkPretPourFaune(chunk, ExigerChunksVoisinsChargesPourSpawn)
+			&& _gestionnaireMonde.EstCollisionTerrainChunkPretPourPoint(pos);
 	}
 
 	private BoeufSauvage InstancierBoeufDepuisEntree(EntreeFaunePersistante entree)
@@ -488,7 +521,7 @@ public partial class GestionnaireFauneBoeufs : Node3D
 			if (!IsInstanceValid(boeuf) || !boeuf.IsInsideTree()) continue;
 			Vector2I chunkBoeuf = Gestionnaire_Monde.WorldToChunkCoord(boeuf.GlobalPosition, _gestionnaireMonde.TailleChunk);
 			bool horsRayon = Mathf.Abs(chunkBoeuf.X - chunkJoueur.X) > rayonActif || Mathf.Abs(chunkBoeuf.Y - chunkJoueur.Y) > rayonActif;
-			bool chunkAbsent = !_gestionnaireMonde.ChunkEstCharge(chunkBoeuf);
+			bool chunkAbsent = !ChunkPretPourFaune(chunkBoeuf, false);
 			if (horsRayon || chunkAbsent)
 				_scratchBoeufsADecharger.Add(boeuf);
 		}
@@ -701,12 +734,7 @@ public partial class GestionnaireFauneBoeufs : Node3D
 			return true;
 
 		Vector2I c = Gestionnaire_Monde.WorldToChunkCoord(point, _gestionnaireMonde.TailleChunk);
-		if (!_gestionnaireMonde.ChunkEstCharge(c)) return false;
-		if (!_gestionnaireMonde.ChunkEstCharge(new Vector2I(c.X - 1, c.Y))) return false;
-		if (!_gestionnaireMonde.ChunkEstCharge(new Vector2I(c.X + 1, c.Y))) return false;
-		if (!_gestionnaireMonde.ChunkEstCharge(new Vector2I(c.X, c.Y - 1))) return false;
-		if (!_gestionnaireMonde.ChunkEstCharge(new Vector2I(c.X, c.Y + 1))) return false;
-		return true;
+		return ChunkPretPourFaune(c, true);
 	}
 
 	private bool ValiderSolAutourDuPoint(Vector3 pointSol)

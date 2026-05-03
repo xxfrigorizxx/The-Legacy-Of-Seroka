@@ -102,9 +102,61 @@ public partial class NetworkManager : Node
 		EmitSignal(SignalName.BlocActualise, pos, nouvelId);
 	}
 
+	/// <summary>Client -> serveur : commande admin texte brute (validation stricte côté serveur uniquement).</summary>
+	[Rpc(MultiplayerApi.RpcMode.AnyPeer, CallLocal = true)]
+	public void SoumettreCommandeAdmin(string commande)
+	{
+		long idAppelant = Multiplayer.GetRemoteSenderId();
+		EmitSignal(SignalName.CommandeAdminDemandee, commande ?? "", idAppelant);
+	}
+
+	public void EnvoyerCommandeAdminAuServeur(string commande)
+	{
+		string cmd = (commande ?? "").Trim();
+		if (string.IsNullOrEmpty(cmd)) return;
+		// Peer 1 = autorité serveur dans ce projet (solo host et serveur dédié).
+		RpcId(1, nameof(SoumettreCommandeAdmin), cmd);
+	}
+
+	/// <summary>Client -> serveur : demande d'injection d'objet créatif (validée côté autorité).</summary>
+	[Rpc(MultiplayerApi.RpcMode.AnyPeer, CallLocal = true)]
+	public void DemanderInjectionItemCreatif(int id, int indexMorphologique, int indexChimique, int indexTaille, int indexBotanique)
+	{
+		long idAppelant = Multiplayer.GetRemoteSenderId();
+		EmitSignal(SignalName.InjectionItemCreatifDemandee, id, indexMorphologique, indexChimique, indexTaille, indexBotanique, idAppelant);
+	}
+
+	/// <summary>Client -> serveur : demande explicite de chunk dans une dimension donnée.</summary>
+	[Rpc(MultiplayerApi.RpcMode.AnyPeer, CallLocal = true)]
+	public void DemanderChunkDimension(int coordX, int coordY, int coordZ, int dimensionId, float obsX, float obsY, float obsZ)
+	{
+		long idAppelant = Multiplayer.GetRemoteSenderId();
+		EmitSignal(SignalName.DemandeChunkDimensionDemandee, coordX, coordY, coordZ, dimensionId, obsX, obsY, obsZ, idAppelant);
+	}
+
+	public void EnvoyerDemandeInjectionItemCreatif(SlotInventaire slot)
+	{
+		if (slot.EstVide) return;
+		RpcId(1, nameof(DemanderInjectionItemCreatif), slot.ID, slot.IndexMorphologique, slot.IndexChimique, slot.IndexTaille, (int)slot.IndexBotanique);
+	}
+
+	public void EnvoyerDemandeChunkDimensionAuServeur(Vector2I coord, int coordY, int dimensionId, Vector3 positionObservation)
+	{
+		RpcId(1, nameof(DemanderChunkDimension), coord.X, coordY, coord.Y, dimensionId, positionObservation.X, positionObservation.Y, positionObservation.Z);
+	}
+
 	[Signal]
 	public delegate void DestructionDemandeeEventHandler(Vector3I pos, float rayon, long peerId);
 
 	[Signal]
 	public delegate void BlocActualiseEventHandler(Vector3I pos, int nouvelId);
+
+	[Signal]
+	public delegate void CommandeAdminDemandeeEventHandler(string commande, long peerId);
+
+	[Signal]
+	public delegate void InjectionItemCreatifDemandeeEventHandler(int id, int indexMorphologique, int indexChimique, int indexTaille, int indexBotanique, long peerId);
+
+	[Signal]
+	public delegate void DemandeChunkDimensionDemandeeEventHandler(int coordX, int coordY, int coordZ, int dimensionId, float obsX, float obsY, float obsZ, long peerId);
 }

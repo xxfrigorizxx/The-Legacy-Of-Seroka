@@ -284,6 +284,42 @@ public partial class Joueur
 		},
 		new RecetteAnalysable
 		{
+			CleCraft = "id_124",
+			IdResultat = IdObjetFondationBois,
+			Masque = CategorieAnalyse.DemiBuche,
+			Titre = "Fondation bois",
+			LegendeSymboles = new[] { "D = Demi-buche standard (x9, meme essence)" },
+			PatronCraft = new[] { "(D)(D)(D)", "(D)(D)(D)", "(D)(D)(D)" }
+		},
+		new RecetteAnalysable
+		{
+			CleCraft = "id_125",
+			IdResultat = IdObjetFondationRoche,
+			Masque = CategorieAnalyse.RocheMatiere,
+			Titre = "Fondation roche",
+			LegendeSymboles = new[] { "R = Roche matiere (x9, meme type chimique)" },
+			PatronCraft = new[] { "(R)(R)(R)", "(R)(R)(R)", "(R)(R)(R)" }
+		},
+		new RecetteAnalysable
+		{
+			CleCraft = "id_126",
+			IdResultat = IdObjetFondationBoisSoleRoche,
+			Masque = CategorieAnalyse.DemiBuche | CategorieAnalyse.RocheMatiere,
+			Titre = "Fondation bois sole roche",
+			LegendeSymboles = new[] { "D = Demi-buche standard (x6, meme essence)", "R = Roche matiere (x3, meme type)" },
+			PatronCraft = new[] { "(D)(D)(D)", "(D)(D)(D)", "(R)(R)(R)" }
+		},
+		new RecetteAnalysable
+		{
+			CleCraft = "id_127",
+			IdResultat = IdObjetFondationRocheSoleBois,
+			Masque = CategorieAnalyse.DemiBuche | CategorieAnalyse.RocheMatiere,
+			Titre = "Fondation roche sole bois",
+			LegendeSymboles = new[] { "R = Roche matiere (x6, meme type)", "D = Demi-buche standard (x3, meme essence)" },
+			PatronCraft = new[] { "(R)(R)(R)", "(R)(R)(R)", "(D)(D)(D)" }
+		},
+		new RecetteAnalysable
+		{
 			CleCraft = "id_200",
 			IdResultat = 200,
 			Masque = CategorieAnalyse.DemiBuche | CategorieAnalyse.BuchePleine | CategorieAnalyse.RocheRonde | CategorieAnalyse.Corde,

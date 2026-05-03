@@ -6,7 +6,9 @@ using System.Collections.Generic;
 public class ChunkData
 {
 	public Vector2I Coordonnees { get; set; }
+	public int CoordChunkY { get; set; }
 	public int ChunkOffsetX => Coordonnees.X;
+	public int ChunkOffsetY => CoordChunkY;
 	public int ChunkOffsetZ => Coordonnees.Y;
 	public int TailleChunk { get; set; }
 	public int HauteurMax { get; set; }

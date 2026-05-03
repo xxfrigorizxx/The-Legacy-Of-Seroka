@@ -8,7 +8,7 @@ public partial class Joueur
     private static bool EstObjetAvecVisuel(int id)
     {
         if (id >= 1 && id <= 9) return true;
-        return ItemPhysique.EstIdRocheMatiere(id) || id == 10 || id == 11 || id == BlocChutant.ID_BRANCHE || id == 15 || id == 16 || id == 17 || id == 20 || id == 21 || id == Joueur.IdObjetCeinturePoches || id == Joueur.IdObjetCeintureSacoches || id == Joueur.IdObjetPochetteTier0 || id == Joueur.IdObjetSacTier0 || id == Joueur.IdObjetCarnetSavoir || id == Joueur.IdObjetSteakCru || id == Joueur.IdObjetSteakCuit || id == Joueur.IdObjetOsBoeuf || id == Joueur.IdObjetCuirBoeuf || id == Joueur.IdObjetIntestinBoeuf || id == Joueur.IdObjetIntestinBoeufNettoye || id == 30 || id == 32 || id == 34 || id == Joueur.IdObjetBaie || id == 100 || id == 105 || id == 106 || id == Joueur.IdObjetPellePierreTier0 || id == Joueur.IdObjetPiochePierreTier0 || id == Joueur.IdObjetLancePierreTier0 || id == Joueur.IdObjetFauxPierreTier0 || id == 200 || id == Joueur.IdObjetRackBatons || id == Joueur.IdObjetRackBuches || id == Joueur.IdObjetCoffreBoisTier0 || id == Joueur.IdObjetPitFeu || id == Joueur.IdObjetPitFeuRoche || id == Joueur.IdObjetAllumeFeu;
+        return ItemPhysique.EstIdRocheMatiere(id) || id == 10 || id == 11 || id == BlocChutant.ID_BRANCHE || id == 15 || id == 16 || id == 17 || id == 20 || id == 21 || id == Joueur.IdObjetCeinturePoches || id == Joueur.IdObjetCeintureSacoches || id == Joueur.IdObjetPochetteTier0 || id == Joueur.IdObjetSacTier0 || id == Joueur.IdObjetCarnetSavoir || id == Joueur.IdObjetSteakCru || id == Joueur.IdObjetSteakCuit || id == Joueur.IdObjetOsBoeuf || id == Joueur.IdObjetCuirBoeuf || id == Joueur.IdObjetIntestinBoeuf || id == Joueur.IdObjetIntestinBoeufNettoye || id == 30 || id == 32 || id == 34 || id == Joueur.IdObjetBaie || id == 100 || id == 105 || id == 106 || id == Joueur.IdObjetPellePierreTier0 || id == Joueur.IdObjetPiochePierreTier0 || id == Joueur.IdObjetLancePierreTier0 || id == Joueur.IdObjetFauxPierreTier0 || id == 200 || id == Joueur.IdObjetRackBatons || id == Joueur.IdObjetRackBuches || id == Joueur.IdObjetCoffreBoisTier0 || id == Joueur.IdObjetPitFeu || id == Joueur.IdObjetPitFeuRoche || id == Joueur.IdObjetAllumeFeu || EstIdFondation(id);
     }
 
     public static void NettoyerModelesEnfants(Node3D parent)
@@ -49,6 +49,8 @@ public partial class Joueur
             parent.RemoveMeta(MetaSignatureLootCuir117);
         if (parent.HasMeta(MetaSignatureAllumeFeu121))
             parent.RemoveMeta(MetaSignatureAllumeFeu121);
+        if (parent.HasMeta(MetaSignatureFondation))
+            parent.RemoveMeta(MetaSignatureFondation);
     }
 
     private static Aabb TransformerAabb(Transform3D t, Aabb a)
@@ -135,6 +137,30 @@ public partial class Joueur
         if (!combine.HasValue) return;
         Aabb apres = combine.Value;
         Vector3 centre = apres.GetCenter();
+        modeleRacine.Position = new Vector3(
+            posAvant.X - centre.X,
+            posAvant.Y - apres.Position.Y,
+            posAvant.Z - centre.Z);
+    }
+
+    /// <summary>Applique une mise à l'échelle non uniforme pour atteindre des dimensions monde cibles, base ancrée sur Y=0.</summary>
+    private static void NormaliserDimensionsAncrerAuSol(Node3D modeleRacine, float cibleX, float cibleY, float cibleZ)
+    {
+        if (modeleRacine == null) return;
+        Aabb? combine = null;
+        AccumulerAabbMeshes(modeleRacine, Transform3D.Identity, ref combine);
+        if (!combine.HasValue) return;
+        Aabb box = combine.Value;
+        float sx = box.Size.X > 1e-6f ? cibleX / box.Size.X : 1f;
+        float sy = box.Size.Y > 1e-6f ? cibleY / box.Size.Y : 1f;
+        float sz = box.Size.Z > 1e-6f ? cibleZ / box.Size.Z : 1f;
+        modeleRacine.Scale = new Vector3(modeleRacine.Scale.X * sx, modeleRacine.Scale.Y * sy, modeleRacine.Scale.Z * sz);
+        combine = null;
+        AccumulerAabbMeshes(modeleRacine, Transform3D.Identity, ref combine);
+        if (!combine.HasValue) return;
+        Aabb apres = combine.Value;
+        Vector3 centre = apres.GetCenter();
+        Vector3 posAvant = modeleRacine.Position;
         modeleRacine.Position = new Vector3(
             posAvant.X - centre.X,
             posAvant.Y - apres.Position.Y,
@@ -332,6 +358,7 @@ public partial class Joueur
             var st = new SurfaceTool();
             st.Begin(Mesh.PrimitiveType.Triangles);
             bool ajoute = false;
+            bool uvValidesPourTangentes = false;
 
             void PousserTri(Vector3 a, Vector3 b, Vector3 c, Vector2? uva, Vector2? uvb, Vector2? uvc)
             {
@@ -340,6 +367,7 @@ public partial class Joueur
                 n = n.Normalized();
                 if (uva.HasValue && uvb.HasValue && uvc.HasValue)
                 {
+                    uvValidesPourTangentes = true;
                     st.SetNormal(n); st.SetUV(uva.Value); st.AddVertex(a);
                     st.SetNormal(n); st.SetUV(uvb.Value); st.AddVertex(b);
                     st.SetNormal(n); st.SetUV(uvc.Value); st.AddVertex(c);
@@ -385,7 +413,13 @@ public partial class Joueur
             }
 
             if (ajoute)
+            {
+                if (uvValidesPourTangentes)
+                {
+                    try { st.GenerateTangents(); } catch { }
+                }
                 st.Commit(output);
+            }
         }
         return output.GetSurfaceCount() > 0 ? output : null;
     }
@@ -735,6 +769,8 @@ public partial class Joueur
         {
             if (n is MeshInstance3D mi)
             {
+                // Évite les warnings "shader requires tangents" sur certains GLB importés.
+                RemplacerMeshParNormalesFacettes(mi);
                 string nom = mi.Name.ToString().ToLowerInvariant();
                 bool estLigature = nom.Contains("corde")
                     || nom.Contains("cord")
@@ -748,13 +784,11 @@ public partial class Joueur
                     || nom.Contains("shaft");
                 if (estLigature)
                 {
-                    RemplacerMeshParNormalesFacettes(mi);
                     int idLigature = varianteLigature == Joueur.TagVarianteLiane ? 16 : 20;
                     AppliquerMaterielObjet(mi, idLigature, slot.IndexChimique, slot.IndexMorphologique, slot.NiveauFracture, varianteLigature);
                 }
                 else if (estBranche)
                 {
-                    RemplacerMeshParNormalesFacettes(mi);
                     AppliquerMaterielObjet(mi, 32, 0, 0, 0, essenceBois);
                 }
                 else
@@ -859,6 +893,240 @@ public partial class Joueur
         ParcourirMeshes(modele);
         if (ancrerBaseAuSol)
             NormaliserEchelleTableAtelierAuSol(modele, tailleMaxMetres);
+        else
+            NormaliserEchelleEtCentrerModeleArme(modele, tailleMaxMetres);
+        parent.AddChild(modele);
+    }
+
+    /// <summary>Fondations: variantes bois/roche/mixte chargées depuis Modeles/structure/fondation.</summary>
+    public static void InstancierModeleFondation(Node3D parent, SlotInventaire slot, float tailleMaxMetres = 0.96f, bool ancrerBaseAuSol = true)
+    {
+        string cheminGlb = slot.ID switch
+        {
+            IdObjetFondationBois => "res://Modeles/structure/fondation/Fondation+bois.glb",
+            IdObjetFondationRoche => "res://Modeles/structure/fondation/fondation+roche.glb",
+            IdObjetFondationBoisSoleRoche => "res://Modeles/structure/fondation/fondation+bois+sole+roche.glb",
+            IdObjetFondationRocheSoleBois => "res://Modeles/structure/fondation/fondation en roche sole en bois.glb",
+            _ => ""
+        };
+        if (string.IsNullOrEmpty(cheminGlb))
+            return;
+
+        PackedScene scene = GD.Load<PackedScene>(cheminGlb);
+        byte essenceBois = slot.IndexBotanique;
+        if (essenceBois == Joueur.TagVarianteLiane || essenceBois == Joueur.TagVarianteHerbeSolide || essenceBois == Joueur.TagVarianteIntestin || essenceBois == Joueur.TagVarianteIntestinSolide)
+            essenceBois = LSystem_Botanique.IndexChene;
+        int idxRoche = Mathf.Clamp(slot.IndexChimique, 0, ItemPhysique.TableGeologique.Length - 1);
+
+        if (scene == null)
+        {
+            bool dominanteRoche = slot.ID == IdObjetFondationRoche || slot.ID == IdObjetFondationRocheSoleBois;
+            var fb = new MeshInstance3D
+            {
+                Name = "ModeleArme",
+                Mesh = new BoxMesh { Size = ancrerBaseAuSol ? new Vector3(4f, 1f, 4f) : new Vector3(0.92f, 0.18f, 0.92f) },
+                MaterialOverride = dominanteRoche
+                    ? ItemPhysique.CreerMaterielProcedural(false, idxRoche)
+                    : ArbreVivant.ObtenirMaterielBoisTriplanar((byte)Mathf.Clamp((int)essenceBois, 0, 4))
+            };
+            parent.AddChild(fb);
+            return;
+        }
+
+        Node3D modele = scene.Instantiate<Node3D>();
+        modele.Name = "ModeleArme";
+        List<MeshInstance3D> meshesFondation = ListerMeshes(modele);
+        float minY = float.MaxValue;
+        float maxY = float.MinValue;
+        foreach (MeshInstance3D mesh in meshesFondation)
+        {
+            if (mesh?.Mesh == null) continue;
+            Aabb aabbLocal = TransformerAabb(mesh.Transform, mesh.Mesh.GetAabb());
+            minY = Mathf.Min(minY, aabbLocal.Position.Y);
+            maxY = Mathf.Max(maxY, aabbLocal.End.Y);
+        }
+        if (minY > maxY)
+        {
+            minY = -0.5f;
+            maxY = 0.5f;
+        }
+        float hauteur = Mathf.Max(0.001f, maxY - minY);
+
+        string genomeFondation = slot.GenomeAssemblage ?? "";
+        bool topBois;
+        bool sideBois;
+        if (genomeFondation.Contains("TOPBOIS", StringComparison.OrdinalIgnoreCase))
+            topBois = true;
+        else if (genomeFondation.Contains("TOPROCH", StringComparison.OrdinalIgnoreCase))
+            topBois = false;
+        else
+            topBois = slot.ID == IdObjetFondationBoisSoleRoche;
+
+        if (genomeFondation.Contains("SIDEBOIS", StringComparison.OrdinalIgnoreCase))
+            sideBois = true;
+        else if (genomeFondation.Contains("SIDEROCH", StringComparison.OrdinalIgnoreCase))
+            sideBois = false;
+        else
+            sideBois = slot.ID == IdObjetFondationRocheSoleBois;
+
+        bool mixteBaseBois = slot.ID == IdObjetFondationBoisSoleRoche;
+        bool mixteBaseRoche = slot.ID == IdObjetFondationRocheSoleBois;
+        bool estMixteFondation = mixteBaseBois || mixteBaseRoche;
+
+        static bool NomSuggereRoche(string nom)
+        {
+            return nom.Contains("rock")
+                || nom.Contains("roche")
+                || nom.Contains("stone")
+                || nom.Contains("caill");
+        }
+
+        static bool NomSuggereBois(string nom)
+        {
+            return nom.Contains("wood")
+                || nom.Contains("bois")
+                || nom.Contains("log")
+                || nom.Contains("buche")
+                || nom.Contains("bûche")
+                || nom.Contains("rondin");
+        }
+
+        static bool NomSuggereSectionTop(string nom)
+        {
+            return nom.Contains("top")
+                || nom.Contains("haut")
+                || nom.Contains("dessus")
+                || nom.Contains("upper")
+                || nom.Contains("plateau");
+        }
+
+        static bool NomSuggereSectionSide(string nom)
+        {
+            return nom.Contains("side")
+                || nom.Contains("lateral")
+                || nom.Contains("lat")
+                || nom.Contains("cote")
+                || nom.Contains("côté")
+                || nom.Contains("sole")
+                || nom.Contains("base")
+                || nom.Contains("bord");
+        }
+
+        var sectionTopParMesh = new Dictionary<MeshInstance3D, bool>();
+        if (estMixteFondation)
+        {
+            foreach (MeshInstance3D mesh in meshesFondation)
+            {
+                if (mesh?.Mesh == null)
+                    continue;
+                string nom = mesh.Name.ToString().ToLowerInvariant();
+                bool tagTop = NomSuggereSectionTop(nom);
+                bool tagSide = NomSuggereSectionSide(nom);
+                if (tagTop && !tagSide)
+                    sectionTopParMesh[mesh] = true;
+                else if (tagSide && !tagTop)
+                    sectionTopParMesh[mesh] = false;
+            }
+
+            // Cas typique des GLB mixtes en 2 parties non nommées:
+            // le mesh au centre Y le plus haut est considéré comme "top".
+            if (sectionTopParMesh.Count == 0 && meshesFondation.Count >= 2)
+            {
+                MeshInstance3D meshTop = null;
+                float meilleurCentreY = float.MinValue;
+                foreach (MeshInstance3D mesh in meshesFondation)
+                {
+                    if (mesh?.Mesh == null)
+                        continue;
+                    Aabb aabbMesh = TransformerAabb(mesh.Transform, mesh.Mesh.GetAabb());
+                    float centreY = aabbMesh.GetCenter().Y;
+                    if (centreY > meilleurCentreY)
+                    {
+                        meilleurCentreY = centreY;
+                        meshTop = mesh;
+                    }
+                }
+                if (meshTop != null)
+                    sectionTopParMesh[meshTop] = true;
+            }
+        }
+
+        void ParcourirMeshesFondation(Node n)
+        {
+            if (n is MeshInstance3D mi)
+            {
+                RemplacerMeshParNormalesFacettes(mi);
+                string nom = mi.Name.ToString().ToLowerInvariant();
+                bool estRoche = NomSuggereRoche(nom);
+                bool estBois = NomSuggereBois(nom);
+                bool forcerRoche = slot.ID == IdObjetFondationRoche;
+                bool forcerBois = slot.ID == IdObjetFondationBois;
+                // Règle de rendu fidèle au craft:
+                // - fondation pure roche => tout en roche du slot crafté
+                // - fondation pure bois => tout en essence bois du slot crafté
+                // - fondations mixtes => parties détectées "roche" en roche craftée, le reste en bois crafté
+                bool nomTagConnu = estRoche || estBois;
+                bool estMixte = !forcerBois && !forcerRoche && estMixteFondation;
+                bool appliquerRoche;
+                bool decisionFiable = true;
+
+                if (forcerRoche) appliquerRoche = true;
+                else if (forcerBois) appliquerRoche = false;
+                else if (nomTagConnu)
+                    appliquerRoche = estRoche && !estBois;
+                else if (estMixte)
+                {
+                    bool sectionDeterminee = false;
+                    bool sectionTop = false;
+
+                    if (sectionTopParMesh.TryGetValue(mi, out bool topPrecalc))
+                    {
+                        sectionDeterminee = true;
+                        sectionTop = topPrecalc;
+                    }
+                    else if (mi.Mesh != null)
+                    {
+                        Aabb aabbMesh = TransformerAabb(mi.Transform, mi.Mesh.GetAabb());
+                        float epaisseurY = Mathf.Max(0.0001f, aabbMesh.Size.Y);
+                        float epaisseurRelative = epaisseurY / hauteur;
+                        bool toucheSommet = aabbMesh.End.Y >= (maxY - Mathf.Max(0.03f, hauteur * 0.08f));
+                        bool demarreBas = aabbMesh.Position.Y <= (minY + hauteur * 0.22f);
+                        bool estTop = toucheSommet && epaisseurRelative <= 0.68f;
+                        bool estLateral = !estTop && demarreBas && epaisseurRelative >= 0.30f;
+                        if (estTop || estLateral)
+                        {
+                            sectionDeterminee = true;
+                            sectionTop = estTop;
+                        }
+                    }
+
+                    if (sectionDeterminee)
+                        appliquerRoche = sectionTop ? !topBois : !sideBois;
+                    else
+                    {
+                        decisionFiable = false;
+                        appliquerRoche = !sideBois;
+                    }
+                }
+                else
+                    appliquerRoche = estRoche && !estBois;
+
+                bool conserverMateriauOrigine = estMixte && !nomTagConnu && !decisionFiable;
+                if (!conserverMateriauOrigine)
+                {
+                    if (appliquerRoche)
+                        AppliquerMaterielObjet(mi, ItemPhysique.IdRocheMatiereMin + idxRoche, idxRoche, 0, 0, essenceBois);
+                    else
+                        mi.MaterialOverride = ArbreVivant.ObtenirMaterielBoisTriplanar(essenceBois);
+                }
+            }
+            foreach (Node c in n.GetChildren())
+                ParcourirMeshesFondation(c);
+        }
+
+        ParcourirMeshesFondation(modele);
+        if (ancrerBaseAuSol)
+            NormaliserDimensionsAncrerAuSol(modele, 4f, 1f, 4f);
         else
             NormaliserEchelleEtCentrerModeleArme(modele, tailleMaxMetres);
         parent.AddChild(modele);

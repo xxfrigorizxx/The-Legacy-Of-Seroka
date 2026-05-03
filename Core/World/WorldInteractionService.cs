@@ -5,6 +5,16 @@ using System.Collections.Generic;
 public partial class Joueur
 {
     private const float RayonInteractionBaiesBuisson = 1.2f;
+    private const float FondationPasSnapMetres = 4f;
+    private const float FondationPenetrationMetres = 0.015f;
+    private const float FondationDistanceCentreAdjacente = FondationPasSnapMetres - FondationPenetrationMetres;
+    private const float FondationRayonSnapDouxMetres = 4.8f;
+    private const float FondationToleranceAxePrincipalMetres = 0.12f;
+    private const float FondationToleranceAxeSecondaireMetres = 0.12f;
+    private const float NormaleSupportStructureMinY = 0.6f;
+    private const float MargeChevauchementMetres = 0.02f;
+    private const float MargeEmpilementStructureMetres = 0.01f;
+    private const float PasRotationStructuresFixesDegres = 15f;
 
     /// <summary>Ouvre le conteneur sous visée (atelier 200, racks 109/110, coffre 113, pit roche 122).</summary>
     private bool EssayerOuvrirAtelierSousVisee()
@@ -284,7 +294,7 @@ public partial class Joueur
     {
         if (s.EstVide || s.ID == 0) return false;
         if (EstIdTerrainVoxelPosable(s.ID)) return true;
-        return s.ID == 999 || s.ID == 10 || s.ID == 11 || s.ID == BlocChutant.ID_BRANCHE || s.ID == IdObjetBaie || ItemPhysique.EstIdRocheMatiere(s.ID) || s.ID == 30 || s.ID == 32 || s.ID == 34 || s.ID == 21 || s.ID == IdObjetCeinturePoches || s.ID == IdObjetCeintureSacoches || s.ID == IdObjetPochetteTier0 || s.ID == IdObjetSacTier0 || s.ID == IdObjetPellePierreTier0 || s.ID == IdObjetPiochePierreTier0 || s.ID == IdObjetLancePierreTier0 || s.ID == IdObjetFauxPierreTier0 || s.ID == IdObjetAllumeFeu || s.ID == 200 || s.ID == IdObjetRackBatons || s.ID == IdObjetRackBuches || s.ID == IdObjetCoffreBoisTier0 || s.ID == IdObjetPitFeuRoche;
+        return s.ID == 999 || s.ID == 10 || s.ID == 11 || s.ID == BlocChutant.ID_BRANCHE || s.ID == IdObjetBaie || ItemPhysique.EstIdRocheMatiere(s.ID) || s.ID == 30 || s.ID == 32 || s.ID == 34 || s.ID == 21 || s.ID == IdObjetCeinturePoches || s.ID == IdObjetCeintureSacoches || s.ID == IdObjetPochetteTier0 || s.ID == IdObjetSacTier0 || s.ID == IdObjetPellePierreTier0 || s.ID == IdObjetPiochePierreTier0 || s.ID == IdObjetLancePierreTier0 || s.ID == IdObjetFauxPierreTier0 || s.ID == IdObjetAllumeFeu || s.ID == 200 || s.ID == IdObjetRackBatons || s.ID == IdObjetRackBuches || s.ID == IdObjetCoffreBoisTier0 || s.ID == IdObjetPitFeuRoche || EstIdFondation(s.ID);
     }
 
     /// <summary>Corde (20) : accrocher au point de visée si surface valide (sol, roche, arbre, bloc posé).</summary>
@@ -358,14 +368,14 @@ public partial class Joueur
         if (objetTouche.IsInGroup("BlocsPoses"))
         {
             int id = objetTouche.HasMeta("ID_Matiere") ? (int)objetTouche.GetMeta("ID_Matiere").AsInt32() : 1;
-            if (id == 200 || id == IdObjetRackBatons || id == IdObjetRackBuches || EstIdPitFeu(id))
+            if (id == 200 || id == IdObjetRackBatons || id == IdObjetRackBuches || EstIdPitFeu(id) || EstIdFondation(id))
             {
                 GD.Print("ZERO-K : Structure fixée au monde. Récupération uniquement par minage.");
                 return;
             }
             var item = objetTouche as ItemPhysique ?? (objetTouche as Node)?.GetParent() as ItemPhysique ?? (objetTouche as Node)?.GetNodeOrNull<ItemPhysique>("ItemPhysique");
             byte indexBotaniqueRamasse = LSystem_Botanique.IndexChene;
-            if (item != null && (item.ID_Objet == 30 || item.ID_Objet == 32 || item.ID_Objet == BlocChutant.ID_BRANCHE || item.ID_Objet == 106 || item.ID_Objet == IdObjetPellePierreTier0 || item.ID_Objet == IdObjetPiochePierreTier0 || item.ID_Objet == IdObjetLancePierreTier0 || item.ID_Objet == IdObjetFauxPierreTier0 || item.ID_Objet == IdObjetPochetteTier0 || item.ID_Objet == IdObjetSacTier0 || item.ID_Objet == IdObjetCeinturePoches || item.ID_Objet == IdObjetCeintureSacoches || item.ID_Objet == IdObjetRackBatons || item.ID_Objet == IdObjetRackBuches || item.ID_Objet == IdObjetCoffreBoisTier0 || EstIdPitFeu(item.ID_Objet)))
+            if (item != null && (item.ID_Objet == 30 || item.ID_Objet == 32 || item.ID_Objet == BlocChutant.ID_BRANCHE || item.ID_Objet == 106 || item.ID_Objet == IdObjetPellePierreTier0 || item.ID_Objet == IdObjetPiochePierreTier0 || item.ID_Objet == IdObjetLancePierreTier0 || item.ID_Objet == IdObjetFauxPierreTier0 || item.ID_Objet == IdObjetPochetteTier0 || item.ID_Objet == IdObjetSacTier0 || item.ID_Objet == IdObjetCeinturePoches || item.ID_Objet == IdObjetCeintureSacoches || item.ID_Objet == IdObjetRackBatons || item.ID_Objet == IdObjetRackBuches || item.ID_Objet == IdObjetCoffreBoisTier0 || EstIdPitFeu(item.ID_Objet) || EstIdFondation(item.ID_Objet)))
                 indexBotaniqueRamasse = item.IndexBotanique;
             else if ((id == BlocChutant.ID_BRANCHE || id == BlocChutant.ID_BOIS) && objetTouche.HasMeta("IndexBotanique"))
                 indexBotaniqueRamasse = (byte)Mathf.Clamp(objetTouche.GetMeta("IndexBotanique").AsInt32(), 0, 255);
@@ -427,7 +437,7 @@ public partial class Joueur
             {
             var item = rb as ItemPhysique ?? (rb as Node)?.GetParent() as ItemPhysique ?? rb.GetNodeOrNull<ItemPhysique>("ItemPhysique");
             if (item == null) return;
-            if (item.ID_Objet == 200 || item.ID_Objet == IdObjetRackBatons || item.ID_Objet == IdObjetRackBuches || EstIdPitFeu(item.ID_Objet))
+            if (item.ID_Objet == 200 || item.ID_Objet == IdObjetRackBatons || item.ID_Objet == IdObjetRackBuches || EstIdPitFeu(item.ID_Objet) || EstIdFondation(item.ID_Objet))
             {
                 GD.Print("ZERO-K : Structure fixée au monde. Récupération uniquement par minage.");
                 return;
@@ -452,7 +462,7 @@ public partial class Joueur
                 MeshEclat = item.EstUnEclat ? item.ObtenirMeshVisuel() : null,
                 NiveauFracture = item.NiveauFracture,
                 ScaleEclat = (item.ID_Objet == 30 || item.ID_Objet == 32 || item.ID_Objet == BlocChutant.ID_BRANCHE) ? ScaleEclatBoisAuRamassage(item) : item.Scale,
-                IndexBotanique = (item.ID_Objet == 30 || item.ID_Objet == 32 || item.ID_Objet == BlocChutant.ID_BRANCHE || item.ID_Objet == 106 || item.ID_Objet == IdObjetPellePierreTier0 || item.ID_Objet == IdObjetPiochePierreTier0 || item.ID_Objet == IdObjetLancePierreTier0 || item.ID_Objet == IdObjetFauxPierreTier0 || item.ID_Objet == 200 || item.ID_Objet == IdObjetPochetteTier0 || item.ID_Objet == IdObjetSacTier0 || item.ID_Objet == IdObjetCeinturePoches || item.ID_Objet == IdObjetCeintureSacoches || item.ID_Objet == IdObjetRackBatons || item.ID_Objet == IdObjetRackBuches || item.ID_Objet == IdObjetCoffreBoisTier0 || EstIdPitFeu(item.ID_Objet))
+                IndexBotanique = (item.ID_Objet == 30 || item.ID_Objet == 32 || item.ID_Objet == BlocChutant.ID_BRANCHE || item.ID_Objet == 106 || item.ID_Objet == IdObjetPellePierreTier0 || item.ID_Objet == IdObjetPiochePierreTier0 || item.ID_Objet == IdObjetLancePierreTier0 || item.ID_Objet == IdObjetFauxPierreTier0 || item.ID_Objet == 200 || item.ID_Objet == IdObjetPochetteTier0 || item.ID_Objet == IdObjetSacTier0 || item.ID_Objet == IdObjetCeinturePoches || item.ID_Objet == IdObjetCeintureSacoches || item.ID_Objet == IdObjetRackBatons || item.ID_Objet == IdObjetRackBuches || item.ID_Objet == IdObjetCoffreBoisTier0 || EstIdPitFeu(item.ID_Objet) || EstIdFondation(item.ID_Objet))
                     ? item.IndexBotanique
                     : LSystem_Botanique.IndexChene,
                 GenomeAssemblage = LireGenomeSurItemPhysique(item),
@@ -466,7 +476,7 @@ public partial class Joueur
         {
             var item = sb.GetNodeOrNull<ItemPhysique>("ItemPhysique");
             if (item == null) return;
-            if (item.ID_Objet == 200 || item.ID_Objet == IdObjetRackBatons || item.ID_Objet == IdObjetRackBuches || EstIdPitFeu(item.ID_Objet))
+            if (item.ID_Objet == 200 || item.ID_Objet == IdObjetRackBatons || item.ID_Objet == IdObjetRackBuches || EstIdPitFeu(item.ID_Objet) || EstIdFondation(item.ID_Objet))
             {
                 GD.Print("ZERO-K : Structure fixée au monde. Récupération uniquement par minage.");
                 return;
@@ -491,7 +501,7 @@ public partial class Joueur
                 MeshEclat = item.EstUnEclat ? item.ObtenirMeshVisuel() : null,
                 NiveauFracture = item.NiveauFracture,
                 ScaleEclat = (item.ID_Objet == 30 || item.ID_Objet == 32 || item.ID_Objet == BlocChutant.ID_BRANCHE) ? ScaleEclatBoisAuRamassage(item) : item.Scale,
-                IndexBotanique = (item.ID_Objet == 30 || item.ID_Objet == 32 || item.ID_Objet == BlocChutant.ID_BRANCHE || item.ID_Objet == 106 || item.ID_Objet == IdObjetPellePierreTier0 || item.ID_Objet == IdObjetPiochePierreTier0 || item.ID_Objet == IdObjetLancePierreTier0 || item.ID_Objet == IdObjetFauxPierreTier0 || item.ID_Objet == IdObjetPochetteTier0 || item.ID_Objet == IdObjetSacTier0 || item.ID_Objet == IdObjetCeinturePoches || item.ID_Objet == IdObjetCeintureSacoches || item.ID_Objet == IdObjetRackBatons || item.ID_Objet == IdObjetRackBuches || item.ID_Objet == IdObjetCoffreBoisTier0 || EstIdPitFeu(item.ID_Objet))
+                IndexBotanique = (item.ID_Objet == 30 || item.ID_Objet == 32 || item.ID_Objet == BlocChutant.ID_BRANCHE || item.ID_Objet == 106 || item.ID_Objet == IdObjetPellePierreTier0 || item.ID_Objet == IdObjetPiochePierreTier0 || item.ID_Objet == IdObjetLancePierreTier0 || item.ID_Objet == IdObjetFauxPierreTier0 || item.ID_Objet == IdObjetPochetteTier0 || item.ID_Objet == IdObjetSacTier0 || item.ID_Objet == IdObjetCeinturePoches || item.ID_Objet == IdObjetCeintureSacoches || item.ID_Objet == IdObjetRackBatons || item.ID_Objet == IdObjetRackBuches || item.ID_Objet == IdObjetCoffreBoisTier0 || EstIdPitFeu(item.ID_Objet) || EstIdFondation(item.ID_Objet))
                     ? item.IndexBotanique
                     : LSystem_Botanique.IndexChene,
                 GenomeAssemblage = LireGenomeSurItemPhysique(item),
@@ -550,22 +560,16 @@ public partial class Joueur
         Vector3 pointImpact = _rayon.GetCollisionPoint();
         Vector3 normaleImpact = _rayon.GetCollisionNormal();
         Vector3 pointDeChute;
+        Vector3 pointAligneStructure = Vector3.Zero;
+        Vector3 rotationStructureDeg = Vector3.Zero;
+        bool structureFixe = EstStructureFixePose(mainActive.ID);
 
-        if (mainActive.ID == 200 || mainActive.ID == IdObjetRackBatons || mainActive.ID == IdObjetRackBuches || mainActive.ID == IdObjetCoffreBoisTier0 || EstIdPitFeu(mainActive.ID))
+        if (structureFixe)
         {
-            Node noeudCol = NoeudDepuisColliderRaycast(_rayon.GetCollider());
-            if (!EstSolViseParRayon(_rayon, noeudCol))
-            {
-                GD.Print("ZERO-K : Posez cette structure sur le sol (terrain / herbe), pas sur un objet vertical.");
+            if (!EssayerCalculerPoseStructureFixe(mainActive, depuisInteragir, out pointDeChute, out pointAligneStructure, out rotationStructureDeg, out bool poseStructureValide))
                 return;
-            }
-
-            // Plus de fauchage automatique a la pose de l'atelier :
-            // cela faisait apparaitre des fibres loin du visuel reel de l'herbe.
-
-            // FIX CRITIQUE : On supprime la lecture du voxel hSurf + 1f.
-            // L'objet se pose EXACTEMENT sur le point du raycast, ancré par son pivot.
-            pointDeChute = pointImpact;
+            if (!poseStructureValide)
+                return;
         }
         else
         {
@@ -577,7 +581,7 @@ public partial class Joueur
         bool flexOuCordeE = depuisInteragir && (EstMatiereFlexible(mainActive.ID) || mainActive.ID == 20 || mainActive.ID == 21);
         // Atelier : marge courte pour poser sous la visée (évite un rejet silencieux puis une pose « ailleurs »).
         // Clic droit + objet lançable : même ordre de marge que l'atelier — pose au sol près des pieds / exactement sous le clic.
-        float distMin = flexOuCordeE ? 0.35f : ((mainActive.ID == 200 || mainActive.ID == IdObjetRackBatons || mainActive.ID == IdObjetRackBuches || mainActive.ID == IdObjetCoffreBoisTier0 || EstIdPitFeu(mainActive.ID)) ? 0.55f : 1.4f);
+        float distMin = flexOuCordeE ? 0.35f : (structureFixe ? 0.55f : 1.4f);
         if (!depuisInteragir && EstObjetLancableAuMaintien(mainActive))
             distMin = Mathf.Min(distMin, 0.55f);
         if (distance < distMin) return;
@@ -606,13 +610,19 @@ public partial class Joueur
 			}
 			GD.Print("ZERO-K : Buisson replanté.");
 		}
-        else if (id == 999 || id == BlocChutant.ID_BRANCHE || id == IdObjetBaie || ItemPhysique.EstIdRocheMatiere(id) || id == 15 || id == 16 || id == 17 || id == 20 || id == 21 || id == IdObjetCeinturePoches || id == IdObjetCeintureSacoches || id == IdObjetPochetteTier0 || id == IdObjetSacTier0 || id == IdObjetCarnetSavoir || id == 30 || id == 32 || id == 34 || id == 105 || id == 106 || id == IdObjetPellePierreTier0 || id == IdObjetPiochePierreTier0 || id == IdObjetLancePierreTier0 || id == IdObjetFauxPierreTier0 || id == IdObjetAllumeFeu || id == 200 || id == IdObjetRackBatons || id == IdObjetRackBuches || id == IdObjetCoffreBoisTier0 || EstIdPitFeu(id))
+        else if (id == 999 || id == BlocChutant.ID_BRANCHE || id == IdObjetBaie || ItemPhysique.EstIdRocheMatiere(id) || id == 15 || id == 16 || id == 17 || id == 20 || id == 21 || id == IdObjetCeinturePoches || id == IdObjetCeintureSacoches || id == IdObjetPochetteTier0 || id == IdObjetSacTier0 || id == IdObjetCarnetSavoir || id == 30 || id == 32 || id == 34 || id == 105 || id == 106 || id == IdObjetPellePierreTier0 || id == IdObjetPiochePierreTier0 || id == IdObjetLancePierreTier0 || id == IdObjetFauxPierreTier0 || id == IdObjetAllumeFeu || id == 200 || id == IdObjetRackBatons || id == IdObjetRackBuches || id == IdObjetCoffreBoisTier0 || EstIdPitFeu(id) || EstIdFondation(id))
         {
-            Node3D nePose = CreerBlocPose(pointDeChute, mainActive);
+            Vector3 pointSpawn = (structureFixe && EstIdFondation(mainActive.ID))
+                ? pointAligneStructure
+                : pointDeChute;
+            Node3D nePose = CreerBlocPose(pointSpawn, mainActive);
+            if (nePose == null)
+                return;
+            if (structureFixe)
+                AppliquerTransformPoseStructure(nePose, pointAligneStructure, rotationStructureDeg);
             // Clic droit rapide : un objet lançable doit se déposer au sol sans mini-impulsion.
             // La poussée douce reste utile pour les poses via touche Interagir.
             bool estLancable = EstObjetLancableAuMaintien(mainActive);
-            bool structureFixe = id == 200 || id == IdObjetRackBatons || id == IdObjetRackBuches || id == IdObjetCoffreBoisTier0 || EstIdPitFeu(id);
             bool appliquerImpulsionPose = !structureFixe && (depuisInteragir || !estLancable);
             if (appliquerImpulsionPose)
                 AppliquerImpulsionLacherDoux(nePose);
@@ -626,12 +636,304 @@ public partial class Joueur
 
         ConsommerUneUniteMainActive();
 
-        ReinitialiserRotationManuelle();
+        if (!structureFixe)
+            ReinitialiserRotationManuelle();
         RafraichirHUD();
 
         // Persistance immédiate : évite de perdre tables / racks / blocs si crash ou fermeture avant autosauvegarde.
         if (!Engine.IsEditorHint())
             SauvegarderEtatPersistantMonde(GetTree());
+    }
+
+    private bool EssayerCalculerPoseStructureFixe(
+        SlotInventaire mainActive,
+        bool depuisInteragir,
+        out Vector3 pointDeChute,
+        out Vector3 pointAligne,
+        out Vector3 rotationDeg,
+        out bool poseValide)
+    {
+        pointDeChute = Vector3.Zero;
+        pointAligne = Vector3.Zero;
+        rotationDeg = Vector3.Zero;
+        poseValide = false;
+
+        if (mainActive.EstVide || !EstStructureFixePose(mainActive.ID))
+            return false;
+
+        Node noeudCol = NoeudDepuisColliderRaycast(_rayon.GetCollider());
+        if (!EstSurfaceSupportStructureVisee(_rayon, noeudCol))
+        {
+            GD.Print("ZERO-K : Posez cette structure sur une surface horizontale (sol, fondation ou meuble de structure).");
+            return false;
+        }
+
+        // Plus de fauchage automatique a la pose de l'atelier :
+        // cela faisait apparaitre des fibres loin du visuel reel de l'herbe.
+        // FIX CRITIQUE : On supprime la lecture du voxel hSurf + 1f.
+        // L'objet se pose EXACTEMENT sur le point du raycast, ancré par son pivot.
+        pointDeChute = _rayon.GetCollisionPoint();
+        ItemPhysique structureSupport = ResoudreStructureSupportDepuisNoeud(noeudCol);
+        if (structureSupport != null)
+        {
+            // Si la visée touche une structure existante, on impose un plancher Y au-dessus de son sommet.
+            // Cela empêche toute fusion visuelle/collision quand la normale renvoyée est imprécise.
+            float ySommetSupport = structureSupport.GlobalPosition.Y + ObtenirDimensionsApproxStructurePose(structureSupport.ID_Objet).Y;
+            float yMinimalPose = ySommetSupport + MargeEmpilementStructureMetres;
+            if (pointDeChute.Y < yMinimalPose)
+                pointDeChute = new Vector3(pointDeChute.X, yMinimalPose, pointDeChute.Z);
+        }
+        pointAligne = EstIdFondation(mainActive.ID)
+            ? CalculerPositionPoseFondation(pointDeChute)
+            : pointDeChute;
+        rotationDeg = CalculerRotationStructureFixe();
+        if (!EssayerAjusterStructureSansChevauchement(mainActive.ID, ref pointDeChute, ref pointAligne))
+        {
+            GD.Print("ZERO-K : Espace insuffisant autour de la cible (aucune position libre proche).");
+            return false;
+        }
+
+        float distance = GlobalPosition.DistanceTo(pointDeChute);
+        bool flexOuCordeE = depuisInteragir && (EstMatiereFlexible(mainActive.ID) || mainActive.ID == 20 || mainActive.ID == 21);
+        float distMin = flexOuCordeE ? 0.35f : 0.55f;
+        if (!depuisInteragir && EstObjetLancableAuMaintien(mainActive))
+            distMin = Mathf.Min(distMin, 0.55f);
+        poseValide = distance >= distMin;
+        return true;
+    }
+
+    private bool EstStructureFixePose(int idObjet)
+    {
+        return idObjet == 200
+            || idObjet == IdObjetRackBatons
+            || idObjet == IdObjetRackBuches
+            || idObjet == IdObjetCoffreBoisTier0
+            || EstIdPitFeu(idObjet)
+            || EstIdFondation(idObjet);
+    }
+
+    private bool EssayerCalculerApercuPlacementStructure(
+        SlotInventaire mainActive,
+        bool depuisInteragir,
+        out Vector3 pointDeChute,
+        out Vector3 pointAligne,
+        out Vector3 rotationDeg,
+        out bool poseValide)
+    {
+        pointDeChute = Vector3.Zero;
+        pointAligne = Vector3.Zero;
+        rotationDeg = Vector3.Zero;
+        poseValide = false;
+        if (mainActive.EstVide || !EstStructureFixePose(mainActive.ID))
+            return false;
+
+        _rayon.ForceRaycastUpdate();
+        if (!_rayon.IsColliding())
+            return false;
+        return EssayerCalculerPoseStructureFixe(mainActive, depuisInteragir, out pointDeChute, out pointAligne, out rotationDeg, out poseValide);
+    }
+
+    /// <summary>Structures fixes: conserve la rotation manuelle et fige X/Z sur la visée, seul Y reste recalé par la physique.</summary>
+    private void AppliquerTransformPoseStructure(Node3D structure, Vector3 pointDeChute)
+    {
+        int idObjet = 0;
+        if (structure is ItemPhysique item)
+            idObjet = item.ID_Objet;
+        else if (structure.HasMeta("ID_Matiere"))
+            idObjet = structure.GetMeta("ID_Matiere").AsInt32();
+
+        Vector3 pointAligne = pointDeChute;
+        bool estFondation = EstIdFondation(idObjet);
+        if (estFondation)
+            pointAligne = CalculerPositionPoseFondation(pointDeChute);
+        Vector3 rotation = EstStructureFixePose(idObjet)
+            ? CalculerRotationStructureFixe()
+            : new Vector3(_rotationManuelleX, _rotationManuelleY, _rotationManuelleZ);
+        AppliquerTransformPoseStructure(structure, pointAligne, rotation);
+    }
+
+    private Vector3 CalculerRotationStructureFixe()
+    {
+        float rotationY = Mathf.Round(_rotationManuelleY / PasRotationStructuresFixesDegres) * PasRotationStructuresFixesDegres;
+        return new Vector3(0f, rotationY, 0f);
+    }
+
+    private void AppliquerTransformPoseStructure(Node3D structure, Vector3 pointAligne, Vector3 rotationDeg)
+    {
+        Vector3 pos = structure.GlobalPosition;
+        structure.GlobalPosition = new Vector3(pointAligne.X, pos.Y, pointAligne.Z);
+        structure.GlobalRotationDegrees = rotationDeg;
+        if (structure is RigidBody3D rb)
+        {
+            rb.LinearVelocity = Vector3.Zero;
+            rb.AngularVelocity = Vector3.Zero;
+            rb.Sleeping = true;
+        }
+    }
+
+    private bool SontFondationsAdjacentes(float dx, float dz)
+    {
+        bool adjacentX = dz <= FondationToleranceAxeSecondaireMetres
+            && Mathf.Abs(dx - FondationDistanceCentreAdjacente) <= FondationToleranceAxePrincipalMetres;
+        bool adjacentZ = dx <= FondationToleranceAxeSecondaireMetres
+            && Mathf.Abs(dz - FondationDistanceCentreAdjacente) <= FondationToleranceAxePrincipalMetres;
+        return adjacentX || adjacentZ;
+    }
+
+    /// <summary>Fondation : première pose libre, puis snap doux uniquement près d'une fondation existante.</summary>
+    private Vector3 CalculerPositionPoseFondation(Vector3 pointDeChute)
+    {
+        Vector3 meilleur = pointDeChute;
+        float meilleurDistSq = float.MaxValue;
+        bool meilleurAxePrefere = false;
+        bool meilleurSignePrefere = false;
+        int meilleurOrdre = int.MaxValue;
+        bool candidatTrouve = false;
+        bool fondationExistante = false;
+        float rayonSq = FondationRayonSnapDouxMetres * FondationRayonSnapDouxMetres;
+        var nodes = GetTree()?.GetNodesInGroup("BlocsPoses");
+        if (nodes == null)
+            return pointDeChute;
+
+        void EvaluerCandidat(Vector3 p, bool candidatSurAxeX, bool candidatPositif, bool axePrefereX, bool signePreferePositif, int ordreCandidat)
+        {
+            float dx = p.X - pointDeChute.X;
+            float dz = p.Z - pointDeChute.Z;
+            float distSq = dx * dx + dz * dz;
+            if (distSq > rayonSq)
+                return;
+            bool axePrefere = candidatSurAxeX == axePrefereX;
+            bool signePrefere = candidatPositif == signePreferePositif;
+            const float epsilonDist = 0.0001f;
+            bool meilleurParDistance = distSq < (meilleurDistSq - epsilonDist);
+            bool distanceQuasiEgale = Mathf.Abs(distSq - meilleurDistSq) <= epsilonDist;
+            bool meilleurParPreference = distanceQuasiEgale
+                && ((axePrefere && !meilleurAxePrefere)
+                    || (axePrefere == meilleurAxePrefere && signePrefere && !meilleurSignePrefere)
+                    || (axePrefere == meilleurAxePrefere && signePrefere == meilleurSignePrefere && ordreCandidat < meilleurOrdre));
+            if (!candidatTrouve || meilleurParDistance || meilleurParPreference)
+            {
+                candidatTrouve = true;
+                meilleurDistSq = distSq;
+                meilleurAxePrefere = axePrefere;
+                meilleurSignePrefere = signePrefere;
+                meilleurOrdre = ordreCandidat;
+                meilleur = new Vector3(p.X, pointDeChute.Y, p.Z);
+            }
+        }
+
+        foreach (Node n in nodes)
+        {
+            if (n is not ItemPhysique ip || !EstIdFondation(ip.ID_Objet))
+                continue;
+            fondationExistante = true;
+            Vector3 c = ip.GlobalPosition;
+            Vector3 delta = pointDeChute - c;
+            bool axePrefereX = Mathf.Abs(delta.X) >= Mathf.Abs(delta.Z);
+            bool signePreferePositif = axePrefereX ? delta.X >= 0f : delta.Z >= 0f;
+            EvaluerCandidat(new Vector3(c.X + FondationDistanceCentreAdjacente, c.Y, c.Z), candidatSurAxeX: true, candidatPositif: true, axePrefereX, signePreferePositif, ordreCandidat: 0);
+            EvaluerCandidat(new Vector3(c.X - FondationDistanceCentreAdjacente, c.Y, c.Z), candidatSurAxeX: true, candidatPositif: false, axePrefereX, signePreferePositif, ordreCandidat: 1);
+            EvaluerCandidat(new Vector3(c.X, c.Y, c.Z + FondationDistanceCentreAdjacente), candidatSurAxeX: false, candidatPositif: true, axePrefereX, signePreferePositif, ordreCandidat: 2);
+            EvaluerCandidat(new Vector3(c.X, c.Y, c.Z - FondationDistanceCentreAdjacente), candidatSurAxeX: false, candidatPositif: false, axePrefereX, signePreferePositif, ordreCandidat: 3);
+        }
+
+        if (!fondationExistante || !candidatTrouve)
+            return pointDeChute;
+        return meilleur;
+    }
+
+    private Vector3 ObtenirDimensionsApproxStructurePose(int idObjet)
+    {
+        if (EstIdFondation(idObjet))
+            return new Vector3(FondationDistanceCentreAdjacente, 1f, FondationDistanceCentreAdjacente);
+        if (idObjet == 200)
+            return new Vector3(1.2f, 1.0f, 0.9f);
+        if (idObjet == IdObjetRackBatons || idObjet == IdObjetRackBuches)
+            return new Vector3(0.95f, 0.72f, 0.62f);
+        if (idObjet == IdObjetCoffreBoisTier0)
+            return new Vector3(0.58f, 0.42f, 0.48f);
+        if (EstIdPitFeu(idObjet))
+            return new Vector3(0.98f, 0.45f, 0.98f);
+        return new Vector3(0.8f, 0.8f, 0.8f);
+    }
+
+    private bool EstPositionStructureLibre(int idObjet, Vector3 pointDeChute, Vector3 pointAligne)
+    {
+        var nodes = GetTree()?.GetNodesInGroup("BlocsPoses");
+        if (nodes == null)
+            return true;
+        Vector3 dimsPose = ObtenirDimensionsApproxStructurePose(idObjet);
+        Vector3 posPose = new Vector3(pointAligne.X, pointDeChute.Y, pointAligne.Z);
+        for (int i = 0; i < nodes.Count; i++)
+        {
+            if (nodes[i] is not ItemPhysique ip || !EstStructureFixePose(ip.ID_Objet))
+                continue;
+            Vector3 dimsRef = ObtenirDimensionsApproxStructurePose(ip.ID_Objet);
+            Vector3 posRef = ip.GlobalPosition;
+            // Les structures fixes sont ancrées au sol (Y = base). On considère collision
+            // si la séparation verticale est inférieure à la plus petite hauteur utile.
+            float yTolerance = Mathf.Min(dimsPose.Y, dimsRef.Y) - MargeChevauchementMetres;
+            if (Mathf.Abs(posPose.Y - posRef.Y) > yTolerance)
+                continue;
+            float xTolerance = ((dimsPose.X + dimsRef.X) * 0.5f) - MargeChevauchementMetres;
+            float zTolerance = ((dimsPose.Z + dimsRef.Z) * 0.5f) - MargeChevauchementMetres;
+            if (Mathf.Abs(posPose.X - posRef.X) < xTolerance && Mathf.Abs(posPose.Z - posRef.Z) < zTolerance)
+                return false;
+        }
+        return true;
+    }
+
+    private ItemPhysique ResoudreStructureSupportDepuisNoeud(Node n)
+    {
+        for (Node cur = n; cur != null; cur = cur.GetParent())
+        {
+            if (cur is ItemPhysique item && item.IsInGroup("BlocsPoses") && EstStructureFixePose(item.ID_Objet))
+                return item;
+        }
+        return null;
+    }
+
+    private bool EssayerAjusterStructureSansChevauchement(int idObjet, ref Vector3 pointDeChute, ref Vector3 pointAligne)
+    {
+        if (!EstStructureFixePose(idObjet))
+            return true;
+        if (EstPositionStructureLibre(idObjet, pointDeChute, pointAligne))
+            return true;
+
+        float baseStep = Mathf.Max(0.32f, Mathf.Max(ObtenirDimensionsApproxStructurePose(idObjet).X, ObtenirDimensionsApproxStructurePose(idObjet).Z) * 0.55f);
+        Vector2[] directions = new Vector2[]
+        {
+            new Vector2(1f, 0f),
+            new Vector2(-1f, 0f),
+            new Vector2(0f, 1f),
+            new Vector2(0f, -1f),
+            new Vector2(0.70710677f, 0.70710677f),
+            new Vector2(-0.70710677f, 0.70710677f),
+            new Vector2(0.70710677f, -0.70710677f),
+            new Vector2(-0.70710677f, -0.70710677f),
+        };
+        float[] yOffsets = new float[] { 0f, 0.2f, -0.2f, 0.4f };
+
+        for (int ring = 1; ring <= 4; ring++)
+        {
+            float step = baseStep * ring;
+            for (int d = 0; d < directions.Length; d++)
+            {
+                for (int y = 0; y < yOffsets.Length; y++)
+                {
+                    Vector3 candidatChute = pointDeChute + new Vector3(directions[d].X * step, yOffsets[y], directions[d].Y * step);
+                    Vector3 candidatAligne = EstIdFondation(idObjet)
+                        ? CalculerPositionPoseFondation(candidatChute)
+                        : candidatChute;
+                    if (!EstPositionStructureLibre(idObjet, candidatChute, candidatAligne))
+                        continue;
+                    pointDeChute = candidatChute;
+                    pointAligne = candidatAligne;
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private bool EstObjetLancableAuMaintien(SlotInventaire slot)
@@ -642,7 +944,7 @@ public partial class Joueur
         bool estRackBatons = slot.ID == IdObjetRackBatons || slot.ID == IdObjetRackBuches;
         bool estBuisson = slot.ID == 10 || slot.ID == 11;
         bool estCoffre = slot.ID == IdObjetCoffreBoisTier0;
-        bool estPitFeu = EstIdPitFeu(slot.ID);
+        bool estPitFeu = EstIdPitFeu(slot.ID) || EstIdFondation(slot.ID);
         return !estTerrainVoxel && !estAtelier && !estRackBatons && !estBuisson && !estCoffre && !estPitFeu;
     }
 
@@ -691,6 +993,19 @@ public partial class Joueur
         return false;
     }
 
+    private bool EstNoeudSupportStructure(Node n)
+    {
+        for (Node cur = n; cur != null; cur = cur.GetParent())
+        {
+            if (!cur.IsInGroup("BlocsPoses"))
+                continue;
+            if (cur is ItemPhysique item)
+                return EstStructureFixePose(item.ID_Objet);
+            return true;
+        }
+        return false;
+    }
+
     /// <summary>
     /// Sol du monde procédural (Monde_Client) : corps créés uniquement via <see cref="PhysicsServer3D"/> sans nœud <see cref="CollisionObject3D"/>.
     /// Dans ce cas <see cref="RayCast3D.GetCollider"/> est souvent <c>null</c> alors que <see cref="RayCast3D.IsColliding"/> est vrai.
@@ -706,6 +1021,17 @@ public partial class Joueur
     private static bool EstSolViseParRayon(RayCast3D rayon, Node noeudDepuisCollider)
     {
         return EstSurfaceTerrainVisee(noeudDepuisCollider) || EstSolMondeSansColliderNode(rayon);
+    }
+
+    private bool EstSurfaceSupportStructureVisee(RayCast3D rayon, Node noeudDepuisCollider)
+    {
+        if (EstSolViseParRayon(rayon, noeudDepuisCollider))
+            return true;
+        if (!rayon.IsColliding())
+            return false;
+        if (rayon.GetCollisionNormal().Y < NormaleSupportStructureMinY)
+            return false;
+        return EstNoeudSupportStructure(noeudDepuisCollider);
     }
 
     /// <summary>Collider Jolt = souvent <see cref="CollisionShape3D"/> ; on remonte au corps pour groupes / noms.</summary>

@@ -16,6 +16,8 @@ public partial class Cycle_Solaire : Node
 
 	/// <summary>Décalage en heures de la dimension actuelle. Monde 1 = 0, Monde 2 = +6, etc.</summary>
 	private double _decalageMondeHeures = 0.0;
+	private bool _forcerHeureFixeDimension;
+	private double _heureFixeDimensionHeures = 12.0;
 	/// <summary>Pour détecter le passage minuit (nouveau jour).</summary>
 	private double _pourcentageJourneePrecedent = -1.0;
 	/// <summary>Vrai pendant le chargement initial du terrain autour du joueur (cache soleil/lune pour éviter le "flash" avant stabilité).</summary>
@@ -32,6 +34,13 @@ public partial class Cycle_Solaire : Node
 	public void DefinirDecalageHoraire(double heuresDeDecalage)
 	{
 		_decalageMondeHeures = heuresDeDecalage;
+	}
+
+	[Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = true)]
+	public void ConfigurerHeureFixeDimension(int forcerHeureFixe, double heureFixe)
+	{
+		_forcerHeureFixeDimension = forcerHeureFixe != 0;
+		_heureFixeDimensionHeures = Mathf.Clamp((float)heureFixe, 0f, 23.99f);
 	}
 
 	/// <summary>Permet au gestionnaire de masquer les luminaires célestes pendant le bootstrap des chunks de spawn.</summary>
@@ -165,12 +174,20 @@ public partial class Cycle_Solaire : Node
 
 		AppliquerTextureEtoilesSiPossible();
 
-		DateTime heureDansCeMonde = DateTime.UtcNow.AddHours(_decalageMondeHeures);
-		TimeSpan heureActuelle = heureDansCeMonde.TimeOfDay;
-		double pourcentageJournee = heureActuelle.TotalHours / 24.0;
+		double pourcentageJournee;
+		if (_forcerHeureFixeDimension)
+		{
+			pourcentageJournee = _heureFixeDimensionHeures / 24.0;
+		}
+		else
+		{
+			DateTime heureDansCeMonde = DateTime.UtcNow.AddHours(_decalageMondeHeures);
+			TimeSpan heureActuelle = heureDansCeMonde.TimeOfDay;
+			pourcentageJournee = heureActuelle.TotalHours / 24.0;
+		}
 
 		// Détection passage minuit → signal NouveauJour (croissance arbres)
-		if (_pourcentageJourneePrecedent >= 0.98 && pourcentageJournee < 0.02)
+		if (!_forcerHeureFixeDimension && _pourcentageJourneePrecedent >= 0.98 && pourcentageJournee < 0.02)
 			EmitSignal("NouveauJour");
 		_pourcentageJourneePrecedent = pourcentageJournee;
 

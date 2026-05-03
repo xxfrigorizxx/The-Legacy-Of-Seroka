@@ -6,6 +6,7 @@ using System.Collections.Generic;
 public partial class DonneesChunk : RefCounted
 {
 	public Vector2I CoordChunk;
+	public int CoordChunkY;
 	public int TailleChunk;
 	public int HauteurMax;
 
@@ -23,10 +24,10 @@ public partial class DonneesChunk : RefCounted
 	public float[] DensitiesEauFlat;
 
 	/// <summary>Chemin binaire pour sauvegarde/chargement. TOUJOURS user://saves/{NomMondeActuel}/chunks/.</summary>
-	public static string ObtenirCheminChunk(Vector2I coord)
+	public static string ObtenirCheminChunk(Vector2I coord, int coordY = 0)
 	{
 		string nom = GameState.Instance?.NomMondeActuel ?? "MonMonde";
-		return $"user://saves/{nom}/chunks/chunk_{coord.X}_{coord.Y}.bin";
+		return $"user://saves/{nom}/chunks/chunk_{coord.X}_{coordY}_{coord.Y}.bin";
 	}
 
 	/// <summary>Échelle pour normaliser les densités (typiquement -64 à 64 → -1 à 1).</summary>
