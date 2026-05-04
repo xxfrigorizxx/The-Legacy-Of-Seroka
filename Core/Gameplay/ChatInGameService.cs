@@ -201,7 +201,7 @@ public partial class Joueur
         PousserLigneChatHistorique("[Aide] /MODUSA RUDI 0 -> desactive mode creatif + noclip.", prefixerSquelette: false);
         PousserLigneChatHistorique("[Aide] /MODUSA RUDI 1 -> active mode creatif.", prefixerSquelette: false);
         PousserLigneChatHistorique("[Aide] /MODUSA RUDI 3 -> active mode creatif + noclip.", prefixerSquelette: false);
-        PousserLigneChatHistorique("[Aide] /DIMANASIO APISARA -> transfere vers l'Abysse.", prefixerSquelette: false);
+        PousserLigneChatHistorique("[Aide] /DIMANASIO APISARA -> transfert vers APISARA.", prefixerSquelette: false);
         PousserLigneChatHistorique("[Aide] /DIMANASIO ARAPA -> retour vers Alpha.", prefixerSquelette: false);
     }
 

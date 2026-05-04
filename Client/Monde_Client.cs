@@ -3611,7 +3611,7 @@ public partial class Monde_Client : Node3D
 	}
 
 	/// <summary>
-	/// Condition stricte anti-chute pour l'Abysse: collision active sur le chunk courant
+	/// Condition stricte anti-chute pour APISARA (<see cref="ConstantesDimensionAbysse.Apisara"/>): collision active sur le chunk courant
 	/// et les 4 voisins cardinaux, dans la fenêtre de paliers active.
 	/// </summary>
 	public bool AbyssePretPourDeplacement(Vector3 pointMonde)

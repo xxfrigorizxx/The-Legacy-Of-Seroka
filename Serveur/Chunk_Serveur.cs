@@ -30,6 +30,9 @@ public partial class Chunk_Serveur : RefCounted
 	private FastNoiseLite _noiseRivieres;
 	private FastNoiseLite _noiseNeige;
 	private FastNoiseLite _noiseBiomeForet;
+	private FastNoiseLite _noiseAbysseSpirale3D;
+	private FastNoiseLite _noiseAbysseChaos3D;
+	private FastNoiseLite _noiseAbysseChaosDetail3D;
 
 	private const float Isolevel = 0.0f;
 	private const int NiveauEau = 103;  // +1 m
@@ -42,6 +45,9 @@ public partial class Chunk_Serveur : RefCounted
 		new Vector3I(1, 0, 0), new Vector3I(-1, 0, 0),
 		new Vector3I(0, 1, 0), new Vector3I(0, -1, 0),
 		new Vector3I(0, 0, 1), new Vector3I(0, 0, -1)
+	};
+	private static readonly Vector2I[] DirCardinales2D = {
+		new Vector2I(1, 0), new Vector2I(-1, 0), new Vector2I(0, 1), new Vector2I(0, -1)
 	};
 	/// <summary>Limites altitude flore. Inclut la zone de spawn (herbe haute).</summary>
 	private const float NIVEAU_MIN_FLORE = 5f;
@@ -57,6 +63,16 @@ public partial class Chunk_Serveur : RefCounted
 	private const float AbyssFondAbsolu = ConstantesDimensionAbysse.FondAbsolu;
 	private const float AbyssAltitudeSanctuaire = 20f;
 	private const int AbyssNiveauEau = 19;
+	private const float AbyssYSpiraleTop = 20f;
+	private const float AbyssYSpiraleBottom = -450f;
+	private const float AbyssYAnneauTransitionBottom = -510f;
+	private const float AbyssRayonSpiraleMin = 400f;
+	private const float AbyssRayonSpiraleMax = 500f;
+	private const float AbyssExtrusionMin = 6f;
+	private const float AbyssExtrusionMax = 72f;
+	private const float AbyssChaosExtrusionMin = 18f;
+	private const float AbyssChaosExtrusionMax = 375f;
+	private const float AbyssChaosYScale = 0.30f;
 
 	/// <summary>Registre flore: 0=gazon, puis couples buisson (impair=plein, pair=vide) pour variantes futures.</summary>
 	public Dictionary<Vector3I, byte> InventaireFlore { get; } = new Dictionary<Vector3I, byte>();
@@ -183,6 +199,27 @@ public partial class Chunk_Serveur : RefCounted
 		_noiseBiomeForet.FractalType = FastNoiseLite.FractalTypeEnum.Fbm;
 		_noiseBiomeForet.FractalOctaves = 3;
 		_noiseBiomeForet.Frequency = 0.00028f;
+
+		_noiseAbysseSpirale3D = new FastNoiseLite();
+		_noiseAbysseSpirale3D.NoiseType = FastNoiseLite.NoiseTypeEnum.Cellular;
+		_noiseAbysseSpirale3D.Seed = seed + 9137;
+		_noiseAbysseSpirale3D.FractalType = FastNoiseLite.FractalTypeEnum.Ridged;
+		_noiseAbysseSpirale3D.FractalOctaves = 3;
+		_noiseAbysseSpirale3D.Frequency = 0.028f;
+
+		_noiseAbysseChaos3D = new FastNoiseLite();
+		_noiseAbysseChaos3D.NoiseType = FastNoiseLite.NoiseTypeEnum.Cellular;
+		_noiseAbysseChaos3D.Seed = seed + 9241;
+		_noiseAbysseChaos3D.FractalType = FastNoiseLite.FractalTypeEnum.Ridged;
+		_noiseAbysseChaos3D.FractalOctaves = 4;
+		_noiseAbysseChaos3D.Frequency = 0.0135f;
+
+		_noiseAbysseChaosDetail3D = new FastNoiseLite();
+		_noiseAbysseChaosDetail3D.NoiseType = FastNoiseLite.NoiseTypeEnum.Perlin;
+		_noiseAbysseChaosDetail3D.Seed = seed + 9242;
+		_noiseAbysseChaosDetail3D.FractalType = FastNoiseLite.FractalTypeEnum.Fbm;
+		_noiseAbysseChaosDetail3D.FractalOctaves = 3;
+		_noiseAbysseChaosDetail3D.Frequency = 0.026f;
 	}
 
 	public bool EstPret => _densities != null;
@@ -214,6 +251,20 @@ public partial class Chunk_Serveur : RefCounted
 						float xGlobal = ChunkOffsetX * TailleChunk + x;
 						float zGlobal = ChunkOffsetZ * TailleChunk + z;
 						float globalY = ChunkOffsetY * HauteurMax + y;
+						bool extrusionParoiAbysse = _generationAbysseActive
+							&& EvaluerExtrusionParoiAbysse(xGlobal, globalY, zGlobal, out _);
+						bool extrusionAnneauAbysse = _generationAbysseActive
+							&& !extrusionParoiAbysse
+							&& EvaluerExtrusionAnneauAbysse(xGlobal, globalY, zGlobal, out _);
+
+						if (extrusionParoiAbysse || extrusionAnneauAbysse)
+						{
+							_densities[x, y, z] = 10.0f;
+							_materials[x, y, z] = 2;
+							_densitiesEau[x, y, z] = -1.0f;
+							sommetSolide[x, z] = y;
+							continue;
+						}
 
 						int hauteurSurface = CalculerHauteurTerrain((int)xGlobal, (int)zGlobal);
 						float temperature = _generationAbysseActive ? 0f : _noiseTemperature.GetNoise2D(xGlobal, zGlobal);
@@ -292,6 +343,7 @@ public partial class Chunk_Serveur : RefCounted
 					}
 				}
 			}
+			AppliquerBiomeParasiteCornichesAbysse();
 			InitialiserEauVolumetrique(sommetSolide);
 
 			// Pass L-System : injection des Chênes (voxels bois ID 30, feuilles ID 31)
@@ -802,6 +854,151 @@ public partial class Chunk_Serveur : RefCounted
 			h = HauteurOcean();
 
 		return Mathf.RoundToInt(h);
+	}
+
+	private bool EvaluerExtrusionParoiAbysse(float xGlobal, float yGlobal, float zGlobal, out float profondeurInward)
+	{
+		profondeurInward = 0f;
+		if (!_generationAbysseActive) return false;
+		if (yGlobal > AbyssYSpiraleTop || yGlobal < AbyssYSpiraleBottom) return false;
+
+		float distance = Mathf.Sqrt((xGlobal * xGlobal) + (zGlobal * zGlobal));
+		if (distance < AbyssRayonSpiraleMin || distance > AbyssRayonSpiraleMax) return false;
+
+		float angle = Mathf.Atan2(zGlobal, xGlobal);
+		float warpHelicoidal = _noiseErosion.GetNoise3D(xGlobal * 0.0062f + 4100f, yGlobal * 0.0093f - 1700f, zGlobal * 0.0062f - 2600f) * 0.85f;
+		float phase = angle * 6.2f + yGlobal * 0.018f + warpHelicoidal;
+		float signalSpirale = 0.5f + (0.5f * Mathf.Cos(phase));
+		float masqueSpirale = Mathf.SmoothStep(0.58f, 0.92f, signalSpirale);
+
+		float n3dBrut = _noiseAbysseSpirale3D.GetNoise3D(xGlobal, yGlobal, zGlobal);
+		float n3d = Mathf.Pow(Mathf.Clamp((n3dBrut + 1f) * 0.5f, 0f, 1f), 1.25f);
+
+		float attenuationRayon = Mathf.Clamp((distance - AbyssRayonSpiraleMin) / Mathf.Max(1f, AbyssRayonTrouNoir - AbyssRayonSpiraleMin), 0f, 1f);
+		attenuationRayon *= attenuationRayon;
+
+		float tDescente = Mathf.Clamp((AbyssYSpiraleTop - yGlobal) / Mathf.Max(1f, AbyssYSpiraleTop - AbyssYSpiraleBottom), 0f, 1f);
+		float gainDescente = Mathf.Lerp(0.85f, 1.22f, tDescente);
+
+		float intensite = masqueSpirale * n3d * attenuationRayon * gainDescente;
+		if (intensite <= 0.02f) return false;
+
+		profondeurInward = Mathf.Lerp(AbyssExtrusionMin, AbyssExtrusionMax, Mathf.Clamp(intensite, 0f, 1f));
+		float seuilInterieur = AbyssRayonTrouNoir - profondeurInward;
+		return distance >= seuilInterieur && distance <= AbyssRayonTrouNoir;
+	}
+
+	private bool EvaluerExtrusionAnneauAbysse(float xGlobal, float yGlobal, float zGlobal, out float profondeurInward)
+	{
+		profondeurInward = 0f;
+		if (!_generationAbysseActive) return false;
+		if (yGlobal >= AbyssYSpiraleBottom || yGlobal < AbyssYAnneauTransitionBottom) return false;
+
+		float distance = Mathf.Sqrt((xGlobal * xGlobal) + (zGlobal * zGlobal));
+		if (distance > AbyssRayonTrouNoir) return false;
+
+		float angle = Mathf.Atan2(zGlobal, xGlobal);
+		float xMur = Mathf.Cos(angle) * AbyssRayonTrouNoir;
+		float zMur = Mathf.Sin(angle) * AbyssRayonTrouNoir;
+		float yAniso = yGlobal * AbyssChaosYScale;
+
+		float bruitMacro = Mathf.Clamp((_noiseAbysseChaos3D.GetNoise3D(xMur, yAniso, zMur) + 1f) * 0.5f, 0f, 1f);
+		float bruitDetail = Mathf.Clamp((_noiseAbysseChaosDetail3D.GetNoise3D(xMur * 1.75f + 700f, yAniso * 0.8f - 220f, zMur * 1.75f - 700f) + 1f) * 0.5f, 0f, 1f);
+
+		// Anneau brisé dense: présence quasi continue, sculptée par le bruit pour créer un archipel serré.
+		float densiteBase = Mathf.Lerp(0.60f, 0.95f, bruitMacro);
+		float decoupe = Mathf.Abs(bruitDetail - 0.5f) * 2f;
+		float masquePresence = Mathf.Clamp(densiteBase - decoupe * 0.28f, 0.38f, 1f);
+
+		float profondeurBase = Mathf.Lerp(AbyssChaosExtrusionMin, AbyssChaosExtrusionMax, masquePresence);
+		profondeurBase = Mathf.Max(profondeurBase, Mathf.Lerp(160f, 320f, bruitMacro));
+
+		// Mega pic d'atterrissage au point de sortie de la spirale.
+		float angleSortieSpirale = ObtenirAngleSortieSpirale();
+		float ecartAngle = ObtenirEcartAngulaireAbsolu(angle, angleSortieSpirale);
+		float megaMasqueAngle = Mathf.Clamp(1f - (ecartAngle / 1.35f), 0f, 1f);
+		megaMasqueAngle = megaMasqueAngle * megaMasqueAngle * (3f - 2f * megaMasqueAngle);
+		float megaMasqueAltitude = Mathf.Clamp(1f - (Mathf.Abs(yGlobal - AbyssYSpiraleBottom) / 34f), 0f, 1f);
+		megaMasqueAltitude = megaMasqueAltitude * megaMasqueAltitude * (3f - 2f * megaMasqueAltitude);
+		float megaMasque = megaMasqueAngle * megaMasqueAltitude;
+		profondeurBase = Mathf.Max(profondeurBase, Mathf.Lerp(300f, AbyssChaosExtrusionMax, megaMasque));
+
+		profondeurInward = Mathf.Clamp(profondeurBase, 0f, AbyssChaosExtrusionMax);
+		if (profondeurInward <= 0f) return false;
+
+		float seuilInterieur = AbyssRayonTrouNoir - profondeurInward;
+		return distance >= seuilInterieur && distance <= AbyssRayonTrouNoir;
+	}
+
+	private static float ObtenirAngleSortieSpirale()
+	{
+		float angle = (-AbyssYSpiraleBottom * 0.018f) / 6.2f;
+		return Mathf.PosMod(angle, Mathf.Tau);
+	}
+
+	private static float ObtenirEcartAngulaireAbsolu(float a, float b)
+	{
+		float d = Mathf.PosMod(a - b + Mathf.Pi, Mathf.Tau) - Mathf.Pi;
+		return Mathf.Abs(d);
+	}
+
+	private void AppliquerBiomeParasiteCornichesAbysse()
+	{
+		if (!_generationAbysseActive || _densities == null || _materials == null) return;
+		for (int x = 0; x <= TailleChunk; x++)
+		{
+			for (int y = 0; y <= HauteurMax; y++)
+			{
+				float globalY = ChunkOffsetY * HauteurMax + y;
+
+				for (int z = 0; z <= TailleChunk; z++)
+				{
+					if (_densities[x, y, z] <= Isolevel) continue;
+
+					float xGlobal = ChunkOffsetX * TailleChunk + x;
+					float zGlobal = ChunkOffsetZ * TailleChunk + z;
+					bool appartientSpirale = EvaluerExtrusionParoiAbysse(xGlobal, globalY, zGlobal, out _);
+					bool appartientAnneau = !appartientSpirale && EvaluerExtrusionAnneauAbysse(xGlobal, globalY, zGlobal, out _);
+					if (!appartientSpirale && !appartientAnneau) continue;
+
+					bool airAuDessus = y >= HauteurMax
+						|| (_densities[x, y + 1, z] <= Isolevel && (_densitiesEau == null || _densitiesEau[x, y + 1, z] <= Isolevel));
+					if (!airAuDessus)
+					{
+						_materials[x, y, z] = 2;
+						continue;
+					}
+
+					bool praticable = EstSurfacePraticableBiomeParasite(x, y, z);
+					_materials[x, y, z] = praticable ? (byte)1 : (byte)2;
+				}
+			}
+		}
+	}
+
+	private bool EstSurfacePraticableBiomeParasite(int x, int y, int z)
+	{
+		if (_densities == null) return false;
+		if (y < 0 || y > HauteurMax) return false;
+
+		int voisinsTestes = 0;
+		int voisinsStables = 0;
+		for (int i = 0; i < DirCardinales2D.Length; i++)
+		{
+			int nx = x + DirCardinales2D[i].X;
+			int nz = z + DirCardinales2D[i].Y;
+			if (nx < 0 || nx > TailleChunk || nz < 0 || nz > TailleChunk)
+				continue;
+
+			voisinsTestes++;
+			bool voisinSolide = _densities[nx, y, nz] > Isolevel;
+			bool voisinAirAuDessus = y >= HauteurMax
+				|| (_densities[nx, y + 1, nz] <= Isolevel && (_densitiesEau == null || _densitiesEau[nx, y + 1, nz] <= Isolevel));
+			if (voisinSolide && voisinAirAuDessus)
+				voisinsStables++;
+		}
+
+		return voisinsTestes >= 3 && voisinsStables >= 2;
 	}
 
 	private bool EstDansTrouNoirAbysseMonde(float xGlobal, float zGlobal)

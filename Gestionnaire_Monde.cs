@@ -88,7 +88,24 @@ public partial class Gestionnaire_Monde : Node3D
 	/// <summary>Overlay "Chargement du monde..." affiché tant que la collision du chunk de spawn n'est pas prête.</summary>
 	private CanvasLayer _overlayChargement;
 	private Label _labelChargementPrincipal;
+	/// <summary>Nom canonique du phénomène qui provoque les effets de remontée par palier (APISARA). Ce n'est ni une « maladie du vide », ni une malédiction générique : c'est l'EMERUKEDESI PAROTAROMA.</summary>
+	public const string EmerukedesiParotaroma = "EMERUKEDESI PAROTAROMA";
+
+	/// <summary>Overlay visuel : manifestation palier 1 de l'<see cref="EmerukedesiParotaroma"/> (flou perceptif, pas un simple « mal de l'air »).</summary>
+	private CanvasLayer _overlayEmerukedesiParotaromaStage1;
+	private ShaderMaterial _materiauEmerukedesiParotaromaStage1;
 	private double _secondesOverlayChargement;
+	private float _dernierYRemonteeAbysse = float.NaN;
+	private float _yDepartMonteeAbysse = float.NaN;
+	private bool _monteeAbysseContinue;
+	private bool _emerukedesiParotaromaStage1Actif;
+	private bool _emerukedesiParotaromaStage1FonduSortieActif;
+	private double _emerukedesiParotaromaStage1TempsFonduRestant;
+	private const float SeuilDeclenchementRemonteeAbysseMetres = 10f;
+	private const float SeuilVitesseMonteeAbysse = 0.25f;
+	private const float SeuilVitesseDescenteAbysse = -0.25f;
+	/// <summary>Durée du fondu quand la remontée cesse, pour l'effet palier 1 de l'<see cref="EmerukedesiParotaroma"/>.</summary>
+	private const double DureeFonduEmerukedesiParotaromaStage1Sec = 15.0;
 	private bool _chargementAbysseEnCours;
 	private double _secondesStabiliteAbyssePret;
 	private const double DureeStabiliteAbyssePretSec = 0.22;
@@ -397,7 +414,7 @@ public partial class Gestionnaire_Monde : Node3D
 	/// <summary>Nouvelle partie : le joueur ne doit bouger en physique qu’après <see cref="FinaliserSpawnInitialAuSol"/> (sinon il tombe depuis Y=h+10 avant le raycast et peut traverser le sol).</summary>
 	public bool EstAlignementSpawnTermine() => !_spawnDoitEtreAligneAuSol || _spawnAligneAuSol;
 
-	/// <summary>Vrai si le verrou anti-chute Abysse force actuellement l'arrêt du mouvement joueur.</summary>
+	/// <summary>Vrai si le verrou anti-chute APISARA force actuellement l'arrêt du mouvement joueur.</summary>
 	public bool EstVerrouSecuriteAbysseActif() => _gateTpDimensionActif;
 
 	public bool EstDimensionLocaleAbysse() => _dimensionLocaleActive == (int)DimensionJeu.Abysse;
@@ -836,7 +853,7 @@ public partial class Gestionnaire_Monde : Node3D
 				&& dimensionReconnexion == (int)DimensionJeu.Abysse
 				&& _serveurParDimension.ContainsKey(dimensionReconnexion))
 			{
-				AppliquerChangementDimensionLocale(dimensionReconnexion, posSpawn, "Reconnexion en Abysse.");
+				AppliquerChangementDimensionLocale(dimensionReconnexion, posSpawn, $"Reconnexion en {ConstantesDimensionAbysse.Apisara}.");
 			}
 		}
 		else
@@ -865,6 +882,7 @@ public partial class Gestionnaire_Monde : Node3D
 		_overlayChargement.AddChild(panelChargement);
 		AddChild(_overlayChargement);
 		_secondesOverlayChargement = 0;
+		CreerOverlayEmerukedesiParotaromaStage1();
 
 		// Forge automatique du matériau eau (bypass de l'éditeur) — sanctuarisation : le GC ne le détruira pas car lié au nœud.
 		var shaderEau = GD.Load<Shader>("res://EauTriplanar.gdshader");
@@ -922,6 +940,151 @@ public partial class Gestionnaire_Monde : Node3D
 		v.Size = v.CustomMinimumSize;
 		v.Position = -v.Size * 0.5f;
 		root.AddChild(v);
+	}
+
+	private void CreerOverlayEmerukedesiParotaromaStage1()
+	{
+		if (_overlayEmerukedesiParotaromaStage1 != null && GodotObject.IsInstanceValid(_overlayEmerukedesiParotaromaStage1))
+			return;
+
+		_overlayEmerukedesiParotaromaStage1 = new CanvasLayer { Name = "Overlay_EmerukedesiParotaroma_Stage1", Layer = 49 };
+		var rect = new ColorRect
+		{
+			Name = "EmerukedesiParotaromaRect",
+			MouseFilter = Control.MouseFilterEnum.Ignore
+		};
+		rect.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+		rect.OffsetLeft = 0f;
+		rect.OffsetTop = 0f;
+		rect.OffsetRight = 0f;
+		rect.OffsetBottom = 0f;
+		rect.Color = Colors.White;
+
+		var shader = new Shader();
+		shader.Code = @"
+shader_type canvas_item;
+uniform sampler2D screen_tex : hint_screen_texture, filter_linear_mipmap;
+uniform float strength : hint_range(0.0, 1.0) = 0.0;
+
+void fragment() {
+	vec2 uv = SCREEN_UV;
+	vec4 base = texture(screen_tex, uv);
+	vec2 p = SCREEN_PIXEL_SIZE * mix(0.0, 5.0, clamp(strength, 0.0, 1.0));
+
+	vec4 blur = base * 0.30;
+	blur += texture(screen_tex, uv + vec2( p.x,  0.0)) * 0.14;
+	blur += texture(screen_tex, uv + vec2(-p.x,  0.0)) * 0.14;
+	blur += texture(screen_tex, uv + vec2( 0.0,  p.y)) * 0.14;
+	blur += texture(screen_tex, uv + vec2( 0.0, -p.y)) * 0.14;
+	blur += texture(screen_tex, uv + vec2( p.x,  p.y)) * 0.07;
+	blur += texture(screen_tex, uv + vec2(-p.x,  p.y)) * 0.07;
+
+	COLOR = mix(base, blur, clamp(strength, 0.0, 1.0));
+}";
+
+		_materiauEmerukedesiParotaromaStage1 = new ShaderMaterial { Shader = shader };
+		_materiauEmerukedesiParotaromaStage1.SetShaderParameter("strength", 0.0f);
+		rect.Material = _materiauEmerukedesiParotaromaStage1;
+		_overlayEmerukedesiParotaromaStage1.AddChild(rect);
+		_overlayEmerukedesiParotaromaStage1.Visible = false;
+		AddChild(_overlayEmerukedesiParotaromaStage1);
+	}
+
+	private void ReinitialiserEmerukedesiParotaromaStage1()
+	{
+		_dernierYRemonteeAbysse = float.NaN;
+		_yDepartMonteeAbysse = float.NaN;
+		_monteeAbysseContinue = false;
+		_emerukedesiParotaromaStage1Actif = false;
+		_emerukedesiParotaromaStage1FonduSortieActif = false;
+		_emerukedesiParotaromaStage1TempsFonduRestant = 0.0;
+		if (_materiauEmerukedesiParotaromaStage1 != null && GodotObject.IsInstanceValid(_materiauEmerukedesiParotaromaStage1))
+			_materiauEmerukedesiParotaromaStage1.SetShaderParameter("strength", 0.0f);
+		if (_overlayEmerukedesiParotaromaStage1 != null && GodotObject.IsInstanceValid(_overlayEmerukedesiParotaromaStage1))
+			_overlayEmerukedesiParotaromaStage1.Visible = false;
+	}
+
+	/// <summary>Mise à jour de la manifestation palier 1 de l'<see cref="EmerukedesiParotaroma"/> (remontée en zone négative uniquement).</summary>
+	private void MettreAJourEmerukedesiParotaromaStage1(double delta)
+	{
+		if (_joueur == null || _dimensionLocaleActive != (int)DimensionJeu.Abysse)
+		{
+			ReinitialiserEmerukedesiParotaromaStage1();
+			return;
+		}
+
+		float yActuel = _joueur.GlobalPosition.Y;
+		if (yActuel >= 0f)
+		{
+			ReinitialiserEmerukedesiParotaromaStage1();
+			_dernierYRemonteeAbysse = yActuel;
+			return;
+		}
+
+		float vitesseY = _joueur.Velocity.Y;
+		bool monte = vitesseY > SeuilVitesseMonteeAbysse;
+		bool descend = vitesseY < SeuilVitesseDescenteAbysse;
+
+		if (float.IsNaN(_dernierYRemonteeAbysse))
+			_dernierYRemonteeAbysse = yActuel;
+
+		float intensite = 0f;
+		if (descend)
+		{
+			// À la descente, l'EMERUKEDESI PAROTAROMA ne s'applique pas (aucune manifestation).
+			_emerukedesiParotaromaStage1Actif = false;
+			_emerukedesiParotaromaStage1FonduSortieActif = false;
+			_emerukedesiParotaromaStage1TempsFonduRestant = 0.0;
+			_monteeAbysseContinue = false;
+			_yDepartMonteeAbysse = float.NaN;
+		}
+		else if (monte)
+		{
+			if (!_monteeAbysseContinue)
+			{
+				_monteeAbysseContinue = true;
+				_yDepartMonteeAbysse = yActuel;
+			}
+
+			if (_emerukedesiParotaromaStage1Actif || (yActuel - _yDepartMonteeAbysse) >= SeuilDeclenchementRemonteeAbysseMetres)
+			{
+				_emerukedesiParotaromaStage1Actif = true;
+				_emerukedesiParotaromaStage1FonduSortieActif = false;
+				_emerukedesiParotaromaStage1TempsFonduRestant = DureeFonduEmerukedesiParotaromaStage1Sec;
+				intensite = 1f;
+			}
+		}
+		else
+		{
+			if (_monteeAbysseContinue)
+			{
+				_monteeAbysseContinue = false;
+				_yDepartMonteeAbysse = float.NaN;
+				if (_emerukedesiParotaromaStage1Actif && !_emerukedesiParotaromaStage1FonduSortieActif)
+				{
+					_emerukedesiParotaromaStage1FonduSortieActif = true;
+					_emerukedesiParotaromaStage1TempsFonduRestant = DureeFonduEmerukedesiParotaromaStage1Sec;
+				}
+			}
+
+			if (_emerukedesiParotaromaStage1FonduSortieActif)
+			{
+				_emerukedesiParotaromaStage1TempsFonduRestant = Math.Max(0.0, _emerukedesiParotaromaStage1TempsFonduRestant - delta);
+				intensite = (float)Mathf.Clamp((float)(_emerukedesiParotaromaStage1TempsFonduRestant / DureeFonduEmerukedesiParotaromaStage1Sec), 0f, 1f);
+				if (_emerukedesiParotaromaStage1TempsFonduRestant <= 0.0)
+				{
+					_emerukedesiParotaromaStage1FonduSortieActif = false;
+					_emerukedesiParotaromaStage1Actif = false;
+					intensite = 0f;
+				}
+			}
+		}
+
+		if (_materiauEmerukedesiParotaromaStage1 != null && GodotObject.IsInstanceValid(_materiauEmerukedesiParotaromaStage1))
+			_materiauEmerukedesiParotaromaStage1.SetShaderParameter("strength", intensite);
+		if (_overlayEmerukedesiParotaromaStage1 != null && GodotObject.IsInstanceValid(_overlayEmerukedesiParotaromaStage1))
+			_overlayEmerukedesiParotaromaStage1.Visible = intensite > 0.001f;
+		_dernierYRemonteeAbysse = yActuel;
 	}
 
 	private void RestaurerEtatPersistantMonde()
@@ -1794,7 +1957,7 @@ public partial class Gestionnaire_Monde : Node3D
 		_attenteChunksParDimension.Clear();
 		_dimensionParPeer.Clear();
 		_racineDimensionAlpha = new Node3D { Name = "Dimension_Alpha" };
-		_racineDimensionAbysse = new Node3D { Name = "Dimension_Abysse" };
+		_racineDimensionAbysse = new Node3D { Name = ConstantesDimensionAbysse.Apisara };
 		AddChild(_racineDimensionAlpha);
 		AddChild(_racineDimensionAbysse);
 
@@ -1811,7 +1974,7 @@ public partial class Gestionnaire_Monde : Node3D
 		_mondeServeurAlpha.MaterielTerrain = MaterielTerrain ?? GD.Load<Material>("res://Manteau_Planetaire.tres");
 
 		_mondeServeurAbysse = new Gestionnaire_Abysse();
-		_mondeServeurAbysse.NomDimension = "Dimension_Abysse";
+		_mondeServeurAbysse.NomDimension = ConstantesDimensionAbysse.Apisara;
 		_mondeServeurAbysse.ActiverGenerationAbysse = true;
 		_mondeServeurAbysse.TailleChunk = TailleChunk;
 		_mondeServeurAbysse.HauteurMax = HauteurMax;
@@ -2083,7 +2246,7 @@ public partial class Gestionnaire_Monde : Node3D
 		string cmd = (commande ?? "").Trim();
 		if (string.Equals(cmd, "/DIMANASIO APISARA", StringComparison.OrdinalIgnoreCase))
 		{
-			TransfererPeerVersDimension(peerId, (int)DimensionJeu.Abysse, ObtenirPointTeleportDimension((int)DimensionJeu.Abysse), "Transfert vers l'Abysse.");
+			TransfererPeerVersDimension(peerId, (int)DimensionJeu.Abysse, ObtenirPointTeleportDimension((int)DimensionJeu.Abysse), $"Transfert vers {ConstantesDimensionAbysse.Apisara}.");
 			return;
 		}
 		if (string.Equals(cmd, "/DIMANASIO ARAPA", StringComparison.OrdinalIgnoreCase))
@@ -2200,6 +2363,7 @@ public partial class Gestionnaire_Monde : Node3D
 		_mondeServeur?.ForcerPulseReveilPierres();
 		_mondeClient?.DefinirDimensionReseauActive(dimensionId);
 		_mondeClient?.ReinitialiserTousLesChunksLocaux();
+		ReinitialiserEmerukedesiParotaromaStage1();
 		MettreAJourVisibiliteArbresParDimension(dimensionId);
 		ReparenterNoeudDansDimension(_joueur, dimensionId);
 		if (_joueur != null)
@@ -2685,6 +2849,7 @@ public partial class Gestionnaire_Monde : Node3D
 				_joueur.Velocity = Vector3.Zero;
 			}
 		}
+		MettreAJourEmerukedesiParotaromaStage1(delta);
 
 		bool spawnPretActuel = EstSpawnPret();
 		bool spawnPretEtAligneActuel = spawnPretActuel && (!_spawnDoitEtreAligneAuSol || _spawnAligneAuSol);

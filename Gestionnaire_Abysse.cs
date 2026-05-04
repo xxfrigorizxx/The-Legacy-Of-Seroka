@@ -1,7 +1,7 @@
 using Godot;
 using System.Collections.Generic;
 
-/// <summary>Variante serveur dédiée à la dimension Abysse (génération insulaire).</summary>
+/// <summary>Variante serveur dédiée à APISARA (<see cref="ConstantesDimensionAbysse.Apisara"/>), identifiant technique <see cref="DimensionJeu.Abysse"/>.</summary>
 public partial class Gestionnaire_Abysse : Monde_Serveur
 {
 	private WorldEnvironment _worldEnvironmentAbysse;
@@ -17,7 +17,7 @@ public partial class Gestionnaire_Abysse : Monde_Serveur
 	public override void _Ready()
 	{
 		base._Ready();
-		NomDimension = "Dimension_Abysse";
+		NomDimension = ConstantesDimensionAbysse.Apisara;
 		ActiverGenerationAbysse = true;
 		InitialiserAtmosphereAbysseNative();
 		DefinirAtmosphereAbysseActive(false);
@@ -126,7 +126,8 @@ public partial class Gestionnaire_Abysse : Monde_Serveur
 			return;
 
 		float taillePalier = Mathf.Max(1f, ConstantesDimensionAbysse.TaillePalierMetres);
-		const int nombreStratesVersBas = 26;
+		float profondeurAbsolue = Mathf.Abs(ConstantesDimensionAbysse.FondAbsolu);
+		int nombreStratesVersBas = Mathf.Max(1, Mathf.CeilToInt(profondeurAbsolue / taillePalier) + 1);
 		const float epaisseurStrateMetres = 12f;
 		const float decalageCentreSousPalierMetres = 6f;
 		for (int i = 0; i < nombreStratesVersBas; i++)

@@ -1,14 +1,18 @@
 public enum DimensionJeu
 {
 	Alpha = 0,
+	/// <summary>Identifiant technique réseau / code. Le nom canonique de cette dimension est <see cref="ConstantesDimensionAbysse.Apisara"/>.</summary>
 	Abysse = 1
 }
 
 public static class ConstantesDimensionAbysse
 {
-	public const float FondAbsolu = -2000000000f;
+	/// <summary>Nom canonique de la dimension (lore, UI, dossiers chunks : <c>chunks_APISARA</c>). Ce n'est pas « la dimension Abysse » : c'est APISARA.</summary>
+	public const string Apisara = "APISARA";
+
+	public const float FondAbsolu = -15000f;
 	public const float RayonTrouNoir = 500f;
-	public const int TaillePalierMetres = 1000;
+	public const int TaillePalierMetres = 500;
 	public const int DemiFenetrePaliersActifs = 1;
 
 	public static int ObtenirIndexStageDepuisYMonde(float yMonde)
