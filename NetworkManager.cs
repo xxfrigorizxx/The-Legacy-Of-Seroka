@@ -35,7 +35,15 @@ public partial class NetworkManager : Node
 		{
 			enet?.Dispose();
 			enet = new ENetMultiplayerPeer();
-			err = enet.CreateServer(portEssai);
+			try
+			{
+				err = enet.CreateServer(portEssai);
+			}
+			catch (Exception ex)
+			{
+				err = Error.CantCreate;
+				GD.PrintErr($"NetworkManager: CreateServer exception sur le port {portEssai}: {ex.Message}");
+			}
 			if (err == Error.Ok)
 			{
 				_peer = enet;
@@ -45,6 +53,9 @@ public partial class NetworkManager : Node
 			}
 
 			GD.PrintErr($"NetworkManager: impossible d'ouvrir le port {portEssai} pour ENet ({err}). Cause fréquente : port déjà utilisé (autre instance du jeu, Minecraft Java, etc.).");
+			// Si ENet n'arrive même pas à créer l'hôte, inutile d'insister sur 16 ports.
+			if (err == Error.CantCreate)
+				break;
 			if (portEssai < ushort.MaxValue)
 				portEssai++;
 		}

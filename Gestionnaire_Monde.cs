@@ -1093,6 +1093,8 @@ public partial class Gestionnaire_Monde : Node3D
 
 		var cycleSolaire = GetParent()?.GetNodeOrNull<Cycle_Solaire>("CycleSolaire");
 		cycleSolaire?.ConfigurerDistanceBrouillardProgressive(RenderDistance, TailleChunk, 2);
+		if (_mondeServeurAbysse is Gestionnaire_Abysse gestionnaireAbysseDistance)
+			gestionnaireAbysseDistance.ConfigurerDistanceBrouillardProgressive(RenderDistance, TailleChunk, 2);
 
 		// Mode legacy : pas de Monde_Client — il faut rafraîchir la grille de chunks sinon RenderDistance ne bouge jamais tant qu’on ne change pas de chunk.
 		if (!UseArchitectureReseau)
@@ -1866,12 +1868,15 @@ public partial class Gestionnaire_Monde : Node3D
 		_racineDimensionAbysse?.AddChild(_mondeServeurAbysse);
 		AddChild(_mondeClient);
 		ReparenterNoeudDansDimension(_joueur, (int)DimensionJeu.Alpha);
+		MettreAJourAtmosphereAbysseLocale(_dimensionLocaleActive);
 
 		// Croissance des arbres + jour absolu au passage minuit
 		var cycleSolaire = GetParent()?.GetNodeOrNull<Cycle_Solaire>("CycleSolaire");
 		if (cycleSolaire != null)
 		{
 			cycleSolaire.ConfigurerDistanceBrouillardProgressive(RenderDistance, TailleChunk, 2);
+			if (_mondeServeurAbysse is Gestionnaire_Abysse gestionnaireAbysseDistance)
+				gestionnaireAbysseDistance.ConfigurerDistanceBrouillardProgressive(RenderDistance, TailleChunk, 2);
 			cycleSolaire.Connect("NouveauJour", Callable.From(() =>
 			{
 				GameState.Instance?.IncrementerJourAbsolu();
@@ -2006,15 +2011,16 @@ public partial class Gestionnaire_Monde : Node3D
 				coord.X, donnees?.CoordChunkY ?? 0, coord.Y, donnees.TailleChunk, donnees.HauteurMax,
 				donnees.DensitiesQuantifiees ?? Array.Empty<byte>(),
 				donnees.MaterialsFlat ?? Array.Empty<byte>(),
-				donnees.DensitiesEauQuantifiees ?? Array.Empty<byte>());
+				donnees.DensitiesEauQuantifiees ?? Array.Empty<byte>(),
+				donnees?.EstVideIntegral ?? false);
 		}
 	}
 
 	[Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = false)]
-	private void RecevoirChunkDimensionRPC(int dimensionId, int coordX, int coordY, int coordZ, int tailleChunk, int hauteurMax, byte[] densitiesPlates, byte[] materialsFlat, byte[] densitiesEauPlates)
+	private void RecevoirChunkDimensionRPC(int dimensionId, int coordX, int coordY, int coordZ, int tailleChunk, int hauteurMax, byte[] densitiesPlates, byte[] materialsFlat, byte[] densitiesEauPlates, bool estVideIntegral)
 	{
 		if (_dimensionLocaleActive != dimensionId || _mondeClient == null) return;
-		_mondeClient.RecevoirChunkDuServeurRPC(coordX, coordY, coordZ, tailleChunk, hauteurMax, densitiesPlates, materialsFlat, densitiesEauPlates);
+		_mondeClient.RecevoirChunkDuServeurRPC(coordX, coordY, coordZ, tailleChunk, hauteurMax, densitiesPlates, materialsFlat, densitiesEauPlates, estVideIntegral);
 	}
 
 	private void DiffuserVoxelDimension(int dimensionId, Vector3I pos, byte id)
@@ -2225,8 +2231,15 @@ public partial class Gestionnaire_Monde : Node3D
 			_mondeClient.ReserverChunkSpawnPrioritaire(chunkSpawn);
 		}
 		EnvoyerFuseauHoraireAuPeer(Multiplayer.GetUniqueId());
+		MettreAJourAtmosphereAbysseLocale(dimensionId);
 		if (!string.IsNullOrWhiteSpace(messageServeur))
 			Joueur.AlerteSqueletteBoiteNoire(messageServeur);
+	}
+
+	private void MettreAJourAtmosphereAbysseLocale(int dimensionIdActif)
+	{
+		if (_mondeServeurAbysse is Gestionnaire_Abysse gestionnaireAbysse)
+			gestionnaireAbysse.DefinirAtmosphereAbysseActive(dimensionIdActif == (int)DimensionJeu.Abysse);
 	}
 
 	/// <summary>Volume océan dédié à la détection (remous/éclaboussures), sans override physique global.</summary>

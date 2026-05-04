@@ -134,6 +134,8 @@ public partial class Monde_Serveur : Node
 	private const int MagicArbresV6 = 0x5A4B3255;
 	private readonly List<Vector2I> _cycleAutosaveChunks = new List<Vector2I>();
 	private int _indexCycleAutosaveChunks;
+	private readonly List<Vector3I> _cycleAutosaveChunksAbysse = new List<Vector3I>();
+	private int _indexCycleAutosaveChunksAbysse;
 	private readonly Queue<Vector2I> _fileChunksDirtyAutosave = new Queue<Vector2I>();
 	private readonly HashSet<Vector2I> _setChunksDirtyAutosave = new HashSet<Vector2I>();
 	[Export] public int MultiplicateurScanDirtyAutosave = 6;
@@ -387,15 +389,26 @@ public partial class Monde_Serveur : Node
 		GD.Print($"ZERO-K : Lancement du Râle d'Agonie ({contexteInfo}, ignorerDedoublonage={ignorerDedoublonage}). Sauvegarde des Chunks modifiés...");
 		ForcerInstanciationArbresEnAttente();
 		int chunksSauves = 0;
-		foreach (var kvp in _chunks)
+		if (ActiverGenerationAbysse)
 		{
-			Vector2I coord = kvp.Key;
-			Chunk_Serveur chunk = kvp.Value;
-			chunk.SauvegarderChunkSurDisque();
-			SauvegarderFloreChunk(coord, chunk);
-			SauvegarderPierresChunk(coord);
-			SauvegarderArbresChunk(coord);
-			chunksSauves++;
+			foreach (var kvStage in _chunksAbysseParStage2D)
+			{
+				foreach (var kvp in kvStage.Value)
+				{
+					if (SauvegarderChunkCoordEtCouche(kvp.Key, kvp.Value.ChunkOffsetY, kvp.Value, uniquementSiModifie: false))
+						chunksSauves++;
+				}
+			}
+		}
+		else
+		{
+			foreach (var kvp in _chunks)
+			{
+				Vector2I coord = kvp.Key;
+				Chunk_Serveur chunk = kvp.Value;
+				if (SauvegarderChunkCoordEtCouche(coord, 0, chunk, uniquementSiModifie: false))
+					chunksSauves++;
+			}
 		}
 		GD.Print($"ZERO-K : Râle d'Agonie terminé. {chunksSauves} Chunks gravés sur le disque.");
 	}
@@ -414,22 +427,48 @@ public partial class Monde_Serveur : Node
 	/// </summary>
 	public int SauvegarderChunksActifsProgressif(int maxChunks)
 	{
-		if (maxChunks <= 0 || _chunks.Count == 0) return 0;
-		int scans = Mathf.Max(maxChunks * Mathf.Max(2, MultiplicateurScanDirtyAutosave), 8);
-		AlimenterFileChunksDirtyAutosave(scans);
+		if (maxChunks <= 0) return 0;
+		if (ActiverGenerationAbysse)
+		{
+			if (_chunksAbysseParStage2D.Count == 0)
+				return 0;
+			ReconstruireCycleAutosaveAbysseSiNecessaire();
+			if (_cycleAutosaveChunksAbysse.Count == 0)
+				return 0;
+			int sauvegardes = 0;
+			int scans = Mathf.Max(maxChunks * Mathf.Max(2, MultiplicateurScanDirtyAutosave), 8);
+			int total = _cycleAutosaveChunksAbysse.Count;
+			scans = Mathf.Clamp(scans, 1, total);
+			for (int i = 0; i < scans && sauvegardes < maxChunks; i++)
+			{
+				if (_indexCycleAutosaveChunksAbysse >= total)
+					_indexCycleAutosaveChunksAbysse = 0;
+				Vector3I cle = _cycleAutosaveChunksAbysse[_indexCycleAutosaveChunksAbysse++];
+				if (!_chunksAbysseParStage2D.TryGetValue(ConstantesDimensionAbysse.ObtenirIndexStageDepuisCoordYChunk(cle.Y, HauteurMax), out var stage))
+					continue;
+				if (!stage.TryGetValue(new Vector2I(cle.X, cle.Z), out var chunk) || chunk == null || !chunk.EstModifie)
+					continue;
+				if (SauvegarderChunkCoordEtCouche(new Vector2I(cle.X, cle.Z), cle.Y, chunk, uniquementSiModifie: true))
+					sauvegardes++;
+			}
+			return sauvegardes;
+		}
+		if (_chunks.Count == 0) return 0;
+		int scansAlpha = Mathf.Max(maxChunks * Mathf.Max(2, MultiplicateurScanDirtyAutosave), 8);
+		AlimenterFileChunksDirtyAutosave(scansAlpha);
 		if (_fileChunksDirtyAutosave.Count == 0) return 0;
 
-		int sauvegardes = 0;
+		int sauvegardesAlpha = 0;
 		int tentative = _fileChunksDirtyAutosave.Count;
-		while (sauvegardes < maxChunks && tentative > 0 && _fileChunksDirtyAutosave.Count > 0)
+		while (sauvegardesAlpha < maxChunks && tentative > 0 && _fileChunksDirtyAutosave.Count > 0)
 		{
 			tentative--;
 			Vector2I coord = _fileChunksDirtyAutosave.Dequeue();
 			_setChunksDirtyAutosave.Remove(coord);
 			if (SauvegarderChunkCoord(coord, uniquementSiModifie: true))
-				sauvegardes++;
+				sauvegardesAlpha++;
 		}
-		return sauvegardes;
+		return sauvegardesAlpha;
 	}
 
 	/// <summary>Retourne un backlog compact pour diagnostics autosave/décharge (profil perf).</summary>
@@ -441,20 +480,39 @@ public partial class Monde_Serveur : Node
 	/// <summary>Flush explicite des chunks modifiés (quitter/sauvegarde forcée) avec budget optionnel.</summary>
 	public int ForcerSauvegardeChunksDirty(int maxChunks = int.MaxValue)
 	{
+		if (ActiverGenerationAbysse)
+		{
+			int budget = maxChunks <= 0 ? int.MaxValue : maxChunks;
+			int sauvegardes = 0;
+			foreach (var kvStage in _chunksAbysseParStage2D)
+			{
+				foreach (var kvp in kvStage.Value)
+				{
+					if (sauvegardes >= budget)
+						return sauvegardes;
+					Chunk_Serveur chunk = kvp.Value;
+					if (chunk == null || !chunk.EstModifie)
+						continue;
+					if (SauvegarderChunkCoordEtCouche(kvp.Key, chunk.ChunkOffsetY, chunk, uniquementSiModifie: true))
+						sauvegardes++;
+				}
+			}
+			return sauvegardes;
+		}
 		if (_chunks.Count == 0) return 0;
 		AlimenterFileChunksDirtyAutosave(_chunks.Count);
-		int budget = maxChunks <= 0 ? int.MaxValue : maxChunks;
-		int sauvegardes = 0;
+		int budgetAlpha = maxChunks <= 0 ? int.MaxValue : maxChunks;
+		int sauvegardesAlpha = 0;
 		int tentative = _fileChunksDirtyAutosave.Count;
-		while (sauvegardes < budget && tentative > 0 && _fileChunksDirtyAutosave.Count > 0)
+		while (sauvegardesAlpha < budgetAlpha && tentative > 0 && _fileChunksDirtyAutosave.Count > 0)
 		{
 			tentative--;
 			Vector2I coord = _fileChunksDirtyAutosave.Dequeue();
 			_setChunksDirtyAutosave.Remove(coord);
 			if (SauvegarderChunkCoord(coord, uniquementSiModifie: true))
-				sauvegardes++;
+				sauvegardesAlpha++;
 		}
-		return sauvegardes;
+		return sauvegardesAlpha;
 	}
 
 	private void AlimenterFileChunksDirtyAutosave(int budgetScan)
@@ -487,14 +545,61 @@ public partial class Monde_Serveur : Node
 	{
 		if (!_chunks.TryGetValue(coord, out var chunk) || chunk == null)
 			return false;
+		int coordYSauvegarde = ActiverGenerationAbysse ? chunk.ChunkOffsetY : 0;
+		return SauvegarderChunkCoordEtCouche(coord, coordYSauvegarde, chunk, uniquementSiModifie);
+	}
+
+	private bool SauvegarderChunkCoordEtCouche(Vector2I coord, int coordY, Chunk_Serveur chunk, bool uniquementSiModifie)
+	{
+		if (chunk == null)
+			return false;
 		if (uniquementSiModifie && !chunk.EstModifie)
 			return false;
 		ForcerInstanciationArbresEnAttente(coord);
 		chunk.SauvegarderChunkSurDisque();
 		SauvegarderFloreChunk(coord, chunk);
-		SauvegarderPierresChunk(coord);
+		SauvegarderPierresChunk(coord, coordY);
 		SauvegarderArbresChunk(coord);
 		return true;
+	}
+
+	private void ReconstruireCycleAutosaveAbysseSiNecessaire()
+	{
+		int total = 0;
+		foreach (var stage in _chunksAbysseParStage2D.Values)
+			total += stage.Count;
+		if (_cycleAutosaveChunksAbysse.Count == total)
+			return;
+		_cycleAutosaveChunksAbysse.Clear();
+		foreach (var kvStage in _chunksAbysseParStage2D)
+		{
+			foreach (var coord in kvStage.Value.Keys)
+				_cycleAutosaveChunksAbysse.Add(new Vector3I(coord.X, ConstantesDimensionAbysse.ObtenirCoordYChunkRepresentatifDuStage(kvStage.Key, HauteurMax), coord.Y));
+		}
+		_indexCycleAutosaveChunksAbysse = 0;
+	}
+
+	private bool ColonneAbysseExiste(Vector2I coord)
+	{
+		foreach (var stage in _chunksAbysseParStage2D.Values)
+		{
+			if (stage.ContainsKey(coord))
+				return true;
+		}
+		return false;
+	}
+
+	private int SauvegarderColonneAbysse(Vector2I coord, bool uniquementSiModifie)
+	{
+		int sauves = 0;
+		foreach (var stage in _chunksAbysseParStage2D.Values)
+		{
+			if (!stage.TryGetValue(coord, out var chunk) || chunk == null)
+				continue;
+			if (SauvegarderChunkCoordEtCouche(coord, chunk.ChunkOffsetY, chunk, uniquementSiModifie))
+				sauves++;
+		}
+		return sauves;
 	}
 
 	public override void _ExitTree()
@@ -554,6 +659,25 @@ public partial class Monde_Serveur : Node
 		return ConstantesDimensionAbysse.ObtenirCoordYChunkRepresentatifDuStage(indexStage, HauteurMax);
 	}
 
+	private void RemplirCoordYImpactesParRayonAbysse(float yCentreMonde, float rayon, HashSet<int> sortie)
+	{
+		if (sortie == null)
+			return;
+		sortie.Clear();
+		int coordYMin = CoordYDepuisMondeY(yCentreMonde - rayon, HauteurMax);
+		int coordYMax = CoordYDepuisMondeY(yCentreMonde + rayon, HauteurMax);
+		if (coordYMax < coordYMin)
+		{
+			int tmp = coordYMin;
+			coordYMin = coordYMax;
+			coordYMax = tmp;
+		}
+		for (int coordY = coordYMin; coordY <= coordYMax; coordY++)
+			sortie.Add(NormaliserCoordYAbysse(coordY));
+		if (sortie.Count == 0)
+			sortie.Add(NormaliserCoordYAbysse(CoordYDepuisMondeY(yCentreMonde, HauteurMax)));
+	}
+
 	private Dictionary<Vector2I, Chunk_Serveur> ObtenirOuCreerStageAbysse(int indexStage)
 	{
 		if (!_chunksAbysseParStage2D.TryGetValue(indexStage, out var stage))
@@ -586,6 +710,9 @@ public partial class Monde_Serveur : Node
 			int coordYNormalise = NormaliserCoordYAbysse(coordY);
 			int indexStage = ConstantesDimensionAbysse.ObtenirIndexStageDepuisCoordYChunk(coordYNormalise, HauteurMax);
 			ObtenirOuCreerStageAbysse(indexStage)[coord] = chunk;
+			if (!_chunks.ContainsKey(coord))
+				_chunks[coord] = chunk; // proxy colonne pour les systèmes 2D existants (décharge/radar)
+			return;
 		}
 		_chunks[coord] = chunk;
 	}
@@ -639,9 +766,19 @@ public partial class Monde_Serveur : Node
 			DefinirChunkRuntime(result.coord, result.coordY, result.chunk);
 			SynchroniserFrontieresAvecVoisinsCharges(result.coord, result.chunk);
 			SpawnerArbresChunkAvecPrioriteSauvegarde(result.coord, result.chunk);
-			// Envoi client uniquement APRÈS stase remplie, sinon LibererRochesChunk trouve une liste vide
-			DeclencherEnsemencement(result.coord, result.chunk, TailleChunk, (coord, ch) =>
-				_fileEnvoiReseau.Enqueue(new ColisChunk { Coord = coord, Donnees = ch.ObtenirDonneesPourClient() }));
+			if (ActiverGenerationAbysse)
+			{
+				// En Abysse, l'affichage du terrain est prioritaire: on envoie le chunk immédiatement
+				// et on laisse l'ensemencement des roches suivre en arrière-plan.
+				_fileEnvoiReseau.Enqueue(new ColisChunk { Coord = result.coord, Donnees = result.chunk.ObtenirDonneesPourClient() });
+				DeclencherEnsemencement(result.coord, result.chunk, TailleChunk, (coord, ch) => LibererRochesChunk(coord));
+			}
+			else
+			{
+				// Envoi client uniquement APRÈS stase remplie, sinon LibererRochesChunk trouve une liste vide
+				DeclencherEnsemencement(result.coord, result.chunk, TailleChunk, (coord, ch) =>
+					_fileEnvoiReseau.Enqueue(new ColisChunk { Coord = coord, Donnees = ch.ObtenirDonneesPourClient() }));
+			}
 			integrationsWorkers++;
 		}
 
@@ -664,8 +801,9 @@ public partial class Monde_Serveur : Node
 			Vector3 posObservation = posObs;
 			int demandesTraitees = 0;
 			int chargesDisque = 0;
+			int budgetChargesDisque = ActiverGenerationAbysse ? Mathf.Max(4, MaxChargesDisqueParTick * 5) : MaxChargesDisqueParTick;
 			int budgetDemandes = ActiverGenerationAbysse
-				? Mathf.Max(1, MaxDemandesChunksAbysseParTick)
+				? Mathf.Max(2, MaxDemandesChunksAbysseParTick + 2)
 				: Mathf.Max(1, MaxDemandesChunksParTick);
 			while (_chunksEnAttenteEnvoi.Count > 0 && _chunksEnGenerationActive < LancerMaxTaches && demandesTraitees < budgetDemandes)
 			{
@@ -699,7 +837,7 @@ public partial class Monde_Serveur : Node
 				// BRANCHE 1 : RÉSURRECTION PURE — AUCUN appel de génération. Le chunk part directement au Mesh.
 				if (FichierChunkExiste(chunkCible, coordYCible))
 				{
-					if (chargesDisque >= MaxChargesDisqueParTick)
+					if (chargesDisque >= budgetChargesDisque)
 					{
 						// On refile la demande pour la frame suivante afin d'éviter un pic I/O + désérialisation.
 						_chunksEnAttenteEnvoi.Add(demande);
@@ -741,11 +879,20 @@ public partial class Monde_Serveur : Node
 				SynchroniserFrontieresAvecVoisinsCharges(chunkCible, chunkActuel);
 				RepousserBorduresChunkDisqueVersVoisinsProceduraux(chunkCible, chunkActuel);
 				SpawnerArbresChunkAvecPrioriteSauvegarde(chunkCible, chunkActuel);
-				if (!ChargerEtSpawnerPierresChunk(chunkCible))
+				if (!ChargerEtSpawnerPierresChunk(chunkCible, coordYCible))
 				{
-					// Attendre que l'ensemencement asynchrone finisse AVANT d'envoyer le chunk au réseau
-					DeclencherEnsemencement(chunkCible, chunkActuel, TailleChunk, (coord, ch) =>
-						_fileEnvoiReseau.Enqueue(new ColisChunk { Coord = coord, Donnees = ch.ObtenirDonneesPourClient() }));
+					if (ActiverGenerationAbysse)
+					{
+						// Reconnexion Abysse: ne pas bloquer l'envoi du chunk par l'ensemencement.
+						_fileEnvoiReseau.Enqueue(new ColisChunk { Coord = chunkCible, Donnees = chunkActuel.ObtenirDonneesPourClient() });
+						DeclencherEnsemencement(chunkCible, chunkActuel, TailleChunk, (coord, ch) => LibererRochesChunk(coord));
+					}
+					else
+					{
+						// Attendre que l'ensemencement asynchrone finisse AVANT d'envoyer le chunk au réseau
+						DeclencherEnsemencement(chunkCible, chunkActuel, TailleChunk, (coord, ch) =>
+							_fileEnvoiReseau.Enqueue(new ColisChunk { Coord = coord, Donnees = ch.ObtenirDonneesPourClient() }));
+					}
 				}
 				else
 				{
@@ -910,22 +1057,28 @@ public partial class Monde_Serveur : Node
 
 	public Chunk_Serveur ObtenirOuCreerChunk(Vector2I coord)
 	{
-		if (TryGetChunkRuntime(coord, 0, out var c)) return c;
+		return ObtenirOuCreerChunk(coord, 0);
+	}
+
+	public Chunk_Serveur ObtenirOuCreerChunk(Vector2I coord, int coordY)
+	{
+		int coordYLocal = ActiverGenerationAbysse ? NormaliserCoordYAbysse(coordY) : 0;
+		if (TryGetChunkRuntime(coord, coordYLocal, out var c)) return c;
 
 		Chunk_Serveur chunkActuel = null;
-		bool fichierExistant = FichierChunkExiste(coord, 0);
+		bool fichierExistant = FichierChunkExiste(coord, coordYLocal);
 		// BRANCHE 1 : RÉSURRECTION — AUCUNE génération.
 		if (fichierExistant)
-			chunkActuel = ChargerChunkDepuisDisque(coord, 0);
+			chunkActuel = ChargerChunkDepuisDisque(coord, coordYLocal);
 		// BRANCHE 2 : CRÉATION PROCÉDURALE — TOUTES les passes ici.
 		if (chunkActuel == null)
 		{
 			if (fichierExistant)
 				GD.PrintErr($"ZERO-K DIAG : ObtenirOuCreerChunk fallback procédural pour {coord} (fichier présent mais lecture invalide).");
-			chunkActuel = CreerChunkServeur(coord, 0);
+			chunkActuel = CreerChunkServeur(coord, coordYLocal);
 			chunkActuel.GenererDonneesVoxel(); // GenererTerrainDeBase, Surface, Eau — UNIQUEMENT pour chunks ex nihilo.
 		}
-		DefinirChunkRuntime(coord, 0, chunkActuel);
+		DefinirChunkRuntime(coord, coordYLocal, chunkActuel);
 		SynchroniserFrontieresAvecVoisinsCharges(coord, chunkActuel);
 		RepousserBorduresChunkDisqueVersVoisinsProceduraux(coord, chunkActuel);
 		return chunkActuel;
@@ -1553,7 +1706,7 @@ public partial class Monde_Serveur : Node
 	}
 
 	/// <summary>Sauvegarde les roches matière (ID <see cref="ItemPhysique.IdRocheMatiereMin"/>–<see cref="ItemPhysique.IdRocheMatiereMax"/>) : morph dans index, taille dans chimique (octet).</summary>
-	private void SauvegarderPierresChunk(Vector2I coord)
+	private void SauvegarderPierresChunk(Vector2I coord, int coordY)
 	{
 		if (_parentPourBlocsChutants == null) return;
 		float xMin = coord.X * TailleChunk;
@@ -1574,7 +1727,7 @@ public partial class Monde_Serveur : Node
 		}
 		string dossier = ProjectSettings.GlobalizePath(ObtenirDossierChunksRelatif() + "/");
 		Directory.CreateDirectory(dossier);
-		string chemin = Path.Combine(dossier, $"chunk_{coord.X}_0_{coord.Y}_items.bin");
+		string chemin = Path.Combine(dossier, $"chunk_{coord.X}_{coordY}_{coord.Y}_items.bin");
 		try
 		{
 			using (var w = new BinaryWriter(File.Open(chemin, FileMode.Create)))
@@ -1594,10 +1747,16 @@ public partial class Monde_Serveur : Node
 	}
 
 	/// <summary>Charge et enfile les pierres sur le tapis roulant (ordre spatial logique X,Z,Y). v1/v2/v3.</summary>
-	private bool ChargerEtSpawnerPierresChunk(Vector2I coord)
+	private bool ChargerEtSpawnerPierresChunk(Vector2I coord, int coordY)
 	{
 		if (_parentPourBlocsChutants == null) return false;
-		string chemin = Path.Combine(ProjectSettings.GlobalizePath(ObtenirDossierChunksRelatif()), $"chunk_{coord.X}_0_{coord.Y}_items.bin");
+		string dossier = ProjectSettings.GlobalizePath(ObtenirDossierChunksRelatif());
+		string chemin = Path.Combine(dossier, $"chunk_{coord.X}_{coordY}_{coord.Y}_items.bin");
+		if (!File.Exists(chemin))
+		{
+			// Fallback legacy: les versions précédentes forçaient coordY=0.
+			chemin = Path.Combine(dossier, $"chunk_{coord.X}_0_{coord.Y}_items.bin");
+		}
 		if (!File.Exists(chemin)) return false;
 		try
 		{
@@ -2002,6 +2161,23 @@ public partial class Monde_Serveur : Node
 		int czMin = Gestionnaire_Monde.WorldToChunkCoord(pointImpact.X, pointImpact.Z - rayon, TailleChunk).Y;
 		int czMax = Gestionnaire_Monde.WorldToChunkCoord(pointImpact.X, pointImpact.Z + rayon, TailleChunk).Y;
 
+		if (ActiverGenerationAbysse)
+		{
+			var coordYImpactes = new HashSet<int>();
+			RemplirCoordYImpactesParRayonAbysse(pointImpact.Y, rayon, coordYImpactes);
+			for (int cx = cxMin; cx <= cxMax; cx++)
+				for (int cz = czMin; cz <= czMax; cz++)
+				{
+					Vector2I coord = new Vector2I(cx, cz);
+					foreach (int coordY in coordYImpactes)
+					{
+						var chunk = ObtenirOuCreerChunk(coord, coordY);
+						chunk.DetruireVoxel(pointImpact, rayon, forceDegats);
+					}
+				}
+			return;
+		}
+
 		for (int cx = cxMin; cx <= cxMax; cx++)
 			for (int cz = czMin; cz <= czMax; cz++)
 			{
@@ -2158,6 +2334,25 @@ public partial class Monde_Serveur : Node
 		int cxMax = Gestionnaire_Monde.WorldToChunkCoord(pointCible.X + rayon, pointCible.Z, TailleChunk).X;
 		int czMin = Gestionnaire_Monde.WorldToChunkCoord(pointCible.X, pointCible.Z - rayon, TailleChunk).Y;
 		int czMax = Gestionnaire_Monde.WorldToChunkCoord(pointCible.X, pointCible.Z + rayon, TailleChunk).Y;
+
+		if (ActiverGenerationAbysse)
+		{
+			var coordYImpactes = new HashSet<int>();
+			RemplirCoordYImpactesParRayonAbysse(pointCible.Y, rayon, coordYImpactes);
+			for (int cx = cxMin; cx <= cxMax; cx++)
+			{
+				for (int cz = czMin; cz <= czMax; cz++)
+				{
+					Vector2I coord = new Vector2I(cx, cz);
+					foreach (int coordY in coordYImpactes)
+					{
+						var chunk = ObtenirOuCreerChunk(coord, coordY);
+						chunk.CreerMatiere(pointCible, rayon, matiere);
+					}
+				}
+			}
+			return;
+		}
 
 		for (int cx = cxMin; cx <= cxMax; cx++)
 		{
@@ -2424,9 +2619,13 @@ public partial class Monde_Serveur : Node
 			int dzJoueur = Mathf.Abs(coord.Y - cj.Y);
 			if (dxJoueur <= RenderDistance && dzJoueur <= RenderDistance)
 				continue;
-			if (_chunks.ContainsKey(coord))
+			bool colonneChargee = _chunks.ContainsKey(coord) || (ActiverGenerationAbysse && ColonneAbysseExiste(coord));
+			if (colonneChargee)
 			{
-				SauvegarderChunkCoord(coord, uniquementSiModifie: false);
+				if (ActiverGenerationAbysse)
+					SauvegarderColonneAbysse(coord, uniquementSiModifie: false);
+				else
+					SauvegarderChunkCoord(coord, uniquementSiModifie: false);
 				RetirerPierresChunk(coord);
 				RetirerArbresChunk(coord);
 				if (ActiverGenerationAbysse)

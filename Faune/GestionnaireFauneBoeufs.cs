@@ -125,7 +125,15 @@ public partial class GestionnaireFauneBoeufs : Node3D
 		string nomMonde = GameState.Instance?.NomMondeActuel ?? "MonMonde";
 		string dossier = ProjectSettings.GlobalizePath($"user://saves/{nomMonde}");
 		Directory.CreateDirectory(dossier);
-		return Path.Combine(dossier, "faune_boeufs.dat");
+		bool enAbysse = false;
+		Gestionnaire_Monde gestionnaire = null;
+		Node racine = Engine.GetMainLoop() is SceneTree arbre ? arbre.CurrentScene : null;
+		if (racine != null)
+			gestionnaire = racine.GetNodeOrNull<Gestionnaire_Monde>("Gestionnaire_Monde");
+		if (gestionnaire != null)
+			enAbysse = gestionnaire.EstDimensionLocaleAbysse();
+		string suffixe = enAbysse ? "abysse" : "alpha";
+		return Path.Combine(dossier, $"faune_boeufs_{suffixe}.dat");
 	}
 
 	public void SauvegarderFauneMonde()

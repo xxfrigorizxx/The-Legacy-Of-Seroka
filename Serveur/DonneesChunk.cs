@@ -18,6 +18,7 @@ public partial class DonneesChunk : RefCounted
 	/// <summary>Densités eau quantifiées. Null si pas d'eau ou format local.</summary>
 	public byte[] DensitiesEauQuantifiees;
 	public byte[] MaterialsFlat;
+	public bool EstVideIntegral;
 
 	// Format local (Solo, même processus) - évite quantification si appel direct
 	public float[] DensitiesFlat;

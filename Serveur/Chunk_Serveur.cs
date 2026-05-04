@@ -696,10 +696,10 @@ public partial class Chunk_Serveur : RefCounted
 		// Décale radialement les frontières de zones pour casser l'anneau parfait
 		// et obtenir une muraille plus organique (bosses, creux, pointes irrégulières).
 		float modulationAngulaire =
-			Mathf.Sin(angle * 3.1f + 0.8f) * 62f +
-			Mathf.Sin(angle * 6.7f - 1.4f) * 34f;
-		float bruitMacroAnneau = _noiseSurface.GetNoise2D(xGlobal * 0.0018f + 2600f, zGlobal * 0.0018f + 2600f) * 92f;
-		float bruitWarpAnneau = _noiseErosion.GetNoise2D(xGlobal * 0.0034f - 3700f, zGlobal * 0.0034f - 3700f) * 48f;
+			Mathf.Sin(angle * 3.1f + 0.8f) * 38f +
+			Mathf.Sin(angle * 6.7f - 1.4f) * 22f;
+		float bruitMacroAnneau = _noiseSurface.GetNoise2D(xGlobal * 0.0018f + 2600f, zGlobal * 0.0018f + 2600f) * 54f;
+		float bruitWarpAnneau = _noiseErosion.GetNoise2D(xGlobal * 0.0034f - 3700f, zGlobal * 0.0034f - 3700f) * 28f;
 		float distanceProfil = distance + modulationAngulaire + bruitMacroAnneau + bruitWarpAnneau;
 
 		// 0..500 : trou noir vertical jusqu'au fond absolu.
@@ -720,31 +720,31 @@ public partial class Chunk_Serveur : RefCounted
 		{
 			float tMur = Mathf.Clamp((distanceProfil - AbyssRayonX) / Mathf.Max(1f, AbyssRayonY - AbyssRayonX), 0f, 1f);
 			float sCurve = tMur * tMur * (3f - 2f * tMur);
-			float baseMur = Mathf.Lerp(140f, 520f, sCurve);
+			float baseMur = Mathf.Lerp(120f, 340f, sCurve);
 
-			float bruitMacro = _noiseSurface.GetNoise2D(xGlobal * 0.005f + 6100f, zGlobal * 0.005f + 6100f) * 115f;
-			float bruitMicro = _noiseErosion.GetNoise2D(xGlobal * 0.022f + 9100f, zGlobal * 0.022f + 9100f) * 48f;
-			float cretes = Mathf.Abs(_noiseCavernes.GetNoise2D(xGlobal * 0.034f + 13000f, zGlobal * 0.034f + 13000f)) * 210f;
+			float bruitMacro = _noiseSurface.GetNoise2D(xGlobal * 0.005f + 6100f, zGlobal * 0.005f + 6100f) * 62f;
+			float bruitMicro = _noiseErosion.GetNoise2D(xGlobal * 0.022f + 9100f, zGlobal * 0.022f + 9100f) * 26f;
+			float cretes = Mathf.Abs(_noiseCavernes.GetNoise2D(xGlobal * 0.034f + 13000f, zGlobal * 0.034f + 13000f)) * 95f;
 			float picsAigusBrut = (_noiseCavernes.GetNoise2D(xGlobal * 0.061f + 31000f, zGlobal * 0.061f + 31000f) + 1f) * 0.5f;
-			float picsAigus = Mathf.Pow(Mathf.Clamp(picsAigusBrut, 0f, 1f), 4.2f) * 190f;
+			float picsAigus = Mathf.Pow(Mathf.Clamp(picsAigusBrut, 0f, 1f), 3.6f) * 70f;
 
 			float bruitFalaises = _noiseRivieres.GetNoise2D(xGlobal * 0.011f + 17000f, zGlobal * 0.011f + 17000f);
 			float masqueFalaises = Mathf.Clamp((bruitFalaises - 0.08f) * 2.35f, 0f, 1f);
 			float zoneFalaises = Mathf.Clamp(1f - (Mathf.Abs(tMur - 0.46f) / 0.42f), 0f, 1f);
 			zoneFalaises *= zoneFalaises;
-			float falaises = masqueFalaises * zoneFalaises * 260f;
+			float falaises = masqueFalaises * zoneFalaises * 110f;
 
 			// Entailles locales: crée des passages/creux dans la muraille au lieu d'une couronne parfaite.
 			float bruitEntaille = _noiseRivieres.GetNoise2D(xGlobal * 0.0065f + 21000f, zGlobal * 0.0065f + 21000f);
 			float masqueEntaille = Mathf.Clamp((0.14f - bruitEntaille) * 2.7f, 0f, 1f);
-			float entaille = masqueEntaille * (95f + (1f - sCurve) * 95f);
+			float entaille = masqueEntaille * (60f + (1f - sCurve) * 70f);
 
 			float attenuationSortie = Mathf.Clamp((tMur - 0.72f) / 0.28f, 0f, 1f);
-			float sortieRampe = Mathf.Lerp(0f, 240f, attenuationSortie * attenuationSortie);
+			float sortieRampe = Mathf.Lerp(0f, 150f, attenuationSortie * attenuationSortie);
 			float reductionSortie = sortieRampe * (0.45f + (1f - masqueFalaises) * 0.55f);
 
 			float hauteurMur = baseMur + bruitMacro + bruitMicro + cretes + picsAigus + falaises - reductionSortie - entaille;
-			return Mathf.Clamp(hauteurMur, 110f, 820f);
+			return Mathf.Clamp(hauteurMur, 95f, 460f);
 		}
 
 		float HauteurPlaineExterieure()
@@ -1188,6 +1188,7 @@ public partial class Chunk_Serveur : RefCounted
 		lock (_verrouVoxel)
 		{
 			int tx = TailleChunk + 1, ty = HauteurMax + 1, tz = TailleChunk + 1;
+			bool estVideIntegral = true;
 			var d = new DonneesChunk
 			{
 				CoordChunk = new Vector2I(ChunkOffsetX, ChunkOffsetZ),
@@ -1203,7 +1204,13 @@ public partial class Chunk_Serveur : RefCounted
 			for (int x = 0; x < tx; x++)
 				for (int y = 0; y < ty; y++)
 					for (int z = 0; z < tz; z++)
-						d.MaterialsFlat[idx++] = _materials[x, y, z];
+					{
+						byte mat = _materials[x, y, z];
+						d.MaterialsFlat[idx++] = mat;
+						if (estVideIntegral && mat > 0 && _densities[x, y, z] > 0f)
+							estVideIntegral = false;
+					}
+			d.EstVideIntegral = estVideIntegral;
 			return d;
 		}
 	}
@@ -1395,7 +1402,9 @@ public bool RecolterBaiesBuisson(Vector3 pointImpactGlobal, float rayon, out int
 						if (dx * dx + dy * dy + dz * dz <= rayon2)
 						{
 							bool etaitSolide = _densities[x, y, z] > Isolevel;
-							_densities[x, y, z] = Mathf.Max(_densities[x, y, z] - forceDegats, -1.0f); // Plancher absolu : le voxel ne peut pas être "plus que vide"
+							// Gameplay: un minage validé doit produire un trou immédiatement visible.
+							_densities[x, y, z] = -10.0f;
+							_materials[x, y, z] = 0;
 							modifie = true;
 							if (etaitSolide) positionsDetruites.Add(new Vector3I(x, y, z));
 						}
@@ -1412,8 +1421,9 @@ public bool RecolterBaiesBuisson(Vector3 pointImpactGlobal, float rayon, out int
 		{
 			_reveillerEau?.Invoke(PositionMonde + new Vector3(pos.X, pos.Y, pos.Z));
 			int gx = baseX + pos.X;
+			int gy = ChunkOffsetY * HauteurMax + pos.Y;
 			int gz = baseZ + pos.Z;
-			var posGlobal = new Vector3I(gx, pos.Y, gz);
+			var posGlobal = new Vector3I(gx, gy, gz);
 			_onVoxelModifie?.Invoke(posGlobal, 0);
 		}
 		AuditerGraviteFlore();
@@ -1435,7 +1445,8 @@ public bool RecolterBaiesBuisson(Vector3 pointImpactGlobal, float rayon, out int
 						float dx = pointLocal.X - x, dy = pointLocal.Y - y, dz = pointLocal.Z - z;
 						if (dx * dx + dy * dy + dz * dz <= rayon2)
 						{
-							_densities[x, y, z] = Mathf.Min(_densities[x, y, z] + 5.0f, 1.0f); // Plafond absolu : le voxel ne peut pas être "plus que plein"
+							// Gameplay: une pose validée doit créer de la matière immédiatement visible.
+							_densities[x, y, z] = 10.0f;
 							_materials[x, y, z] = idMatiere; // Injection couleur : le Shader lit ce tableau
 							positionsModifiees.Add(new Vector3I(x, y, z));
 						}
@@ -1448,8 +1459,9 @@ public bool RecolterBaiesBuisson(Vector3 pointImpactGlobal, float rayon, out int
 		{
 			_reveillerEau?.Invoke(PositionMonde + new Vector3(pos.X, pos.Y, pos.Z));
 			int gx = Mathf.FloorToInt(PositionMonde.X) + pos.X;
+			int gy = ChunkOffsetY * HauteurMax + pos.Y;
 			int gz = Mathf.FloorToInt(PositionMonde.Z) + pos.Z;
-			var posGlobal = new Vector3I(gx, pos.Y, gz);
+			var posGlobal = new Vector3I(gx, gy, gz);
 			_onVoxelModifie?.Invoke(posGlobal, idMatiere);
 		}
 		AuditerGraviteFlore();
@@ -1664,7 +1676,8 @@ public bool RecolterBaiesBuisson(Vector3 pointImpactGlobal, float rayon, out int
 	{
 		SetVoxelLocal(lx, ly, lz, id);
 		_estModifie = true;
-		var posGlobal = new Vector3I(ChunkOffsetX * TailleChunk + lx, ly, ChunkOffsetZ * TailleChunk + lz);
+		int gy = ChunkOffsetY * HauteurMax + ly;
+		var posGlobal = new Vector3I(ChunkOffsetX * TailleChunk + lx, gy, ChunkOffsetZ * TailleChunk + lz);
 		_onVoxelModifie?.Invoke(posGlobal, id);
 	}
 

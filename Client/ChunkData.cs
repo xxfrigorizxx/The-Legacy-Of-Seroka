@@ -43,6 +43,8 @@ public class ChunkData
 	public bool CullingVisible { get; set; } = true;
 	/// <summary>True tant que le chunk attend dans la file de solidification physique (évite doublons).</summary>
 	public bool EstEnFileSolidification { get; set; }
+	/// <summary>Chunk entièrement vide (aucun voxel solide). Utilisé pour éviter le mode panique dans le trou noir Abysse.</summary>
+	public bool EstVideIntegral { get; set; }
 
 	/// <summary>Bruit climat (une seule instance par chunk, réutilisée pour tous les voxels).</summary>
 	public FastNoiseLite NoiseTemperature { get; set; }

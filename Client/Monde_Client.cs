@@ -191,11 +191,11 @@ public partial class Monde_Client : Node3D
 
 	private readonly HashSet<Vector2I> _prioritaireSetTemp = new HashSet<Vector2I>();
 	private readonly List<Vector2I> _prioritaireListTemp = new List<Vector2I>();
-	private readonly HashSet<Vector2I> _chunksUniquesTemp = new HashSet<Vector2I>();
+	private readonly HashSet<Vector3I> _chunksUniquesTemp = new HashSet<Vector3I>();
 	private readonly List<Vector2I> _chunksATuerTemp = new List<Vector2I>();
 	private readonly List<Vector3I> _clesChunksAbysseARetirerTemp = new List<Vector3I>();
 	private bool _radarEnCours;
-	private HashSet<(int cx, int cz, int section)> _sectionsAReconstruire = new HashSet<(int, int, int)>();
+	private HashSet<(int cx, int coordY, int cz, int section)> _sectionsAReconstruire = new HashSet<(int, int, int, int)>();
 	private CharacterBody3D _joueur;
 	private Vector2I _ancienChunkJoueur = new Vector2I(-99999, -99999);
 	private bool _modificationEnCours;
@@ -263,18 +263,12 @@ public partial class Monde_Client : Node3D
 	private readonly Dictionary<Vector3I, ulong> _demandesAbysseFrameDerniereEmission = new Dictionary<Vector3I, ulong>();
 	private readonly List<Vector3I> _clesDemandesAbysseExpireesTemp = new List<Vector3I>();
 	private float _timerTrimAbysse = 0f;
-	private const float IntervalleTrimAbysseSec = 0.35f;
+	private const float IntervalleTrimAbysseSec = 0.50f;
 	private float _cooldownDiagCoherenceAbysse = 0f;
 	private const float IntervalleDiagCoherenceAbysseSec = 1.25f;
 	private float _cooldownLogDiagnosticCollisionAbysse = 0f;
 	private const float IntervalleDiagnosticCollisionAbysseSec = 0.80f;
 	private const int MaxFileDemandesChunksAbysse = 2600;
-	private MeshInstance3D _voileTransitionPalierAbysse;
-	private ShaderMaterial _materiauVoileTransitionPalierAbysse;
-	private const float EpaisseurVoileAbysse = 12f;
-	private const float DemiHauteurTransitionNuageAbysse = 3f; // 6m total de traversée
-	private CanvasLayer _overlayPassageNuageAbysse;
-	private ColorRect _overlayPassageNuageAbysseRect;
 
 	private Camera3D ObtenirCameraObservation()
 	{
@@ -293,11 +287,37 @@ public partial class Monde_Client : Node3D
 		return null;
 	}
 
+	private bool JoueurEnModeVolCreatif()
+	{
+		if (_joueur is Joueur joueur)
+			return joueur.ModeCreatifActif || joueur.NoclipAdminActif;
+		return false;
+	}
+
 	private int ObtenirRayonSecuriteSolActif()
 	{
 		int rayon = Mathf.Max(1, RayonDormancePhysique);
 		if (_dimensionReseauActive == (int)DimensionJeu.Abysse)
-			rayon = Mathf.Max(5, rayon);
+		{
+			if (JoueurEnModeVolCreatif())
+				return 2;
+			if (_joueur != null && ConstantesDimensionAbysse.EstDansTrouNoirXZ(_joueur.GlobalPosition.X, _joueur.GlobalPosition.Z))
+				return Mathf.Clamp(rayon, 2, 3);
+			if (_joueur != null)
+			{
+				Vector3 v = _joueur.Velocity;
+				float vitesseXZ = Mathf.Sqrt(v.X * v.X + v.Z * v.Z);
+				bool localPret = AbysseCollisionLocaleActive(_joueur.GlobalPosition);
+				if (!localPret || vitesseXZ >= 4.0f || v.Y < -0.4f)
+					rayon = Mathf.Max(5, rayon);
+				else
+					rayon = Mathf.Clamp(rayon, 3, 4);
+			}
+			else
+			{
+				rayon = Mathf.Max(4, rayon);
+			}
+		}
 		return rayon;
 	}
 
@@ -305,7 +325,26 @@ public partial class Monde_Client : Node3D
 	{
 		int rayon = Mathf.Max(1, RayonPrioriteCollisionJoueur);
 		if (_dimensionReseauActive == (int)DimensionJeu.Abysse)
-			rayon = Mathf.Max(5, rayon);
+		{
+			if (JoueurEnModeVolCreatif())
+				return 2;
+			if (_joueur != null && ConstantesDimensionAbysse.EstDansTrouNoirXZ(_joueur.GlobalPosition.X, _joueur.GlobalPosition.Z))
+				return Mathf.Clamp(rayon, 2, 3);
+			if (_joueur != null)
+			{
+				Vector3 v = _joueur.Velocity;
+				float vitesseXZ = Mathf.Sqrt(v.X * v.X + v.Z * v.Z);
+				bool localPret = AbysseCollisionLocaleActive(_joueur.GlobalPosition);
+				if (!localPret || vitesseXZ >= 4.0f || v.Y < -0.4f)
+					rayon = Mathf.Max(5, rayon);
+				else
+					rayon = Mathf.Clamp(rayon, 3, 4);
+			}
+			else
+			{
+				rayon = Mathf.Max(4, rayon);
+			}
+		}
 		return rayon;
 	}
 
@@ -319,8 +358,6 @@ public partial class Monde_Client : Node3D
 		_slotGauche = GetNode<Panel>("../HUD_Inventaire/Conteneur_Ancrage/Boite_Slots/Slot_Main_Gauche");
 		_slotDroite = GetNode<Panel>("../HUD_Inventaire/Conteneur_Ancrage/Boite_Slots/Slot_Main_Droite");
 		InitialiserHorizonLointain();
-		InitialiserVoileTransitionAbysse();
-		InitialiserOverlayPassageNuageAbysse();
 	}
 
 	private int RayonDetailChunksActif()
@@ -549,10 +586,6 @@ public partial class Monde_Client : Node3D
 		_dimensionReseauActive = dimensionActive;
 		_timerTrimAbysse = 0f;
 		_demandesAbysseFrameDerniereEmission.Clear();
-		if (dimensionActive != (int)DimensionJeu.Abysse && _voileTransitionPalierAbysse != null)
-			_voileTransitionPalierAbysse.Visible = false;
-		if (dimensionActive != (int)DimensionJeu.Abysse && _overlayPassageNuageAbysseRect != null)
-			_overlayPassageNuageAbysseRect.Visible = false;
 	}
 
 	public void DefinirDimensionReseauActive(int dimensionId)
@@ -560,10 +593,6 @@ public partial class Monde_Client : Node3D
 		_dimensionReseauActive = dimensionId;
 		_timerTrimAbysse = 0f;
 		_demandesAbysseFrameDerniereEmission.Clear();
-		if (dimensionId != (int)DimensionJeu.Abysse && _voileTransitionPalierAbysse != null)
-			_voileTransitionPalierAbysse.Visible = false;
-		if (dimensionId != (int)DimensionJeu.Abysse && _overlayPassageNuageAbysseRect != null)
-			_overlayPassageNuageAbysseRect.Visible = false;
 	}
 
 	/// <summary>
@@ -1126,6 +1155,11 @@ public partial class Monde_Client : Node3D
 					{
 						if (!_chunksDataAbysse3D.TryGetValue(new Vector3I(cc.X, y, cc.Y), out var data) || data == null)
 							continue;
+						if (data.EstVideIntegral && EstVideAbysseAttendu(pointMonde))
+						{
+							data.EstEnFileSolidification = false;
+							continue;
+						}
 						if (data.PhysicsBodyRID.IsValid && !data.Dormant && !data.EstEnFileSolidification) continue;
 						if (data.EstEnFileSolidification)
 							RetirerDeFileSolidification(data);
@@ -1165,7 +1199,6 @@ public partial class Monde_Client : Node3D
 		Vector3 directionObservation = cameraActive != null ? (-cameraActive.GlobalTransform.Basis.Z).Normalized() :
 			(_joueur != null ? (-_joueur.GlobalTransform.Basis.Z).Normalized() : Vector3.Forward);
 		Vector2I chunkObservationActuel = Gestionnaire_Monde.WorldToChunkCoord(positionObservation, TailleChunk);
-		MettreAJourVoileTransitionAbysse(positionObservation);
 		if (_dimensionReseauActive == (int)DimensionJeu.Abysse)
 		{
 			_timerTrimAbysse -= dt;
@@ -1226,7 +1259,19 @@ public partial class Monde_Client : Node3D
 		bool enChargement = !ChunkSousPiedsAPret();
 		// GARANTIE SOL JOUEUR : dès que le sol proche manque ou que le joueur est en l'air, on refuse toute restriction sous les pieds.
 		bool joueurEnChute = _joueur != null && _joueur.Velocity.Y < -0.5f;
+		bool enVideAttenduAbysse = _dimensionReseauActive == (int)DimensionJeu.Abysse
+			&& _joueur != null
+			&& EstVideAbysseAttendu(_joueur.GlobalPosition);
+		if (enVideAttenduAbysse)
+			enChargement = false; // Dans le vide attendu, l'absence de sol local est normale.
 		bool doitGarantirProcheJoueur = enChargement || joueurEnChute || prioriteJoueur;
+		if (enVideAttenduAbysse)
+		{
+			float distanceCentre = Mathf.Sqrt((_joueur.GlobalPosition.X * _joueur.GlobalPosition.X) + (_joueur.GlobalPosition.Z * _joueur.GlobalPosition.Z));
+			// Marge élargie pour éviter les décrochages de solidification en descente proche paroi.
+			bool procheParoiTrou = Mathf.Abs(distanceCentre - ConstantesDimensionAbysse.RayonTrouNoir) <= 220f;
+			doitGarantirProcheJoueur = procheParoiTrou && (joueurEnChute || prioriteJoueur);
+		}
 		int baseIntegrations = enChargement
 			? Mathf.Max(1, MaxIntegrationsParFrameChargement)
 			: Mathf.Max(1, MaxIntegrationsParFrameExploration);
@@ -1331,7 +1376,7 @@ public partial class Monde_Client : Node3D
 				maxSolidifications = Mathf.Max(maxSolidifications, 4);
 				if (_dimensionReseauActive == (int)DimensionJeu.Abysse)
 				{
-					maxSolidifications = Mathf.Max(maxSolidifications, 12);
+					maxSolidifications = Mathf.Max(maxSolidifications, 8);
 					if (joueurEnChute)
 						maxSolidifications = Mathf.Max(maxSolidifications, 16);
 				}
@@ -1361,6 +1406,10 @@ public partial class Monde_Client : Node3D
 					PhysicsServer3D.Singleton.BodySetSpace(urgent.PhysicsBodyRID, w.Space);
 					urgent.EstEnFileSolidification = false;
 				}
+				else if (urgent.EstVideIntegral && EstVideAbysseAttendu(_joueur?.GlobalPosition ?? positionObservation))
+				{
+					urgent.EstEnFileSolidification = false;
+				}
 				efforts++;
 			}
 			while (_fileAttenteSolidification.Count > 0 && efforts < maxSolidifications)
@@ -1383,14 +1432,20 @@ public partial class Monde_Client : Node3D
 					{
 						_fileAttenteSolidification.RemoveAt(idxProche);
 						_setSolidificationNormale.Remove(chunkASolidifier);
-						AjouterEnFileSolidification(chunkASolidifier);
+						if (chunkASolidifier.EstVideIntegral && EstVideAbysseAttendu(_joueur?.GlobalPosition ?? positionObservation))
+							chunkASolidifier.EstEnFileSolidification = false;
+						else
+							AjouterEnFileSolidification(chunkASolidifier);
 					}
 				}
 				else
 				{
 					_fileAttenteSolidification.RemoveAt(idxProche);
 					_setSolidificationNormale.Remove(chunkASolidifier);
-					AjouterEnFileSolidification(chunkASolidifier);
+					if (chunkASolidifier.EstVideIntegral && EstVideAbysseAttendu(_joueur?.GlobalPosition ?? positionObservation))
+						chunkASolidifier.EstEnFileSolidification = false;
+					else
+						AjouterEnFileSolidification(chunkASolidifier);
 				}
 				efforts++;
 			}
@@ -1491,13 +1546,20 @@ public partial class Monde_Client : Node3D
 		bool hadModifications = _sectionsAReconstruire.Count > 0;
 		_modificationEnCours = false;
 
-		// En Abysse, on force les requêtes proches du joueur à chaque frame:
-		// sinon elles ne partent qu'en mode "phase fond coupée" et des trous apparaissent en marche.
+		// En Abysse, on force les requêtes proches du joueur seulement en zone critique
+		// (collision locale pas prête ou déplacement rapide) pour éviter les bursts permanents.
 		if (_dimensionReseauActive == (int)DimensionJeu.Abysse && _joueur != null)
 		{
 			Vector3 posJoueur = _joueur.GlobalPosition;
-			Vector2I chunkJoueur = Gestionnaire_Monde.WorldToChunkCoord(posJoueur, TailleChunk);
-			GarantirRequetesChunksProcheJoueur(posJoueur, chunkJoueur);
+			bool enVideAttendu = EstVideAbysseAttendu(posJoueur);
+			Vector3 v = _joueur.Velocity;
+			float vitesseXZ = Mathf.Sqrt(v.X * v.X + v.Z * v.Z);
+			bool localPret = AbysseCollisionLocaleActive(posJoueur);
+			if ((!localPret && !enVideAttendu) || vitesseXZ >= 2.5f || v.Y < -0.5f)
+			{
+				Vector2I chunkJoueur = Gestionnaire_Monde.WorldToChunkCoord(posJoueur, TailleChunk);
+				GarantirRequetesChunksProcheJoueur(posJoueur, chunkJoueur);
+			}
 		}
 
 		// 1. PRIORITÉ ABSOLUE : Reconstruire les chunks modifiés (minage/pose) pour que le terrain se mette à jour
@@ -1505,9 +1567,9 @@ public partial class Monde_Client : Node3D
 		{
 			_chunksUniquesTemp.Clear();
 			foreach (var cible in _sectionsAReconstruire)
-				_chunksUniquesTemp.Add(new Vector2I(cible.cx, cible.cz));
+				_chunksUniquesTemp.Add(new Vector3I(cible.cx, cible.coordY, cible.cz));
 			_sectionsAReconstruire.Clear();
-			foreach (Vector2I coord in _chunksUniquesTemp)
+			foreach (Vector3I coord in _chunksUniquesTemp)
 				ExecuterReconstructionPrioritaire(coord);
 			// Gel de Production : l'univers s'arrête de naître pendant cette frame.
 			return;
@@ -2326,9 +2388,18 @@ public partial class Monde_Client : Node3D
 		return v;
 	}
 
-	private void ExecuterReconstructionPrioritaire(Vector2I coord)
+	private void ExecuterReconstructionPrioritaire(Vector3I coord)
 	{
-		if (!_chunksData.TryGetValue(coord, out var data)) return;
+		ChunkData data = null;
+		if (_dimensionReseauActive == (int)DimensionJeu.Abysse)
+		{
+			if (!_chunksDataAbysse3D.TryGetValue(coord, out data))
+				return;
+		}
+		else if (!_chunksData.TryGetValue(new Vector2I(coord.X, coord.Z), out data))
+		{
+			return;
+		}
 		if (data.DensitiesFlat == null || data.MaterialsFlat == null) return;
 		// Libérer l'ancien mesh et la collision avant de recréer (sinon fuite RID)
 		data.LibérerRids();
@@ -2532,7 +2603,7 @@ public partial class Monde_Client : Node3D
 		return idxBest;
 	}
 
-	private void DeclencherReconstructionSection((int cx, int cz, int section) cible)
+	private void DeclencherReconstructionSection((int cx, int coordY, int cz, int section) cible)
 	{
 		var coord = new Vector2I(cible.cx, cible.cz);
 		if (!_chunksData.TryGetValue(coord, out _)) return;
@@ -2589,9 +2660,27 @@ public partial class Monde_Client : Node3D
 	public void RecevoirChunkModifie(Vector2I coordChunk, List<int> sectionsAffectees)
 	{
 		_modificationEnCours = true;
+		if (_dimensionReseauActive == (int)DimensionJeu.Abysse)
+		{
+			bool trouve = false;
+			foreach (var kv in _chunksDataAbysse3D)
+			{
+				if (kv.Key.X != coordChunk.X || kv.Key.Z != coordChunk.Y)
+					continue;
+				trouve = true;
+				foreach (int sec in sectionsAffectees)
+				{
+					if (sec >= 0 && sec < 45)
+						_sectionsAReconstruire.Add((coordChunk.X, kv.Key.Y, coordChunk.Y, sec));
+				}
+			}
+			if (!trouve)
+				return;
+			return;
+		}
 		if (!_chunksData.TryGetValue(coordChunk, out _)) return;
 		foreach (int sec in sectionsAffectees)
-			if (sec >= 0 && sec < 45) _sectionsAReconstruire.Add((coordChunk.X, coordChunk.Y, sec));
+			if (sec >= 0 && sec < 45) _sectionsAReconstruire.Add((coordChunk.X, 0, coordChunk.Y, sec));
 	}
 
 	/// <summary>Micro-RPC : mise à jour voxel unique. Modifie le chunk principal ET la réplique sur le padding des voisins.</summary>
@@ -2612,49 +2701,49 @@ public partial class Monde_Client : Node3D
 		if (localX == 0 && TryGetChunkDataPourCoordY(new Vector2I(cx - 1, cz), coordY, out var vx))
 		{
 			vx.SetVoxelLocal(TailleChunk, localVoxelY, localZ, id);
-			_sectionsAReconstruire.Add((cx - 1, cz, sec));
+			_sectionsAReconstruire.Add((cx - 1, vx.CoordChunkY, cz, sec));
 		}
 		if (localX == TailleChunk - 1 && TryGetChunkDataPourCoordY(new Vector2I(cx + 1, cz), coordY, out var vxp))
 		{
 			vxp.SetVoxelLocal(0, localVoxelY, localZ, id);
-			_sectionsAReconstruire.Add((cx + 1, cz, sec));
+			_sectionsAReconstruire.Add((cx + 1, vxp.CoordChunkY, cz, sec));
 		}
 		if (localZ == 0 && TryGetChunkDataPourCoordY(new Vector2I(cx, cz - 1), coordY, out var vz))
 		{
 			vz.SetVoxelLocal(localX, localVoxelY, TailleChunk, id);
-			_sectionsAReconstruire.Add((cx, cz - 1, sec));
+			_sectionsAReconstruire.Add((cx, vz.CoordChunkY, cz - 1, sec));
 		}
 		if (localZ == TailleChunk - 1 && TryGetChunkDataPourCoordY(new Vector2I(cx, cz + 1), coordY, out var vzp))
 		{
 			vzp.SetVoxelLocal(localX, localVoxelY, 0, id);
-			_sectionsAReconstruire.Add((cx, cz + 1, sec));
+			_sectionsAReconstruire.Add((cx, vzp.CoordChunkY, cz + 1, sec));
 		}
 		if (localX == 0 && localZ == 0 && TryGetChunkDataPourCoordY(new Vector2I(cx - 1, cz - 1), coordY, out var vxz))
 		{
 			vxz.SetVoxelLocal(TailleChunk, localVoxelY, TailleChunk, id);
-			_sectionsAReconstruire.Add((cx - 1, cz - 1, sec));
+			_sectionsAReconstruire.Add((cx - 1, vxz.CoordChunkY, cz - 1, sec));
 		}
 		if (localX == TailleChunk - 1 && localZ == 0 && TryGetChunkDataPourCoordY(new Vector2I(cx + 1, cz - 1), coordY, out var vxpz))
 		{
 			vxpz.SetVoxelLocal(0, localVoxelY, TailleChunk, id);
-			_sectionsAReconstruire.Add((cx + 1, cz - 1, sec));
+			_sectionsAReconstruire.Add((cx + 1, vxpz.CoordChunkY, cz - 1, sec));
 		}
 		if (localX == 0 && localZ == TailleChunk - 1 && TryGetChunkDataPourCoordY(new Vector2I(cx - 1, cz + 1), coordY, out var vxzp))
 		{
 			vxzp.SetVoxelLocal(TailleChunk, localVoxelY, 0, id);
-			_sectionsAReconstruire.Add((cx - 1, cz + 1, sec));
+			_sectionsAReconstruire.Add((cx - 1, vxzp.CoordChunkY, cz + 1, sec));
 		}
 		if (localX == TailleChunk - 1 && localZ == TailleChunk - 1 && TryGetChunkDataPourCoordY(new Vector2I(cx + 1, cz + 1), coordY, out var vxpzp))
 		{
 			vxpzp.SetVoxelLocal(0, localVoxelY, 0, id);
-			_sectionsAReconstruire.Add((cx + 1, cz + 1, sec));
+			_sectionsAReconstruire.Add((cx + 1, vxpzp.CoordChunkY, cz + 1, sec));
 		}
 
-		if (sec >= 0 && sec < 45) _sectionsAReconstruire.Add((cx, cz, sec));
-		if (localYSection == 0 && localVoxelY > 0 && sec - 1 >= 0) _sectionsAReconstruire.Add((cx, cz, sec - 1));
-		if (localYSection == 15 && sec + 1 < 45) _sectionsAReconstruire.Add((cx, cz, sec + 1));
-		if (localX == TailleChunk - 1) _sectionsAReconstruire.Add((cx + 1, cz, sec));
-		if (localZ == TailleChunk - 1) _sectionsAReconstruire.Add((cx, cz + 1, sec));
+		if (sec >= 0 && sec < 45) _sectionsAReconstruire.Add((cx, data.CoordChunkY, cz, sec));
+		if (localYSection == 0 && localVoxelY > 0 && sec - 1 >= 0) _sectionsAReconstruire.Add((cx, data.CoordChunkY, cz, sec - 1));
+		if (localYSection == 15 && sec + 1 < 45) _sectionsAReconstruire.Add((cx, data.CoordChunkY, cz, sec + 1));
+		if (localX == TailleChunk - 1) _sectionsAReconstruire.Add((cx + 1, data.CoordChunkY, cz, sec));
+		if (localZ == TailleChunk - 1) _sectionsAReconstruire.Add((cx, data.CoordChunkY, cz + 1, sec));
 	}
 
 	[Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = false)]
@@ -2712,7 +2801,7 @@ public partial class Monde_Client : Node3D
 
 	/// <summary>RPC : le serveur envoie chunk en byte[] uniquement. Ne jamais lancer Marching Cubes ici — Task.Run immédiat.</summary>
 	[Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = false)]
-	public void RecevoirChunkDuServeurRPC(int coordX, int coordY, int coordZ, int tailleChunk, int hauteurMax, byte[] densitiesPlates, byte[] materialsFlat, byte[] densitiesEauPlates)
+	public void RecevoirChunkDuServeurRPC(int coordX, int coordY, int coordZ, int tailleChunk, int hauteurMax, byte[] densitiesPlates, byte[] materialsFlat, byte[] densitiesEauPlates, bool estVideIntegral = false)
 	{
 		var donnees = new DonneesChunk
 		{
@@ -2722,7 +2811,8 @@ public partial class Monde_Client : Node3D
 			HauteurMax = hauteurMax,
 			DensitiesQuantifiees = densitiesPlates,
 			DensitiesEauQuantifiees = densitiesEauPlates,
-			MaterialsFlat = materialsFlat
+			MaterialsFlat = materialsFlat,
+			EstVideIntegral = estVideIntegral
 		};
 		RecevoirDonneesChunk(new Vector2I(coordX, coordZ), donnees);
 	}
@@ -2743,6 +2833,7 @@ public partial class Monde_Client : Node3D
 		if (modeAbysse && _chunksDataAbysse3D.TryGetValue(cle3DNormalisee, out var existingAbysse))
 		{
 			existingAbysse.CoordChunkY = coordYCle;
+			existingAbysse.EstVideIntegral = donnees?.EstVideIntegral ?? false;
 			EnqueueChunkGeneration(existingAbysse, donnees);
 			_chunksData[coordChunk] = existingAbysse; // vue 2D = couche la plus récente demandée
 			return;
@@ -2759,7 +2850,8 @@ public partial class Monde_Client : Node3D
 			Coordonnees = coordChunk,
 			CoordChunkY = coordYCle,
 			TailleChunk = TailleChunk,
-			HauteurMax = HauteurMax
+			HauteurMax = HauteurMax,
+			EstVideIntegral = donnees?.EstVideIntegral ?? false
 		};
 		data.ConfigurerBruitClimat(_seedTerrain);
 		_chunksData[coordChunk] = data;
@@ -3171,6 +3263,17 @@ public partial class Monde_Client : Node3D
 		return local;
 	}
 
+	private bool EstVideAbysseAttendu(Vector3 observation)
+	{
+		if (_dimensionReseauActive != (int)DimensionJeu.Abysse)
+			return false;
+		if (ConstantesDimensionAbysse.EstDansTrouNoirXZ(observation.X, observation.Z))
+			return true;
+		if (JoueurEnModeVolCreatif())
+			return true;
+		return false;
+	}
+
 	private void RemplirCoordYCollisionAutourPointMonde(float yMonde, HashSet<int> sortie)
 	{
 		if (sortie == null)
@@ -3310,148 +3413,6 @@ public partial class Monde_Client : Node3D
 		}
 	}
 
-	private void InitialiserVoileTransitionAbysse()
-	{
-		if (_voileTransitionPalierAbysse != null)
-			return;
-		_voileTransitionPalierAbysse = new MeshInstance3D { Name = "VoileTransitionPalierAbysse", Visible = false };
-		var volumeNuage = new BoxMesh
-		{
-			Size = new Vector3(10000f, EpaisseurVoileAbysse, 10000f)
-		};
-		_voileTransitionPalierAbysse.Mesh = volumeNuage;
-		var shaderNuage = new Shader();
-		shaderNuage.Code = @"
-shader_type spatial;
-render_mode unshaded, cull_disabled, blend_mix;
-
-uniform vec4 cloud_color : source_color = vec4(0.86, 0.90, 0.97, 1.0);
-uniform float alpha_strength : hint_range(0.0, 1.0) = 0.85;
-uniform float noise_scale : hint_range(0.0002, 0.01) = 0.0017;
-uniform float speed : hint_range(0.0, 0.2) = 0.016;
-uniform float cut : hint_range(0.0, 1.0) = 0.34;
-uniform float half_thickness = 140.0;
-varying vec3 world_pos;
-
-float hash(vec2 p)
-{
-	p = fract(p * vec2(123.34, 345.45));
-	p += dot(p, p + 34.345);
-	return fract(p.x * p.y);
-}
-
-float noise2(vec2 p)
-{
-	vec2 i = floor(p);
-	vec2 f = fract(p);
-	float a = hash(i);
-	float b = hash(i + vec2(1.0, 0.0));
-	float c = hash(i + vec2(0.0, 1.0));
-	float d = hash(i + vec2(1.0, 1.0));
-	vec2 u = f * f * (3.0 - 2.0 * f);
-	return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
-}
-
-float fbm(vec2 p)
-{
-	float v = 0.0;
-	float a = 0.5;
-	for (int i = 0; i < 5; i++)
-	{
-		v += a * noise2(p);
-		p = p * 2.03 + vec2(17.1, 9.2);
-		a *= 0.5;
-	}
-	return v;
-}
-
-void vertex()
-{
-	world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
-}
-
-void fragment()
-{
-	vec3 wp = world_pos;
-	float n1 = fbm(wp.xz * noise_scale + vec2(TIME * speed, -TIME * speed * 0.73));
-	float n2 = fbm((wp.xz + wp.yy * 0.34) * (noise_scale * 1.8) + vec2(-TIME * speed * 0.5, TIME * speed * 0.31));
-	float densite = clamp(n1 * 0.68 + n2 * 0.32, 0.0, 1.0);
-	float formeNuage = smoothstep(cut, 1.0, densite);
-
-	float h = clamp(abs(VERTEX.y) / max(1.0, half_thickness), 0.0, 1.0);
-	float masqueVertical = 1.0 - smoothstep(0.55, 1.0, h);
-
-	float alpha = alpha_strength * formeNuage * masqueVertical;
-	ALBEDO = cloud_color.rgb;
-	ALPHA = alpha;
-}";
-		_materiauVoileTransitionPalierAbysse = new ShaderMaterial();
-		_materiauVoileTransitionPalierAbysse.Shader = shaderNuage;
-		_materiauVoileTransitionPalierAbysse.SetShaderParameter("half_thickness", EpaisseurVoileAbysse * 0.5f);
-		_voileTransitionPalierAbysse.MaterialOverride = _materiauVoileTransitionPalierAbysse;
-		AddChild(_voileTransitionPalierAbysse);
-	}
-
-	private void InitialiserOverlayPassageNuageAbysse()
-	{
-		if (_overlayPassageNuageAbysse != null)
-			return;
-		_overlayPassageNuageAbysse = new CanvasLayer
-		{
-			Name = "OverlayPassageNuageAbysse",
-			Layer = 90
-		};
-		_overlayPassageNuageAbysseRect = new ColorRect
-		{
-			Name = "NuageBlanc",
-			Color = new Color(1f, 1f, 1f, 0f),
-			MouseFilter = Control.MouseFilterEnum.Ignore,
-			Visible = false
-		};
-		_overlayPassageNuageAbysseRect.SetAnchorsPreset(Control.LayoutPreset.FullRect);
-		_overlayPassageNuageAbysseRect.OffsetLeft = 0f;
-		_overlayPassageNuageAbysseRect.OffsetTop = 0f;
-		_overlayPassageNuageAbysseRect.OffsetRight = 0f;
-		_overlayPassageNuageAbysseRect.OffsetBottom = 0f;
-		_overlayPassageNuageAbysse.AddChild(_overlayPassageNuageAbysseRect);
-		AddChild(_overlayPassageNuageAbysse);
-	}
-
-	private void MettreAJourVoileTransitionAbysse(Vector3 positionObservation)
-	{
-		if (_voileTransitionPalierAbysse == null || _materiauVoileTransitionPalierAbysse == null)
-			return;
-		if (_dimensionReseauActive != (int)DimensionJeu.Abysse)
-		{
-			_voileTransitionPalierAbysse.Visible = false;
-			if (_overlayPassageNuageAbysseRect != null)
-				_overlayPassageNuageAbysseRect.Visible = false;
-			return;
-		}
-
-		float taillePalier = Mathf.Max(1f, ConstantesDimensionAbysse.TaillePalierMetres);
-		float yCible = Mathf.Round(positionObservation.Y / taillePalier) * taillePalier;
-		// La première couche doit être à -1000m, jamais à 0.
-		if (yCible > -taillePalier)
-			yCible = -taillePalier;
-		float distanceFrontiere = Mathf.Abs(positionObservation.Y - yCible);
-
-		// Traversée courte: 5-6 m de hauteur de nuage autour de la frontière.
-		float t = Mathf.Clamp(1f - (distanceFrontiere / Mathf.Max(0.01f, DemiHauteurTransitionNuageAbysse)), 0f, 1f);
-		float alphaNuage = t * t * 0.98f;
-		_materiauVoileTransitionPalierAbysse.SetShaderParameter("alpha_strength", alphaNuage);
-		_voileTransitionPalierAbysse.Visible = alphaNuage > 0.01f;
-		_voileTransitionPalierAbysse.GlobalPosition = new Vector3(0f, yCible, 0f);
-		if (_overlayPassageNuageAbysseRect != null)
-		{
-			float alphaOverlay = t * t * 0.72f;
-			_overlayPassageNuageAbysseRect.Visible = alphaOverlay > 0.01f;
-			Color c = _overlayPassageNuageAbysseRect.Color;
-			c.A = alphaOverlay;
-			_overlayPassageNuageAbysseRect.Color = c;
-		}
-	}
-
 	public void ReinitialiserTousLesChunksLocaux()
 	{
 		var dejaLibere = new HashSet<ChunkData>();
@@ -3483,10 +3444,6 @@ void fragment()
 		_indexDormanceScan = 0;
 		_timerTrimAbysse = 0f;
 		_demandesAbysseFrameDerniereEmission.Clear();
-		if (_voileTransitionPalierAbysse != null)
-			_voileTransitionPalierAbysse.Visible = false;
-		if (_overlayPassageNuageAbysseRect != null)
-			_overlayPassageNuageAbysseRect.Visible = false;
 	}
 
 	/// <summary>
@@ -3496,16 +3453,26 @@ void fragment()
 	private void GarantirRequetesChunksProcheJoueur(Vector3 positionObservation, Vector2I chunkObservationActuel)
 	{
 		bool modeAbysse = _dimensionReseauActive == (int)DimensionJeu.Abysse;
+		bool zoneCritiqueAbysse = false;
 		float vitesseXZ = 0f;
 		if (_joueur != null)
 		{
 			Vector3 v = _joueur.Velocity;
 			vitesseXZ = Mathf.Sqrt(v.X * v.X + v.Z * v.Z);
+			if (modeAbysse)
+			{
+				bool enVideAttendu = EstVideAbysseAttendu(_joueur.GlobalPosition);
+				zoneCritiqueAbysse = ((!AbysseCollisionLocaleActive(_joueur.GlobalPosition) && !enVideAttendu) || v.Y < -0.5f);
+			}
 		}
 		// Rayon minimal : couvre au moins le RayonGrilleMinSpawnPret + anticipation courte dans la direction de déplacement.
 		int bonusVitesse = (modeAbysse && vitesseXZ >= 4.0f) ? 1 : 0;
 		int rayonMin = Mathf.Clamp(RayonGrilleMinSpawnPret + (modeAbysse ? 2 : 1) + bonusVitesse, 1, Mathf.Max(1, RayonDormancePhysique + 2));
-		int budgetRequetesForce = modeAbysse ? (vitesseXZ >= 4.0f ? 24 : 16) : 6; // Abysse: burst plus large pour éviter les trous en déplacement.
+		int budgetRequetesForce = modeAbysse
+			? (zoneCritiqueAbysse ? (vitesseXZ >= 4.0f ? 20 : 14) : (vitesseXZ >= 4.0f ? 12 : 8))
+			: 6;
+		if (modeAbysse && JoueurEnModeVolCreatif())
+			budgetRequetesForce = Mathf.Min(budgetRequetesForce, 6);
 		int emises = 0;
 		for (int dx = -rayonMin; dx <= rayonMin && emises < budgetRequetesForce; dx++)
 		{
@@ -3629,6 +3596,14 @@ void fragment()
 			&& dataCourant.PhysicsBodyRID.IsValid
 			&& !dataCourant.Dormant
 			&& !dataCourant.EstEnFileSolidification)
+		{
+			return true;
+		}
+		// Dans les zones de vide attendues, un chunk explicitement vide est un état valide:
+		// ne pas le traiter comme "non prêt" sinon le client entre en boucle de panique.
+		if (dataCourant != null
+			&& dataCourant.EstVideIntegral
+			&& EstVideAbysseAttendu(observation))
 		{
 			return true;
 		}
