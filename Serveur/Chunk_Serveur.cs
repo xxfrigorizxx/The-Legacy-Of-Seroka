@@ -73,6 +73,12 @@ public partial class Chunk_Serveur : RefCounted
 	private const float AbyssChaosExtrusionMin = 18f;
 	private const float AbyssChaosExtrusionMax = 375f;
 	private const float AbyssChaosYScale = 0.30f;
+	/// <summary>Nombre de pics angulaires (période par tour) dans l'anneau [-510,-450[ — élevé = champ dense après l'arrêt de la spirale.</summary>
+	private const float AbyssPicAnneauNombre = 54f;
+	/// <summary>Pics beaucoup plus rares dans la zone spirale (supplément hors rampe).</summary>
+	private const float AbyssPicSpiraleNombre = 14f;
+	/// <summary>Petit affleurement praticable à l'angle de sortie de spirale (m, profondeur max) — sans dalle large.</summary>
+	private const float AbyssPicLipSortieProfondeurMax = 22f;
 
 	/// <summary>Registre flore: 0=gazon, puis couples buisson (impair=plein, pair=vide) pour variantes futures.</summary>
 	public Dictionary<Vector3I, byte> InventaireFlore { get; } = new Dictionary<Vector3I, byte>();
@@ -256,8 +262,12 @@ public partial class Chunk_Serveur : RefCounted
 						bool extrusionAnneauAbysse = _generationAbysseActive
 							&& !extrusionParoiAbysse
 							&& EvaluerExtrusionAnneauAbysse(xGlobal, globalY, zGlobal, out _);
+						bool picSupplementSpiraleAbysse = _generationAbysseActive
+							&& !extrusionParoiAbysse
+							&& !extrusionAnneauAbysse
+							&& EvaluerPicSupplementSpiraleAbysse(xGlobal, globalY, zGlobal, out _);
 
-						if (extrusionParoiAbysse || extrusionAnneauAbysse)
+						if (extrusionParoiAbysse || extrusionAnneauAbysse || picSupplementSpiraleAbysse)
 						{
 							_densities[x, y, z] = 10.0f;
 							_materials[x, y, z] = 2;
@@ -888,6 +898,10 @@ public partial class Chunk_Serveur : RefCounted
 		return distance >= seuilInterieur && distance <= AbyssRayonTrouNoir;
 	}
 
+	/// <summary>
+	/// Anneau [-510,-450[ : pics pierre triangulaires (vue de côté) ancrés au mur, herbe en passe séparée.
+	/// Profondeur maximale vers Y=-450 (base du pic côté mur), pointe vers Y=-510.
+	/// </summary>
 	private bool EvaluerExtrusionAnneauAbysse(float xGlobal, float yGlobal, float zGlobal, out float profondeurInward)
 	{
 		profondeurInward = 0f;
@@ -898,33 +912,76 @@ public partial class Chunk_Serveur : RefCounted
 		if (distance > AbyssRayonTrouNoir) return false;
 
 		float angle = Mathf.Atan2(zGlobal, xGlobal);
+		float angleNorm = Mathf.PosMod(angle + Mathf.Pi, Mathf.Tau) / Mathf.Tau;
 		float xMur = Mathf.Cos(angle) * AbyssRayonTrouNoir;
 		float zMur = Mathf.Sin(angle) * AbyssRayonTrouNoir;
 		float yAniso = yGlobal * AbyssChaosYScale;
 
+		float warpAng = _noiseAbysseChaosDetail3D.GetNoise3D(xMur * 0.019f + 120f, yAniso, zMur * 0.019f - 120f) * 0.075f;
+		float scaled = (angleNorm + warpAng) * AbyssPicAnneauNombre;
+		float frac = scaled - Mathf.Floor(scaled);
+		float distCreneau = Mathf.Min(frac, 1f - frac);
+		float porteAngulaire = 1f - Mathf.SmoothStep(0.035f, 0.13f, distCreneau);
+
+		float tVert = (yGlobal - AbyssYAnneauTransitionBottom) / Mathf.Max(1e-3f, AbyssYSpiraleBottom - AbyssYAnneauTransitionBottom);
+		tVert = Mathf.Clamp(tVert, 0f, 1f);
+		tVert = tVert * tVert * (3f - 2f * tVert);
+
 		float bruitMacro = Mathf.Clamp((_noiseAbysseChaos3D.GetNoise3D(xMur, yAniso, zMur) + 1f) * 0.5f, 0f, 1f);
 		float bruitDetail = Mathf.Clamp((_noiseAbysseChaosDetail3D.GetNoise3D(xMur * 1.75f + 700f, yAniso * 0.8f - 220f, zMur * 1.75f - 700f) + 1f) * 0.5f, 0f, 1f);
+		float amplitude = Mathf.Lerp(0.42f, 1f, bruitMacro) * (0.72f + 0.28f * bruitDetail);
 
-		// Anneau brisé dense: présence quasi continue, sculptée par le bruit pour créer un archipel serré.
-		float densiteBase = Mathf.Lerp(0.60f, 0.95f, bruitMacro);
-		float decoupe = Mathf.Abs(bruitDetail - 0.5f) * 2f;
-		float masquePresence = Mathf.Clamp(densiteBase - decoupe * 0.28f, 0.38f, 1f);
+		float profondeurBase = Mathf.Lerp(AbyssChaosExtrusionMin + 24f, AbyssChaosExtrusionMax, amplitude);
+		profondeurBase *= tVert * porteAngulaire;
 
-		float profondeurBase = Mathf.Lerp(AbyssChaosExtrusionMin, AbyssChaosExtrusionMax, masquePresence);
-		profondeurBase = Mathf.Max(profondeurBase, Mathf.Lerp(160f, 320f, bruitMacro));
-
-		// Mega pic d'atterrissage au point de sortie de la spirale.
 		float angleSortieSpirale = ObtenirAngleSortieSpirale();
 		float ecartAngle = ObtenirEcartAngulaireAbsolu(angle, angleSortieSpirale);
-		float megaMasqueAngle = Mathf.Clamp(1f - (ecartAngle / 1.35f), 0f, 1f);
-		megaMasqueAngle = megaMasqueAngle * megaMasqueAngle * (3f - 2f * megaMasqueAngle);
-		float megaMasqueAltitude = Mathf.Clamp(1f - (Mathf.Abs(yGlobal - AbyssYSpiraleBottom) / 34f), 0f, 1f);
-		megaMasqueAltitude = megaMasqueAltitude * megaMasqueAltitude * (3f - 2f * megaMasqueAltitude);
-		float megaMasque = megaMasqueAngle * megaMasqueAltitude;
-		profondeurBase = Mathf.Max(profondeurBase, Mathf.Lerp(300f, AbyssChaosExtrusionMax, megaMasque));
+		float lipAngle = 1f - Mathf.SmoothStep(0.07f, 0.24f, ecartAngle);
+		float lipAlt = 1f - Mathf.SmoothStep(10f, 26f, Mathf.Abs(yGlobal - AbyssYSpiraleBottom));
+		float lip = lipAngle * lipAngle * (3f - 2f * lipAngle) * lipAlt * lipAlt * (3f - 2f * lipAlt);
+		profondeurBase = Mathf.Max(profondeurBase, lip * AbyssPicLipSortieProfondeurMax);
 
 		profondeurInward = Mathf.Clamp(profondeurBase, 0f, AbyssChaosExtrusionMax);
-		if (profondeurInward <= 0f) return false;
+		if (profondeurInward < 1.5f) return false;
+
+		float seuilInterieur = AbyssRayonTrouNoir - profondeurInward;
+		return distance >= seuilInterieur && distance <= AbyssRayonTrouNoir;
+	}
+
+	/// <summary>
+	/// Hors rampe spirale : pics supplémentaires plus rares entre Y=-450 et le haut de la spirale (Y=20).
+	/// </summary>
+	private bool EvaluerPicSupplementSpiraleAbysse(float xGlobal, float yGlobal, float zGlobal, out float profondeurInward)
+	{
+		profondeurInward = 0f;
+		if (!_generationAbysseActive) return false;
+		if (yGlobal <= AbyssYSpiraleBottom || yGlobal > AbyssYSpiraleTop) return false;
+
+		float distance = Mathf.Sqrt((xGlobal * xGlobal) + (zGlobal * zGlobal));
+		if (distance > AbyssRayonTrouNoir) return false;
+
+		float angle = Mathf.Atan2(zGlobal, xGlobal);
+		float angleNorm = Mathf.PosMod(angle + Mathf.Pi, Mathf.Tau) / Mathf.Tau;
+		float xMur = Mathf.Cos(angle) * AbyssRayonTrouNoir;
+		float zMur = Mathf.Sin(angle) * AbyssRayonTrouNoir;
+		float yAniso = yGlobal * AbyssChaosYScale;
+
+		float tProximiteFinSpirale = 1f - (yGlobal - AbyssYSpiraleBottom) / Mathf.Max(1e-3f, AbyssYSpiraleTop - AbyssYSpiraleBottom);
+		tProximiteFinSpirale = Mathf.Clamp(tProximiteFinSpirale, 0f, 1f);
+		tProximiteFinSpirale = tProximiteFinSpirale * tProximiteFinSpirale * (3f - 2f * tProximiteFinSpirale);
+		if (tProximiteFinSpirale < 0.06f) return false;
+
+		float warpAng = _noiseAbysseChaosDetail3D.GetNoise3D(xMur * 0.017f - 900f, yAniso * 1.1f, zMur * 0.017f + 900f) * 0.09f;
+		float scaled = (angleNorm + warpAng) * AbyssPicSpiraleNombre;
+		float frac = scaled - Mathf.Floor(scaled);
+		float distCreneau = Mathf.Min(frac, 1f - frac);
+		float porteAngulaire = 1f - Mathf.SmoothStep(0.05f, 0.19f, distCreneau);
+
+		float bruit = Mathf.Clamp((_noiseAbysseChaos3D.GetNoise3D(xMur * 0.35f, yAniso + 80f, zMur * 0.35f) + 1f) * 0.5f, 0f, 1f);
+		float profondeurMax = Mathf.Lerp(32f, 138f, bruit) * tProximiteFinSpirale * porteAngulaire;
+
+		profondeurInward = Mathf.Clamp(profondeurMax, 0f, 165f);
+		if (profondeurInward < 2f) return false;
 
 		float seuilInterieur = AbyssRayonTrouNoir - profondeurInward;
 		return distance >= seuilInterieur && distance <= AbyssRayonTrouNoir;
@@ -959,7 +1016,8 @@ public partial class Chunk_Serveur : RefCounted
 					float zGlobal = ChunkOffsetZ * TailleChunk + z;
 					bool appartientSpirale = EvaluerExtrusionParoiAbysse(xGlobal, globalY, zGlobal, out _);
 					bool appartientAnneau = !appartientSpirale && EvaluerExtrusionAnneauAbysse(xGlobal, globalY, zGlobal, out _);
-					if (!appartientSpirale && !appartientAnneau) continue;
+					bool appartientPicSupplement = !appartientSpirale && !appartientAnneau && EvaluerPicSupplementSpiraleAbysse(xGlobal, globalY, zGlobal, out _);
+					if (!appartientSpirale && !appartientAnneau && !appartientPicSupplement) continue;
 
 					bool airAuDessus = y >= HauteurMax
 						|| (_densities[x, y + 1, z] <= Isolevel && (_densitiesEau == null || _densitiesEau[x, y + 1, z] <= Isolevel));
@@ -969,7 +1027,9 @@ public partial class Chunk_Serveur : RefCounted
 						continue;
 					}
 
-					bool praticable = EstSurfacePraticableBiomeParasite(x, y, z);
+					bool zonePic = appartientAnneau || appartientPicSupplement;
+					bool praticable = EstSurfacePraticableBiomeParasite(x, y, z)
+						|| (zonePic && EstSurfacePraticablePicAbysseRelaxee(x, y, z));
 					_materials[x, y, z] = praticable ? (byte)1 : (byte)2;
 				}
 			}
@@ -999,6 +1059,32 @@ public partial class Chunk_Serveur : RefCounted
 		}
 
 		return voisinsTestes >= 3 && voisinsStables >= 2;
+	}
+
+	/// <summary>Sommets de pics APISARA souvent trop étroits pour 2/3 voisins stables — critère assoupli sans toucher au reste.</summary>
+	private bool EstSurfacePraticablePicAbysseRelaxee(int x, int y, int z)
+	{
+		if (_densities == null) return false;
+		if (y < 0 || y > HauteurMax) return false;
+
+		int voisinsTestes = 0;
+		int voisinsStables = 0;
+		for (int i = 0; i < DirCardinales2D.Length; i++)
+		{
+			int nx = x + DirCardinales2D[i].X;
+			int nz = z + DirCardinales2D[i].Y;
+			if (nx < 0 || nx > TailleChunk || nz < 0 || nz > TailleChunk)
+				continue;
+
+			voisinsTestes++;
+			bool voisinSolide = _densities[nx, y, nz] > Isolevel;
+			bool voisinAirAuDessus = y >= HauteurMax
+				|| (_densities[nx, y + 1, nz] <= Isolevel && (_densitiesEau == null || _densitiesEau[nx, y + 1, nz] <= Isolevel));
+			if (voisinSolide && voisinAirAuDessus)
+				voisinsStables++;
+		}
+
+		return voisinsTestes >= 2 && voisinsStables >= 1;
 	}
 
 	private bool EstDansTrouNoirAbysseMonde(float xGlobal, float zGlobal)
