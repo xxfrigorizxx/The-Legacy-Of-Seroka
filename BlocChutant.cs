@@ -114,12 +114,12 @@ public partial class BlocChutant : RigidBody3D
 
 	/// <summary>Méta sur ID 31 : branche issue d'un buisson (coupée courte / fine), pas d'un arbre.</summary>
 	public const string MetaBrancheTailléeBuisson = "BrancheTailléeBuisson";
-	/// <summary>Méta sur ID 35 : teinte de baie (<see cref="Joueur.BaieNombreCouleurs"/> indices 0..7).</summary>
+	/// <summary>Méta sur ID 35 : teinte de baie (<see cref="Joueur.BaieNombreCouleurs"/> indices 0..8).</summary>
 	public const string MetaIndexCouleurBaie = "IndexChimiqueBaie";
 
 	/// <summary>Crée un BlocChutant. Le parent doit l'ajouter à la scène, puis définir GlobalPosition immédiatement après.</summary>
 	/// <param name="brancheTailléeBuisson">Si true et <see cref="ID_BRANCHE"/> : mesh court (récolte buisson). Sinon : branche d'arbre (longue).</param>
-	/// <param name="indexCouleurBaie">Si <see cref="ID_BAIE"/> : index 0..7 pour la teinte (ramassage → inventaire).</param>
+	/// <param name="indexCouleurBaie">Si <see cref="ID_BAIE"/> : index 0..8 pour la teinte (ramassage → inventaire).</param>
 	public static BlocChutant Creer(Vector3 positionMonde, byte idMateriau, Material matTerrain, bool brancheTailléeBuisson = false, byte indexCouleurBaie = 0)
 	{
 		var bloc = new BlocChutant();

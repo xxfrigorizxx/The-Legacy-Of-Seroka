@@ -206,9 +206,10 @@ public partial class Monde_Client : Node3D
 	private float _timerCullingCamera = 0f;
 	/// <summary>Nombre de passes culling « boost » après une rotation caméra (évite trous / herbe figée hors cône).</summary>
 	private int _framesBoostCullingRotationRestantes;
-	private readonly List<Vector2I> _fileFloreDifferee = new List<Vector2I>();
-	private readonly HashSet<Vector2I> _setFloreDifferee = new HashSet<Vector2I>();
-	private readonly Dictionary<Vector2I, ulong> _frameEnqueueFlore = new Dictionary<Vector2I, ulong>();
+	/// <summary>Clé (chunkX, coordChunkY, chunkZ) : en Abysse plusieurs couches partagent le même couple (X,Z).</summary>
+	private readonly List<Vector3I> _fileFloreDifferee = new List<Vector3I>();
+	private readonly HashSet<Vector3I> _setFloreDifferee = new HashSet<Vector3I>();
+	private readonly Dictionary<Vector3I, ulong> _frameEnqueueFlore = new Dictionary<Vector3I, ulong>();
 	private int _rayonRequetesActuel;
 	private float _timerExpansionRequetes;
 	private float _timerProgressionForceeRayon = 0f;
@@ -975,7 +976,10 @@ public partial class Monde_Client : Node3D
 			Vector2I cJoueurFlore = Gestionnaire_Monde.WorldToChunkCoord(posObsFlore, TailleChunk);
 			int ddx = Mathf.Abs(data.Coordonnees.X - cJoueurFlore.X);
 			int ddz = Mathf.Abs(data.Coordonnees.Y - cJoueurFlore.Y);
-			if (ddx == 0 && ddz == 0)
+			bool chunkSousPiedsXZ = ddx == 0 && ddz == 0;
+			if (_dimensionReseauActive == (int)DimensionJeu.Abysse && chunkSousPiedsXZ)
+				chunkSousPiedsXZ = data.CoordChunkY == CoordYStageAbysseDepuisYMonde(posObsFlore.Y);
+			if (chunkSousPiedsXZ)
 				ConstruireFloreChunk(data, posObsFlore);
 			else
 				EnfilerFloreChunk(data, posObsFlore);
@@ -1155,7 +1159,7 @@ public partial class Monde_Client : Node3D
 					{
 						if (!_chunksDataAbysse3D.TryGetValue(new Vector3I(cc.X, y, cc.Y), out var data) || data == null)
 							continue;
-						if (data.EstVideIntegral && EstVideAbysseAttendu(pointMonde))
+						if (data.EstVideIntegral)
 						{
 							data.EstEnFileSolidification = false;
 							continue;
@@ -1311,8 +1315,9 @@ public partial class Monde_Client : Node3D
 			budgetVerticesDyn = Mathf.Max(budgetVerticesDyn, 22000);
 			if (_dimensionReseauActive == (int)DimensionJeu.Abysse)
 			{
-				maxIntegrations = Mathf.Max(maxIntegrations, 5);
-				budgetVerticesDyn = Mathf.Max(budgetVerticesDyn, 34000);
+				// Limiter le burst mesh/frame pour réduire les micro-freezes tout en gardant le sol sous les pieds.
+				maxIntegrations = Mathf.Clamp(Mathf.Max(maxIntegrations, 4), 1, 4);
+				budgetVerticesDyn = Mathf.Max(budgetVerticesDyn, 26000);
 			}
 		}
 		// GATE FPS STRICT : hors zone critique, gel total si FPS < seuil, puis ramp-up 1→budget.
@@ -1376,9 +1381,10 @@ public partial class Monde_Client : Node3D
 				maxSolidifications = Mathf.Max(maxSolidifications, 4);
 				if (_dimensionReseauActive == (int)DimensionJeu.Abysse)
 				{
-					maxSolidifications = Mathf.Max(maxSolidifications, 8);
+					// Plafond : trop de BodySetSpace / frame = saccades nettes en exploration APISARA.
+					maxSolidifications = Mathf.Clamp(Mathf.Max(maxSolidifications, 6), 1, 8);
 					if (joueurEnChute)
-						maxSolidifications = Mathf.Max(maxSolidifications, 16);
+						maxSolidifications = Mathf.Clamp(maxSolidifications + 1, 1, 8);
 				}
 			}
 			// GATE FPS STRICT : hors zone critique, 0 si gelé, puis ramp-up.
@@ -1405,8 +1411,9 @@ public partial class Monde_Client : Node3D
 				{
 					PhysicsServer3D.Singleton.BodySetSpace(urgent.PhysicsBodyRID, w.Space);
 					urgent.EstEnFileSolidification = false;
+					SynchroniserFloreDesQueCollisionChunkActive(urgent);
 				}
-				else if (urgent.EstVideIntegral && EstVideAbysseAttendu(_joueur?.GlobalPosition ?? positionObservation))
+				else if (urgent.EstVideIntegral && _dimensionReseauActive == (int)DimensionJeu.Abysse)
 				{
 					urgent.EstEnFileSolidification = false;
 				}
@@ -1427,12 +1434,13 @@ public partial class Monde_Client : Node3D
 						_setSolidificationNormale.Remove(chunkASolidifier);
 						chunkASolidifier.EstEnFileSolidification = false;
 						PhysicsServer3D.Singleton.BodySetSpace(chunkASolidifier.PhysicsBodyRID, w.Space);
+						SynchroniserFloreDesQueCollisionChunkActive(chunkASolidifier);
 					}
 					else
 					{
 						_fileAttenteSolidification.RemoveAt(idxProche);
 						_setSolidificationNormale.Remove(chunkASolidifier);
-						if (chunkASolidifier.EstVideIntegral && EstVideAbysseAttendu(_joueur?.GlobalPosition ?? positionObservation))
+						if (chunkASolidifier.EstVideIntegral && _dimensionReseauActive == (int)DimensionJeu.Abysse)
 							chunkASolidifier.EstEnFileSolidification = false;
 						else
 							AjouterEnFileSolidification(chunkASolidifier);
@@ -1442,7 +1450,7 @@ public partial class Monde_Client : Node3D
 				{
 					_fileAttenteSolidification.RemoveAt(idxProche);
 					_setSolidificationNormale.Remove(chunkASolidifier);
-					if (chunkASolidifier.EstVideIntegral && EstVideAbysseAttendu(_joueur?.GlobalPosition ?? positionObservation))
+					if (chunkASolidifier.EstVideIntegral && _dimensionReseauActive == (int)DimensionJeu.Abysse)
 						chunkASolidifier.EstEnFileSolidification = false;
 					else
 						AjouterEnFileSolidification(chunkASolidifier);
@@ -2173,22 +2181,49 @@ public partial class Monde_Client : Node3D
 		return Mathf.Abs(coordChunk.X - obs.X) <= rayonChunks && Mathf.Abs(coordChunk.Y - obs.Y) <= rayonChunks;
 	}
 
+	/// <summary>Dès que le corps statique du chunk est dans l'espace (collision réelle), applique la flore sans attendre <see cref="TraiterFloreDifferee"/>.</summary>
+	private void SynchroniserFloreDesQueCollisionChunkActive(ChunkData data)
+	{
+		if (data == null) return;
+		if (data.InventaireFlore == null || data.InventaireFlore.Count == 0) return;
+		if (!data.PhysicsBodyRID.IsValid || data.Dormant) return;
+		ConstruireFloreChunk(data, ObtenirPositionInteractionFlore());
+	}
+
+	private static Vector3I CleFlorePourChunkData(ChunkData data)
+		=> new Vector3I(data.Coordonnees.X, data.CoordChunkY, data.Coordonnees.Y);
+
+	private bool ChunkFloreEncoreCharge(ChunkData data)
+	{
+		if (data == null)
+			return false;
+		if (_dimensionReseauActive == (int)DimensionJeu.Abysse)
+		{
+			Vector3I cle = CleFlorePourChunkData(data);
+			return _chunksDataAbysse3D.TryGetValue(cle, out ChunkData d) && ReferenceEquals(d, data);
+		}
+		return _chunksData.TryGetValue(data.Coordonnees, out ChunkData d2) && ReferenceEquals(d2, data);
+	}
+
 	private void EnfilerFloreChunk(ChunkData data, Vector3 positionObservation)
 	{
 		if (data == null || data.InventaireFlore == null || data.InventaireFlore.Count == 0) return;
-		if (_setFloreDifferee.Add(data.Coordonnees))
+		Vector3I cle = CleFlorePourChunkData(data);
+		if (_setFloreDifferee.Add(cle))
 		{
-			_fileFloreDifferee.Add(data.Coordonnees);
-			_frameEnqueueFlore[data.Coordonnees] = Engine.GetPhysicsFrames();
+			_fileFloreDifferee.Add(cle);
+			_frameEnqueueFlore[cle] = Engine.GetPhysicsFrames();
 		}
 	}
 
 	private void ConstruireFloreChunk(ChunkData data, Vector3 positionObservation)
 	{
-		if (data == null || !_chunksData.ContainsKey(data.Coordonnees)) return;
-		_setFloreDifferee.Remove(data.Coordonnees);
-		_fileFloreDifferee.Remove(data.Coordonnees);
-		_frameEnqueueFlore.Remove(data.Coordonnees);
+		if (data == null || !ChunkFloreEncoreCharge(data))
+			return;
+		Vector3I cleFlore = CleFlorePourChunkData(data);
+		_setFloreDifferee.Remove(cleFlore);
+		_fileFloreDifferee.Remove(cleFlore);
+		_frameEnqueueFlore.Remove(cleFlore);
 		if (data.InventaireFlore == null || data.InventaireFlore.Count == 0) return;
 		// Si un node flore existe déjà (généré quand le joueur était loin et souvent presque vide),
 		// on le met à jour au lieu de retourner : rend l'herbe/buissons visibles dès que tu t'approches.
@@ -2211,6 +2246,30 @@ public partial class Monde_Client : Node3D
 	private void ReplanifierFloreAutourJoueur(Vector2I chunkCentre)
 	{
 		int rayon = Mathf.Max(1, Mathf.Min(RayonGazonVisibleChunks, RayonBuissonsVisibleChunks));
+		if (_dimensionReseauActive == (int)DimensionJeu.Abysse)
+		{
+			Vector3 posObs = ObtenirPositionObservation();
+			foreach (var kv in _chunksDataAbysse3D)
+			{
+				Vector3I key = kv.Key;
+				int ddx = Mathf.Abs(key.X - chunkCentre.X);
+				int ddz = Mathf.Abs(key.Z - chunkCentre.Y);
+				if (ddx > rayon || ddz > rayon)
+					continue;
+				if (!EstCoordYDansFenetrePaliersAbysse(key.Y, posObs))
+					continue;
+				ChunkData data = kv.Value;
+				if (data?.InventaireFlore == null || data.InventaireFlore.Count == 0)
+					continue;
+				Vector3I cle = CleFlorePourChunkData(data);
+				if (_setFloreDifferee.Add(cle))
+				{
+					_fileFloreDifferee.Add(cle);
+					_frameEnqueueFlore[cle] = Engine.GetPhysicsFrames();
+				}
+			}
+			return;
+		}
 		for (int dx = -rayon; dx <= rayon; dx++)
 		{
 			for (int dz = -rayon; dz <= rayon; dz++)
@@ -2218,10 +2277,11 @@ public partial class Monde_Client : Node3D
 				Vector2I coord = new Vector2I(chunkCentre.X + dx, chunkCentre.Y + dz);
 				if (!_chunksData.TryGetValue(coord, out var data)) continue;
 				if (data.InventaireFlore == null || data.InventaireFlore.Count == 0) continue;
-				if (_setFloreDifferee.Add(coord))
+				Vector3I cle = CleFlorePourChunkData(data);
+				if (_setFloreDifferee.Add(cle))
 				{
-					_fileFloreDifferee.Add(coord);
-					_frameEnqueueFlore[coord] = Engine.GetPhysicsFrames();
+					_fileFloreDifferee.Add(cle);
+					_frameEnqueueFlore[cle] = Engine.GetPhysicsFrames();
 				}
 			}
 		}
@@ -2236,7 +2296,7 @@ public partial class Monde_Client : Node3D
 		while (traites < budget && _fileFloreDifferee.Count > 0 && tentatives > 0)
 		{
 			tentatives--;
-			Vector2I coord = ExtraireChunkLePlusProcheSimple(_fileFloreDifferee, positionObservation);
+			Vector3I coord = ExtraireCleFloreLaPlusProche(_fileFloreDifferee, positionObservation);
 			if (_frameEnqueueFlore.TryGetValue(coord, out ulong frameAjout) && frameAjout >= frameCourante)
 			{
 				// Laisse au moins 1 frame entre l’intégration du chunk et la création de sa flore.
@@ -2245,7 +2305,13 @@ public partial class Monde_Client : Node3D
 			}
 			_setFloreDifferee.Remove(coord);
 			_frameEnqueueFlore.Remove(coord);
-			if (!_chunksData.TryGetValue(coord, out var data)) continue;
+			ChunkData data = null;
+			if (_dimensionReseauActive == (int)DimensionJeu.Abysse)
+				_chunksDataAbysse3D.TryGetValue(coord, out data);
+			else if (_chunksData.TryGetValue(new Vector2I(coord.X, coord.Z), out var dAlpha) && dAlpha.CoordChunkY == coord.Y)
+				data = dAlpha;
+			if (data == null)
+				continue;
 			ConstruireFloreChunk(data, positionObservation);
 			traites++;
 		}
@@ -2371,19 +2437,19 @@ public partial class Monde_Client : Node3D
 		}
 	}
 
-	private Vector2I ExtraireChunkLePlusProcheSimple(List<Vector2I> liste, Vector3 positionObservation)
+	private Vector3I ExtraireCleFloreLaPlusProche(List<Vector3I> liste, Vector3 positionObservation)
 	{
-		if (liste.Count == 0) return Vector2I.Zero;
+		if (liste.Count == 0) return Vector3I.Zero;
 		Vector2 posObsV2 = new Vector2(positionObservation.X / TailleChunk, positionObservation.Z / TailleChunk);
 		int best = 0;
 		float bestD = float.MaxValue;
 		for (int i = 0; i < liste.Count; i++)
 		{
-			Vector2 c = new Vector2(liste[i].X, liste[i].Y);
+			Vector2 c = new Vector2(liste[i].X, liste[i].Z);
 			float d = c.DistanceSquaredTo(posObsV2);
 			if (d < bestD) { bestD = d; best = i; }
 		}
-		Vector2I v = liste[best];
+		Vector3I v = liste[best];
 		liste.RemoveAt(best);
 		return v;
 	}
@@ -2465,9 +2531,10 @@ public partial class Monde_Client : Node3D
 				_chunksData.Remove(coord);
 				RetirerDeFileSolidification(data);
 				_setSolidificationUrgente.Remove(data);
-				_setFloreDifferee.Remove(coord);
-				_fileFloreDifferee.Remove(coord);
-				_frameEnqueueFlore.Remove(coord);
+				Vector3I cleFlore = CleFlorePourChunkData(data);
+				_setFloreDifferee.Remove(cleFlore);
+				_fileFloreDifferee.Remove(cleFlore);
+				_frameEnqueueFlore.Remove(cleFlore);
 				data.LibérerRids();
 				NettoyerRegistreReconstruction(coord);
 			}
@@ -2621,21 +2688,32 @@ public partial class Monde_Client : Node3D
 	}
 
 	/// <summary>Mise à jour flore : le serveur a purgé du gazon (minage, gravité, fauchage). On met à jour l'inventaire et le rendu gazon pour que les brins disparaissent.</summary>
-	public void RecevoirFloreModifie(Vector2I coordChunk, Dictionary<Vector3I, byte> inventaireFlore)
+	public void RecevoirFloreModifie(Vector2I coordChunk, int coordChunkY, Dictionary<Vector3I, byte> inventaireFlore)
 	{
-		RecevoirFloreModifieAvecRetry(coordChunk, inventaireFlore, 0);
+		RecevoirFloreModifieAvecRetry(coordChunk, coordChunkY, inventaireFlore, 0);
 	}
 
-	private void RecevoirFloreModifieAvecRetry(Vector2I coordChunk, Dictionary<Vector3I, byte> inventaireFlore, int tentative)
+	private void RecevoirFloreModifieAvecRetry(Vector2I coordChunk, int coordChunkY, Dictionary<Vector3I, byte> inventaireFlore, int tentative)
 	{
-		if (!_chunksData.TryGetValue(coordChunk, out var data))
+		ChunkData data = null;
+		if (_dimensionReseauActive == (int)DimensionJeu.Abysse)
+		{
+			if (!TryGetChunkDataPourCoordY(coordChunk, coordChunkY, out data))
+				data = null;
+		}
+		else if (!_chunksData.TryGetValue(coordChunk, out data))
+			data = null;
+
+		if (data == null)
 		{
 			if (tentative < 12)
-				Callable.From(() => RecevoirFloreModifieAvecRetry(coordChunk, inventaireFlore, tentative + 1)).CallDeferred();
+				Callable.From(() => RecevoirFloreModifieAvecRetry(coordChunk, coordChunkY, inventaireFlore, tentative + 1)).CallDeferred();
 			return;
 		}
 
 		data.InventaireFlore = inventaireFlore ?? new Dictionary<Vector3I, byte>();
+		if (_dimensionReseauActive == (int)DimensionJeu.Abysse)
+			_chunksData[coordChunk] = data;
 		Vector3 posObs = ObtenirPositionObservation();
 
 		if (data._nodeFlore is Node3D nodeFlore)
@@ -3001,6 +3079,7 @@ public partial class Monde_Client : Node3D
 								PhysicsServer3D.Singleton.BodySetSpace(d.PhysicsBodyRID, space);
 								if (d.EstEnFileSolidification)
 									RetirerDeFileSolidification(d);
+								SynchroniserFloreDesQueCollisionChunkActive(d);
 							}
 						}
 						else if (!d.EstEnFileSolidification)
@@ -3036,6 +3115,7 @@ public partial class Monde_Client : Node3D
 							{
 								RetirerDeFileSolidification(d);
 							}
+							SynchroniserFloreDesQueCollisionChunkActive(d);
 						}
 					}
 					else if (!d.EstEnFileSolidification)
@@ -3075,6 +3155,7 @@ public partial class Monde_Client : Node3D
 					{
 						RetirerDeFileSolidification(data);
 					}
+					SynchroniserFloreDesQueCollisionChunkActive(data);
 				}
 			}
 			else if (!dormantCible)
@@ -3353,6 +3434,10 @@ public partial class Monde_Client : Node3D
 	private void RetirerChunkDataAbysse(Vector3I cle, ChunkData data)
 	{
 		_chunksDataAbysse3D.Remove(cle);
+		Vector3I cleFlore = CleFlorePourChunkData(data);
+		_setFloreDifferee.Remove(cleFlore);
+		_fileFloreDifferee.Remove(cleFlore);
+		_frameEnqueueFlore.Remove(cleFlore);
 		RetirerDeFileSolidification(data);
 		_setSolidificationUrgente.Remove(data);
 		_setSolidificationNormale.Remove(data);
@@ -3367,9 +3452,6 @@ public partial class Monde_Client : Node3D
 			{
 				_chunksData.Remove(data.Coordonnees);
 				_chunksACharger.Remove(data.Coordonnees);
-				_setFloreDifferee.Remove(data.Coordonnees);
-				_fileFloreDifferee.Remove(data.Coordonnees);
-				_frameEnqueueFlore.Remove(data.Coordonnees);
 				NettoyerRegistreReconstruction(data.Coordonnees);
 			}
 		}
@@ -3462,7 +3544,9 @@ public partial class Monde_Client : Node3D
 			if (modeAbysse)
 			{
 				bool enVideAttendu = EstVideAbysseAttendu(_joueur.GlobalPosition);
-				zoneCritiqueAbysse = ((!AbysseCollisionLocaleActive(_joueur.GlobalPosition) && !enVideAttendu) || v.Y < -0.5f);
+				bool localeOk = AbysseCollisionLocaleActive(_joueur.GlobalPosition);
+				// Pas d’urgence max dès qu’on chute : évite rafales de requêtes/solidifications (micro-freezes).
+				zoneCritiqueAbysse = !localeOk && !enVideAttendu;
 			}
 		}
 		// Rayon minimal : couvre au moins le RayonGrilleMinSpawnPret + anticipation courte dans la direction de déplacement.
@@ -3599,14 +3683,9 @@ public partial class Monde_Client : Node3D
 		{
 			return true;
 		}
-		// Dans les zones de vide attendues, un chunk explicitement vide est un état valide:
-		// ne pas le traiter comme "non prêt" sinon le client entre en boucle de panique.
-		if (dataCourant != null
-			&& dataCourant.EstVideIntegral
-			&& EstVideAbysseAttendu(observation))
-		{
+		// Chunk vide déjà en RAM : collision « prête » (trou réel, streaming) — évite filet joueur / boucle panique.
+		if (dataCourant != null && dataCourant.EstVideIntegral)
 			return true;
-		}
 		return false;
 	}
 

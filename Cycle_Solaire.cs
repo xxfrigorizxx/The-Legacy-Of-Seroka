@@ -258,6 +258,10 @@ public partial class Cycle_Solaire : Node
 	{
 		if (_environnement == null || _environnement.Environment == null)
 			return;
+		// APISARA : heure fixe + ciel/brouillard portés par la ressource Environment du Gestionnaire_Abysse (assignée au WE racine).
+		// Ne pas réécraser chaque frame sinon le ciel « bleu APISARA » est remplacé par l’interpolation jour/nuit standard.
+		if (_forcerHeureFixeDimension)
+			return;
 
 		var envGlobal = _environnement.Environment;
 		// Réparation si un réglage ou une ressource a basculé le fond hors Sky (ciel entièrement noir).

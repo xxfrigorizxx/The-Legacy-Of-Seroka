@@ -109,7 +109,7 @@ public partial class Chunk_Serveur : RefCounted
 	private Func<Vector2I, bool> _chunkEstCharge;
 	private Action<Vector3> _reveillerEau;
 	private Action<Vector3I, byte> _onVoxelModifie;
-	private Action<Vector2I, Dictionary<Vector3I, byte>> _onFlorePurgée;
+	private Action<Vector2I, int, Dictionary<Vector3I, byte>> _onFlorePurgée;
 
 	/// <summary>Drapeau de souillure : true dès qu'un voxel persistant (sol/eau/air) change réellement.</summary>
 	private bool _estModifie;
@@ -120,7 +120,7 @@ public partial class Chunk_Serveur : RefCounted
 	public bool EstChargeDepuisDisque => _chargeDepuisDisque;
 
 	public void SetOnVoxelModifie(Action<Vector3I, byte> callback) => _onVoxelModifie = callback;
-	public void SetOnFlorePurgée(Action<Vector2I, Dictionary<Vector3I, byte>> callback) => _onFlorePurgée = callback;
+	public void SetOnFlorePurgée(Action<Vector2I, int, Dictionary<Vector3I, byte>> callback) => _onFlorePurgée = callback;
 
 	public Chunk_Serveur(int chunkOffsetX, int chunkOffsetY, int chunkOffsetZ, int tailleChunk, int hauteurMax, int seed,
 		Action<Vector3, byte, bool, byte> callbackBlocChutant, Func<Vector2I, bool> chunkEstCharge, Action<Vector3> reveillerEau,
@@ -297,17 +297,23 @@ public partial class Chunk_Serveur : RefCounted
 							_materials[x, y, z] = mat;
 							_densities[x, y, z] = 10.0f;
 							sommetSolide[x, z] = y;
-							// Gazon uniquement sur voxel herbe (ID 1), uniquement sur terrain plat
-							if (!_generationAbysseActive
+							// Gazon sur voxel herbe (ID 1), terrain plat — Alpha classique ou deux plaines APISARA (jungle).
+							bool floreAlpha = !_generationAbysseActive
 								&& EstMateriauSupportGazon(mat)
 								&& TerrainAssezPlat((int)xGlobal, (int)zGlobal)
-								&& TerrainAvecMargeBord((int)xGlobal, (int)zGlobal))
+								&& TerrainAvecMargeBord((int)xGlobal, (int)zGlobal);
+							bool florePlaineJungleAbysse = _generationAbysseActive
+								&& EstPlaineJungleAbysse(xGlobal, zGlobal)
+								&& EstMateriauSupportGazon(mat)
+								&& TerrainAssezPlat((int)xGlobal, (int)zGlobal)
+								&& TerrainAvecMargeBord((int)xGlobal, (int)zGlobal);
+							if (floreAlpha || florePlaineJungleAbysse)
 							{
 								float altitudeFlore = globalY;
 								if (altitudeFlore > NIVEAU_MIN_FLORE && altitudeFlore < NIVEAU_MAX_FLORE)
 								{
 									var posGlobale = new Vector3I((int)xGlobal, (int)globalY, (int)zGlobal);
-									InventaireFlore[posGlobale] = FloreTypeGazon; // Gazon seul par défaut
+									InventaireFlore[posGlobale] = FloreTypeGazon;
 									EssayerPromouvoirGazonEnBuisson(posGlobale, xGlobal, zGlobal);
 								}
 							}
@@ -354,6 +360,8 @@ public partial class Chunk_Serveur : RefCounted
 				}
 			}
 			AppliquerBiomeParasiteCornichesAbysse();
+			EnsemencerFloreTrouAbysseReplats();
+			EnsemencerBuissonsFluoTrouAbysse();
 			InitialiserEauVolumetrique(sommetSolide);
 
 			// Pass L-System : injection des Chênes (voxels bois ID 30, feuilles ID 31)
@@ -435,7 +443,10 @@ public partial class Chunk_Serveur : RefCounted
 	private void InjecterArbresLSystem()
 	{
 		if (_generationAbysseActive)
+		{
+			InjecterArbresLSystemPlaineJungleAbysse();
 			return;
+		}
 		const float chanceArbre = 0.06f;
 		const int espacementMin = 4;
 		int xCentre = ChunkOffsetX * TailleChunk + TailleChunk / 2;
@@ -586,6 +597,56 @@ public partial class Chunk_Serveur : RefCounted
 		}
 	}
 
+	/// <summary>APISARA : arbres type jungle uniquement sur les deux plaines herbe (sanctuaire + plaine extérieure).</summary>
+	private void InjecterArbresLSystemPlaineJungleAbysse()
+	{
+		const int espacementMin = 3;
+		bool arbreAjoute = false;
+		for (int x = 2; x < TailleChunk - 2; x += espacementMin)
+		for (int z = 2; z < TailleChunk - 2; z += espacementMin)
+		{
+			int xGlobal = ChunkOffsetX * TailleChunk + x;
+			int zGlobal = ChunkOffsetZ * TailleChunk + z;
+			if (!EstPlaineJungleAbysse(xGlobal, zGlobal)) continue;
+			if (!TerrainAssezPlat(xGlobal, zGlobal)) continue;
+			if (!TerrainAvecMargeBord(xGlobal, zGlobal)) continue;
+			int hauteurSurface = CalculerHauteurTerrain(xGlobal, zGlobal);
+			if (hauteurSurface < 0 || hauteurSurface >= HauteurMax - 1) continue;
+			if (hauteurSurface <= 2) continue;
+			byte matSurface;
+			lock (_verrouVoxel)
+				matSurface = _materials[x, hauteurSurface, z];
+			if (matSurface != 1) continue;
+			float bruitDensite = DeterministicRand(xGlobal * 1.7f, zGlobal * 2.3f);
+			float chanceLocale = Mathf.Lerp(0.068f, 0.132f, bruitDensite);
+			if (DeterministicRand(xGlobal * 0.91f + 2f, zGlobal * 1.1f + 3f) >= chanceLocale) continue;
+			var racine = new Vector3I(xGlobal, hauteurSurface + 1, zGlobal);
+			uint seedArbre = (uint)((xGlobal * 73856093) ^ (zGlobal * 19349663));
+			int stage = (int)(seedArbre % 10);
+			InventaireArbres[racine] = new DonneesArbre { Stage = (byte)stage, Seed = seedArbre };
+			arbreAjoute = true;
+		}
+		if (arbreAjoute || InventaireArbres.Count > 0) return;
+		for (int x = 2; x < TailleChunk - 2; x += 2)
+		for (int z = 2; z < TailleChunk - 2; z += 2)
+		{
+			int xGlobal = ChunkOffsetX * TailleChunk + x;
+			int zGlobal = ChunkOffsetZ * TailleChunk + z;
+			if (!EstPlaineJungleAbysse(xGlobal, zGlobal)) continue;
+			if (!TerrainAssezPlat(xGlobal, zGlobal) || !TerrainAvecMargeBord(xGlobal, zGlobal)) continue;
+			int hauteurSurface = CalculerHauteurTerrain(xGlobal, zGlobal);
+			if (hauteurSurface < 3 || hauteurSurface >= HauteurMax - 1) continue;
+			byte matSurface;
+			lock (_verrouVoxel)
+				matSurface = _materials[x, hauteurSurface, z];
+			if (matSurface != 1) continue;
+			var racine = new Vector3I(xGlobal, hauteurSurface + 1, zGlobal);
+			uint seedArbre = (uint)((xGlobal * 73856093) ^ (zGlobal * 19349663));
+			InventaireArbres[racine] = new DonneesArbre { Stage = (byte)(seedArbre % 10), Seed = seedArbre };
+			return;
+		}
+	}
+
 	/// <summary>0=sans arbres, 1=bouleau seul, 2=mixte, 3=chêne seul (tempéré uniquement).</summary>
 	private int DeterminerBiomeForetTempere(int xGlobal, int zGlobal)
 	{
@@ -620,23 +681,26 @@ public partial class Chunk_Serveur : RefCounted
 	{
 		if (!estJungle)
 		{
-			// Tempéré : 8 teintes de baies (alignées sur IndexChimique 0..7 au ramassage).
+			// Tempéré : 8 teintes (0..7) ; la variante 8 est réservée aux buissons APISARA du trou noir.
 			float r = DeterministicRand(xGlobal * 0.31f + 5f, zGlobal * 0.47f + 7f);
-			return (byte)Mathf.Clamp((int)(r * Joueur.BaieNombreCouleurs), 0, Joueur.BaieNombreCouleurs - 1);
+			return (byte)Mathf.Clamp((int)(r * 8f), 0, 7);
 		}
 		// Jungle: pool ouvert 0..120 (future-proof pour nouvelles variantes).
 		float rJ = DeterministicRand(xGlobal * 0.77f + 11f, zGlobal * 1.13f + 23f);
 		int variante = Mathf.Clamp((int)(rJ * 121f), 0, 120);
+		// Réserve la variante 8 au trou (baie cyan fluorescente) — évite un buisson jungle « fluo » par hasard.
+		if (variante == 8) variante = 9;
 		return (byte)variante;
 	}
 
 	private void EssayerPromouvoirGazonEnBuisson(Vector3I posGlobale, float xGlobal, float zGlobal)
 	{
-		if (_generationAbysseActive)
+		if (_generationAbysseActive && !EstPlaineJungleAbysse(xGlobal, zGlobal))
 			return;
 		float chanceDePousse = CalculerChanceBuisson(xGlobal, zGlobal);
 		if (chanceDePousse <= 0f || DeterministicRand(xGlobal, zGlobal) >= chanceDePousse) return;
-		bool estJungle = EstZoneJungle(xGlobal, zGlobal);
+		bool estJungle = EstZoneJungle(xGlobal, zGlobal)
+			|| (_generationAbysseActive && EstPlaineJungleAbysse(xGlobal, zGlobal));
 		int rayonEspacement = estJungle ? 2 : 1;
 		if (!PeutPlacerBuissonAvecEspacement(posGlobale, rayonEspacement)) return;
 		byte variante = DeterminerVarianteBuisson(xGlobal, zGlobal, estJungle);
@@ -648,8 +712,6 @@ public partial class Chunk_Serveur : RefCounted
 	/// <summary>Assure un minimum visuel : au moins un buisson s'il existe du gazon dans le chunk.</summary>
 	private void AssurerBuissonMinimalDansChunk()
 	{
-		if (_generationAbysseActive)
-			return;
 		if (InventaireFlore.Count == 0) return;
 		foreach (var kv in InventaireFlore)
 			if (EstTypeBuisson(kv.Value))
@@ -661,6 +723,7 @@ public partial class Chunk_Serveur : RefCounted
 		foreach (var kv in InventaireFlore)
 		{
 			if (kv.Value != FloreTypeGazon) continue;
+			if (_generationAbysseActive && EstDansTrouNoirAbysseMonde(kv.Key.X, kv.Key.Z)) continue;
 			uint h = (uint)(kv.Key.X * 73856093) ^ (uint)(kv.Key.Z * 19349663) ^ (uint)(kv.Key.Y * 83492791);
 			if (!trouve || h < hashMin)
 			{
@@ -670,7 +733,8 @@ public partial class Chunk_Serveur : RefCounted
 			}
 		}
 		if (!trouve) return;
-		bool estJungle = EstZoneJungle(candidat.X, candidat.Z);
+		bool estJungle = EstZoneJungle(candidat.X, candidat.Z)
+			|| (_generationAbysseActive && EstPlaineJungleAbysse(candidat.X, candidat.Z));
 		byte variante = DeterminerVarianteBuisson(candidat.X, candidat.Z, estJungle);
 		InventaireFlore[candidat] = ConstruireTypeBuisson(variante, true);
 	}
@@ -747,13 +811,11 @@ public partial class Chunk_Serveur : RefCounted
 		return hauteurBase - profondeurEau;
 	}
 
-	private int CalculerHauteurTerrainAbysse(int xGlobal, int zGlobal)
+	/// <summary>Distance radiale warping APISARA (plaines / muraille) — partagée hauteur + masques biome.</summary>
+	private float CalculerDistanceProfilAbysse(float xGlobal, float zGlobal)
 	{
-		float dx = xGlobal;
-		float dz = zGlobal;
-		float distance = Mathf.Sqrt(dx * dx + dz * dz);
-		const float largeurTransition = 120f;
-		float angle = Mathf.Atan2(dz, dx);
+		float distance = Mathf.Sqrt(xGlobal * xGlobal + zGlobal * zGlobal);
+		float angle = Mathf.Atan2(zGlobal, xGlobal);
 
 		// Décale radialement les frontières de zones pour casser l'anneau parfait
 		// et obtenir une muraille plus organique (bosses, creux, pointes irrégulières).
@@ -762,10 +824,28 @@ public partial class Chunk_Serveur : RefCounted
 			Mathf.Sin(angle * 6.7f - 1.4f) * 22f;
 		float bruitMacroAnneau = _noiseSurface.GetNoise2D(xGlobal * 0.0018f + 2600f, zGlobal * 0.0018f + 2600f) * 54f;
 		float bruitWarpAnneau = _noiseErosion.GetNoise2D(xGlobal * 0.0034f - 3700f, zGlobal * 0.0034f - 3700f) * 28f;
-		float distanceProfil = distance + modulationAngulaire + bruitMacroAnneau + bruitWarpAnneau;
+		return distance + modulationAngulaire + bruitMacroAnneau + bruitWarpAnneau;
+	}
 
-		// 0..500 : trou noir vertical jusqu'au fond absolu.
-		if (distance <= AbyssRayonTrouNoir)
+	/// <summary>Les deux plaines herbe (sanctuaire intérieur + plaine extérieure), hors trou et hors muraille.</summary>
+	private bool EstPlaineJungleAbysse(float xGlobal, float zGlobal)
+	{
+		if (!_generationAbysseActive) return false;
+		float dp = CalculerDistanceProfilAbysse(xGlobal, zGlobal);
+		if (dp <= AbyssRayonTrouNoir) return false;
+		if (dp > AbyssRayonTrouNoir && dp <= AbyssRayonX) return true;
+		if (dp >= AbyssRayonY && dp <= AbyssRayonZ) return true;
+		return false;
+	}
+
+	private int CalculerHauteurTerrainAbysse(int xGlobal, int zGlobal)
+	{
+		const float largeurTransition = 120f;
+		float distanceProfil = CalculerDistanceProfilAbysse(xGlobal, zGlobal);
+		float distanceBrute = Mathf.Sqrt(xGlobal * xGlobal + zGlobal * zGlobal);
+
+		// 0..500 : trou noir vertical jusqu'au fond absolu (rayon euclidien, pas le profil warping).
+		if (distanceBrute <= AbyssRayonTrouNoir)
 			return (int)AbyssFondAbsolu;
 
 		float HauteurSanctuaire()
@@ -780,15 +860,19 @@ public partial class Chunk_Serveur : RefCounted
 
 		float HauteurMuraille()
 		{
-			float tMur = Mathf.Clamp((distanceProfil - AbyssRayonX) / Mathf.Max(1f, AbyssRayonY - AbyssRayonX), 0f, 1f);
+			// Décalage radial non symétrique : casse l’anneau « parfait » et crée replats / bosses hétérogènes.
+			float shiftRadialMur = _noiseAbysseChaos3D.GetNoise2D(xGlobal * 0.00155f + 5500f, zGlobal * 0.00155f - 5500f) * 118f;
+			float tMur = Mathf.Clamp((distanceProfil + shiftRadialMur - AbyssRayonX) / Mathf.Max(1f, AbyssRayonY - AbyssRayonX), 0f, 1f);
 			float sCurve = tMur * tMur * (3f - 2f * tMur);
-			float baseMur = Mathf.Lerp(120f, 340f, sCurve);
+			float ondulationBase = _noiseAbysseChaosDetail3D.GetNoise2D(xGlobal * 0.0024f + 7200f, zGlobal * 0.0024f - 7200f) * 42f;
+			float baseMur = Mathf.Lerp(108f, 352f, sCurve) + ondulationBase;
 
-			float bruitMacro = _noiseSurface.GetNoise2D(xGlobal * 0.005f + 6100f, zGlobal * 0.005f + 6100f) * 62f;
-			float bruitMicro = _noiseErosion.GetNoise2D(xGlobal * 0.022f + 9100f, zGlobal * 0.022f + 9100f) * 26f;
-			float cretes = Mathf.Abs(_noiseCavernes.GetNoise2D(xGlobal * 0.034f + 13000f, zGlobal * 0.034f + 13000f)) * 95f;
+			float bruitMacro = _noiseSurface.GetNoise2D(xGlobal * 0.005f + 6100f, zGlobal * 0.005f + 6100f) * 72f;
+			float bruitMicro = _noiseErosion.GetNoise2D(xGlobal * 0.022f + 9100f, zGlobal * 0.022f + 9100f) * 34f;
+			float chaosRelief = Mathf.Abs(_noiseAbysseChaos3D.GetNoise2D(xGlobal * 0.0038f + 1800f, zGlobal * 0.0038f - 1800f)) * 68f;
+			float cretes = Mathf.Abs(_noiseCavernes.GetNoise2D(xGlobal * 0.034f + 13000f, zGlobal * 0.034f + 13000f)) * 108f;
 			float picsAigusBrut = (_noiseCavernes.GetNoise2D(xGlobal * 0.061f + 31000f, zGlobal * 0.061f + 31000f) + 1f) * 0.5f;
-			float picsAigus = Mathf.Pow(Mathf.Clamp(picsAigusBrut, 0f, 1f), 3.6f) * 70f;
+			float picsAigus = Mathf.Pow(Mathf.Clamp(picsAigusBrut, 0f, 1f), 3.15f) * 88f;
 
 			float bruitFalaises = _noiseRivieres.GetNoise2D(xGlobal * 0.011f + 17000f, zGlobal * 0.011f + 17000f);
 			float masqueFalaises = Mathf.Clamp((bruitFalaises - 0.08f) * 2.35f, 0f, 1f);
@@ -805,8 +889,8 @@ public partial class Chunk_Serveur : RefCounted
 			float sortieRampe = Mathf.Lerp(0f, 150f, attenuationSortie * attenuationSortie);
 			float reductionSortie = sortieRampe * (0.45f + (1f - masqueFalaises) * 0.55f);
 
-			float hauteurMur = baseMur + bruitMacro + bruitMicro + cretes + picsAigus + falaises - reductionSortie - entaille;
-			return Mathf.Clamp(hauteurMur, 95f, 460f);
+			float hauteurMur = baseMur + bruitMacro + bruitMicro + chaosRelief + cretes + picsAigus + falaises - reductionSortie - entaille;
+			return Mathf.Clamp(hauteurMur, 88f, 485f);
 		}
 
 		float HauteurPlaineExterieure()
@@ -866,14 +950,13 @@ public partial class Chunk_Serveur : RefCounted
 		return Mathf.RoundToInt(h);
 	}
 
-	private bool EvaluerExtrusionParoiAbysse(float xGlobal, float yGlobal, float zGlobal, out float profondeurInward)
+	/// <summary>Même masque que la rampe spirale ciselée dans le trou ; 0 = hors bande. Sert aussi à ne pas poser de gazon sur la descente.</summary>
+	private float CalculerIntensiteSpiraleDescenteAbysse(float xGlobal, float yGlobal, float zGlobal)
 	{
-		profondeurInward = 0f;
-		if (!_generationAbysseActive) return false;
-		if (yGlobal > AbyssYSpiraleTop || yGlobal < AbyssYSpiraleBottom) return false;
-
+		if (!_generationAbysseActive) return 0f;
+		if (yGlobal > AbyssYSpiraleTop || yGlobal < AbyssYSpiraleBottom) return 0f;
 		float distance = Mathf.Sqrt((xGlobal * xGlobal) + (zGlobal * zGlobal));
-		if (distance < AbyssRayonSpiraleMin || distance > AbyssRayonSpiraleMax) return false;
+		if (distance < AbyssRayonSpiraleMin || distance > AbyssRayonSpiraleMax) return 0f;
 
 		float angle = Mathf.Atan2(zGlobal, xGlobal);
 		float warpHelicoidal = _noiseErosion.GetNoise3D(xGlobal * 0.0062f + 4100f, yGlobal * 0.0093f - 1700f, zGlobal * 0.0062f - 2600f) * 0.85f;
@@ -890,9 +973,17 @@ public partial class Chunk_Serveur : RefCounted
 		float tDescente = Mathf.Clamp((AbyssYSpiraleTop - yGlobal) / Mathf.Max(1f, AbyssYSpiraleTop - AbyssYSpiraleBottom), 0f, 1f);
 		float gainDescente = Mathf.Lerp(0.85f, 1.22f, tDescente);
 
-		float intensite = masqueSpirale * n3d * attenuationRayon * gainDescente;
+		float varianteOrg = Mathf.Lerp(0.72f, 1.28f, Mathf.Clamp((_noiseAbysseChaosDetail3D.GetNoise3D(xGlobal * 0.31f, yGlobal * 0.41f, zGlobal * 0.31f) + 1f) * 0.5f, 0f, 1f));
+		return masqueSpirale * n3d * attenuationRayon * gainDescente * varianteOrg;
+	}
+
+	private bool EvaluerExtrusionParoiAbysse(float xGlobal, float yGlobal, float zGlobal, out float profondeurInward)
+	{
+		profondeurInward = 0f;
+		float intensite = CalculerIntensiteSpiraleDescenteAbysse(xGlobal, yGlobal, zGlobal);
 		if (intensite <= 0.02f) return false;
 
+		float distance = Mathf.Sqrt((xGlobal * xGlobal) + (zGlobal * zGlobal));
 		profondeurInward = Mathf.Lerp(AbyssExtrusionMin, AbyssExtrusionMax, Mathf.Clamp(intensite, 0f, 1f));
 		float seuilInterieur = AbyssRayonTrouNoir - profondeurInward;
 		return distance >= seuilInterieur && distance <= AbyssRayonTrouNoir;
@@ -918,7 +1009,8 @@ public partial class Chunk_Serveur : RefCounted
 		float yAniso = yGlobal * AbyssChaosYScale;
 
 		float warpAng = _noiseAbysseChaosDetail3D.GetNoise3D(xMur * 0.019f + 120f, yAniso, zMur * 0.019f - 120f) * 0.075f;
-		float scaled = (angleNorm + warpAng) * AbyssPicAnneauNombre;
+		float densitePic = AbyssPicAnneauNombre * Mathf.Lerp(0.78f, 1.22f, Mathf.Clamp((_noiseAbysseChaos3D.GetNoise2D(xMur * 0.0022f + 900f, zMur * 0.0022f - 900f) + 1f) * 0.5f, 0f, 1f));
+		float scaled = (angleNorm + warpAng) * densitePic;
 		float frac = scaled - Mathf.Floor(scaled);
 		float distCreneau = Mathf.Min(frac, 1f - frac);
 		float porteAngulaire = 1f - Mathf.SmoothStep(0.035f, 0.13f, distCreneau);
@@ -1036,6 +1128,81 @@ public partial class Chunk_Serveur : RefCounted
 		}
 	}
 
+	/// <summary>APISARA : buissons à baies cyan fluorescentes (variante 8) uniquement dans le trou, Y monde [-500, 0], sur gazon existant avec espacement.</summary>
+	private void EnsemencerBuissonsFluoTrouAbysse()
+	{
+		if (!_generationAbysseActive || _densities == null) return;
+		const float chanceBuissonFluo = 0.018f;
+		float yMin = ConstantesDimensionAbysse.LimiteInferieureHerbeTrouMonde;
+		for (int x = 0; x <= TailleChunk; x++)
+		for (int z = 0; z <= TailleChunk; z++)
+		{
+			float xG = ChunkOffsetX * TailleChunk + x;
+			float zG = ChunkOffsetZ * TailleChunk + z;
+			if (!EstDansTrouNoirAbysseMonde(xG, zG)) continue;
+			for (int y = 0; y <= HauteurMax; y++)
+			{
+				float globalY = ChunkOffsetY * HauteurMax + y;
+				if (globalY < yMin || globalY > 0f) continue;
+				var pos = new Vector3I((int)xG, (int)globalY, (int)zG);
+				if (!InventaireFlore.TryGetValue(pos, out byte t) || t != FloreTypeGazon) continue;
+				if (DeterministicRand(xG * 1.03f + globalY * 0.019f, zG * 0.97f) > chanceBuissonFluo) continue;
+				if (!PeutPlacerBuissonAvecEspacement(pos, 3)) continue;
+				InventaireFlore[pos] = ConstruireTypeBuisson(8, true);
+			}
+		}
+	}
+
+	/// <summary>APISARA : gazon seul sur replats du trou (spirale/pics), sans buissons ni arbres.</summary>
+	private void EnsemencerFloreTrouAbysseReplats()
+	{
+		if (!_generationAbysseActive || _densities == null || _materials == null) return;
+		float yMin = ConstantesDimensionAbysse.LimiteInferieureHerbeTrouMonde;
+		float yMax = AbyssYSpiraleTop + 28f;
+		for (int x = 0; x <= TailleChunk; x++)
+		for (int z = 0; z <= TailleChunk; z++)
+		{
+			float xG = ChunkOffsetX * TailleChunk + x;
+			float zG = ChunkOffsetZ * TailleChunk + z;
+			if (!EstDansTrouNoirAbysseMonde(xG, zG)) continue;
+			for (int y = 0; y <= HauteurMax; y++)
+			{
+				float globalY = ChunkOffsetY * HauteurMax + y;
+				if (globalY < yMin || globalY > yMax) continue;
+				if (_materials[x, y, z] != 1) continue;
+				bool airDessus = y >= HauteurMax
+					|| (_densities[x, y + 1, z] <= Isolevel && (_densitiesEau == null || _densitiesEau[x, y + 1, z] <= Isolevel));
+				if (!airDessus) continue;
+				if (!AbysseReplatreHerbeTrouPlat(x, y, z)) continue;
+				// Pas de brins sur la rampe de la spirale (même masque que le ciselage paroi).
+				if (CalculerIntensiteSpiraleDescenteAbysse(xG, globalY, zG) > 0.02f) continue;
+				var pos = new Vector3I((int)xG, (int)globalY, (int)zG);
+				InventaireFlore[pos] = FloreTypeGazon;
+			}
+		}
+	}
+
+	/// <summary>Replats horizontaux dans le puits : voisins en 8 dans le chunk ; hors grille ignorés. Surface strictement plate (même Y que le centre) pour éviter l’herbe sur les marches.</summary>
+	private bool AbysseReplatreHerbeTrouPlat(int lx, int ly, int lz)
+	{
+		if (_densities == null) return false;
+		int h0 = ly;
+		int voisinsExaminés = 0;
+		for (int dz = -1; dz <= 1; dz++)
+		for (int dx = -1; dx <= 1; dx++)
+		{
+			if (dx == 0 && dz == 0) continue;
+			int nx = lx + dx;
+			int nz = lz + dz;
+			if (nx < 0 || nx > TailleChunk || nz < 0 || nz > TailleChunk) continue;
+			voisinsExaminés++;
+			int hy = ObtenirHauteurSurfaceLocale(nx, nz);
+			if (hy < 0) return false;
+			if (hy != h0) return false;
+		}
+		return voisinsExaminés > 0;
+	}
+
 	private bool EstSurfacePraticableBiomeParasite(int x, int y, int z)
 	{
 		if (_densities == null) return false;
@@ -1121,6 +1288,8 @@ public partial class Chunk_Serveur : RefCounted
 	/// <summary>Probabilité de transformer un gazon en buisson selon humidité + biome tempéré/jungle.</summary>
 	private float CalculerChanceBuisson(float xGlobal, float zGlobal)
 	{
+		if (_generationAbysseActive && EstPlaineJungleAbysse(xGlobal, zGlobal))
+			return Mathf.Clamp(0.048f + DeterministicRand(xGlobal * 0.21f + 3f, zGlobal * 0.19f + 5f) * 0.052f, 0.042f, 0.10f);
 		float humiditeBrute = CalculerHumiditeGlobale(xGlobal, zGlobal);
 		float humiditeNorm = (humiditeBrute + 1f) * 0.5f;
 		// Seuil bas abaissé : des buissons même en zones plus sèches (baies visibles « partout »).
@@ -1370,11 +1539,6 @@ public partial class Chunk_Serveur : RefCounted
 	/// <summary>Flore fallback pour rétrocompatibilité si aucun fichier flore n’existe encore.</summary>
 	public void RegenererInventaireFloreDepuisSurface()
 	{
-		if (_generationAbysseActive)
-		{
-			InventaireFlore.Clear();
-			return;
-		}
 		InventaireFlore.Clear();
 		GenererInventaireFloreDepuisSurface();
 	}
@@ -1382,8 +1546,6 @@ public partial class Chunk_Serveur : RefCounted
 	/// <summary>Migration douce: anciens chunks avec gazon seul -> injecte des buissons sans recréer toute la flore.</summary>
 	public void EnrichirBuissonsDepuisInventaireSiAbsents()
 	{
-		if (_generationAbysseActive)
-			return;
 		if (InventaireFlore.Count == 0) return;
 		foreach (var kv in InventaireFlore)
 			if (EstTypeBuisson(kv.Value))
@@ -1400,14 +1562,16 @@ public partial class Chunk_Serveur : RefCounted
 		AssurerBuissonMinimalDansChunk();
 	}
 
-	/// <summary>Scanne la surface chargée et remplit InventaireFlore (chunks du disque). Gazon partout sur ID 1.</summary>
+	/// <summary>Scanne la surface chargée et remplit InventaireFlore (chunks du disque). Gazon partout sur ID 1 ; Abysse : plaines jungle uniquement, clés en Y monde.</summary>
 	private void GenererInventaireFloreDepuisSurface()
 	{
-		if (_generationAbysseActive)
-			return;
 		for (int x = 0; x < TailleChunk; x++)
 			for (int z = 0; z < TailleChunk; z++)
 			{
+				float xGlobal = ChunkOffsetX * TailleChunk + x;
+				float zGlobal = ChunkOffsetZ * TailleChunk + z;
+				if (_generationAbysseActive && !EstPlaineJungleAbysse(xGlobal, zGlobal))
+					continue;
 				int ySurface = -1;
 				for (int y = HauteurMax - 1; y >= 2; y--)
 					if (_densities[x, y, z] > Isolevel && (y + 1 >= HauteurMax + 1 || _densities[x, y + 1, z] <= Isolevel))
@@ -1417,11 +1581,9 @@ public partial class Chunk_Serveur : RefCounted
 				if (!EstMateriauSupportGazon(mat)) continue;
 				if (!TerrainAssezPlatDepuisDonnees(x, z)) continue;
 				if (!TerrainAvecMargeBordDepuisDonnees(x, z)) continue;
-				float xGlobal = ChunkOffsetX * TailleChunk + x;
-				float zGlobal = ChunkOffsetZ * TailleChunk + z;
-				float altitudeFlore = ySurface;
-				if (altitudeFlore <= NIVEAU_MIN_FLORE || altitudeFlore >= NIVEAU_MAX_FLORE) continue;
-				var posGlobale = new Vector3I((int)xGlobal, ySurface, (int)zGlobal);
+				int yMonde = ChunkOffsetY * HauteurMax + ySurface;
+				if (yMonde <= NIVEAU_MIN_FLORE || yMonde >= NIVEAU_MAX_FLORE) continue;
+				var posGlobale = new Vector3I((int)xGlobal, yMonde, (int)zGlobal);
 				InventaireFlore[posGlobale] = FloreTypeGazon;
 				EssayerPromouvoirGazonEnBuisson(posGlobale, xGlobal, zGlobal);
 			}
@@ -1445,7 +1607,7 @@ public partial class Chunk_Serveur : RefCounted
 			{
 				Vector3I posGlobale = kv.Key;
 				int lx = posGlobale.X - ChunkOffsetX * TailleChunk;
-				int ly = posGlobale.Y;
+				int ly = posGlobale.Y - ChunkOffsetY * HauteurMax;
 				int lz = posGlobale.Z - ChunkOffsetZ * TailleChunk;
 				if (!EstDansLimitesChunk(lx, ly, lz)) continue;
 				if (_densities[lx, ly, lz] <= Isolevel) floreMorte.Add(posGlobale);
@@ -1462,7 +1624,7 @@ public partial class Chunk_Serveur : RefCounted
 			}
 			InventaireFlore.Remove(mort);
 		}
-		_onFlorePurgée?.Invoke(new Vector2I(ChunkOffsetX, ChunkOffsetZ), new Dictionary<Vector3I, byte>(InventaireFlore));
+		_onFlorePurgée?.Invoke(new Vector2I(ChunkOffsetX, ChunkOffsetZ), ChunkOffsetY, new Dictionary<Vector3I, byte>(InventaireFlore));
 	}
 
 	/// <summary>Copie les données du chunk pour envoi au client. Quantification byte[] pour RPC (divise poids par 4).</summary>
@@ -1519,7 +1681,7 @@ private void FaireTomberBaiesAuSolSiPlein(Vector3I posFlore, byte typeFlore, int
 	int q = quantiteForcee > 0
 		? quantiteForcee
 		: TirerQuantiteBaiesDepuisSeed((posFlore.X * 73856093) ^ (posFlore.Y * 19349663) ^ (posFlore.Z * 83492791) ^ 0x6B35);
-	byte couleurBaie = (byte)Joueur.ClampIndexCouleurBaie(ObtenirVarianteBuisson(typeFlore) % Joueur.BaieNombreCouleurs);
+	byte couleurBaie = (byte)Joueur.IndexCouleurBaieDepuisVariante(ObtenirVarianteBuisson(typeFlore));
 	var rng = new RandomNumberGenerator { Seed = unchecked((ulong)(uint)((posFlore.X * 911) ^ (posFlore.Z * 353) ^ 0xBEE35)) };
 	Vector3 basePos = new Vector3(posFlore.X + 0.5f, posFlore.Y + 0.72f, posFlore.Z + 0.5f);
 	for (int i = 0; i < q; i++)
@@ -1602,7 +1764,7 @@ public bool RecolterBuisson(Vector3 pointImpactGlobal, float rayon, byte modeRec
 			return false;
 	}
 
-	_onFlorePurgée?.Invoke(new Vector2I(ChunkOffsetX, ChunkOffsetZ), new Dictionary<Vector3I, byte>(InventaireFlore));
+	_onFlorePurgée?.Invoke(new Vector2I(ChunkOffsetX, ChunkOffsetZ), ChunkOffsetY, new Dictionary<Vector3I, byte>(InventaireFlore));
 	return true;
 }
 
@@ -1623,7 +1785,7 @@ public bool PlanterBuisson(Vector3 pointImpactGlobal, byte typeFlore)
 	if (!TerrainAvecMargeBordDepuisDonnees(lx, lz)) return false;
 	var posGlobale = new Vector3I(ChunkOffsetX * TailleChunk + lx, ySurface, ChunkOffsetZ * TailleChunk + lz);
 	InventaireFlore[posGlobale] = typeFlore;
-	_onFlorePurgée?.Invoke(new Vector2I(ChunkOffsetX, ChunkOffsetZ), new Dictionary<Vector3I, byte>(InventaireFlore));
+	_onFlorePurgée?.Invoke(new Vector2I(ChunkOffsetX, ChunkOffsetZ), ChunkOffsetY, new Dictionary<Vector3I, byte>(InventaireFlore));
 	return true;
 }
 
@@ -1638,10 +1800,10 @@ public bool RecolterBaiesBuisson(Vector3 pointImpactGlobal, float rayon, out int
 		return false;
 
 	byte variante = ObtenirVarianteBuisson(typeFlore);
-	indexCouleurBaie = (byte)Joueur.ClampIndexCouleurBaie(variante % Joueur.BaieNombreCouleurs);
+	indexCouleurBaie = (byte)Joueur.IndexCouleurBaieDepuisVariante(variante);
 
 	InventaireFlore[posFlore] = TypeBuissonSansBaies(typeFlore);
-	_onFlorePurgée?.Invoke(new Vector2I(ChunkOffsetX, ChunkOffsetZ), new Dictionary<Vector3I, byte>(InventaireFlore));
+	_onFlorePurgée?.Invoke(new Vector2I(ChunkOffsetX, ChunkOffsetZ), ChunkOffsetY, new Dictionary<Vector3I, byte>(InventaireFlore));
 
 	quantiteBaies = TirerQuantiteBaiesDepuisSeed((posFlore.X * 73856093) ^ (posFlore.Y * 19349663) ^ (posFlore.Z * 83492791) ^ unchecked((int)Time.GetTicksUsec()));
 	return true;
@@ -1669,7 +1831,7 @@ public bool RecolterBaiesBuisson(Vector3 pointImpactGlobal, float rayon, out int
 			_callbackBlocChutant?.Invoke(posSpawn, idItem, false, 0);
 		}
 		if (floreDetruite.Count > 0)
-			_onFlorePurgée?.Invoke(new Vector2I(ChunkOffsetX, ChunkOffsetZ), new Dictionary<Vector3I, byte>(InventaireFlore));
+			_onFlorePurgée?.Invoke(new Vector2I(ChunkOffsetX, ChunkOffsetZ), ChunkOffsetY, new Dictionary<Vector3I, byte>(InventaireFlore));
 
 		lock (_verrouVoxel)
 		{
@@ -2024,7 +2186,7 @@ public bool RecolterBaiesBuisson(Vector3 pointImpactGlobal, float rayon, out int
 				_callbackBlocChutant?.Invoke(posSpawn, 15, false, 0);
 			}
 		}
-		_onFlorePurgée?.Invoke(new Vector2I(ChunkOffsetX, ChunkOffsetZ), new Dictionary<Vector3I, byte>(InventaireFlore));
+		_onFlorePurgée?.Invoke(new Vector2I(ChunkOffsetX, ChunkOffsetZ), ChunkOffsetY, new Dictionary<Vector3I, byte>(InventaireFlore));
 		return true;
 	}
 }

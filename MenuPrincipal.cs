@@ -93,7 +93,22 @@ public partial class MenuPrincipal : Control
 
 		RafraichirListeMondes();
 		SelectionnerDernierMondeJoueDansListeSiConnu();
-		AfficherPanneauPrincipal();
+		if (Etat.RecreationPersonnageMemeMondeEnAttente)
+		{
+			Input.MouseMode = Input.MouseModeEnum.Visible;
+			_panelMenuPrincipal.Visible = false;
+			_panelEtapeMonde.Visible = false;
+			_panelEtapePerso.Visible = true;
+			_labelErreurPerso.Text = "";
+			_nomPersonnage.Text = "";
+			_raceSelectionnee = Etat.RaceJoueurCourante;
+			_sexeSelectionne = Etat.SexeJoueurCourante;
+			MettreAJourAffichageRace();
+			MettreAJourAffichageSexe();
+			_apercu3d?.DefinirRaceEtSexe(_raceSelectionnee, _sexeSelectionne);
+		}
+		else
+			AfficherPanneauPrincipal();
 	}
 
 	private GameState Etat => GetNode<GameState>("/root/GameState");
@@ -142,6 +157,12 @@ public partial class MenuPrincipal : Control
 
 	private void OnRetourDepuisEtapePerso()
 	{
+		if (Etat.RecreationPersonnageMemeMondeEnAttente)
+		{
+			Etat.AnnulerRecreationPersonnageMemeMondeEnAttente();
+			AfficherPanneauPrincipal();
+			return;
+		}
 		_panelEtapePerso.Visible = false;
 		_panelEtapeMonde.Visible = true;
 	}
@@ -185,6 +206,18 @@ public partial class MenuPrincipal : Control
 	private void OnConfirmerEtJouer()
 	{
 		_labelErreurPerso.Text = "";
+		if (Etat.RecreationPersonnageMemeMondeEnAttente)
+		{
+			if (!Etat.EssayerFinaliserRecreationPersonnageSurMondeExistant(_nomPersonnage.Text, _raceSelectionnee, _sexeSelectionne, out string erreurMort))
+			{
+				_labelErreurPerso.Text = erreurMort ?? "Création impossible.";
+				return;
+			}
+			RafraichirListeMondes();
+			SelectionnerDernierMondeJoueDansListeSiConnu();
+			GetTree().ChangeSceneToFile("res://monde_zero.tscn");
+			return;
+		}
 		if (!Etat.EssayerFinaliserNouveauMondeAvecPersonnage(_nomPersonnage.Text, _raceSelectionnee, _sexeSelectionne, out string erreur))
 		{
 			_labelErreurPerso.Text = erreur ?? "Création impossible.";

@@ -5,7 +5,7 @@ using System.Collections.Generic;
 public partial class Gestionnaire_Abysse : Monde_Serveur
 {
 	private WorldEnvironment _worldEnvironmentAbysse;
-	private Environment _environmentAbysse;
+	private Godot.Environment _environmentAbysse;
 	private Node3D _racineFogVolumesAbysse;
 	private readonly List<FogVolume> _fogVolumesStrates = new List<FogVolume>();
 	private FogVolume _fogVolumeScellementFond;
@@ -23,13 +23,17 @@ public partial class Gestionnaire_Abysse : Monde_Serveur
 		DefinirAtmosphereAbysseActive(false);
 	}
 
+	/// <summary>Ressource d’ambiance partagée (ciel bleu APISARA, brouillard profondeur, volumétrique léger). Assignée au <c>WorldEnvironment</c> racine de la scène pour éviter un second WE en conflit.</summary>
+	public Godot.Environment ObtenirEnvironmentAbysse() => _environmentAbysse;
+
 	public void DefinirAtmosphereAbysseActive(bool actif)
 	{
 		_atmosphereAbysseActive = actif;
 		if (actif)
 			AppliquerDistanceBrouillardProgressive();
+		// Ne pas attacher l’Environment ici : le rendu n’utilise qu’un seul WE actif ; l’assignation se fait sur le nœud racine (voir Gestionnaire_Monde).
 		if (_worldEnvironmentAbysse != null && GodotObject.IsInstanceValid(_worldEnvironmentAbysse))
-			_worldEnvironmentAbysse.Environment = actif ? _environmentAbysse : null;
+			_worldEnvironmentAbysse.Environment = null;
 		if (_racineFogVolumesAbysse != null && GodotObject.IsInstanceValid(_racineFogVolumesAbysse))
 			_racineFogVolumesAbysse.Visible = actif;
 		for (int i = _fogVolumesStrates.Count - 1; i >= 0; i--)
@@ -81,15 +85,16 @@ public partial class Gestionnaire_Abysse : Monde_Serveur
 			AddChild(_worldEnvironmentAbysse);
 		}
 
-		_environmentAbysse = _worldEnvironmentAbysse.Environment ?? new Environment();
+		_environmentAbysse = _worldEnvironmentAbysse.Environment ?? new Godot.Environment();
 		Sky skyAbysse = _environmentAbysse.Sky ?? new Sky();
 		ProceduralSkyMaterial skyMateriauAbysse = skyAbysse.SkyMaterial as ProceduralSkyMaterial ?? new ProceduralSkyMaterial();
-		// Ciel abyssal bleu (évite la dérive verte).
-		skyMateriauAbysse.SkyTopColor = new Color(0.06f, 0.15f, 0.34f, 1f);
-		skyMateriauAbysse.SkyHorizonColor = new Color(0.10f, 0.24f, 0.42f, 1f);
-		skyMateriauAbysse.GroundHorizonColor = new Color(0.05f, 0.14f, 0.24f, 1f);
-		skyMateriauAbysse.GroundBottomColor = new Color(0.02f, 0.08f, 0.15f, 1f);
-		skyMateriauAbysse.EnergyMultiplier = 0.85f;
+		// Ciel APISARA : bleu clair type jour (zénith saturé, horizon plus lumineux). Les strates « nuages » par palier
+		// restent inchangées : elles sont des FogVolume dans ConstruireStratesFogVolume (non modifié ici).
+		skyMateriauAbysse.SkyTopColor = new Color(0.18f, 0.48f, 0.92f, 1f);
+		skyMateriauAbysse.SkyHorizonColor = new Color(0.45f, 0.72f, 0.98f, 1f);
+		skyMateriauAbysse.GroundHorizonColor = new Color(0.35f, 0.62f, 0.90f, 1f);
+		skyMateriauAbysse.GroundBottomColor = new Color(0.12f, 0.35f, 0.62f, 1f);
+		skyMateriauAbysse.EnergyMultiplier = 1.05f;
 		skyAbysse.SkyMaterial = skyMateriauAbysse;
 		_environmentAbysse.Sky = skyAbysse;
 		_environmentAbysse.BackgroundMode = Environment.BGMode.Sky;
@@ -102,7 +107,8 @@ public partial class Gestionnaire_Abysse : Monde_Serveur
 		_environmentAbysse.Set("volumetric_fog_detail_spread", 4.0f);
 		_environmentAbysse.Set("volumetric_fog_ambient_inject", 0.08f);
 		AppliquerDistanceBrouillardProgressive();
-		_worldEnvironmentAbysse.Environment = _environmentAbysse;
+		_worldEnvironmentAbysse.Environment = null;
+		_worldEnvironmentAbysse.ProcessMode = ProcessModeEnum.Disabled;
 
 		_racineFogVolumesAbysse = GetNodeOrNull<Node3D>("FogVolumes_Abysse");
 		if (_racineFogVolumesAbysse == null)

@@ -153,14 +153,21 @@ public partial class Joueur : CharacterBody3D
     /// <summary>Petite baie rÃ©coltable sur buisson (palette couleur via IndexChimique).</summary>
     public const int IdObjetBaie = 35;
     /// <summary>Nombre de teintes de baie (IndexChimique valide : 0 inclus à <see cref="BaieNombreCouleurs"/> exclus).</summary>
-    public const int BaieNombreCouleurs = 8;
+    public const int BaieNombreCouleurs = 9;
 
-    /// <summary>Index couleur baie (0–7) pour l’inventaire et le rendu.</summary>
+    /// <summary>Index couleur baie (0–8) pour l’inventaire et le rendu.</summary>
     public static int ClampIndexCouleurBaie(int indexChimique)
     {
         if (indexChimique < 0) return 0;
         if (indexChimique >= BaieNombreCouleurs) return BaieNombreCouleurs - 1;
         return indexChimique;
+    }
+
+    /// <summary>Teinte affichée (mesh, inventaire) : 8 = cyan APISARA ; les autres variantes bouclent sur 0..7 comme l’ancien <c>% 8</c>.</summary>
+    public static int IndexCouleurBaieDepuisVariante(byte variante)
+    {
+        if (variante == 8) return 8;
+        return ClampIndexCouleurBaie(variante % 8);
     }
 
     private static bool EstIdPitFeu(int id) => id == IdObjetPitFeu || id == IdObjetPitFeuRoche;
@@ -181,6 +188,7 @@ public partial class Joueur : CharacterBody3D
             5 => new Color(0.22f, 0.72f, 0.28f),
             6 => new Color(0.18f, 0.08f, 0.22f),
             7 => new Color(0.98f, 0.45f, 0.72f),
+            8 => new Color(0.15f, 0.95f, 0.98f),
             _ => new Color(0.90f, 0.14f, 0.14f),
         };
     }
@@ -197,6 +205,7 @@ public partial class Joueur : CharacterBody3D
             5 => "verte",
             6 => "noire",
             7 => "rose",
+            8 => "cyan fluorescente",
             _ => "rouge",
         };
     }
@@ -213,6 +222,7 @@ public partial class Joueur : CharacterBody3D
             5 => pluriel ? "vertes" : "verte",
             6 => pluriel ? "noires" : "noire",
             7 => pluriel ? "roses" : "rose",
+            8 => pluriel ? "cyan fluorescentes" : "cyan fluorescente",
             _ => pluriel ? "rouges" : "rouge",
         };
     }
@@ -616,6 +626,8 @@ public partial class Joueur : CharacterBody3D
     private const float CoutFaimParPointEndurance = 0.0045f;
     /// <summary>Multiplicateur sur la perte de faim (passif, effort, sprint, coût lié à la régénération d'énergie).</summary>
     private const float FacteurRalentissementDrainFaim = 0.5f;
+    /// <summary>Dégâts par seconde sur le torse lorsque la faim est épuisée (affamer).</summary>
+    private const float DegatsTorseParSecondeFaimNulle = 2f;
     private const float MultiplicateurVitesseSprint = 1.65f;
     /// <summary>Au sol : vitesse physique ×1,05 ; <see cref="Speed"/> reste la référence des blends d’animation.</summary>
     private const float FacteurVitesseMouvementAuSol = 1.05f;
@@ -625,6 +637,7 @@ public partial class Joueur : CharacterBody3D
     private float _enduranceJoueur = EnduranceMaxJoueur;
     private float _cooldownGainFaimClicDroit;
     private float _cooldownEnjambementObstacle;
+    private bool _mortJoueurEnCours;
 
     public override void _Ready()
     {
@@ -803,6 +816,7 @@ public partial class Joueur : CharacterBody3D
                 break;
         }
         RafraichirHUD();
+        VerifierMortTorseSiNecessaire();
     }
 
     private const float GainFaimConsommationBaieRouge = 10f;
@@ -810,47 +824,18 @@ public partial class Joueur : CharacterBody3D
     private const float GainFaimConsommationSteakCru = 5f;
     private const float GainFaimConsommationSteakCuit = 50f;
 
-    /// <summary>+1 PV sur la zone corporelle la plus abîmée (baies).</summary>
-    public void AppliquerSoinConsommationBaieUnePv()
-    {
-        string[] cles =
-        {
-            SectionCorpsTete, SectionCorpsTorse, SectionCorpsBrasGauche, SectionCorpsBrasDroit,
-            SectionCorpsJambeGauche, SectionCorpsJambeDroite
-        };
-        int meilleurIndex = -1;
-        float meilleurDeficit = 0f;
-        for (int i = 0; i < cles.Length; i++)
-        {
-            string cle = cles[i];
-            float pv = cle switch
-            {
-                SectionCorpsTete => _pvTete,
-                SectionCorpsTorse => _pvTorse,
-                SectionCorpsBrasGauche => _pvBrasGauche,
-                SectionCorpsBrasDroit => _pvBrasDroit,
-                SectionCorpsJambeGauche => _pvJambeGauche,
-                SectionCorpsJambeDroite => _pvJambeDroite,
-                _ => _pvTorse
-            };
-            float maxPv = ObtenirPvMaxSectionCorps(NormaliserCleSectionCorps(cle));
-            float deficit = maxPv - pv;
-            if (deficit > meilleurDeficit)
-            {
-                meilleurDeficit = deficit;
-                meilleurIndex = i;
-            }
-        }
-        if (meilleurIndex < 0 || meilleurDeficit <= 0)
-            return;
-        SoignerSectionCorps(cles[meilleurIndex], 1);
-    }
-
-    /// <summary>Effets d’une baie mangée : soin léger + faim (rouge IndexChimique 0 : +10, autres teintes : +1).</summary>
+    /// <summary>Effets d’une baie mangée : faim pour toutes les teintes ; soin PV **torse uniquement** pour la baie du trou APISARA (index 8). Les autres baies ne restaurent pas les PV.</summary>
     public void AppliquerEffetsConsommationBaie(int indexCouleurBaie)
     {
-        AppliquerSoinConsommationBaieUnePv();
         int idx = ClampIndexCouleurBaie(indexCouleurBaie);
+        if (idx == 8)
+        {
+            for (int i = 0; i < 5; i++)
+                SoignerSectionCorps(SectionCorpsTorse, 1);
+            _faimJoueur = Mathf.Min(FaimMaxJoueur, _faimJoueur + 5f);
+            MettreAJourHudStatsSurvie();
+            return;
+        }
         float gain = idx == 0 ? GainFaimConsommationBaieRouge : GainFaimConsommationBaieAutreCouleur;
         _faimJoueur = Mathf.Min(FaimMaxJoueur, _faimJoueur + gain);
         MettreAJourHudStatsSurvie();
@@ -2539,7 +2524,27 @@ public partial class Joueur : CharacterBody3D
             }
         }
 
+        if (_faimJoueur <= 0.001f)
+        {
+            int degatsFaim = Mathf.Max(1, Mathf.RoundToInt(DegatsTorseParSecondeFaimNulle * dt));
+            AppliquerDegatsSectionCorps(SectionCorpsTorse, degatsFaim);
+        }
+
         MettreAJourHudStatsSurvie();
+    }
+
+    private void VerifierMortTorseSiNecessaire()
+    {
+        if (_mortJoueurEnCours || _pvTorse > 0)
+            return;
+        _mortJoueurEnCours = true;
+        Callable.From(ExecuterMortJoueurRetourCreationPersonnage).CallDeferred();
+    }
+
+    private void ExecuterMortJoueurRetourCreationPersonnage()
+    {
+        GameState.Instance?.PreparerRetourCreationPersonnageApresMort();
+        GetTree().ChangeSceneToFile("res://menu_principal.tscn");
     }
 
     private float RatioEnduranceJoueur()
@@ -6136,25 +6141,16 @@ public partial class Joueur : CharacterBody3D
                 _positionSolideAbysseValide = true;
                 _dernierePositionSolideAbysse = GlobalPosition;
             }
-            if (!zoneLocalePrete)
-            {
-                // Sécurité anti-chute sans hard-lock WASD: frein très fort jusqu'au retour
-                // de la collision locale active.
-                float freinHoriz = Mathf.Max(10f, vitesseMouvement * 4.0f);
-                velocity.X = Mathf.MoveToward(velocity.X, 0f, freinHoriz * dt);
-                velocity.Z = Mathf.MoveToward(velocity.Z, 0f, freinHoriz * dt);
-                // Filet anti-traversée: tant que la collision locale n'est pas prête,
-                // on limite la descente pour laisser le temps à la solidification.
-                if (velocity.Y < -1.2f)
-                    velocity.Y = -1.2f;
-                bool chuteDangereuse = !IsOnFloor() && velocity.Y < -0.95f;
-                if (chuteDangereuse && _positionSolideAbysseValide && _cooldownRetourSolAbysse <= 0f)
-                {
-                    GlobalPosition = _dernierePositionSolideAbysse + Vector3.Up * 0.35f;
-                    velocity.Y = 0f;
-                    _cooldownRetourSolAbysse = 0.22f;
-                }
-            }
+			if (!zoneLocalePrete)
+			{
+				// Sécurité anti-chute sans hard-lock WASD: frein très fort jusqu'au retour
+				// de la collision locale active. Pas de téléport arrière : le vide chargé est géré côté Monde_Client.
+				float freinHoriz = Mathf.Max(10f, vitesseMouvement * 4.0f);
+				velocity.X = Mathf.MoveToward(velocity.X, 0f, freinHoriz * dt);
+				velocity.Z = Mathf.MoveToward(velocity.Z, 0f, freinHoriz * dt);
+				if (velocity.Y < -1.2f)
+					velocity.Y = -1.2f;
+			}
         }
 
         MettreAJourAnimationHumain(dt, velocity, inputDir, auSolPourAnim, sprintActif, estDansEau);

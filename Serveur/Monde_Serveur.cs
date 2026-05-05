@@ -40,7 +40,7 @@ public partial class Monde_Serveur : Node
 	private Node _parentPourArbres;
 	private Action<Vector2I, List<int>> _onChunkModifie;
 	private Action<Vector2I, DonneesChunk> _onEnvoyerChunk;
-	private Action<Vector2I, Dictionary<Vector3I, byte>> _onFloreModifie;
+	private Action<Vector2I, int, Dictionary<Vector3I, byte>> _onFloreModifie;
 	private Action<Vector3I, byte> _onVoxelModifie;
 	private Action<Vector2I> _onOrdonnerDestructionChunk;
 	private Func<Vector3> _obtenirPositionJoueur;
@@ -173,7 +173,7 @@ public partial class Monde_Serveur : Node
 	private readonly uint[,,] _poolSeedsArbres = new uint[PoolEspecesArbre, PoolAgesPregenArbre, PoolVariantesArbreParAge];
 	private int _seedPoolArbres = int.MinValue;
 
-	public void Initialiser(Node parentPourBlocsChutants, Node parentPourArbres, Action<Vector2I, List<int>> onChunkModifie, Action<Vector2I, DonneesChunk> onEnvoyerChunk = null, Action<Vector2I, Dictionary<Vector3I, byte>> onFloreModifie = null, Action<Vector3I, byte> onVoxelModifie = null, Action<Vector2I> onOrdonnerDestructionChunk = null, Func<Vector3> obtenirPositionJoueur = null, Func<int> obtenirDimensionActive = null, int dimensionServeurId = (int)DimensionJeu.Alpha)
+	public void Initialiser(Node parentPourBlocsChutants, Node parentPourArbres, Action<Vector2I, List<int>> onChunkModifie, Action<Vector2I, DonneesChunk> onEnvoyerChunk = null, Action<Vector2I, int, Dictionary<Vector3I, byte>> onFloreModifie = null, Action<Vector3I, byte> onVoxelModifie = null, Action<Vector2I> onOrdonnerDestructionChunk = null, Func<Vector3> obtenirPositionJoueur = null, Func<int> obtenirDimensionActive = null, int dimensionServeurId = (int)DimensionJeu.Alpha)
 	{
 		_parentPourBlocsChutants = parentPourBlocsChutants;
 		_parentPourArbres = parentPourArbres;
@@ -1373,9 +1373,9 @@ public partial class Monde_Serveur : Node
 			ObtenirDossierChunksRelatif()
 		);
 		chunk.SetOnVoxelModifie((pos, id) => _onVoxelModifie?.Invoke(pos, id));
-		chunk.SetOnFlorePurgée((c, inventaire) =>
+		chunk.SetOnFlorePurgée((c, coordChunkY, inventaire) =>
 		{
-			_onFloreModifie?.Invoke(c, inventaire);
+			_onFloreModifie?.Invoke(c, coordChunkY, inventaire);
 			// La fauche et les interactions buissons ne touchent pas aux voxels : sans gravure immédiate,
 			// l’état flore ne part sur disque qu’au prochain passage de l’autosauvegarde progressive (potentiellement très tard).
 			SauvegarderFloreChunk(c, chunk);
@@ -1902,6 +1902,9 @@ public partial class Monde_Serveur : Node
 		float ratioJungleTest = Mathf.Clamp(RatioJungleModeTest, 0f, 0.95f);
 		if (ModeEssencesPartoutTemporaire && r < ratioJungleTest)
 			return LSystem_Botanique.IndexJungle;
+		// APISARA : le bruit tempéré (neige/bouleau) ne correspond pas au climat surface ; canopée jungle + chênes.
+		if (ActiverGenerationAbysse)
+			return (byte)(r < 0.55f ? LSystem_Botanique.IndexJungle : LSystem_Botanique.IndexChene);
 		AssurerNoiseTemperatureArbres();
 		float temp = _noiseTemperatureArbres?.GetNoise2D(gx, gz) ?? 0f;
 		AssurerNoiseHumiditeArbres();
@@ -1929,8 +1932,6 @@ public partial class Monde_Serveur : Node
 	/// <summary>Spawn les ArbreVivant 3D pour ce chunk (procédural ou chargé).</summary>
 	private void SpawnerArbresChunk(Vector2I coord, Chunk_Serveur chunk)
 	{
-		if (ActiverGenerationAbysse)
-			return;
 		if (_parentPourArbres == null || chunk.InventaireArbres.Count == 0) return;
 		AssurerPoolSeedsArbresPregen();
 		foreach (var kv in chunk.InventaireArbres)
@@ -1950,8 +1951,6 @@ public partial class Monde_Serveur : Node
 	/// <summary>Priorité au disque: si un save arbres existe, on le charge; sinon fallback procédural du chunk.</summary>
 	private void SpawnerArbresChunkAvecPrioriteSauvegarde(Vector2I coord, Chunk_Serveur chunk)
 	{
-		if (ActiverGenerationAbysse)
-			return;
 		if (!ChargerArbresChunk(coord, chunk))
 			SpawnerArbresChunk(coord, chunk);
 	}
@@ -2194,6 +2193,23 @@ public partial class Monde_Serveur : Node
 		int czMin = Gestionnaire_Monde.WorldToChunkCoord(pointImpact.X, pointImpact.Z - rayon, TailleChunk).Y;
 		int czMax = Gestionnaire_Monde.WorldToChunkCoord(pointImpact.X, pointImpact.Z + rayon, TailleChunk).Y;
 
+		if (ActiverGenerationAbysse)
+		{
+			var coordYImpactes = new HashSet<int>();
+			RemplirCoordYImpactesParRayonAbysse(pointImpact.Y, rayon, coordYImpactes);
+			for (int cx = cxMin; cx <= cxMax; cx++)
+				for (int cz = czMin; cz <= czMax; cz++)
+				{
+					Vector2I coord = new Vector2I(cx, cz);
+					foreach (int coordY in coordYImpactes)
+					{
+						var chunk = ObtenirOuCreerChunk(coord, coordY);
+						chunk.FaucherFlore(pointImpact, rayon);
+					}
+				}
+			return;
+		}
+
 		for (int cx = cxMin; cx <= cxMax; cx++)
 			for (int cz = czMin; cz <= czMax; cz++)
 			{
@@ -2209,6 +2225,24 @@ public partial class Monde_Serveur : Node
 		int czMin = Gestionnaire_Monde.WorldToChunkCoord(pointImpact.X, pointImpact.Z - rayon, TailleChunk).Y;
 		int czMax = Gestionnaire_Monde.WorldToChunkCoord(pointImpact.X, pointImpact.Z + rayon, TailleChunk).Y;
 		bool aFauche = false;
+
+		if (ActiverGenerationAbysse)
+		{
+			var coordYImpactes = new HashSet<int>();
+			RemplirCoordYImpactesParRayonAbysse(pointImpact.Y, rayon, coordYImpactes);
+			for (int cx = cxMin; cx <= cxMax; cx++)
+				for (int cz = czMin; cz <= czMax; cz++)
+				{
+					Vector2I coord = new Vector2I(cx, cz);
+					foreach (int coordY in coordYImpactes)
+					{
+						var chunk = ObtenirOuCreerChunk(coord, coordY);
+						if (chunk.FaucherFloreSansLoot(pointImpact, rayon))
+							aFauche = true;
+					}
+				}
+			return aFauche;
+		}
 
 		for (int cx = cxMin; cx <= cxMax; cx++)
 			for (int cz = czMin; cz <= czMax; cz++)
@@ -2226,6 +2260,23 @@ public partial class Monde_Serveur : Node
 		int cxMax = Gestionnaire_Monde.WorldToChunkCoord(pointImpact.X + rayon, pointImpact.Z, TailleChunk).X;
 		int czMin = Gestionnaire_Monde.WorldToChunkCoord(pointImpact.X, pointImpact.Z - rayon, TailleChunk).Y;
 		int czMax = Gestionnaire_Monde.WorldToChunkCoord(pointImpact.X, pointImpact.Z + rayon, TailleChunk).Y;
+		if (ActiverGenerationAbysse)
+		{
+			var coordYImpactes = new HashSet<int>();
+			RemplirCoordYImpactesParRayonAbysse(pointImpact.Y, rayon, coordYImpactes);
+			for (int cx = cxMin; cx <= cxMax; cx++)
+				for (int cz = czMin; cz <= czMax; cz++)
+				{
+					Vector2I coord = new Vector2I(cx, cz);
+					foreach (int coordY in coordYImpactes)
+					{
+						var chunk = ObtenirOuCreerChunk(coord, coordY);
+						if (chunk.ExisteGazonDansRayon(pointImpact, rayon))
+							return true;
+					}
+				}
+			return false;
+		}
 		for (int cx = cxMin; cx <= cxMax; cx++)
 			for (int cz = czMin; cz <= czMax; cz++)
 			{
@@ -2243,6 +2294,23 @@ public partial class Monde_Serveur : Node
 		int cxMax = Gestionnaire_Monde.WorldToChunkCoord(pointImpact.X + rayon, pointImpact.Z, TailleChunk).X;
 		int czMin = Gestionnaire_Monde.WorldToChunkCoord(pointImpact.X, pointImpact.Z - rayon, TailleChunk).Y;
 		int czMax = Gestionnaire_Monde.WorldToChunkCoord(pointImpact.X, pointImpact.Z + rayon, TailleChunk).Y;
+		if (ActiverGenerationAbysse)
+		{
+			var coordYImpactes = new HashSet<int>();
+			RemplirCoordYImpactesParRayonAbysse(pointImpact.Y, rayon, coordYImpactes);
+			for (int cx = cxMin; cx <= cxMax; cx++)
+				for (int cz = czMin; cz <= czMax; cz++)
+				{
+					Vector2I coord = new Vector2I(cx, cz);
+					foreach (int coordY in coordYImpactes)
+					{
+						var chunk = ObtenirOuCreerChunk(coord, coordY);
+						if (chunk.RecolterBuisson(pointImpact, rayon, modeRecolte))
+							return true;
+					}
+				}
+			return false;
+		}
 		for (int cx = cxMin; cx <= cxMax; cx++)
 			for (int cz = czMin; cz <= czMax; cz++)
 			{
@@ -2264,21 +2332,48 @@ public partial class Monde_Serveur : Node
 		int czMax = Gestionnaire_Monde.WorldToChunkCoord(pointImpact.X, pointImpact.Z + rayon, TailleChunk).Y;
 		float meilleureDist2 = float.MaxValue;
 		bool trouve = false;
-		for (int cx = cxMin; cx <= cxMax; cx++)
-			for (int cz = czMin; cz <= czMax; cz++)
-			{
-				var chunk = ObtenirOuCreerChunk(new Vector2I(cx, cz));
-				if (!chunk.EssayerDetecterBuisson(pointImpact, rayon, out Vector3 pos, out byte type))
-					continue;
-				float d2 = pos.DistanceSquaredTo(pointImpact);
-				if (!trouve || d2 < meilleureDist2)
+		if (ActiverGenerationAbysse)
+		{
+			var coordYImpactes = new HashSet<int>();
+			RemplirCoordYImpactesParRayonAbysse(pointImpact.Y, rayon, coordYImpactes);
+			for (int cx = cxMin; cx <= cxMax; cx++)
+				for (int cz = czMin; cz <= czMax; cz++)
 				{
-					trouve = true;
-					meilleureDist2 = d2;
-					posBuisson = pos;
-					typeFlore = type;
+					Vector2I coord = new Vector2I(cx, cz);
+					foreach (int coordY in coordYImpactes)
+					{
+						var chunk = ObtenirOuCreerChunk(coord, coordY);
+						if (!chunk.EssayerDetecterBuisson(pointImpact, rayon, out Vector3 pos, out byte type))
+							continue;
+						float d2 = pos.DistanceSquaredTo(pointImpact);
+						if (!trouve || d2 < meilleureDist2)
+						{
+							trouve = true;
+							meilleureDist2 = d2;
+							posBuisson = pos;
+							typeFlore = type;
+						}
+					}
 				}
-			}
+		}
+		else
+		{
+			for (int cx = cxMin; cx <= cxMax; cx++)
+				for (int cz = czMin; cz <= czMax; cz++)
+				{
+					var chunk = ObtenirOuCreerChunk(new Vector2I(cx, cz));
+					if (!chunk.EssayerDetecterBuisson(pointImpact, rayon, out Vector3 pos, out byte type))
+						continue;
+					float d2 = pos.DistanceSquaredTo(pointImpact);
+					if (!trouve || d2 < meilleureDist2)
+					{
+						trouve = true;
+						meilleureDist2 = d2;
+						posBuisson = pos;
+						typeFlore = type;
+					}
+				}
+		}
 		return trouve;
 	}
 
@@ -2301,27 +2396,60 @@ public partial class Monde_Serveur : Node
 		int czMax = Gestionnaire_Monde.WorldToChunkCoord(pointImpact.X, pointImpact.Z + rayon, TailleChunk).Y;
 
 		Vector2I meilleurChunk = default;
+		int meilleurCoordYChunk = 0;
 		Vector3 meilleurePos = Vector3.Zero;
 		float meilleureDist2 = float.MaxValue;
 		bool trouve = false;
-		for (int cx = cxMin; cx <= cxMax; cx++)
-			for (int cz = czMin; cz <= czMax; cz++)
-			{
-				var chunk = ObtenirOuCreerChunk(new Vector2I(cx, cz));
-				if (!chunk.EssayerDetecterBuisson(pointImpact, rayon, out Vector3 pos, out byte typeFlore) || !Chunk_Serveur.EstBuissonPlein(typeFlore))
-					continue;
-				float d2 = pos.DistanceSquaredTo(pointImpact);
-				if (!trouve || d2 < meilleureDist2)
+
+		if (ActiverGenerationAbysse)
+		{
+			var coordYImpactes = new HashSet<int>();
+			RemplirCoordYImpactesParRayonAbysse(pointImpact.Y, rayon, coordYImpactes);
+			for (int cx = cxMin; cx <= cxMax; cx++)
+				for (int cz = czMin; cz <= czMax; cz++)
 				{
-					trouve = true;
-					meilleureDist2 = d2;
-					meilleurePos = pos;
-					meilleurChunk = new Vector2I(cx, cz);
+					Vector2I coord = new Vector2I(cx, cz);
+					foreach (int coordY in coordYImpactes)
+					{
+						var chunk = ObtenirOuCreerChunk(coord, coordY);
+						if (!chunk.EssayerDetecterBuisson(pointImpact, rayon, out Vector3 pos, out byte typeFlore) || !Chunk_Serveur.EstBuissonPlein(typeFlore))
+							continue;
+						float d2 = pos.DistanceSquaredTo(pointImpact);
+						if (!trouve || d2 < meilleureDist2)
+						{
+							trouve = true;
+							meilleureDist2 = d2;
+							meilleurePos = pos;
+							meilleurChunk = coord;
+							meilleurCoordYChunk = coordY;
+						}
+					}
 				}
-			}
+		}
+		else
+		{
+			for (int cx = cxMin; cx <= cxMax; cx++)
+				for (int cz = czMin; cz <= czMax; cz++)
+				{
+					var chunk = ObtenirOuCreerChunk(new Vector2I(cx, cz));
+					if (!chunk.EssayerDetecterBuisson(pointImpact, rayon, out Vector3 pos, out byte typeFlore) || !Chunk_Serveur.EstBuissonPlein(typeFlore))
+						continue;
+					float d2 = pos.DistanceSquaredTo(pointImpact);
+					if (!trouve || d2 < meilleureDist2)
+					{
+						trouve = true;
+						meilleureDist2 = d2;
+						meilleurePos = pos;
+						meilleurChunk = new Vector2I(cx, cz);
+						meilleurCoordYChunk = 0;
+					}
+				}
+		}
 
 		if (!trouve) return false;
-		var cible = ObtenirOuCreerChunk(meilleurChunk);
+		var cible = ActiverGenerationAbysse
+			? ObtenirOuCreerChunk(meilleurChunk, meilleurCoordYChunk)
+			: ObtenirOuCreerChunk(meilleurChunk);
 		return cible.RecolterBaiesBuisson(meilleurePos, rayon, out quantiteBaies, out indexCouleurBaie);
 	}
 
@@ -2570,6 +2698,8 @@ public partial class Monde_Serveur : Node
 			foreach (var coord in coordsASupprimer)
 			{
 				if (!kvStage.Value.TryGetValue(coord, out var chunk)) continue;
+				if (chunk != null && chunk.EstModifie)
+					SauvegarderChunkCoordEtCouche(coord, chunk.ChunkOffsetY, chunk, uniquementSiModifie: false);
 				kvStage.Value.Remove(coord);
 				if (_chunks.TryGetValue(coord, out var proxy) && ReferenceEquals(proxy, chunk))
 					_chunks.Remove(coord);
@@ -2578,7 +2708,21 @@ public partial class Monde_Serveur : Node
 				stagesASupprimer.Add(stage);
 		}
 		foreach (int stage in stagesASupprimer)
+		{
+			if (!_chunksAbysseParStage2D.TryGetValue(stage, out var stageDict))
+				continue;
+			var clesEtage = new List<Vector2I>(stageDict.Keys);
+			foreach (var coord in clesEtage)
+			{
+				if (!stageDict.TryGetValue(coord, out var ch) || ch == null)
+					continue;
+				if (ch.EstModifie)
+					SauvegarderChunkCoordEtCouche(coord, ch.ChunkOffsetY, ch, uniquementSiModifie: false);
+				if (_chunks.TryGetValue(coord, out var proxy) && ReferenceEquals(proxy, ch))
+					_chunks.Remove(coord);
+			}
 			_chunksAbysseParStage2D.Remove(stage);
+		}
 	}
 
 	private void EvaluerDechargementChunks()

@@ -15,7 +15,10 @@ public partial class Joueur
         "/MODUSA RUDI 1",
         "/MODUSA RUDI 3",
         "/DIMANASIO APISARA",
-        "/DIMANASIO ARAPA"
+        "/DIMANASIO ARAPA",
+        "/DIMANASIO PETA",
+        "/DIMANASIO OMEGA",
+        "/DIMANASIO DERATA"
     };
 
     private static Joueur _joueurFilSquelette;
@@ -203,6 +206,9 @@ public partial class Joueur
         PousserLigneChatHistorique("[Aide] /MODUSA RUDI 3 -> active mode creatif + noclip.", prefixerSquelette: false);
         PousserLigneChatHistorique("[Aide] /DIMANASIO APISARA -> transfert vers APISARA.", prefixerSquelette: false);
         PousserLigneChatHistorique("[Aide] /DIMANASIO ARAPA -> retour vers Alpha.", prefixerSquelette: false);
+        PousserLigneChatHistorique("[Aide] /DIMANASIO PETA -> transfert vers PETA (clone Alpha, fuseau +6h).", prefixerSquelette: false);
+        PousserLigneChatHistorique("[Aide] /DIMANASIO OMEGA -> transfert vers OMEGA (clone Alpha, fuseau +12h).", prefixerSquelette: false);
+        PousserLigneChatHistorique("[Aide] /DIMANASIO DERATA -> transfert vers DERATA (clone Alpha, fuseau +18h).", prefixerSquelette: false);
     }
 
     private void OnTexteChatModifie(string texte)

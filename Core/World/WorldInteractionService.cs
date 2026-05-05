@@ -191,8 +191,8 @@ public partial class Joueur
             return true;
         }
 
-        byte couleurPourTest = (byte)Joueur.ClampIndexCouleurBaie(
-            Chunk_Serveur.ObtenirVarianteBuisson(typeFlore) % Joueur.BaieNombreCouleurs);
+        byte couleurPourTest = (byte)Joueur.IndexCouleurBaieDepuisVariante(
+            Chunk_Serveur.ObtenirVarianteBuisson(typeFlore));
         var slotTest = new SlotInventaire { ID = IdObjetBaie, IndexChimique = couleurPourTest, Quantite = 1 };
         if (!ADeLaPlacePourSlotInventaire(slotTest))
         {

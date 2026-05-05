@@ -78,11 +78,15 @@ public partial class Gestionnaire_Monde : Node3D
 	private readonly Dictionary<long, int> _dimensionParPeer = new Dictionary<long, int>();
 	private readonly Dictionary<int, Dictionary<Vector3I, HashSet<long>>> _attenteChunksParDimension = new Dictionary<int, Dictionary<Vector3I, HashSet<long>>>();
 	private int _dimensionLocaleActive = (int)DimensionJeu.Alpha;
+	/// <summary>Environment Alpha/autres dimensions avant bascule APISARA — restauré à la sortie pour ne pas perdre la ressource de scène.</summary>
+	private Godot.Environment _environnementSauvegardeHorsApisara;
 	private const string FichierSessionJoueur = "player_session.dat";
-	private Node3D _racineDimensionAlpha;
-	private Node3D _racineDimensionAbysse;
-	private Node3D _arbresDimensionAlpha;
-	private Node3D _arbresDimensionAbysse;
+	/// <summary>Racine de scène par dimension (id → Node3D). Remplace les ex-champs Alpha/Abysse pour supporter Beta/Omega/Delta.</summary>
+	private readonly Dictionary<int, Node3D> _racineParDimension = new Dictionary<int, Node3D>();
+	/// <summary>Conteneur d'arbres scéniques par dimension (id → Node3D). Toggle de visibilité par dimension active.</summary>
+	private readonly Dictionary<int, Node3D> _arbresParDimension = new Dictionary<int, Node3D>();
+	/// <summary>Position joueur mémorisée par dimension (clé = id de dimension). Permet de revenir « exactement où j'étais » dans chaque monde.</summary>
+	private readonly Dictionary<int, Vector3> _positionsSauvegardeesParDimension = new Dictionary<int, Vector3>();
 	private Label _labelCoords;
 	private CanvasLayer _repereCentreLayer;
 	/// <summary>Overlay "Chargement du monde..." affiché tant que la collision du chunk de spawn n'est pas prête.</summary>
@@ -101,7 +105,11 @@ public partial class Gestionnaire_Monde : Node3D
 	private bool _emerukedesiParotaromaStage1Actif;
 	private bool _emerukedesiParotaromaStage1FonduSortieActif;
 	private double _emerukedesiParotaromaStage1TempsFonduRestant;
-	private const float SeuilDeclenchementRemonteeAbysseMetres = 10f;
+	/// <summary>Gain vertical minimal (m) pour déclencher la manifestation, dans la fenêtre temporelle ci-dessous.</summary>
+	private const float SeuilDeclenchementRemonteeAbysseMetres = 2f;
+	/// <summary>Durée max (s) pour atteindre le seuil de remontée : au-delà, la base Y est réinitialisée (pas de déclenchement sur une montée « trop lente »).</summary>
+	private const double DureeMaxAccumulationRemonteeParotaromaSec = 60.0;
+	private double _chronoMonteeEmerukedesiParotaromaSec;
 	private const float SeuilVitesseMonteeAbysse = 0.25f;
 	private const float SeuilVitesseDescenteAbysse = -0.25f;
 	/// <summary>Durée du fondu quand la remontée cesse, pour l'effet palier 1 de l'<see cref="EmerukedesiParotaroma"/>.</summary>
@@ -167,10 +175,13 @@ public partial class Gestionnaire_Monde : Node3D
 	{
 		public readonly int DimensionId;
 		public readonly Vector3 Position;
-		public SessionJoueurSauvegardee(int dimensionId, Vector3 position)
+		/// <summary>Dictionnaire des positions mémorisées par dimension (id → position). En lecture v1 : ne contient que la dimension active.</summary>
+		public readonly Dictionary<int, Vector3> PositionsParDimension;
+		public SessionJoueurSauvegardee(int dimensionId, Vector3 position, Dictionary<int, Vector3> positionsParDimension)
 		{
 			DimensionId = dimensionId;
 			Position = position;
+			PositionsParDimension = positionsParDimension ?? new Dictionary<int, Vector3>();
 		}
 	}
 	private float _cooldownRefreshCacheDormance;
@@ -242,7 +253,8 @@ public partial class Gestionnaire_Monde : Node3D
 	private void ReparenterNoeudDansDimensionDiffere(Node3D noeud, int dimensionId)
 	{
 		if (noeud == null || !GodotObject.IsInstanceValid(noeud)) return;
-		Node3D cible = dimensionId == (int)DimensionJeu.Abysse ? _racineDimensionAbysse : _racineDimensionAlpha;
+		if (!_racineParDimension.TryGetValue(dimensionId, out Node3D cible))
+			_racineParDimension.TryGetValue((int)DimensionJeu.Alpha, out cible);
 		if (cible == null || !GodotObject.IsInstanceValid(cible)) return;
 		if (noeud.GetParent() == cible) return;
 		Vector3 posGlobale = noeud.GlobalPosition;
@@ -293,21 +305,32 @@ public partial class Gestionnaire_Monde : Node3D
 		return System.IO.Path.Combine(ProjectSettings.GlobalizePath($"user://saves/{GameState.Instance?.NomMondeActuel}"), FichierSessionJoueur);
 	}
 
+	/// <summary>Sauvegarde la session joueur (v2) : dimension active + dernière position connue dans chaque dimension visitée.
+	/// Met à jour automatiquement <see cref="_positionsSauvegardeesParDimension"/>[dimensionId] = position avant d'écrire le fichier.</summary>
 	private void SauvegarderSessionJoueur(int dimensionId, Vector3 position)
 	{
 		if (GameState.Instance == null || string.IsNullOrWhiteSpace(GameState.Instance.NomMondeActuel))
 			return;
+		_positionsSauvegardeesParDimension[dimensionId] = position;
 		try
 		{
 			string dossier = ProjectSettings.GlobalizePath($"user://saves/{GameState.Instance.NomMondeActuel}");
 			System.IO.Directory.CreateDirectory(dossier);
 			string chemin = ObtenirCheminSessionJoueur();
 			using var w = new System.IO.BinaryWriter(System.IO.File.Open(chemin, System.IO.FileMode.Create));
-			w.Write(1); // version
+			w.Write(2); // version (v2 = positions par dimension)
 			w.Write(dimensionId);
 			w.Write(position.X);
 			w.Write(position.Y);
 			w.Write(position.Z);
+			w.Write(_positionsSauvegardeesParDimension.Count);
+			foreach (var kv in _positionsSauvegardeesParDimension)
+			{
+				w.Write(kv.Key);
+				w.Write(kv.Value.X);
+				w.Write(kv.Value.Y);
+				w.Write(kv.Value.Z);
+			}
 		}
 		catch (Exception ex)
 		{
@@ -315,6 +338,8 @@ public partial class Gestionnaire_Monde : Node3D
 		}
 	}
 
+	/// <summary>Lit le fichier de session. Compatible v1 (un seul (dim, pos)) ET v2 (dim active + dictionnaire de positions par dim).
+	/// Pour v1, on synthétise un dictionnaire à une seule entrée. Met à jour <see cref="_positionsSauvegardeesParDimension"/>.</summary>
 	private SessionJoueurSauvegardee? ChargerSessionJoueur()
 	{
 		if (GameState.Instance == null || string.IsNullOrWhiteSpace(GameState.Instance.NomMondeActuel))
@@ -326,13 +351,34 @@ public partial class Gestionnaire_Monde : Node3D
 		{
 			using var r = new System.IO.BinaryReader(System.IO.File.Open(chemin, System.IO.FileMode.Open, System.IO.FileAccess.Read, System.IO.FileShare.Read));
 			int version = r.ReadInt32();
-			if (version != 1)
+			if (version != 1 && version != 2)
 				return null;
 			int dimensionId = r.ReadInt32();
 			float x = r.ReadSingle();
 			float y = r.ReadSingle();
 			float z = r.ReadSingle();
-			return new SessionJoueurSauvegardee(dimensionId, new Vector3(x, y, z));
+			Vector3 position = new Vector3(x, y, z);
+			var positions = new Dictionary<int, Vector3>();
+			if (version == 1)
+			{
+				positions[dimensionId] = position;
+			}
+			else
+			{
+				int count = r.ReadInt32();
+				for (int i = 0; i < count; i++)
+				{
+					int dimId = r.ReadInt32();
+					float px = r.ReadSingle();
+					float py = r.ReadSingle();
+					float pz = r.ReadSingle();
+					positions[dimId] = new Vector3(px, py, pz);
+				}
+			}
+			_positionsSauvegardeesParDimension.Clear();
+			foreach (var kv in positions)
+				_positionsSauvegardeesParDimension[kv.Key] = kv.Value;
+			return new SessionJoueurSauvegardee(dimensionId, position, positions);
 		}
 		catch (Exception ex)
 		{
@@ -849,11 +895,14 @@ public partial class Gestionnaire_Monde : Node3D
 		if (UseArchitectureReseau)
 		{
 			DemarrerArchitectureReseau();
+			// Reconnexion : si la dernière dimension active n'est pas Alpha (déjà l'état par défaut au boot)
+			// et qu'elle existe bien dans nos serveurs, on bascule dessus à la même position. Couvre Abysse + Beta/Omega/Delta.
 			if (sessionSauvegardee.HasValue
-				&& dimensionReconnexion == (int)DimensionJeu.Abysse
+				&& dimensionReconnexion != (int)DimensionJeu.Alpha
 				&& _serveurParDimension.ContainsKey(dimensionReconnexion))
 			{
-				AppliquerChangementDimensionLocale(dimensionReconnexion, posSpawn, $"Reconnexion en {ConstantesDimensionAbysse.Apisara}.");
+				string nomCanonique = ConstantesDimensions.ObtenirNomCanonique(dimensionReconnexion);
+				AppliquerChangementDimensionLocale(dimensionReconnexion, posSpawn, $"Reconnexion en {nomCanonique}.");
 			}
 		}
 		else
@@ -994,6 +1043,7 @@ void fragment() {
 	{
 		_dernierYRemonteeAbysse = float.NaN;
 		_yDepartMonteeAbysse = float.NaN;
+		_chronoMonteeEmerukedesiParotaromaSec = 0.0;
 		_monteeAbysseContinue = false;
 		_emerukedesiParotaromaStage1Actif = false;
 		_emerukedesiParotaromaStage1FonduSortieActif = false;
@@ -1037,6 +1087,7 @@ void fragment() {
 			_emerukedesiParotaromaStage1TempsFonduRestant = 0.0;
 			_monteeAbysseContinue = false;
 			_yDepartMonteeAbysse = float.NaN;
+			_chronoMonteeEmerukedesiParotaromaSec = 0.0;
 		}
 		else if (monte)
 		{
@@ -1044,9 +1095,24 @@ void fragment() {
 			{
 				_monteeAbysseContinue = true;
 				_yDepartMonteeAbysse = yActuel;
+				_chronoMonteeEmerukedesiParotaromaSec = 0.0;
+			}
+			else
+			{
+				_chronoMonteeEmerukedesiParotaromaSec += delta;
+				// Fenêtre d'1 min : sans gain suffisant, on repart d'une nouvelle base (même en montée continue lente).
+				if (_chronoMonteeEmerukedesiParotaromaSec > DureeMaxAccumulationRemonteeParotaromaSec)
+				{
+					_yDepartMonteeAbysse = yActuel;
+					_chronoMonteeEmerukedesiParotaromaSec = 0.0;
+				}
 			}
 
-			if (_emerukedesiParotaromaStage1Actif || (yActuel - _yDepartMonteeAbysse) >= SeuilDeclenchementRemonteeAbysseMetres)
+			bool gainSuffisantDansFenetre = !float.IsNaN(_yDepartMonteeAbysse)
+				&& (yActuel - _yDepartMonteeAbysse) >= SeuilDeclenchementRemonteeAbysseMetres
+				&& _chronoMonteeEmerukedesiParotaromaSec <= DureeMaxAccumulationRemonteeParotaromaSec;
+
+			if (_emerukedesiParotaromaStage1Actif || gainSuffisantDansFenetre)
 			{
 				_emerukedesiParotaromaStage1Actif = true;
 				_emerukedesiParotaromaStage1FonduSortieActif = false;
@@ -1060,6 +1126,7 @@ void fragment() {
 			{
 				_monteeAbysseContinue = false;
 				_yDepartMonteeAbysse = float.NaN;
+				_chronoMonteeEmerukedesiParotaromaSec = 0.0;
 				if (_emerukedesiParotaromaStage1Actif && !_emerukedesiParotaromaStage1FonduSortieActif)
 				{
 					_emerukedesiParotaromaStage1FonduSortieActif = true;
@@ -1956,39 +2023,59 @@ void fragment() {
 		_serveurParDimension.Clear();
 		_attenteChunksParDimension.Clear();
 		_dimensionParPeer.Clear();
-		_racineDimensionAlpha = new Node3D { Name = "Dimension_Alpha" };
-		_racineDimensionAbysse = new Node3D { Name = ConstantesDimensionAbysse.Apisara };
-		AddChild(_racineDimensionAlpha);
-		AddChild(_racineDimensionAbysse);
+		_racineParDimension.Clear();
+		_arbresParDimension.Clear();
 
-		_mondeServeurAlpha = new Monde_Serveur();
-		_mondeServeurAlpha.NomDimension = "Dimension_Alpha";
-		_mondeServeurAlpha.ActiverGenerationAbysse = false;
-		_mondeServeurAlpha.TailleChunk = TailleChunk;
-		_mondeServeurAlpha.HauteurMax = HauteurMax;
-		_mondeServeurAlpha.SeedTerrain = GetNode<GameState>("/root/GameState").SeedTerrainActuel;
-		_mondeServeurAlpha.RenderDistance = RenderDistance;
-		_mondeServeurAlpha.FuseauHoraireHeures = FuseauHoraireHeures;
-		_mondeServeurAlpha.ModeEssencesPartoutTemporaire = ModeEssencesPartoutTemporaire;
-		_mondeServeurAlpha.RatioJungleModeTest = RatioJungleModeTest;
-		_mondeServeurAlpha.MaterielTerrain = MaterielTerrain ?? GD.Load<Material>("res://Manteau_Planetaire.tres");
+		// Crée une racine de scène par dimension (Alpha + Abysse + Beta + Omega + Delta) avant d'instancier les serveurs.
+		foreach (var info in ConstantesDimensions.Toutes())
+		{
+			var racine = new Node3D { Name = info.NomCanonique };
+			AddChild(racine);
+			_racineParDimension[info.Id] = racine;
+		}
 
-		_mondeServeurAbysse = new Gestionnaire_Abysse();
-		_mondeServeurAbysse.NomDimension = ConstantesDimensionAbysse.Apisara;
-		_mondeServeurAbysse.ActiverGenerationAbysse = true;
-		_mondeServeurAbysse.TailleChunk = TailleChunk;
-		_mondeServeurAbysse.HauteurMax = HauteurMax;
-		_mondeServeurAbysse.SeedTerrain = GetNode<GameState>("/root/GameState").SeedTerrainActuel + 9137;
-		_mondeServeurAbysse.RenderDistance = RenderDistance;
-		_mondeServeurAbysse.FuseauHoraireHeures = FuseauHoraireHeures + 6.0;
-		_mondeServeurAbysse.ModeEssencesPartoutTemporaire = ModeEssencesPartoutTemporaire;
-		_mondeServeurAbysse.RatioJungleModeTest = RatioJungleModeTest;
-		_mondeServeurAbysse.MaterielTerrain = MaterielTerrain ?? GD.Load<Material>("res://Manteau_Planetaire.tres");
+		int seedAlpha = GetNode<GameState>("/root/GameState").SeedTerrainActuel;
+		Material materielTerrainResolu = MaterielTerrain ?? GD.Load<Material>("res://Manteau_Planetaire.tres");
 
-		_serveurParDimension[(int)DimensionJeu.Alpha] = _mondeServeurAlpha;
+		// Alpha + clones (Beta/Omega/Delta) : même seed, même algorithme, fuseaux décalés de 0/+6/+12/+18 h.
+		foreach (var info in ConstantesDimensions.ToutesAlphaLike())
+		{
+			var serveur = new Monde_Serveur
+			{
+				NomDimension = info.NomCanonique,
+				ActiverGenerationAbysse = false,
+				TailleChunk = TailleChunk,
+				HauteurMax = HauteurMax,
+				SeedTerrain = seedAlpha,
+				RenderDistance = RenderDistance,
+				FuseauHoraireHeures = FuseauHoraireHeures + info.FuseauOffsetHeures,
+				ModeEssencesPartoutTemporaire = ModeEssencesPartoutTemporaire,
+				RatioJungleModeTest = RatioJungleModeTest,
+				MaterielTerrain = materielTerrainResolu
+			};
+			_serveurParDimension[info.Id] = serveur;
+			_attenteChunksParDimension[info.Id] = new Dictionary<Vector3I, HashSet<long>>();
+			if (info.Id == (int)DimensionJeu.Alpha)
+				_mondeServeurAlpha = serveur;
+		}
+
+		// APISARA : génération abyssale dédiée, seed décalée +9137 (bruits Abysse historiques), heure forcée 13h30.
+		_mondeServeurAbysse = new Gestionnaire_Abysse
+		{
+			NomDimension = ConstantesDimensionAbysse.Apisara,
+			ActiverGenerationAbysse = true,
+			TailleChunk = TailleChunk,
+			HauteurMax = HauteurMax,
+			SeedTerrain = seedAlpha + 9137,
+			RenderDistance = RenderDistance,
+			FuseauHoraireHeures = FuseauHoraireHeures + ConstantesDimensions.ObtenirInfoOuAlpha((int)DimensionJeu.Abysse).FuseauOffsetHeures,
+			ModeEssencesPartoutTemporaire = ModeEssencesPartoutTemporaire,
+			RatioJungleModeTest = RatioJungleModeTest,
+			MaterielTerrain = materielTerrainResolu
+		};
 		_serveurParDimension[(int)DimensionJeu.Abysse] = _mondeServeurAbysse;
-		_attenteChunksParDimension[(int)DimensionJeu.Alpha] = new Dictionary<Vector3I, HashSet<long>>();
 		_attenteChunksParDimension[(int)DimensionJeu.Abysse] = new Dictionary<Vector3I, HashSet<long>>();
+
 		_mondeServeur = _mondeServeurAlpha;
 		_dimensionLocaleActive = (int)DimensionJeu.Alpha;
 		DefinirDimensionPeer(Multiplayer.GetUniqueId(), _dimensionLocaleActive);
@@ -2024,11 +2111,14 @@ void fragment() {
 		_mondeClient.ConfigurerReseauChunks(_networkManager, _dimensionLocaleActive);
 		AppliquerOptionsGraphiques(CapturerOptionsGraphiquesCourantes(_optionsGraphiquesActuelles?.Preset ?? PresetGraphique.Personnalise), sauvegarder: false, synchroniserUi: false);
 
-		InitialiserDimensionServeur(_mondeServeurAlpha, (int)DimensionJeu.Alpha);
-		InitialiserDimensionServeur(_mondeServeurAbysse, (int)DimensionJeu.Abysse);
+		// Initialise et reparente chaque serveur sous sa racine dédiée (Alpha, Beta, Omega, Delta, Abysse).
+		foreach (var kv in _serveurParDimension)
+		{
+			InitialiserDimensionServeur(kv.Value, kv.Key);
+			if (_racineParDimension.TryGetValue(kv.Key, out Node3D racine) && racine != null && kv.Value != null)
+				racine.AddChild(kv.Value);
+		}
 		MettreAJourVisibiliteArbresParDimension(_dimensionLocaleActive);
-		_racineDimensionAlpha?.AddChild(_mondeServeurAlpha);
-		_racineDimensionAbysse?.AddChild(_mondeServeurAbysse);
 		AddChild(_mondeClient);
 		ReparenterNoeudDansDimension(_joueur, (int)DimensionJeu.Alpha);
 		MettreAJourAtmosphereAbysseLocale(_dimensionLocaleActive);
@@ -2068,10 +2158,7 @@ void fragment() {
 		if (serveur == null) return;
 		var nodeArbres = new Node3D { Name = $"Arbres_{dimensionId}" };
 		AddChild(nodeArbres);
-		if (dimensionId == (int)DimensionJeu.Abysse)
-			_arbresDimensionAbysse = nodeArbres;
-		else
-			_arbresDimensionAlpha = nodeArbres;
+		_arbresParDimension[dimensionId] = nodeArbres;
 		serveur.Initialiser(
 			this,
 			nodeArbres,
@@ -2081,10 +2168,10 @@ void fragment() {
 					_mondeClient.RecevoirChunkModifie(coord, sections);
 			},
 			(coord, donnees) => DistribuerChunkDimensionAuxPeers(dimensionId, coord, donnees),
-			(coord, inventaireFlore) =>
+			(coord, coordChunkY, inventaireFlore) =>
 			{
 				if (_dimensionLocaleActive == dimensionId)
-					_mondeClient.RecevoirFloreModifie(coord, inventaireFlore);
+					_mondeClient.RecevoirFloreModifie(coord, coordChunkY, inventaireFlore);
 			},
 			(pos, id) =>
 			{
@@ -2107,10 +2194,12 @@ void fragment() {
 
 	private void MettreAJourVisibiliteArbresParDimension(int dimensionIdActif)
 	{
-		if (_arbresDimensionAlpha != null)
-			_arbresDimensionAlpha.Visible = dimensionIdActif == (int)DimensionJeu.Alpha;
-		if (_arbresDimensionAbysse != null)
-			_arbresDimensionAbysse.Visible = dimensionIdActif == (int)DimensionJeu.Abysse;
+		foreach (var kv in _arbresParDimension)
+		{
+			if (kv.Value == null || !GodotObject.IsInstanceValid(kv.Value))
+				continue;
+			kv.Value.Visible = (kv.Key == dimensionIdActif);
+		}
 	}
 
 	private void SurPeerConnecteDimensions(long peerId)
@@ -2216,12 +2305,17 @@ void fragment() {
 
 	private Vector3 ObtenirPointTeleportDimension(int dimensionId)
 	{
-		if (dimensionId == (int)DimensionJeu.Abysse)
-		{
-			// Rebord de l'ile abyssale (frontière sable proche ocean).
-			return new Vector3(1520f, 190f, 0f);
-		}
-		return new Vector3(0f, 170f, 0f);
+		return ConstantesDimensions.ObtenirInfoOuAlpha(dimensionId).PointTeleportDefaut;
+	}
+
+	/// <summary>Retourne la position où réapparaître dans la dimension cible : si une position y a été mémorisée
+	/// (visite précédente sauvegardée dans <see cref="_positionsSauvegardeesParDimension"/>), on la réutilise ;
+	/// sinon on tombe sur le point canonique de téléportation.</summary>
+	private Vector3 ObtenirPointTeleportAvecMemoireDimension(int dimensionId)
+	{
+		if (_positionsSauvegardeesParDimension.TryGetValue(dimensionId, out Vector3 positionMemorisee))
+			return positionMemorisee;
+		return ObtenirPointTeleportDimension(dimensionId);
 	}
 
 	public bool EnvoyerCommandeAdminChat(string commande)
@@ -2246,12 +2340,27 @@ void fragment() {
 		string cmd = (commande ?? "").Trim();
 		if (string.Equals(cmd, "/DIMANASIO APISARA", StringComparison.OrdinalIgnoreCase))
 		{
-			TransfererPeerVersDimension(peerId, (int)DimensionJeu.Abysse, ObtenirPointTeleportDimension((int)DimensionJeu.Abysse), $"Transfert vers {ConstantesDimensionAbysse.Apisara}.");
+			TransfererPeerVersDimension(peerId, (int)DimensionJeu.Abysse, ObtenirPointTeleportAvecMemoireDimension((int)DimensionJeu.Abysse), $"Transfert vers {ConstantesDimensionAbysse.Apisara}.");
 			return;
 		}
 		if (string.Equals(cmd, "/DIMANASIO ARAPA", StringComparison.OrdinalIgnoreCase))
 		{
-			TransfererPeerVersDimension(peerId, (int)DimensionJeu.Alpha, ObtenirPointTeleportDimension((int)DimensionJeu.Alpha), "Retour vers Alpha.");
+			TransfererPeerVersDimension(peerId, (int)DimensionJeu.Alpha, ObtenirPointTeleportAvecMemoireDimension((int)DimensionJeu.Alpha), "Retour vers Alpha.");
+			return;
+		}
+		if (string.Equals(cmd, "/DIMANASIO PETA", StringComparison.OrdinalIgnoreCase))
+		{
+			TransfererPeerVersDimension(peerId, (int)DimensionJeu.Beta, ObtenirPointTeleportAvecMemoireDimension((int)DimensionJeu.Beta), $"Transfert vers {ConstantesDimensions.NomBeta}.");
+			return;
+		}
+		if (string.Equals(cmd, "/DIMANASIO OMEGA", StringComparison.OrdinalIgnoreCase))
+		{
+			TransfererPeerVersDimension(peerId, (int)DimensionJeu.Omega, ObtenirPointTeleportAvecMemoireDimension((int)DimensionJeu.Omega), $"Transfert vers {ConstantesDimensions.NomOmega}.");
+			return;
+		}
+		if (string.Equals(cmd, "/DIMANASIO DERATA", StringComparison.OrdinalIgnoreCase))
+		{
+			TransfererPeerVersDimension(peerId, (int)DimensionJeu.Delta, ObtenirPointTeleportAvecMemoireDimension((int)DimensionJeu.Delta), $"Transfert vers {ConstantesDimensions.NomDelta}.");
 			return;
 		}
 		Monde_Serveur serveurCourant = ObtenirServeurDimension(ObtenirDimensionPeer(peerId)) ?? _mondeServeur;
@@ -2330,11 +2439,17 @@ void fragment() {
 		int dimensionActuelle = ObtenirDimensionPeer(peerId);
 		if (peerId == Multiplayer.GetUniqueId())
 		{
-			GameState.Instance?.SauvegarderPositionJoueur(_joueur?.GlobalPosition ?? positionCible);
-			SauvegarderSessionJoueur(dimensionActuelle, _joueur?.GlobalPosition ?? positionCible);
+			Vector3 positionAvantTp = _joueur?.GlobalPosition ?? positionCible;
+			GameState.Instance?.SauvegarderPositionJoueur(positionAvantTp);
+			// Mémorise la position actuelle dans la dim qu'on quitte (clé = dimensionActuelle).
+			_positionsSauvegardeesParDimension[dimensionActuelle] = positionAvantTp;
+			SauvegarderSessionJoueur(dimensionActuelle, positionAvantTp);
 			if (_joueur is Joueur j)
 			{
-				if (dimensionActuelle == (int)DimensionJeu.Alpha)
+				// Toutes les dimensions Alpha-like (Alpha + Beta + Omega + Delta) doivent sauver l'état complet du monde
+				// (objets posés, blocs construits) pour ne rien perdre. Seule APISARA garde son comportement light (joueur seul).
+				bool estAlphaLike = ConstantesDimensions.EssayerObtenirInfo(dimensionActuelle, out var infoCourante) && infoCourante.EstAlphaLike;
+				if (estAlphaLike)
 					j.SauvegarderEtatPersistantMonde(GetTree());
 				else
 					j.SauvegarderEtatPersistantJoueurSeulement();
@@ -2402,8 +2517,27 @@ void fragment() {
 
 	private void MettreAJourAtmosphereAbysseLocale(int dimensionIdActif)
 	{
-		if (_mondeServeurAbysse is Gestionnaire_Abysse gestionnaireAbysse)
-			gestionnaireAbysse.DefinirAtmosphereAbysseActive(dimensionIdActif == (int)DimensionJeu.Abysse);
+		if (_mondeServeurAbysse is not Gestionnaire_Abysse gestionnaireAbysse)
+			return;
+
+		bool apisara = dimensionIdActif == (int)DimensionJeu.Abysse;
+		gestionnaireAbysse.DefinirAtmosphereAbysseActive(apisara);
+
+		var we = GetParent()?.GetNodeOrNull<WorldEnvironment>("WorldEnvironment");
+		if (we == null)
+			return;
+
+		Godot.Environment envApisara = gestionnaireAbysse.ObtenirEnvironmentAbysse();
+		if (apisara)
+		{
+			if (_environnementSauvegardeHorsApisara == null && we.Environment != null && !ReferenceEquals(we.Environment, envApisara))
+				_environnementSauvegardeHorsApisara = we.Environment;
+			we.Environment = envApisara;
+		}
+		else if (_environnementSauvegardeHorsApisara != null)
+		{
+			we.Environment = _environnementSauvegardeHorsApisara;
+		}
 	}
 
 	/// <summary>Volume océan dédié à la détection (remous/éclaboussures), sans override physique global.</summary>
@@ -2843,10 +2977,14 @@ void fragment() {
 		if (_joueur != null && _dimensionLocaleActive == (int)DimensionJeu.Abysse)
 		{
 			const float fondAbsolu = ConstantesDimensionAbysse.FondAbsolu;
-			if (_joueur.GlobalPosition.Y <= fondAbsolu)
+			float y = _joueur.GlobalPosition.Y;
+			// Amorti avant le plancher : évite une décélération infinie « écrasement » sur un seul tick.
+			if (y < fondAbsolu + 42f && y > fondAbsolu && _joueur.Velocity.Y < -8f)
+				_joueur.Velocity = new Vector3(_joueur.Velocity.X, Mathf.Max(_joueur.Velocity.Y, -22f), _joueur.Velocity.Z);
+			if (y <= fondAbsolu)
 			{
 				_joueur.GlobalPosition = new Vector3(_joueur.GlobalPosition.X, fondAbsolu, _joueur.GlobalPosition.Z);
-				_joueur.Velocity = Vector3.Zero;
+				_joueur.Velocity = new Vector3(_joueur.Velocity.X * 0.35f, 0f, _joueur.Velocity.Z * 0.35f);
 			}
 		}
 		MettreAJourEmerukedesiParotaromaStage1(delta);
@@ -3278,6 +3416,10 @@ FinBlocOverlay:
 	private void EssayerRecalerRigidBodySousSol(RigidBody3D rb, bool terrainPret)
 	{
 		if (!terrainPret)
+			return;
+		// APISARA : la surface réelle ne suit pas ObtenirHauteurTerrainMonde (relief monde Alpha uniquement).
+		// Recaler avec Y « alpha » téléporte fibres / cailloux vers le ciel ou sous le vide → disparition côté joueur.
+		if (_dimensionLocaleActive == (int)DimensionJeu.Abysse)
 			return;
 		float yObjet = rb.GlobalPosition.Y;
 		int h = Generateur_Voxel.ObtenirHauteurTerrainMonde(

@@ -18,7 +18,7 @@ public class SectionPayload
 public class ChunkFlorePayload
 {
 	public List<(Transform3D T, Color C, Vector3 PosMonde)> Gazon;
-	/// <summary>Buissons avec baies : transform + index couleur baie (0..7, voir <see cref="Joueur.BaieNombreCouleurs"/>).</summary>
+	/// <summary>Buissons avec baies : transform + index couleur baie (0..8, voir <see cref="Joueur.BaieNombreCouleurs"/>).</summary>
 	public List<(Transform3D T, int CouleurIdx)> BuissonPlein;
 	public List<Transform3D> BuissonVide;
 }
@@ -205,16 +205,24 @@ public partial class Chunk_Client : Node3D
 		_tx = tx; _ty = ty; _tz = tz;
 		_materialsFlat = (byte[])donnees.MaterialsFlat.Clone();
 
-		_inventaireFloreEnAttente = donnees.InventaireFlore;
 		var invFlore = donnees.InventaireFlore;
 		var chunkRef = this;
 		if (invFlore != null && invFlore.Count > 0)
 		{
 			var payload = ConstruirePayloadFloreEnBackground(invFlore, (float)(donnees.CoordChunk.X * donnees.TailleChunk), (float)(donnees.CoordChunk.Y * donnees.TailleChunk));
-			enqueueIntegration?.Invoke(() => chunkRef.AppliquerPayloadFlore(payload));
+			enqueueIntegration?.Invoke(() =>
+			{
+				// Sans cache, _Process ne rappelle pas ActualiserFloreAvecDistance : l’herbe reste figée au filtrage « joueur loin ».
+				chunkRef._inventaireFloreCache = invFlore;
+				chunkRef.AppliquerPayloadFlore(payload);
+			});
 		}
 		else
-			enqueueIntegration?.Invoke(() => chunkRef.AppliquerPayloadFlore(null));
+			enqueueIntegration?.Invoke(() =>
+			{
+				chunkRef._inventaireFloreCache = null;
+				chunkRef.AppliquerPayloadFlore(null);
+			});
 
 		// 45 sections en séquence dans ce worker (pas de Task.Run par section)
 		for (int idxSec = 0; idxSec < NB_SECTIONS; idxSec++)
@@ -244,7 +252,10 @@ public partial class Chunk_Client : Node3D
 			// Purge flore locale : modèle 3D disparaît immédiatement quand le bloc sous lui est détruit
 			var posGlobale = new Vector3I(ChunkOffsetX * TailleChunk + lx, ly, ChunkOffsetZ * TailleChunk + lz);
 			if (_inventaireFloreCache != null && _inventaireFloreCache.Remove(posGlobale))
+			{
+				_payloadFloreCache = null; // Sinon ActualiserFlore réapplique l’ancien paquet figé.
 				ActualiserFloreAvecDistance();
+			}
 		}
 		else if (id == 4)
 		{
@@ -283,7 +294,11 @@ public partial class Chunk_Client : Node3D
 				var posAuDessus = new Vector3I(posGlobal.X, posGlobal.Y + 1, posGlobal.Z);
 				floreModifiee |= _inventaireFloreCache.Remove(posAuDessus);
 			}
-			if (floreModifiee) ActualiserFloreAvecDistance();
+			if (floreModifiee)
+			{
+				_payloadFloreCache = null;
+				ActualiserFloreAvecDistance();
+			}
 		}
 		else if (id == 4)
 		{
@@ -530,7 +545,7 @@ public partial class Chunk_Client : Node3D
 				tBuis.Basis = Basis.Identity.Scaled(new Vector3(echelleBuis, echelleBuis, echelleBuis)).Rotated(Vector3.Up, angle);
 				if (Chunk_Serveur.EstBuissonPlein(kv.Value))
 				{
-					int idxCouleur = Joueur.ClampIndexCouleurBaie(Chunk_Serveur.ObtenirVarianteBuisson(kv.Value) % Joueur.BaieNombreCouleurs);
+					int idxCouleur = Joueur.IndexCouleurBaieDepuisVariante(Chunk_Serveur.ObtenirVarianteBuisson(kv.Value));
 					payload.BuissonPlein.Add((tBuis, idxCouleur));
 				}
 				else payload.BuissonVide.Add(tBuis);
@@ -934,7 +949,7 @@ public partial class Chunk_Client : Node3D
 				tBuis.Basis = Basis.Identity.Scaled(new Vector3(echelleBuis, echelleBuis, echelleBuis)).Rotated(Vector3.Up, angle);
 				if (Chunk_Serveur.EstBuissonPlein(kv.Value))
 				{
-					int idxCouleur = Joueur.ClampIndexCouleurBaie(Chunk_Serveur.ObtenirVarianteBuisson(kv.Value) % Joueur.BaieNombreCouleurs);
+					int idxCouleur = Joueur.IndexCouleurBaieDepuisVariante(Chunk_Serveur.ObtenirVarianteBuisson(kv.Value));
 					_tamponPleins.Add((tBuis, idxCouleur));
 				}
 				else _tamponVides.Add(tBuis);
@@ -1467,7 +1482,17 @@ private static bool EstCorpsAuSol(PhysicsBody3D body)
 		st.GenerateNormals();
 		var mesh = st.Commit();
 		if (mesh is ArrayMesh am && am.GetSurfaceCount() > 0)
-			am.SurfaceSetMaterial(0, ObtenirMaterielBuissonProcedural());
+		{
+			if (avecBaies && c == 8)
+			{
+				var matFluo = (StandardMaterial3D)ObtenirMaterielBuissonProcedural().Duplicate();
+				matFluo.Emission = new Color(0.08f, 0.48f, 0.58f);
+				matFluo.EmissionEnergyMultiplier = 2.5f;
+				am.SurfaceSetMaterial(0, matFluo);
+			}
+			else
+				am.SurfaceSetMaterial(0, ObtenirMaterielBuissonProcedural());
+		}
 		return mesh;
 	}
 
@@ -2155,7 +2180,7 @@ private static bool EstCorpsAuSol(PhysicsBody3D body)
 			tBuis.Basis = Basis.Identity.Scaled(new Vector3(echelleBuis, echelleBuis, echelleBuis)).Rotated(Vector3.Up, angle);
 			if (Chunk_Serveur.EstBuissonPlein(kv.Value))
 			{
-				int idxCouleur = Joueur.ClampIndexCouleurBaie(Chunk_Serveur.ObtenirVarianteBuisson(kv.Value) % Joueur.BaieNombreCouleurs);
+				int idxCouleur = Joueur.IndexCouleurBaieDepuisVariante(Chunk_Serveur.ObtenirVarianteBuisson(kv.Value));
 				pleinsColores.Add((tBuis, idxCouleur));
 			}
 			else vides.Add(tBuis);

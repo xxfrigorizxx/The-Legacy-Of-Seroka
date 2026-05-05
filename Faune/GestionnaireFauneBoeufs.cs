@@ -71,6 +71,21 @@ public partial class GestionnaireFauneBoeufs : Node3D
 	{
 		if (ResoudreSceneFemelle() == null && SceneTaureau == null) return;
 		if (_gestionnaireMonde == null || _joueur == null) return;
+		// APISARA : aucune faune bovine — purge si passage Alpha → Abysse, pas de spawn ni streaming.
+		if (_gestionnaireMonde.EstDimensionLocaleAbysse())
+		{
+			if (_boeufs.Count > 0)
+			{
+				foreach (BoeufSauvage b in _boeufs)
+				{
+					if (IsInstanceValid(b))
+						b.QueueFree();
+				}
+				_boeufs.Clear();
+				_idsActifs.Clear();
+			}
+			return;
+		}
 		if (!_gestionnaireMonde.EstSpawnPret()) return;
 		if (!_gestionnaireMonde.EstAlignementSpawnTermine()) return;
 		ulong debutFrameUs = ActiverProfilagePerfFaune ? PerfBudgetMonitor.Begin() : 0UL;
@@ -172,6 +187,11 @@ public partial class GestionnaireFauneBoeufs : Node3D
 		{
 			if (_fauneChargeeDepuisSauvegarde)
 				return;
+			if (_gestionnaireMonde != null && _gestionnaireMonde.EstDimensionLocaleAbysse())
+			{
+				_fauneChargeeDepuisSauvegarde = true;
+				return;
+			}
 			string chemin = ObtenirCheminFichierFaune();
 			if (!File.Exists(chemin))
 			{

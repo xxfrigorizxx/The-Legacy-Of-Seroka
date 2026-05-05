@@ -134,6 +134,9 @@ public partial class GameState : Node
 	/// <summary>Sexe du personnage pour ce monde (persisté avec l’identité).</summary>
 	public SexeJoueur SexeJoueurCourante { get; private set; } = SexeJoueur.Masculin;
 
+	/// <summary>Après mort : le menu affiche uniquement l’étape personnage pour le même <see cref="NomMondeActuel"/> (carte inchangée).</summary>
+	public bool RecreationPersonnageMemeMondeEnAttente { get; private set; }
+
 	private const int VersionFichierIdentiteJoueur = 2;
 	private const int VersionFichierIdentiteJoueurMinLue = 1;
 	private const string NomFichierIdentiteJoueur = "player_identity.dat";
@@ -546,5 +549,85 @@ public partial class GameState : Node
 			GD.PrintErr($"ZERO-K : Erreur lecture position joueur : {ex.Message}");
 			return null;
 		}
+	}
+
+	/// <summary>Efface les sauvegardes personnage du monde courant, marque la reprise par création perso, sans toucher au terrain ni aux objets du monde.</summary>
+	public void PreparerRetourCreationPersonnageApresMort()
+	{
+		if (string.IsNullOrWhiteSpace(NomMondeActuel)) return;
+		EffacerDonneesPersonnageMondeActuel();
+		RecreationPersonnageMemeMondeEnAttente = true;
+		NomPersonnageJoue = "";
+		RaceJoueurCourante = RaceJoueur.Humain;
+		SexeJoueurCourante = SexeJoueur.Masculin;
+	}
+
+	public void AnnulerRecreationPersonnageMemeMondeEnAttente()
+	{
+		RecreationPersonnageMemeMondeEnAttente = false;
+	}
+
+	/// <summary>Supprime uniquement les fichiers de progression / inventaire / identité joueur (pas <c>chunks/</c>, <c>world_*</c>, objets posés, drops).</summary>
+	public bool EffacerDonneesPersonnageMondeActuel()
+	{
+		if (string.IsNullOrWhiteSpace(NomMondeActuel)) return false;
+		string dossier = ProjectSettings.GlobalizePath($"user://saves/{NomMondeActuel}");
+		if (!Directory.Exists(dossier)) return false;
+		string[] fichiers =
+		{
+			"player_progression.dat",
+			"player_inventory.dat",
+			"player_carnet_savoir.json",
+			"player_session.dat",
+			"player.dat",
+			NomFichierIdentiteJoueur
+		};
+		foreach (string f in fichiers)
+		{
+			try
+			{
+				string p = Path.Combine(dossier, f);
+				if (File.Exists(p)) File.Delete(p);
+			}
+			catch (Exception ex)
+			{
+				GD.PrintErr($"ZERO-K : Suppression sauvegarde personnage ({f}) : {ex.Message}");
+			}
+		}
+		return true;
+	}
+
+	/// <summary>Valide le nouveau personnage sur le monde déjà chargé (après mort). Réécrit l’identité ; ne crée pas de nouveau dossier monde.</summary>
+	public bool EssayerFinaliserRecreationPersonnageSurMondeExistant(string nomPersonnageBrut, RaceJoueur race, SexeJoueur sexe, out string erreur)
+	{
+		erreur = null;
+		if (string.IsNullOrWhiteSpace(NomMondeActuel))
+		{
+			erreur = "Aucun monde actif.";
+			return false;
+		}
+		string dossier = ProjectSettings.GlobalizePath($"user://saves/{NomMondeActuel}");
+		if (!Directory.Exists(dossier))
+		{
+			erreur = "Dossier de sauvegarde introuvable.";
+			return false;
+		}
+		string nomPerso = NettoyerNomPersonnage(nomPersonnageBrut);
+		NomPersonnageJoue = nomPerso;
+		RaceJoueurCourante = race;
+		SexeJoueurCourante = sexe;
+		try
+		{
+			SauvegarderIdentiteJoueurSurDisque(NomMondeActuel, nomPerso, race, sexe);
+		}
+		catch (Exception ex)
+		{
+			erreur = ex.Message;
+			return false;
+		}
+		RecreationPersonnageMemeMondeEnAttente = false;
+		EcrireDernierMondeJoue(NomMondeActuel);
+		GD.Print($"ZERO-K : Nouveau personnage sur monde existant « {NomMondeActuel} » : « {nomPerso} », {race}, {sexe}.");
+		return true;
 	}
 }
