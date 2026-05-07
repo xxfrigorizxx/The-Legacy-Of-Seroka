@@ -118,6 +118,16 @@ public partial class Chunk_Serveur : RefCounted
 
 	public bool EstModifie => _estModifie;
 	public bool EstChargeDepuisDisque => _chargeDepuisDisque;
+	internal void MarquerModifie() => _estModifie = true;
+
+	/// <summary>Repeuple <see cref="InventaireArbres"/> en rejouant uniquement la passe procédurale d'arbres sur les voxels actuels.
+	/// Utilisé en migration sur saves Abysse antérieures à la persistance des arbres : ne touche pas <c>_densities/_materials</c>.</summary>
+	public void RegenererInventaireArbresProcedural()
+	{
+		if (_densities == null) return;
+		InventaireArbres.Clear();
+		InjecterArbresLSystem();
+	}
 
 	public void SetOnVoxelModifie(Action<Vector3I, byte> callback) => _onVoxelModifie = callback;
 	public void SetOnFlorePurgée(Action<Vector2I, int, Dictionary<Vector3I, byte>> callback) => _onFlorePurgée = callback;
@@ -838,117 +848,11 @@ public partial class Chunk_Serveur : RefCounted
 		return false;
 	}
 
-	private int CalculerHauteurTerrainAbysse(int xGlobal, int zGlobal)
-	{
-		const float largeurTransition = 120f;
-		float distanceProfil = CalculerDistanceProfilAbysse(xGlobal, zGlobal);
-		float distanceBrute = Mathf.Sqrt(xGlobal * xGlobal + zGlobal * zGlobal);
-
-		// 0..500 : trou noir vertical jusqu'au fond absolu (rayon euclidien, pas le profil warping).
-		if (distanceBrute <= AbyssRayonTrouNoir)
-			return (int)AbyssFondAbsolu;
-
-		float HauteurSanctuaire()
-		{
-			float tSanctuaire = Mathf.Clamp((distanceProfil - AbyssRayonTrouNoir) / Mathf.Max(1f, AbyssRayonX - AbyssRayonTrouNoir), 0f, 1f);
-			float baseSanctuaire = AbyssAltitudeSanctuaire + (tSanctuaire * 8f);
-			float bruitMacro = _noiseErosion.GetNoise2D(xGlobal * 0.0042f + 4200f, zGlobal * 0.0042f + 4200f) * 5.5f;
-			float bruitMicro = _noiseSurface.GetNoise2D(xGlobal * 0.013f + 8900f, zGlobal * 0.013f + 8900f) * 2.4f;
-			int hauteurSanctuaire = Mathf.RoundToInt(baseSanctuaire + bruitMacro + bruitMicro);
-			return Mathf.Max(20f, hauteurSanctuaire);
-		}
-
-		float HauteurMuraille()
-		{
-			// Décalage radial non symétrique : casse l’anneau « parfait » et crée replats / bosses hétérogènes.
-			float shiftRadialMur = _noiseAbysseChaos3D.GetNoise2D(xGlobal * 0.00155f + 5500f, zGlobal * 0.00155f - 5500f) * 118f;
-			float tMur = Mathf.Clamp((distanceProfil + shiftRadialMur - AbyssRayonX) / Mathf.Max(1f, AbyssRayonY - AbyssRayonX), 0f, 1f);
-			float sCurve = tMur * tMur * (3f - 2f * tMur);
-			float ondulationBase = _noiseAbysseChaosDetail3D.GetNoise2D(xGlobal * 0.0024f + 7200f, zGlobal * 0.0024f - 7200f) * 42f;
-			float baseMur = Mathf.Lerp(108f, 352f, sCurve) + ondulationBase;
-
-			float bruitMacro = _noiseSurface.GetNoise2D(xGlobal * 0.005f + 6100f, zGlobal * 0.005f + 6100f) * 72f;
-			float bruitMicro = _noiseErosion.GetNoise2D(xGlobal * 0.022f + 9100f, zGlobal * 0.022f + 9100f) * 34f;
-			float chaosRelief = Mathf.Abs(_noiseAbysseChaos3D.GetNoise2D(xGlobal * 0.0038f + 1800f, zGlobal * 0.0038f - 1800f)) * 68f;
-			float cretes = Mathf.Abs(_noiseCavernes.GetNoise2D(xGlobal * 0.034f + 13000f, zGlobal * 0.034f + 13000f)) * 108f;
-			float picsAigusBrut = (_noiseCavernes.GetNoise2D(xGlobal * 0.061f + 31000f, zGlobal * 0.061f + 31000f) + 1f) * 0.5f;
-			float picsAigus = Mathf.Pow(Mathf.Clamp(picsAigusBrut, 0f, 1f), 3.15f) * 88f;
-
-			float bruitFalaises = _noiseRivieres.GetNoise2D(xGlobal * 0.011f + 17000f, zGlobal * 0.011f + 17000f);
-			float masqueFalaises = Mathf.Clamp((bruitFalaises - 0.08f) * 2.35f, 0f, 1f);
-			float zoneFalaises = Mathf.Clamp(1f - (Mathf.Abs(tMur - 0.46f) / 0.42f), 0f, 1f);
-			zoneFalaises *= zoneFalaises;
-			float falaises = masqueFalaises * zoneFalaises * 110f;
-
-			// Entailles locales: crée des passages/creux dans la muraille au lieu d'une couronne parfaite.
-			float bruitEntaille = _noiseRivieres.GetNoise2D(xGlobal * 0.0065f + 21000f, zGlobal * 0.0065f + 21000f);
-			float masqueEntaille = Mathf.Clamp((0.14f - bruitEntaille) * 2.7f, 0f, 1f);
-			float entaille = masqueEntaille * (60f + (1f - sCurve) * 70f);
-
-			float attenuationSortie = Mathf.Clamp((tMur - 0.72f) / 0.28f, 0f, 1f);
-			float sortieRampe = Mathf.Lerp(0f, 150f, attenuationSortie * attenuationSortie);
-			float reductionSortie = sortieRampe * (0.45f + (1f - masqueFalaises) * 0.55f);
-
-			float hauteurMur = baseMur + bruitMacro + bruitMicro + chaosRelief + cretes + picsAigus + falaises - reductionSortie - entaille;
-			return Mathf.Clamp(hauteurMur, 88f, 485f);
-		}
-
-		float HauteurPlaineExterieure()
-		{
-			float t = Mathf.Clamp((distanceProfil - AbyssRayonY) / Mathf.Max(1f, AbyssRayonZ - AbyssRayonY), 0f, 1f);
-			float basePlaine = Mathf.Lerp(145f, 34f, t);
-			float vallons = _noiseErosion.GetNoise2D(xGlobal * 0.0048f + 7000f, zGlobal * 0.0048f + 7000f) * 12f;
-			float reliefFin = _noiseSurface.GetNoise2D(xGlobal * 0.011f + 10100f, zGlobal * 0.011f + 10100f) * 6f;
-			return Mathf.Max(20f, basePlaine + vallons + reliefFin);
-		}
-
-		float HauteurFrontiereSable()
-		{
-			float t = Mathf.Clamp((distanceProfil - AbyssRayonZ) / Mathf.Max(1f, AbyssRayonW - AbyssRayonZ), 0f, 1f);
-			float baseFrontiere = Mathf.Lerp(28f, 0f, t);
-			float bruit = _noiseErosion.GetNoise2D(xGlobal * 0.009f + 11000f, zGlobal * 0.009f + 11000f) * 2.5f;
-			return baseFrontiere + bruit;
-		}
-
-		float HauteurOcean()
-		{
-			float t = (distanceProfil - AbyssRayonW) / 1100f;
-			float chute = Mathf.Clamp(t * t, 0f, 1f) * 180f;
-			float bruit = _noiseRivieres.GetNoise2D(xGlobal * 0.003f + 15000f, zGlobal * 0.003f + 15000f) * 4.2f;
-			return -8f - chute + bruit;
-		}
-
-		float Blend(float a, float b, float centre)
-		{
-			float debut = centre - largeurTransition;
-			float fin = centre + largeurTransition;
-			float t = Mathf.Clamp((distanceProfil - debut) / Mathf.Max(1f, fin - debut), 0f, 1f);
-			float s = t * t * (3f - 2f * t);
-			return Mathf.Lerp(a, b, s);
-		}
-
-		float h;
-		if (distanceProfil < AbyssRayonX - largeurTransition)
-			h = HauteurSanctuaire();
-		else if (distanceProfil < AbyssRayonX + largeurTransition)
-			h = Blend(HauteurSanctuaire(), HauteurMuraille(), AbyssRayonX);
-		else if (distanceProfil < AbyssRayonY - largeurTransition)
-			h = HauteurMuraille();
-		else if (distanceProfil < AbyssRayonY + largeurTransition)
-			h = Blend(HauteurMuraille(), HauteurPlaineExterieure(), AbyssRayonY);
-		else if (distanceProfil < AbyssRayonZ - largeurTransition)
-			h = HauteurPlaineExterieure();
-		else if (distanceProfil < AbyssRayonZ + largeurTransition)
-			h = Blend(HauteurPlaineExterieure(), HauteurFrontiereSable(), AbyssRayonZ);
-		else if (distanceProfil < AbyssRayonW - largeurTransition)
-			h = HauteurFrontiereSable();
-		else if (distanceProfil < AbyssRayonW + largeurTransition)
-			h = Blend(HauteurFrontiereSable(), HauteurOcean(), AbyssRayonW);
-		else
-			h = HauteurOcean();
-
-		return Mathf.RoundToInt(h);
-	}
+	private int CalculerHauteurTerrainAbysse(int xGlobal, int zGlobal) =>
+		ApisaraHauteurTerrain.CalculerSurfaceMonde(
+			xGlobal, zGlobal,
+			_noiseSurface, _noiseErosion, _noiseCavernes, _noiseRivieres,
+			_noiseAbysseChaos3D, _noiseAbysseChaosDetail3D);
 
 	/// <summary>Même masque que la rampe spirale ciselée dans le trou ; 0 = hors bande. Sert aussi à ne pas poser de gazon sur la descente.</summary>
 	private float CalculerIntensiteSpiraleDescenteAbysse(float xGlobal, float yGlobal, float zGlobal)

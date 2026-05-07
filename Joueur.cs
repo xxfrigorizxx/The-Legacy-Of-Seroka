@@ -662,9 +662,9 @@ public partial class Joueur : CharacterBody3D
         _rayonFps.TargetPosition = new Vector3(0f, 0f, -12f);
         _rayonFps.CollisionMask = 0xFFFFFFFF; // Toutes les couches (sol AAA = layer 1, objets, eauâ€¦)
         _rayonFps.AddException(this); // Ne pas toucher le joueur (sinon le "minage" ne vise pas le sol)
-        // MÃªme couche / masque que les corps statiques terrain (Monde_Client PhysicsServer3D layer 1).
+        // Sol = calque 1 ; cadre portail Nexus = calque 2 (<see cref="Portail.CalqueCollisionCadrePortail"/>) pour ne pas bloquer les raycasts sol (masque 1).
         CollisionLayer = 1u;
-        CollisionMask = 1u;
+        CollisionMask = 1u | Portail.CalqueCollisionCadrePortail;
         _collisionLayerParDefaut = CollisionLayer;
         _collisionMaskParDefaut = CollisionMask;
         // Sol voxel irrÃ©gulier : snap modÃ©rÃ© + marge rÃ©duite pour Ã©viter le pompage vertical.

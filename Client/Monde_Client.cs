@@ -3130,6 +3130,26 @@ public partial class Monde_Client : Node3D
 
 		int transitions = 0;
 		int limite = Mathf.Max(1, maxTransitions);
+		int rayonReveil = Mathf.Max(1, RayonDormancePhysique);
+
+		// Réveil portail (0,0) : hors budget transitions (sous FPS bas le passage joueur épuisait la limite avant le chunk portail).
+		void ReveillerChunkPourPortailNexusSansBudget(ChunkData data)
+		{
+			if (data.Dormant && data.PhysicsBodyRID.IsValid)
+			{
+				data.Dormant = false;
+				PhysicsServer3D.Singleton.BodySetSpace(data.PhysicsBodyRID, space);
+				if (data.EstEnFileSolidification)
+					RetirerDeFileSolidification(data);
+				SynchroniserFloreDesQueCollisionChunkActive(data);
+			}
+			else if (!data.PhysicsBodyRID.IsValid && !data.EstEnFileSolidification)
+			{
+				RetirerDeFileSolidification(data);
+				EnfilerSolidificationUrgenteUnique(data);
+				data.EstEnFileSolidification = true;
+			}
+		}
 
 		bool BasculerDormanceChunk(ChunkData data, bool dormantCible)
 		{
@@ -3169,8 +3189,21 @@ public partial class Monde_Client : Node3D
 			return transitions < limite;
 		}
 
-		// PASSAGE A (priorité sécurité): réveille d'abord le rayon proche du joueur.
-		int rayonReveil = Mathf.Max(1, RayonDormancePhysique);
+		// PASSAGE A-portail (priorité absolue) : XZ monde (0,0). Hors budget transitions — indispensable pour le raycast du portail Nexus.
+		if (EstDimensionActiveeAvecPortailNexusAuChunkOrigine())
+		{
+			for (int dx = -rayonReveil; dx <= rayonReveil; dx++)
+			{
+				for (int dz = -rayonReveil; dz <= rayonReveil; dz++)
+				{
+					var coord = new Vector2I(dx, dz);
+					if (!_chunksData.TryGetValue(coord, out var dataPortail)) continue;
+					ReveillerChunkPourPortailNexusSansBudget(dataPortail);
+				}
+			}
+		}
+
+		// PASSAGE A (priorité sécurité): réveille le rayon proche du joueur (budget transitions).
 		for (int dx = -rayonReveil; dx <= rayonReveil; dx++)
 		{
 			for (int dz = -rayonReveil; dz <= rayonReveil; dz++)
@@ -3218,9 +3251,26 @@ public partial class Monde_Client : Node3D
 			int dx = Mathf.Abs(data.Coordonnees.X - obsChunkX);
 			int dz = Mathf.Abs(data.Coordonnees.Y - obsChunkZ);
 			bool doitDormir = dx > RayonDormancePhysique || dz > RayonDormancePhysique;
+			if (doitDormir && EstDimensionActiveeAvecPortailNexusAuChunkOrigine()
+				&& ChunkEstDansDisquePhysiquePortailVersApisara(data.Coordonnees))
+				continue;
 			if (!doitDormir || data.Dormant) continue;
 			if (!BasculerDormanceChunk(data, true)) return;
 		}
+	}
+
+	/// <summary>Alpha / Beta / Omega / Delta : portail « vers APISARA » au XZ monde (0,0) — la collision de ce disque doit rester active pour <see cref="Portail.AlignerPortailSurSurface"/>.</summary>
+	public bool EstDimensionActiveeAvecPortailNexusAuChunkOrigine()
+	{
+		if (_dimensionReseauActive == (int)DimensionJeu.Abysse) return false;
+		return ConstantesDimensions.EssayerObtenirInfo(_dimensionReseauActive, out var info) && info.EstAlphaLike;
+	}
+
+	private bool ChunkEstDansDisquePhysiquePortailVersApisara(Vector2I coordChunkXZ)
+	{
+		int dx0 = Mathf.Abs(coordChunkXZ.X);
+		int dz0 = Mathf.Abs(coordChunkXZ.Y);
+		return dx0 <= RayonDormancePhysique && dz0 <= RayonDormancePhysique;
 	}
 
 	private void DemanderChunk(Vector2I coord)
@@ -3580,6 +3630,35 @@ public partial class Monde_Client : Node3D
 		}
 	}
 
+	/// <summary>Même critère de surface que la flore au chargement du chunk : solide avec air au-dessus (densité &gt; 0). Chunk déjà en RAM pour la dimension active.</summary>
+	public bool EssayerObtenirYSurfaceMondeDepuisDonneesVoxel(float worldX, float worldZ, out float ySurfaceMonde)
+	{
+		ySurfaceMonde = 0f;
+		if (_dimensionReseauActive == (int)DimensionJeu.Abysse) return false;
+		Gestionnaire_Monde.WorldToChunkAndLocal(worldX, worldZ, TailleChunk, out Vector2I c, out int lx, out int lz);
+		if (!_chunksData.TryGetValue(c, out ChunkData data) || data.DensitiesFlat == null || data.MaterialsFlat == null)
+			return false;
+		if (lx < 0 || lx > data.TailleChunk || lz < 0 || lz > data.TailleChunk) return false;
+		const float isolevel = 0f;
+		int ySurface = -1;
+		for (int y = data.HauteurMax - 1; y >= 0; y--)
+		{
+			float d = data.DensitiesFlat[data.Idx(lx, y, lz)];
+			if (d <= isolevel) continue;
+			bool videAuDessus = y + 1 > data.HauteurMax || data.DensitiesFlat[data.Idx(lx, y + 1, lz)] <= isolevel;
+			if (videAuDessus)
+			{
+				ySurface = y;
+				break;
+			}
+		}
+
+		if (ySurface < 0) return false;
+		// Même convention que <see cref="Gestionnaire_Monde.EstimerAltitudeTerrainPortail"/> (h + 1).
+		ySurfaceMonde = ySurface + 1f;
+		return true;
+	}
+
 	/// <summary>Interroge la densité à une position globale (chunk en RAM uniquement). Plus utilisé pour Marching Cubes (rembourrage 17³).</summary>
 	public (float valeur, bool trouve) ObtenirDensiteGlobaleEx(Vector3I posGlobale)
 	{
@@ -3624,6 +3703,22 @@ public partial class Monde_Client : Node3D
 		}
 		if (!_chunksData.TryGetValue(coord, out var data)) return false;
 		return data.PhysicsBodyRID.IsValid && !data.Dormant && !data.EstEnFileSolidification;
+	}
+
+	/// <summary>
+	/// Alpha-like : le chunk horizontal contenant ce XZ a collision terrain active et des densités/voxels en RAM
+	/// (monde généré pour la seed courante réellement connu côté client, comme la flore).
+	/// </summary>
+	public bool ChunkTerrainPretAvecVoxelsPourCoordMonde(float worldX, float worldZ)
+	{
+		if (_dimensionReseauActive == (int)DimensionJeu.Abysse)
+			return false;
+		Vector2I c = Gestionnaire_Monde.WorldToChunkCoord(worldX, worldZ, TailleChunk);
+		if (!ChunkCollisionActive(c))
+			return false;
+		if (!_chunksData.TryGetValue(c, out ChunkData data))
+			return false;
+		return data.DensitiesFlat != null && data.MaterialsFlat != null;
 	}
 
 	/// <summary>Vrai si le chunk sous les pieds et ses 4 voisins cardinaux ont une collision active (évite fissures de bord au démarrage).</summary>

@@ -559,7 +559,7 @@ public partial class Monde_Serveur : Node
 		chunk.SauvegarderChunkSurDisque();
 		SauvegarderFloreChunk(coord, chunk);
 		SauvegarderPierresChunk(coord, coordY);
-		SauvegarderArbresChunk(coord);
+		SauvegarderArbresChunk(coord, chunk);
 		return true;
 	}
 
@@ -1794,10 +1794,8 @@ public partial class Monde_Serveur : Node
 	}
 
 	/// <summary>Sauvegarde les ArbreVivant dans ce chunk. Fichier chunk_X_Y_arbres.bin.</summary>
-	private void SauvegarderArbresChunk(Vector2I coord)
+	private void SauvegarderArbresChunk(Vector2I coord, Chunk_Serveur chunk)
 	{
-		if (ActiverGenerationAbysse)
-			return;
 		// Pendant la fermeture, cette méthode peut être rappelée alors que le parent d'arbres
 		// n'est plus dans l'arbre de scène. Dans cet état, la collecte retourne 0 et
 		// écrase les fichiers *_arbres.bin avec un inventaire vide.
@@ -1806,21 +1804,26 @@ public partial class Monde_Serveur : Node
 			|| !_parentPourArbres.IsInsideTree())
 			return;
 		ForcerInstanciationArbresEnAttente(coord);
+		int coordY = chunk?.ChunkOffsetY ?? 0;
 		float xMin = coord.X * TailleChunk;
 		float xMax = (coord.X + 1) * TailleChunk;
 		float zMin = coord.Y * TailleChunk;
 		float zMax = (coord.Y + 1) * TailleChunk;
+		// En Abysse, plusieurs paliers Y partagent le même XZ : on doit scinder les arbres par couche.
+		// En Alpha, ChunkOffsetY = 0 -> bornes [0, HauteurMax] qui couvrent tout (compatibilité préservée).
+		float yMin = coordY * HauteurMax;
+		float yMax = (coordY + 1) * HauteurMax;
 		var arbres = new List<(Vector3 pos, int age, byte indexBotanique, uint seed)>();
 		foreach (Node n in _parentPourArbres.GetChildren())
 		{
 			if (n is not ArbreVivant arbre) continue;
 			if (!TryGetPositionMonde(arbre, out Vector3 p)) continue;
-			if (p.X >= xMin && p.X < xMax && p.Z >= zMin && p.Z < zMax)
+			if (p.X >= xMin && p.X < xMax && p.Z >= zMin && p.Z < zMax && p.Y >= yMin && p.Y < yMax)
 				arbres.Add((p, arbre.AgeEnJours, arbre.IndexBotanique, arbre.Seed));
 		}
 		string dossier = ProjectSettings.GlobalizePath(ObtenirDossierChunksRelatif() + "/");
 		Directory.CreateDirectory(dossier);
-		string chemin = Path.Combine(dossier, $"chunk_{coord.X}_0_{coord.Y}_arbres.bin");
+		string chemin = Path.Combine(dossier, $"chunk_{coord.X}_{coordY}_{coord.Y}_arbres.bin");
 		try
 		{
 			using (var w = new BinaryWriter(File.Open(chemin, FileMode.Create)))
@@ -1951,8 +1954,18 @@ public partial class Monde_Serveur : Node
 	/// <summary>Priorité au disque: si un save arbres existe, on le charge; sinon fallback procédural du chunk.</summary>
 	private void SpawnerArbresChunkAvecPrioriteSauvegarde(Vector2I coord, Chunk_Serveur chunk)
 	{
-		if (!ChargerArbresChunk(coord, chunk))
-			SpawnerArbresChunk(coord, chunk);
+		if (ChargerArbresChunk(coord, chunk))
+			return;
+		// Migration : un chunk APISARA chargé du disque AVANT que les arbres soient persistés (ancien build) a un
+		// InventaireArbres vide. On rejoue UNE fois la passe procédurale arbres (rules déterministes) pour récupérer
+		// la canopée. Le drapeau EstModifie force l'écriture du fichier *_arbres.bin à la prochaine sauvegarde.
+		if (ActiverGenerationAbysse && chunk != null && chunk.EstChargeDepuisDisque && chunk.InventaireArbres.Count == 0)
+		{
+			chunk.RegenererInventaireArbresProcedural();
+			if (chunk.InventaireArbres.Count > 0)
+				chunk.MarquerModifie();
+		}
+		SpawnerArbresChunk(coord, chunk);
 	}
 
 	private void InstancierArbreVivant(Vector3 pos, int age, uint seed, byte indexBotanique, int joursRattrapage)
@@ -1974,10 +1987,9 @@ public partial class Monde_Serveur : Node
 	/// <summary>Charge et spawn les arbres depuis disque. Rattrape la croissance du temps passé hors-ligne.</summary>
 	private bool ChargerArbresChunk(Vector2I coord, Chunk_Serveur chunk)
 	{
-		if (ActiverGenerationAbysse)
-			return false;
 		if (_parentPourArbres == null) return false;
-		string chemin = Path.Combine(ProjectSettings.GlobalizePath(ObtenirDossierChunksRelatif()), $"chunk_{coord.X}_0_{coord.Y}_arbres.bin");
+		int coordY = chunk?.ChunkOffsetY ?? 0;
+		string chemin = Path.Combine(ProjectSettings.GlobalizePath(ObtenirDossierChunksRelatif()), $"chunk_{coord.X}_{coordY}_{coord.Y}_arbres.bin");
 		if (!File.Exists(chemin)) return false;
 		try
 		{
@@ -2493,10 +2505,121 @@ public partial class Monde_Serveur : Node
 		}
 	}
 
+	/// <summary>
+	/// Comble uniquement l’air entre le premier solide rencontré sous les pieds et la surface (disque XZ), sur une profondeur max.
+	/// Sans solide dans la fenêtre : aucun remblai (évite une colonne pleine dans le ciel quand le portail était mal aligné).
+	/// Réplication via <see cref="Chunk_Serveur.ModifierVoxelEtNotifier"/>.
+	/// </summary>
+	public void RemplirSocleSousPortail(Vector3 centreMondeXZ, float ySurfaceTerrain, int rayonDemiCoteVoxels, int profondeurMaxVersLeBas)
+	{
+		rayonDemiCoteVoxels = Mathf.Max(0, rayonDemiCoteVoxels);
+		profondeurMaxVersLeBas = Mathf.Max(1, profondeurMaxVersLeBas);
+		int gx0 = Mathf.FloorToInt(centreMondeXZ.X);
+		int gz0 = Mathf.FloorToInt(centreMondeXZ.Z);
+		int yTop = Mathf.FloorToInt(ySurfaceTerrain);
+		int yScanMin = yTop - profondeurMaxVersLeBas;
+		const int yMondeDepuis = 3;
+		yScanMin = Mathf.Max(yMondeDepuis, yScanMin);
+
+		int rCarre = rayonDemiCoteVoxels * rayonDemiCoteVoxels;
+		const byte idTerre = 2;
+		const byte idHerbe = 1;
+
+		for (int dx = -rayonDemiCoteVoxels; dx <= rayonDemiCoteVoxels; dx++)
+		{
+			for (int dz = -rayonDemiCoteVoxels; dz <= rayonDemiCoteVoxels; dz++)
+			{
+				if (dx * dx + dz * dz > rCarre)
+					continue;
+				int gx = gx0 + dx;
+				int gz = gz0 + dz;
+				Gestionnaire_Monde.WorldToChunkAndLocal(gx, gz, TailleChunk, out Vector2I coordChunk, out int lx, out int lz);
+				if (lx < 0 || lx > TailleChunk || lz < 0 || lz > TailleChunk)
+					continue;
+
+				int? ySolideSousPied = null;
+				for (int gy = yTop; gy >= yScanMin; gy--)
+				{
+					int coordYSlice = CoordYDepuisMondeY(gy, HauteurMax);
+					Chunk_Serveur chunkScan = ObtenirOuCreerChunk(coordChunk, coordYSlice);
+					int lyScan = LocalYDepuisMondeY(gy, HauteurMax);
+					if (!chunkScan.EstVoxelAir(lx, lyScan, lz))
+					{
+						ySolideSousPied = gy;
+						break;
+					}
+				}
+
+				if (!ySolideSousPied.HasValue)
+					continue;
+
+				for (int gy = ySolideSousPied.Value + 1; gy <= yTop; gy++)
+				{
+					int coordYSlice = CoordYDepuisMondeY(gy, HauteurMax);
+					Chunk_Serveur chunk = ObtenirOuCreerChunk(coordChunk, coordYSlice);
+					int ly = LocalYDepuisMondeY(gy, HauteurMax);
+					if (!chunk.EstVoxelAir(lx, ly, lz))
+						continue;
+					byte id = gy == yTop ? idHerbe : idTerre;
+					chunk.ModifierVoxelEtNotifier(lx, ly, lz, id);
+				}
+			}
+		}
+	}
+
 	public DonneesChunk ObtenirDonneesChunkPourClient(Vector2I coord)
 	{
 		var chunk = ObtenirOuCreerChunk(coord);
 		return chunk.ObtenirDonneesPourClient();
+	}
+
+	/// <summary>
+	/// Surface monde (face supérieure du voxel de surface : <c>gy + 1</c>) à partir des densités serveur,
+	/// même convention que <see cref="Monde_Client.EssayerObtenirYSurfaceMondeDepuisDonneesVoxel"/>.
+	/// Alpha-like uniquement : retourne <c>false</c> si génération Abysse active.
+	/// </summary>
+	public bool EssayerObtenirYSurfaceMondeDepuisVoxels(int gx, int gz, out float ySurface)
+	{
+		ySurface = 0f;
+		if (ActiverGenerationAbysse)
+			return false;
+
+		Gestionnaire_Monde.WorldToChunkAndLocal(gx, gz, TailleChunk, out Vector2I coordChunk, out int lx, out int lz);
+		if (lx < 0 || lx >= TailleChunk || lz < 0 || lz >= TailleChunk)
+			return false;
+
+		ObtenirOuCreerChunk(coordChunk, 0);
+
+		const int yMondeMin = 3;
+		int hProc = Generateur_Voxel.ObtenirHauteurTerrainMonde(gx, gz, SeedTerrain);
+		// Fenêtre autour de la hauteur « carte » : évite de prendre un plafon de grotte / surplomb très au-dessus du sol jouable.
+		int yHaut = Mathf.Min(HauteurMax - 1, hProc + 72);
+		int yBas = Mathf.Max(yMondeMin, hProc - 160);
+		for (int gy = yHaut; gy >= yBas; gy--)
+		{
+			var pos = new Vector3I(gx, gy, gz);
+			if (EstVoxelAir(pos))
+				continue;
+			bool videAuDessus = gy + 1 >= HauteurMax || EstVoxelAir(new Vector3I(gx, gy + 1, gz));
+			if (!videAuDessus)
+				continue;
+			ySurface = gy + 1f;
+			return true;
+		}
+
+		for (int gy = HauteurMax - 1; gy >= yMondeMin; gy--)
+		{
+			var pos = new Vector3I(gx, gy, gz);
+			if (EstVoxelAir(pos))
+				continue;
+			bool videAuDessus = gy + 1 >= HauteurMax || EstVoxelAir(new Vector3I(gx, gy + 1, gz));
+			if (!videAuDessus)
+				continue;
+			ySurface = gy + 1f;
+			return true;
+		}
+
+		return false;
 	}
 
 	private (Chunk_Serveur chunk, Vector3I local)? ObtenirChunkEtLocal(Vector3I pos)

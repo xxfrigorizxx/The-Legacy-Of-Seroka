@@ -134,8 +134,9 @@ public partial class Gestionnaire_Abysse : Monde_Serveur
 		float taillePalier = Mathf.Max(1f, ConstantesDimensionAbysse.TaillePalierMetres);
 		float profondeurAbsolue = Mathf.Abs(ConstantesDimensionAbysse.FondAbsolu);
 		int nombreStratesVersBas = Mathf.Max(1, Mathf.CeilToInt(profondeurAbsolue / taillePalier) + 1);
-		const float epaisseurStrateMetres = 12f;
-		const float decalageCentreSousPalierMetres = 6f;
+		// ×3 vs 12 m d’origine ; +5 m vers le bas pour que la descente dans le trou garde le brouillard plus longtemps (bord haut = palier).
+		const float epaisseurStrateMetres = 12f * 3f + 5f;
+		const float decalageCentreSousPalierMetres = epaisseurStrateMetres * 0.5f;
 		for (int i = 0; i < nombreStratesVersBas; i++)
 		{
 			float yMonde = -i * taillePalier;
@@ -146,7 +147,7 @@ public partial class Gestionnaire_Abysse : Monde_Serveur
 			};
 			volume.Set("shape", 0); // Box
 			// Rebord du trou: on remonte à une emprise 1000x1000 (rayon 500 sur les axes).
-			// Verticalement, la strate est uniquement SOUS le palier: [yPalier, yPalier-12].
+			// Verticalement, sous le palier : bord haut = yPalier, bord bas = yPalier - epaisseurStrateMetres.
 			volume.Set("size", new Vector3(1000f, epaisseurStrateMetres, 1000f));
 			volume.Position = new Vector3(0f, yMonde - decalageCentreSousPalierMetres, 0f);
 

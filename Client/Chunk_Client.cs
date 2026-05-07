@@ -362,7 +362,16 @@ public partial class Chunk_Client : Node3D
 	{
 		int dx = Mathf.Abs(ChunkOffsetX - obsChunkX);
 		int dz = Mathf.Abs(ChunkOffsetZ - obsChunkZ);
-		bool dormant = dx > RAYON_CHUNK_ACTIF_CHUNKS || dz > RAYON_CHUNK_ACTIF_CHUNKS;
+		bool presDuJoueur = dx <= RAYON_CHUNK_ACTIF_CHUNKS && dz <= RAYON_CHUNK_ACTIF_CHUNKS;
+		bool presPortailNexusVersApisara = false;
+		if (GetParent() is Monde_Client mc && mc.EstDimensionActiveeAvecPortailNexusAuChunkOrigine())
+		{
+			int dx0 = Mathf.Abs(ChunkOffsetX);
+			int dz0 = Mathf.Abs(ChunkOffsetZ);
+			presPortailNexusVersApisara = dx0 <= RAYON_CHUNK_ACTIF_CHUNKS && dz0 <= RAYON_CHUNK_ACTIF_CHUNKS;
+		}
+
+		bool dormant = !presDuJoueur && !presPortailNexusVersApisara;
 		if (dormant == _dormant) return;
 		_dormant = dormant;
 

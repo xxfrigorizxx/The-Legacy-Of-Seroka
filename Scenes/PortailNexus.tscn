@@ -1,0 +1,18 @@
+[gd_scene format=3 uid="uid://cfjy5681uikud"]
+
+[ext_resource type="Script" uid="uid://cportailnex26k1" path="res://Portail.cs" id="1_portail"]
+[ext_resource type="PackedScene" uid="uid://di1tjxpq165ec" path="res://Modeles/structure/portaille/Portaille.glb" id="2_portaille_glb"]
+
+; Modèle 3D : res://Modeles/structure/portaille/Portaille.glb (cadre texturé).
+; Jeu : le Gestionnaire_Monde instancie automatiquement — 1 portail à (0,0) sol par monde Alpha, Beta (lore Δ), Omega (lore Γ), Delta (lore Ω) ;
+; sur APISARA : 4 portails sur la 1re prairie (axes N, E, S, O à 800 m), chacun jumelé avec le portail (0,0) du monde lié.
+; Alignement sol : surface voxel serveur (0,0) + RPC ; remblai disque réduit (exports ci-dessous).
+
+[node name="PortailNexus" type="Node3D"]
+script = ExtResource("1_portail")
+Liaison = 0
+AncreSurApisara = false
+RayonSocleVoxelsRemblai = 10
+ProfondeurSocleVoxelsRemblai = 14
+
+[node name="PortailleVisuel" parent="." instance=ExtResource("2_portaille_glb")]

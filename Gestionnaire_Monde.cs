@@ -85,6 +85,8 @@ public partial class Gestionnaire_Monde : Node3D
 	private readonly Dictionary<int, Node3D> _racineParDimension = new Dictionary<int, Node3D>();
 	/// <summary>Conteneur d'arbres scéniques par dimension (id → Node3D). Toggle de visibilité par dimension active.</summary>
 	private readonly Dictionary<int, Node3D> _arbresParDimension = new Dictionary<int, Node3D>();
+	/// <summary>XZ du portail « vers APISARA » par dimension Alpha-like (cible de retour depuis APISARA).</summary>
+	private readonly Dictionary<int, Vector2> _xzPortailVersApisaraParDimension = new Dictionary<int, Vector2>();
 	/// <summary>Position joueur mémorisée par dimension (clé = id de dimension). Permet de revenir « exactement où j'étais » dans chaque monde.</summary>
 	private readonly Dictionary<int, Vector3> _positionsSauvegardeesParDimension = new Dictionary<int, Vector3>();
 	private Label _labelCoords;
@@ -125,6 +127,10 @@ public partial class Gestionnaire_Monde : Node3D
 	private bool _gateTpDimensionActif;
 	private double _secondesGateTpDimension;
 	private const double DureeMaxGateTpDimensionSec = 8.0;
+	private bool _portailsNexusPlaces;
+	/// <summary>Assombrissement plein écran avant TP portail (client).</summary>
+	private CanvasLayer _overlayPortailTransition;
+	private ColorRect _rectAssombrissementPortail;
 	private double _cooldownPulseReveilPierresTp;
 	private const double IntervallePulseReveilPierresTpSec = 0.30;
 	private bool _verrouMarcheAbysseActif;
@@ -298,6 +304,24 @@ public partial class Gestionnaire_Monde : Node3D
 		if (ch == null) return false;
 		int sec = Mathf.FloorToInt(monde.Y / 16f);
 		return ch.SectionAPret(sec);
+	}
+
+	/// <summary>
+	/// Portail Nexus vers APISARA : le terrain du chunk à ce XZ est streamé pour la dimension active
+	/// (collision + voxels), prêt pour un raycast sol fidèle à la génération (seed).
+	/// </summary>
+	public bool EstTerrainClientPretPourPortailVersApisara(float mondeX, float mondeZ, int dimensionIdPortail)
+	{
+		if (dimensionIdPortail == (int)DimensionJeu.Abysse)
+			return false;
+		if (!UseArchitectureReseau || _mondeClient == null)
+		{
+			float y = EstimerAltitudeTerrainPortail(mondeX, mondeZ, dimensionIdPortail);
+			return EstCollisionTerrainChunkPretPourPoint(new Vector3(mondeX, y, mondeZ));
+		}
+		if (dimensionIdPortail != _dimensionLocaleActive)
+			return false;
+		return _mondeClient.ChunkTerrainPretAvecVoxelsPourCoordMonde(mondeX, mondeZ);
 	}
 
 	private string ObtenirCheminSessionJoueur()
@@ -634,6 +658,7 @@ public partial class Gestionnaire_Monde : Node3D
 		Vector3 debut = positionApprox + Vector3.Up * 900f;
 		Vector3 fin = positionApprox + Vector3.Down * 900f;
 		var query = PhysicsRayQueryParameters3D.Create(debut, fin);
+		query.CollisionMask = 1;
 		query.CollideWithAreas = false;
 		query.CollideWithBodies = true;
 		if (_joueur != null && _joueur.GetRid().IsValid)
@@ -932,6 +957,7 @@ public partial class Gestionnaire_Monde : Node3D
 		AddChild(_overlayChargement);
 		_secondesOverlayChargement = 0;
 		CreerOverlayEmerukedesiParotaromaStage1();
+		AssurerOverlayPortailTransition();
 
 		// Forge automatique du matériau eau (bypass de l'éditeur) — sanctuarisation : le GC ne le détruira pas car lié au nœud.
 		var shaderEau = GD.Load<Shader>("res://EauTriplanar.gdshader");
@@ -1037,6 +1063,68 @@ void fragment() {
 		_overlayEmerukedesiParotaromaStage1.AddChild(rect);
 		_overlayEmerukedesiParotaromaStage1.Visible = false;
 		AddChild(_overlayEmerukedesiParotaromaStage1);
+	}
+
+	private void AssurerOverlayPortailTransition()
+	{
+		if (_overlayPortailTransition != null && GodotObject.IsInstanceValid(_overlayPortailTransition)) return;
+		_overlayPortailTransition = new CanvasLayer { Name = "Overlay_Portail_Transition", Layer = 51 };
+		_rectAssombrissementPortail = new ColorRect
+		{
+			Name = "RectAssombrissementPortail",
+			MouseFilter = Control.MouseFilterEnum.Stop,
+			Color = new Color(0f, 0f, 0f, 0f)
+		};
+		_rectAssombrissementPortail.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+		_rectAssombrissementPortail.OffsetLeft = 0f;
+		_rectAssombrissementPortail.OffsetTop = 0f;
+		_rectAssombrissementPortail.OffsetRight = 0f;
+		_rectAssombrissementPortail.OffsetBottom = 0f;
+		_overlayPortailTransition.AddChild(_rectAssombrissementPortail);
+		_overlayPortailTransition.Visible = false;
+		AddChild(_overlayPortailTransition);
+	}
+
+	/// <summary>Fondu noir ~3 s puis masquage (appelé en local sur chaque client concerné).</summary>
+	public void AfficherAssombrissementPortailTransition(float dureeTotaleSec)
+	{
+		AssurerOverlayPortailTransition();
+		if (_rectAssombrissementPortail == null) return;
+		_overlayPortailTransition.Visible = true;
+		_rectAssombrissementPortail.Color = new Color(0f, 0f, 0f, 0f);
+		float d = Mathf.Max(0.35f, dureeTotaleSec);
+		float fadeIn = Mathf.Clamp(d * 0.32f, 0.45f, 1.2f);
+		float fadeOut = Mathf.Clamp(d * 0.22f, 0.25f, 0.7f);
+		float maintien = Mathf.Max(0.15f, d - fadeIn - fadeOut);
+		Tween tween = CreateTween();
+		tween.TweenProperty(_rectAssombrissementPortail, "color", new Color(0f, 0f, 0f, 0.88f), fadeIn);
+		tween.TweenInterval(maintien);
+		tween.TweenProperty(_rectAssombrissementPortail, "color", new Color(0f, 0f, 0f, 0f), fadeOut);
+		tween.TweenCallback(Callable.From(() =>
+		{
+			if (_overlayPortailTransition != null && GodotObject.IsInstanceValid(_overlayPortailTransition))
+				_overlayPortailTransition.Visible = false;
+		}));
+	}
+
+	[Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = false)]
+	private void RpcRecevoirAssombrissementPortail(float dureeSec)
+	{
+		AfficherAssombrissementPortailTransition(dureeSec);
+	}
+
+	/// <summary>Serveur : envoie l’effet d’assombrissement au peer cible (et localement si c’est l’hôte).</summary>
+	public void DiffuserAssombrissementPortailAuxClients(long peerId, float dureeSec)
+	{
+		if (Multiplayer.HasMultiplayerPeer())
+		{
+			if (!Multiplayer.IsServer()) return;
+			RpcId((int)peerId, nameof(RpcRecevoirAssombrissementPortail), dureeSec);
+			if (peerId == Multiplayer.GetUniqueId())
+				AfficherAssombrissementPortailTransition(dureeSec);
+		}
+		else
+			AfficherAssombrissementPortailTransition(dureeSec);
 	}
 
 	private void ReinitialiserEmerukedesiParotaromaStage1()
@@ -2151,6 +2239,264 @@ void fragment() {
 		Multiplayer.PeerConnected += EnvoyerFuseauHoraireAuPeer;
 		Multiplayer.PeerConnected += SurPeerConnecteDimensions;
 		Multiplayer.PeerDisconnected += SurPeerDeconnecteDimensions;
+
+		Callable.From(InitialiserPortailsNexusSiNecessaire).CallDeferred();
+	}
+
+	/// <summary>
+	/// Modèle <c>Portaille.glb</c> : un portail à l’origine <c>(0, surface, 0)</c> par monde Alpha / Beta / Omega / Delta (vers APISARA) ;
+	/// quatre portails sur la prairie extérieure APISARA (axes N, E, S, O ~1280 m). Liaisons fixes : Nord↔Alpha, Est↔Beta, Sud↔Omega, Ouest↔Delta (voir <see cref="NexusPortailsApisara"/>).
+	/// </summary>
+	private void InitialiserPortailsNexusSiNecessaire()
+	{
+		if (_portailsNexusPlaces || !UseArchitectureReseau) return;
+		_portailsNexusPlaces = true;
+		const string cheminPortaille = "res://Modeles/structure/portaille/Portaille.glb";
+		var scene = GD.Load<PackedScene>("res://Scenes/PortailNexus.tscn");
+		if (scene == null)
+		{
+			GD.PrintErr("ZERO-K : impossible de charger res://Scenes/PortailNexus.tscn.");
+			return;
+		}
+
+		foreach (var info in ConstantesDimensions.ToutesAlphaLike())
+		{
+			if (!_racineParDimension.TryGetValue(info.Id, out Node3D racine) || racine == null) continue;
+			var p = scene.Instantiate() as Portail;
+			if (p == null) continue;
+			p.Name = $"PortailVersApisara_{info.NomCanonique}";
+			p.CheminScenePortaille = cheminPortaille;
+			p.Liaison = NexusPortailsApisara.ObtenirCardinalPourDimensionAlphaLike(info.Id);
+			p.AncreSurApisara = false;
+			p.IdDimensionConteneur = info.Id;
+			p.ForcerAttenteAffichageJusquaSolConfirmeVersApisara();
+			racine.AddChild(p);
+			var xz = ObtenirMeilleurXZPortailOrigineAlphaLike(info.Id, SeedTerrain);
+			_xzPortailVersApisaraParDimension[info.Id] = xz;
+			// Hauteur procédurale tout de suite (évite une frame à Y=0) ; au prochain idle : raycast vers le sol pour coller au mesh.
+			float yInit = EstimerAltitudeTerrainPortail(xz.X, xz.Y, info.Id);
+			float enf = Mathf.Max(0f, p.EnfoncementBaseAuSolMetres);
+			p.GlobalPosition = new Vector3(xz.X, yInit - enf, xz.Y);
+			Vector2 xzCapture = xz;
+			int idDimCapture = info.Id;
+			Callable.From(() => AffinerPortailVersApisaraSolParRaycast(p, xzCapture, idDimCapture)).CallDeferred();
+		}
+
+		if (_racineParDimension.TryGetValue((int)DimensionJeu.Abysse, out Node3D racineAb) && racineAb != null)
+		{
+			foreach (PointCardinal c in Enum.GetValues(typeof(PointCardinal)))
+			{
+				var p = scene.Instantiate() as Portail;
+				if (p == null) continue;
+				p.Name = $"PortailDepuisApisara_{c}";
+				p.CheminScenePortaille = cheminPortaille;
+				p.Liaison = c;
+				p.AncreSurApisara = true;
+				p.IdDimensionConteneur = (int)DimensionJeu.Abysse;
+				racineAb.AddChild(p);
+				var a = NexusCoords.ObtenirAncreApisara(c);
+				float y = EstimerAltitudeTerrainPortail(a.X, a.Z, (int)DimensionJeu.Abysse);
+				p.Position = new Vector3(a.X, y - Mathf.Max(0f, p.EnfoncementBaseAuSolMetres), a.Z);
+				Callable.From(() => p.AlignerPortailSurSurface()).CallDeferred();
+			}
+		}
+
+		PrioriserChunksClientAutourPortailsDimension(_dimensionLocaleActive);
+		MettreAJourVisibilitePortailsParDimension(_dimensionLocaleActive);
+		GD.Print("ZERO-K : portails Nexus (Portaille.glb) — 4 mondes à (0,0) + 4 sur plaine extérieure APISARA (N,E,S,O).");
+		Callable.From(DiffuserSolPortailsNexusVersApisaraApresInitDepuisVoxelsServeur).CallDeferred();
+	}
+
+	/// <summary>Ordre fixe : Alpha, Beta, Omega, Delta — aligné sur <see cref="ConstantesDimensions.ToutesAlphaLike"/> usuel.</summary>
+	private static readonly int[] _ordreDimensionsPortailVersApisara =
+	{
+		(int)DimensionJeu.Alpha,
+		(int)DimensionJeu.Beta,
+		(int)DimensionJeu.Omega,
+		(int)DimensionJeu.Delta
+	};
+
+	/// <summary>
+	/// Serveur ou solo : lit la surface voxel à (0,0) par dimension, applique aux portails, envoie aux clients distants.
+	/// Les portails APISARA (<see cref="Portail.AncreSurApisara"/>) ne sont pas concernés.
+	/// </summary>
+	private void DiffuserSolPortailsNexusVersApisaraApresInitDepuisVoxelsServeur()
+	{
+		if (!UseArchitectureReseau)
+			return;
+		bool serveurOuSolo = !Multiplayer.HasMultiplayerPeer() || Multiplayer.IsServer();
+		float yAlpha = -1f, yBeta = -1f, yOmega = -1f, yDelta = -1f;
+		if (serveurOuSolo)
+		{
+			for (int i = 0; i < _ordreDimensionsPortailVersApisara.Length; i++)
+			{
+				int dim = _ordreDimensionsPortailVersApisara[i];
+				Monde_Serveur srv = ObtenirServeurDimension(dim);
+				float y = -1f;
+				if (srv != null && srv.EssayerObtenirYSurfaceMondeDepuisVoxels(0, 0, out float ySurf))
+					y = ySurf;
+				switch (i)
+				{
+					case 0: yAlpha = y; break;
+					case 1: yBeta = y; break;
+					case 2: yOmega = y; break;
+					case 3: yDelta = y; break;
+				}
+			}
+			AppliquerYSolPortailsNexusVersApisaraAuxInstances(yAlpha, yBeta, yOmega, yDelta);
+			if (Multiplayer.HasMultiplayerPeer() && Multiplayer.IsServer())
+			{
+				foreach (long peerId in Multiplayer.GetPeers())
+					RpcId((int)peerId, nameof(RpcRecevoirYSolPortailsNexusVersApisara), yAlpha, yBeta, yOmega, yDelta);
+			}
+		}
+	}
+
+	private void AppliquerYSolPortailsNexusVersApisaraAuxInstances(float yAlpha, float yBeta, float yOmega, float yDelta)
+	{
+		float[] ys = { yAlpha, yBeta, yOmega, yDelta };
+		for (int i = 0; i < _ordreDimensionsPortailVersApisara.Length; i++)
+		{
+			if (ys[i] < 0f)
+				continue;
+			int dim = _ordreDimensionsPortailVersApisara[i];
+			if (!_racineParDimension.TryGetValue(dim, out Node3D racine) || racine == null) continue;
+			foreach (Node enfant in racine.GetChildren())
+			{
+				if (enfant is not Portail portail || portail.AncreSurApisara)
+					continue;
+				if (!portail.Name.ToString().StartsWith("PortailVersApisara_", StringComparison.Ordinal))
+					continue;
+				portail.AppliquerSurfaceSolAutoritaireServeur(ys[i]);
+				break;
+			}
+		}
+	}
+
+	[Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = false)]
+	private void RpcRecevoirYSolPortailsNexusVersApisara(float yAlpha, float yBeta, float yOmega, float yDelta)
+	{
+		AppliquerYSolPortailsNexusVersApisaraAuxInstances(yAlpha, yBeta, yOmega, yDelta);
+	}
+
+	/// <summary>
+	/// Après chargement : raycast vertical (ciel → fond) au XZ du portail « vers APISARA » pour obtenir la vraie hauteur du terrain mesh ;
+	/// sinon on garde l’estimé procédural. Repositionne le nœud puis réaligne trigger / remblai.
+	/// </summary>
+	private void AffinerPortailVersApisaraSolParRaycast(Portail p, Vector2 xz, int dimensionId)
+	{
+		if (p == null || !GodotObject.IsInstanceValid(p) || p.AncreSurApisara) return;
+		// Placement réel : <see cref="Portail.AlignerPortailSurSurface"/> (attente chunk + raycast ciel→sol).
+		float enf = Mathf.Max(0f, p.EnfoncementBaseAuSolMetres);
+		float yProc = EstimerAltitudeTerrainPortail(xz.X, xz.Y, dimensionId);
+		p.GlobalPosition = new Vector3(xz.X, yProc - enf, xz.Y);
+		p.AlignerPortailSurSurface();
+	}
+
+	/// <summary>Raycast monde vers le bas (même principe que <see cref="Portail.AlignerPortailSurSurface"/>), sans exclure de corps.</summary>
+	private static bool EssayerObtenirAltitudeSolParRaycastXZ(Node3D noeudReferenceMonde, float x, float z, int dimensionId, out float ySol)
+	{
+		ySol = 0f;
+		World3D world = noeudReferenceMonde.GetWorld3D();
+		if (world?.DirectSpaceState == null) return false;
+
+		float yRef = EstimerAltitudeTerrainPortail(x, z, dimensionId);
+		float debutY = Mathf.Max(3200f, yRef + 500f);
+		Vector3 debut = new Vector3(x, debutY, z);
+		Vector3 fin = new Vector3(x, ConstantesDimensionAbysse.FondAbsolu, z);
+		var query = PhysicsRayQueryParameters3D.Create(debut, fin);
+		query.CollisionMask = 1u;
+		query.CollideWithAreas = false;
+		query.CollideWithBodies = true;
+		var hit = world.DirectSpaceState.IntersectRay(query);
+		if (hit.Count > 0 && hit.ContainsKey("position"))
+		{
+			ySol = ((Vector3)hit["position"]).Y;
+			return true;
+		}
+
+		return false;
+	}
+
+	/// <summary>Surface à partir des voxels déjà chargés côté client (comme la flore) ; uniquement si <paramref name="dimensionIdPortail"/> est la dimension <b>localement</b> affichée.</summary>
+	public bool EssayerObtenirYSurfaceTerrainDepuisVoxelsChunk(float mondeX, float mondeZ, int dimensionIdPortail, out float ySurface)
+	{
+		ySurface = 0f;
+		if (_mondeClient == null || dimensionIdPortail != _dimensionLocaleActive) return false;
+		return _mondeClient.EssayerObtenirYSurfaceMondeDepuisDonneesVoxel(mondeX, mondeZ, out ySurface);
+	}
+
+	/// <summary>Altitude monde approximative du sol (bruit procédural), même logique que le placement initial des portails.</summary>
+	public static float EstimerAltitudeTerrainPortail(float x, float z, int dimensionId)
+	{
+		int seed = GameState.Instance?.SeedTerrainActuel ?? 19847;
+		if (dimensionId == (int)DimensionJeu.Abysse)
+		{
+			int h = ApisaraHauteurTerrain.ObtenirHauteurSolMonde(Mathf.FloorToInt(x), Mathf.FloorToInt(z), seed);
+			return h + 1f;
+		}
+
+		// Même ordre de grandeur qu’APISARA (+1) : la face du voxel surface est à h ; +10 plaçait le portail dans le ciel avant raycast.
+		int hAlpha = Generateur_Voxel.ObtenirHauteurTerrainMonde(Mathf.FloorToInt(x), Mathf.FloorToInt(z), seed);
+		return hAlpha + 1f;
+	}
+
+	/// <summary>Repère XZ du portail « vers APISARA » : toujours <b>(0,0)</b> monde (chunk 0,0 chargé en priorité — alignement sol / raycast fiables).</summary>
+	public static Vector2 ObtenirMeilleurXZPortailOrigineAlphaLike(int dimensionId, int seedTerrain)
+	{
+		_ = dimensionId;
+		_ = seedTerrain;
+		return Vector2.Zero;
+	}
+
+	/// <summary>Position XZ du portail vers APISARA pour une dimension Alpha-like (retour depuis l’ancre APISARA).</summary>
+	public Vector2 ObtenirXZPortailVersApisaraPourDimension(int dimensionId)
+	{
+		if (_xzPortailVersApisaraParDimension.TryGetValue(dimensionId, out Vector2 v))
+			return v;
+		return ObtenirMeilleurXZPortailOrigineAlphaLike(dimensionId, SeedTerrain);
+	}
+
+	private void MettreAJourVisibilitePortailsParDimension(int dimensionIdActif)
+	{
+		if (!UseArchitectureReseau || _racineParDimension.Count == 0) return;
+		foreach (var kv in _racineParDimension)
+		{
+			if (kv.Value == null || !GodotObject.IsInstanceValid(kv.Value)) continue;
+			foreach (Node enfant in kv.Value.GetChildren())
+			{
+				if (enfant is Portail portail)
+					portail.DefinirVisibiliteSelonDimensionActive(kv.Key == dimensionIdActif);
+			}
+		}
+	}
+
+	private void MarquerPortailsDimensionPourRealignementSol(int dimensionId)
+	{
+		if (!_racineParDimension.TryGetValue(dimensionId, out Node3D racine) || racine == null) return;
+		foreach (Node enfant in racine.GetChildren())
+		{
+			if (enfant is Portail p)
+				p.MarquerAttenteNouveauRaycastSol();
+		}
+	}
+
+	/// <summary>Chunks du client : priorité au sol sous les portails Nexus de la dimension (collision raycast).</summary>
+	private void PrioriserChunksClientAutourPortailsDimension(int dimensionId)
+	{
+		if (_mondeClient == null || TailleChunk <= 0) return;
+		if (dimensionId == (int)DimensionJeu.Abysse)
+		{
+			foreach (PointCardinal c in Enum.GetValues(typeof(PointCardinal)))
+			{
+				Vector3 a = NexusCoords.ObtenirAncreApisara(c);
+				_mondeClient.ReserverChunkSpawnPrioritaire(WorldToChunkCoord(a.X, a.Z, TailleChunk));
+			}
+			return;
+		}
+
+		Vector2 xz = ObtenirXZPortailVersApisaraPourDimension(dimensionId);
+		_mondeClient.ReserverChunkSpawnPrioritaire(WorldToChunkCoord(xz.X, xz.Y, TailleChunk));
 	}
 
 	private void InitialiserDimensionServeur(Monde_Serveur serveur, int dimensionId)
@@ -2435,7 +2781,7 @@ void fragment() {
 
 	private void TransfererPeerVersDimension(long peerId, int dimensionCible, Vector3 positionCible, string messageServeur)
 	{
-		if (!Multiplayer.IsServer()) return;
+		if (Multiplayer.HasMultiplayerPeer() && !Multiplayer.IsServer()) return;
 		int dimensionActuelle = ObtenirDimensionPeer(peerId);
 		if (peerId == Multiplayer.GetUniqueId())
 		{
@@ -2464,10 +2810,71 @@ void fragment() {
 		RpcId((int)peerId, nameof(RecevoirTransfertDimensionRPC), dimensionCible, positionCible.X, positionCible.Y, positionCible.Z, messageServeur ?? "");
 	}
 
+	/// <summary>Peer réseau associé au nœud joueur (autorité), ou l’identifiant local en solo.</summary>
+	public long ObtenirPeerIdPourNoeudJoueur(Joueur j)
+	{
+		if (j == null) return 1;
+		if (!Multiplayer.HasMultiplayerPeer())
+			return Multiplayer.GetUniqueId();
+		int auth = j.GetMultiplayerAuthority();
+		if (auth >= 0)
+			return auth;
+		return Multiplayer.GetUniqueId();
+	}
+
+	/// <summary>Remblai voxel sous un portail (serveur / solo) : uniquement l’air entre le sol existant et les pieds, sur une profondeur max (pas de colonne pleine).</summary>
+	public void DemanderRemplissageSocleSousPortail(Vector3 centrePortailMonde, int dimensionId, float ySurfaceTerrain, int rayonDemiCoteVoxels, int profondeurMaxVersLeBas)
+	{
+		if (!UseArchitectureReseau)
+			return;
+		if (Multiplayer.HasMultiplayerPeer() && !Multiplayer.IsServer())
+			return;
+		Monde_Serveur serveur = ObtenirServeurDimension(dimensionId);
+		serveur?.RemplirSocleSousPortail(centrePortailMonde, ySurfaceTerrain, rayonDemiCoteVoxels, profondeurMaxVersLeBas);
+	}
+
+	/// <summary>Transfert déclenché par un <see cref="Portail"/> : dimension cible + XZ logique (Y affiné par raycast vertical après coup).</summary>
+	public void TransfererJoueurViaPortail(Node3D joueur, int dimensionIdCible, Vector3 positionCibleXZ, string messageServeur = null)
+	{
+		if (joueur is not Joueur j || !GodotObject.IsInstanceValid(j)) return;
+		if (Multiplayer.HasMultiplayerPeer() && !Multiplayer.IsServer()) return;
+
+		float yRef = ConstantesDimensions.ObtenirInfoOuAlpha(dimensionIdCible).PointTeleportDefaut.Y;
+		var posInitiale = new Vector3(positionCibleXZ.X, yRef, positionCibleXZ.Z);
+		long peerId = ObtenirPeerIdPourNoeudJoueur(j);
+		TransfererPeerVersDimension(peerId, dimensionIdCible, posInitiale, messageServeur ?? "Transit dimensionnel.");
+		if (peerId == Multiplayer.GetUniqueId())
+		{
+			float ax = positionCibleXZ.X;
+			float az = positionCibleXZ.Z;
+			Callable.From(() => AlignerJoueurPortailSurSolDeferred(ax, az)).CallDeferred();
+		}
+	}
+
+	private void AlignerJoueurPortailSurSolDeferred(float mondeX, float mondeZ)
+	{
+		if (_joueur == null || !GodotObject.IsInstanceValid(_joueur)) return;
+		var approx = new Vector3(mondeX, 0f, mondeZ);
+		if (EssayerTrouverSolParRaycast(approx, out Vector3 pointSol))
+		{
+			if (_joueur is Joueur jo)
+				_joueur.GlobalPosition = new Vector3(mondeX, jo.CalculerYOriginePourPiedsSurSurface(pointSol.Y + 0.08f), mondeZ);
+			else
+				_joueur.GlobalPosition = pointSol + Vector3.Up * 1.2f;
+			_joueur.Velocity = Vector3.Zero;
+			return;
+		}
+		Vector3 fb = AssurerSpawnAuDessusDuSol(new Vector3(mondeX, ConstantesDimensions.ObtenirInfoOuAlpha(_dimensionLocaleActive).PointTeleportDefaut.Y, mondeZ));
+		_joueur.GlobalPosition = fb;
+		_joueur.Velocity = Vector3.Zero;
+		GD.PushWarning("ZERO-K Portail : raycast sol sans impact, fallback spawn.");
+	}
+
 	[Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = false)]
 	private void RecevoirTransfertDimensionRPC(int dimensionId, float posX, float posY, float posZ, string messageServeur)
 	{
 		AppliquerChangementDimensionLocale(dimensionId, new Vector3(posX, posY, posZ), messageServeur);
+		Callable.From(() => AlignerJoueurPortailSurSolDeferred(posX, posZ)).CallDeferred();
 	}
 
 	private void AppliquerChangementDimensionLocale(int dimensionId, Vector3 positionCible, string messageServeur)
@@ -2478,8 +2885,11 @@ void fragment() {
 		_mondeServeur?.ForcerPulseReveilPierres();
 		_mondeClient?.DefinirDimensionReseauActive(dimensionId);
 		_mondeClient?.ReinitialiserTousLesChunksLocaux();
+		MarquerPortailsDimensionPourRealignementSol(dimensionId);
+		PrioriserChunksClientAutourPortailsDimension(dimensionId);
 		ReinitialiserEmerukedesiParotaromaStage1();
 		MettreAJourVisibiliteArbresParDimension(dimensionId);
+		MettreAJourVisibilitePortailsParDimension(dimensionId);
 		ReparenterNoeudDansDimension(_joueur, dimensionId);
 		if (_joueur != null)
 		{
