@@ -129,6 +129,9 @@ public partial class Monde_Client : Node3D
 	private float _tempsEtatGate = 99f;
 	[Export(PropertyHint.Range, "8,25,0.1")] public float BudgetFrameCibleMs = 16.2f;
 	[Export(PropertyHint.Range, "0.1,4,0.1")] public float MargeBudgetUrgenceMs = 1.0f;
+	[Export(PropertyHint.Range, "0.2,8,0.1")] public float BudgetMsIntegrationsMainThread = 2.8f;
+	[Export(PropertyHint.Range, "0.2,8,0.1")] public float BudgetMsSolidificationMainThread = 2.4f;
+	[Export(PropertyHint.Range, "0.1,4,0.1")] public float BudgetMsLancementWorkersMainThread = 0.8f;
 	[Export(PropertyHint.Range, "0.05,0.8,0.01")] public float IntervalleServicesLointainsUrgenceSec = 0.22f;
 	[Export(PropertyHint.Range, "8,512,1")] public int FenetreSelectionRequetes = 96;
 	[Export(PropertyHint.Range, "1,8,1")] public int MaxLancementsTravailleursParTick = 2;
@@ -996,16 +999,7 @@ public partial class Monde_Client : Node3D
 			Vector2I cJoueur = Gestionnaire_Monde.WorldToChunkCoord(ObtenirPositionObservation(), TailleChunk);
 			int dx = Mathf.Abs(data.Coordonnees.X - cJoueur.X);
 			int dz = Mathf.Abs(data.Coordonnees.Y - cJoueur.Y);
-			if (dx == 0 && dz == 0)
-			{
-				AssurerCorpsPhysiqueChunk(data);
-				if (data.PhysicsBodyRID.IsValid)
-				{
-					PhysicsServer3D.Singleton.BodySetSpace(data.PhysicsBodyRID, world.Space);
-					data.EstEnFileSolidification = false;
-				}
-			}
-			else if (dx <= 1 && dz <= 1)
+			if (dx <= 1 && dz <= 1)
 			{
 				if (!data.EstEnFileSolidification)
 				{
@@ -1258,6 +1252,30 @@ public partial class Monde_Client : Node3D
 		bool urgencePerfExtreme = niveauUrgence >= 3;
 		bool urgencePerfCritique = niveauUrgence >= 2;
 		bool urgencePerfForte = niveauUrgence >= 1;
+		float budgetIntegrationsMs = Mathf.Clamp(BudgetMsIntegrationsMainThread, 0.2f, 8f);
+		float budgetSolidificationMs = Mathf.Clamp(BudgetMsSolidificationMainThread, 0.2f, 8f);
+		float budgetWorkersMainMs = Mathf.Clamp(BudgetMsLancementWorkersMainThread, 0.1f, 4f);
+		if (ModeSurvieFpsAgressif)
+		{
+			if (urgencePerfExtreme)
+			{
+				budgetIntegrationsMs *= 0.68f;
+				budgetSolidificationMs *= 0.70f;
+				budgetWorkersMainMs *= 0.65f;
+			}
+			else if (urgencePerfCritique)
+			{
+				budgetIntegrationsMs *= 0.78f;
+				budgetSolidificationMs *= 0.80f;
+				budgetWorkersMainMs *= 0.78f;
+			}
+			else if (urgencePerfForte)
+			{
+				budgetIntegrationsMs *= 0.90f;
+				budgetSolidificationMs *= 0.92f;
+				budgetWorkersMainMs *= 0.90f;
+			}
+		}
 
 		// 2) Intégrations : chargement initial agressif ; exploration : plusieurs par frame pour suivre un monde infini.
 		bool enChargement = !ChunkSousPiedsAPret();
@@ -1313,11 +1331,19 @@ public partial class Monde_Client : Node3D
 		{
 			maxIntegrations = Mathf.Max(maxIntegrations, 3);
 			budgetVerticesDyn = Mathf.Max(budgetVerticesDyn, 22000);
+			budgetIntegrationsMs = Mathf.Max(budgetIntegrationsMs, 3.2f);
+			budgetSolidificationMs = Mathf.Max(budgetSolidificationMs, 3.0f);
+			budgetWorkersMainMs = Mathf.Max(budgetWorkersMainMs, 1.0f);
 			if (_dimensionReseauActive == (int)DimensionJeu.Abysse)
 			{
-				// Limiter le burst mesh/frame pour réduire les micro-freezes tout en gardant le sol sous les pieds.
-				maxIntegrations = Mathf.Clamp(Mathf.Max(maxIntegrations, 4), 1, 4);
-				budgetVerticesDyn = Mathf.Max(budgetVerticesDyn, 26000);
+				// APISARA : plusieurs intégrations lourdes (fusion mesh + RID + file physique) dans la même
+				// frame produisaient des saccades visibles. On étale sur 2–3 frames max ; le chargement initial
+				// reste un peu plus gourmand pour éviter un écran nu prolongé.
+				int plafondIntegAbysse = enChargement ? 3 : 2;
+				if (joueurEnChute || vitesseJoueurXZ >= 4.5f)
+					plafondIntegAbysse = enChargement ? 4 : 3;
+				maxIntegrations = Mathf.Clamp(Mathf.Max(maxIntegrations, 2), 1, plafondIntegAbysse);
+				budgetVerticesDyn = Mathf.Max(budgetVerticesDyn, 24000);
 			}
 		}
 		// GATE FPS STRICT : hors zone critique, gel total si FPS < seuil, puis ramp-up 1→budget.
@@ -1338,8 +1364,14 @@ public partial class Monde_Client : Node3D
 		int integrations = 0;
 		int verticesIntegres = 0;
 		ulong debutIntegrationsUs = ActiverProfilagePerfMondeClient ? PerfBudgetMonitor.Begin() : 0UL;
+		ulong budgetIntegrationsUs = (ulong)Mathf.Max(300UL, budgetIntegrationsMs * 1000f);
 		while (integrations < maxIntegrations && _fileIntegrationMainThread.TryDequeue(out var integration))
 		{
+			if (integrations > 0 && PerfBudgetMonitor.Begin() - debutIntegrationsUs >= budgetIntegrationsUs)
+			{
+				_fileIntegrationMainThread.Enqueue(integration);
+				break;
+			}
 			int cout = Mathf.Max(1, integration.CoutVerticesEstime);
 			if (integrations > 0 && verticesIntegres + cout > budgetVerticesDyn)
 			{
@@ -1351,6 +1383,8 @@ public partial class Monde_Client : Node3D
 			catch (System.Exception ex) { GD.PrintErr("Monde_Client intégration: ", ex.Message); }
 			verticesIntegres += cout;
 			integrations++;
+			if (integrations > 0 && PerfBudgetMonitor.Begin() - debutIntegrationsUs >= budgetIntegrationsUs)
+				break;
 		}
 		if (ActiverProfilagePerfMondeClient)
 			PerfBudgetMonitor.End("MondeClient/Integrations", debutIntegrationsUs);
@@ -1381,10 +1415,11 @@ public partial class Monde_Client : Node3D
 				maxSolidifications = Mathf.Max(maxSolidifications, 4);
 				if (_dimensionReseauActive == (int)DimensionJeu.Abysse)
 				{
-					// Plafond : trop de BodySetSpace / frame = saccades nettes en exploration APISARA.
-					maxSolidifications = Mathf.Clamp(Mathf.Max(maxSolidifications, 6), 1, 8);
-					if (joueurEnChute)
-						maxSolidifications = Mathf.Clamp(maxSolidifications + 1, 1, 8);
+					// CreateTrimeshShape + BodySetSpace : un burst élevé gèle l’image. Plancher modéré pour le sol,
+					// plafond serré ; on monte seulement en chute / déplacement rapide.
+					maxSolidifications = Mathf.Clamp(Mathf.Max(maxSolidifications, 3), 1, 4);
+					if (joueurEnChute || vitesseJoueurXZ >= 4.5f)
+						maxSolidifications = Mathf.Clamp(maxSolidifications + 2, 1, 6);
 				}
 			}
 			// GATE FPS STRICT : hors zone critique, 0 si gelé, puis ramp-up.
@@ -1399,8 +1434,11 @@ public partial class Monde_Client : Node3D
 			}
 			int efforts = 0;
 			World3D w = GetWorld3D();
+			ulong budgetSolidificationUs = (ulong)Mathf.Max(300UL, budgetSolidificationMs * 1000f);
 			while (_fileAttenteSolidificationUrgente.Count > 0 && efforts < maxSolidifications && w != null)
 			{
+				if (efforts > 0 && PerfBudgetMonitor.Begin() - debutSolidificationUs >= budgetSolidificationUs)
+					break;
 				int idxUrgent = _fileAttenteSolidificationUrgente.Count - 1;
 				ChunkData urgent = _fileAttenteSolidificationUrgente[idxUrgent];
 				_fileAttenteSolidificationUrgente.RemoveAt(idxUrgent);
@@ -1418,9 +1456,13 @@ public partial class Monde_Client : Node3D
 					urgent.EstEnFileSolidification = false;
 				}
 				efforts++;
+				if (efforts > 0 && PerfBudgetMonitor.Begin() - debutSolidificationUs >= budgetSolidificationUs)
+					break;
 			}
 			while (_fileAttenteSolidification.Count > 0 && efforts < maxSolidifications)
 			{
+				if (efforts > 0 && PerfBudgetMonitor.Begin() - debutSolidificationUs >= budgetSolidificationUs)
+					break;
 				int idxProche = ExtraireIndexSolidificationProche(coordObsSolidif);
 				ChunkData chunkASolidifier = _fileAttenteSolidification[idxProche];
 				int dx = Mathf.Abs(chunkASolidifier.Coordonnees.X - coordObsSolidif.X);
@@ -1456,6 +1498,8 @@ public partial class Monde_Client : Node3D
 						AjouterEnFileSolidification(chunkASolidifier);
 				}
 				efforts++;
+				if (efforts > 0 && PerfBudgetMonitor.Begin() - debutSolidificationUs >= budgetSolidificationUs)
+					break;
 			}
 			solidificationsEffectuees = efforts;
 		}
@@ -1495,8 +1539,11 @@ public partial class Monde_Client : Node3D
 		budgetLancementsWorkers = AppliquerGateEtRampUp(budgetLancementsWorkers, doitGarantirProcheJoueur, 1);
 		int workersLancesTick = 0;
 		ulong debutWorkersUs = ActiverProfilagePerfMondeClient ? PerfBudgetMonitor.Begin() : 0UL;
+		ulong budgetWorkersUs = (ulong)Mathf.Max(200UL, budgetWorkersMainMs * 1000f);
 		while (Thread.VolatileRead(ref _chunksEnCoursDeCalcul) < maxTravailleurs && workersLancesTick < budgetLancementsWorkers)
 		{
+			if (workersLancesTick > 0 && PerfBudgetMonitor.Begin() - debutWorkersUs >= budgetWorkersUs)
+				break;
 			ChunkData chunkData = null;
 			DonneesChunk donnees = null;
 			lock (_lockFileAttenteMaths)
@@ -1544,6 +1591,8 @@ public partial class Monde_Client : Node3D
 				}
 			});
 			workersLancesTick++;
+			if (workersLancesTick > 0 && PerfBudgetMonitor.Begin() - debutWorkersUs >= budgetWorkersUs)
+				break;
 		}
 		if (ActiverProfilagePerfMondeClient)
 			PerfBudgetMonitor.End("MondeClient/LancementWorkers", debutWorkersUs);

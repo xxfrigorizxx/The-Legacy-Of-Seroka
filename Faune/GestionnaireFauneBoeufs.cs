@@ -58,6 +58,7 @@ public partial class GestionnaireFauneBoeufs : Node3D
 	private int _curseurEvaluationChunks;
 	private float _cooldownDrainProfilage;
 	private const int VersionPersistanceFaune = 1;
+	private int _dimensionFauneChargee = int.MinValue;
 
 	public override void _Ready()
 	{
@@ -71,6 +72,7 @@ public partial class GestionnaireFauneBoeufs : Node3D
 	{
 		if (ResoudreSceneFemelle() == null && SceneTaureau == null) return;
 		if (_gestionnaireMonde == null || _joueur == null) return;
+		BasculerContexteDimensionSiNecessaire();
 		// APISARA : aucune faune bovine — purge si passage Alpha → Abysse, pas de spawn ni streaming.
 		if (_gestionnaireMonde.EstDimensionLocaleAbysse())
 		{
@@ -135,20 +137,57 @@ public partial class GestionnaireFauneBoeufs : Node3D
 		return _boeufs;
 	}
 
-	private static string ObtenirCheminFichierFaune()
+	private int ObtenirDimensionLocaleActiveId()
+	{
+		if (_gestionnaireMonde != null && GodotObject.IsInstanceValid(_gestionnaireMonde))
+			return _gestionnaireMonde.ObtenirDimensionLocaleActiveId();
+		Node racine = Engine.GetMainLoop() is SceneTree arbre ? arbre.CurrentScene : null;
+		Gestionnaire_Monde gestionnaire = racine?.GetNodeOrNull<Gestionnaire_Monde>("Gestionnaire_Monde");
+		return gestionnaire != null ? gestionnaire.ObtenirDimensionLocaleActiveId() : (int)DimensionJeu.Alpha;
+	}
+
+	private static string ObtenirNomFichierFauneDimension(string suffixeDimensionCanonique)
+	{
+		return $"faune_boeufs.{suffixeDimensionCanonique}.dat";
+	}
+
+	private static string ObtenirCheminFichierFauneDimension(int dimensionId)
 	{
 		string nomMonde = GameState.Instance?.NomMondeActuel ?? "MonMonde";
 		string dossier = ProjectSettings.GlobalizePath($"user://saves/{nomMonde}");
 		Directory.CreateDirectory(dossier);
-		bool enAbysse = false;
-		Gestionnaire_Monde gestionnaire = null;
-		Node racine = Engine.GetMainLoop() is SceneTree arbre ? arbre.CurrentScene : null;
-		if (racine != null)
-			gestionnaire = racine.GetNodeOrNull<Gestionnaire_Monde>("Gestionnaire_Monde");
-		if (gestionnaire != null)
-			enAbysse = gestionnaire.EstDimensionLocaleAbysse();
+		string suffixe = ConstantesDimensions.ObtenirNomCanonique(dimensionId);
+		return Path.Combine(dossier, ObtenirNomFichierFauneDimension(suffixe));
+	}
+
+	private static string ObtenirCheminFichierFauneLegacy(int dimensionId)
+	{
+		string nomMonde = GameState.Instance?.NomMondeActuel ?? "MonMonde";
+		string dossier = ProjectSettings.GlobalizePath($"user://saves/{nomMonde}");
+		Directory.CreateDirectory(dossier);
+		bool enAbysse = dimensionId == (int)DimensionJeu.Abysse;
 		string suffixe = enAbysse ? "abysse" : "alpha";
 		return Path.Combine(dossier, $"faune_boeufs_{suffixe}.dat");
+	}
+
+	private void BasculerContexteDimensionSiNecessaire()
+	{
+		int dimensionActive = ObtenirDimensionLocaleActiveId();
+		if (_dimensionFauneChargee == dimensionActive)
+			return;
+		if (_dimensionFauneChargee != int.MinValue)
+			SauvegarderFauneMonde();
+		foreach (BoeufSauvage b in _boeufs)
+		{
+			if (IsInstanceValid(b))
+				b.QueueFree();
+		}
+		_boeufs.Clear();
+		_banqueFaune.Clear();
+		_idsActifs.Clear();
+		_chunksEvaluesSpawnFaune.Clear();
+		_fauneChargeeDepuisSauvegarde = false;
+		_dimensionFauneChargee = dimensionActive;
 	}
 
 	public void SauvegarderFauneMonde()
@@ -165,7 +204,8 @@ public partial class GestionnaireFauneBoeufs : Node3D
 				if (string.IsNullOrEmpty(id)) continue;
 				entreesValides.Add(entree);
 			}
-			string chemin = ObtenirCheminFichierFaune();
+			int dimensionActive = ObtenirDimensionLocaleActiveId();
+			string chemin = ObtenirCheminFichierFauneDimension(dimensionActive);
 			using var w = new BinaryWriter(File.Open(chemin, FileMode.Create));
 			w.Write(VersionPersistanceFaune);
 			w.Write(entreesValides.Count);
@@ -192,11 +232,21 @@ public partial class GestionnaireFauneBoeufs : Node3D
 				_fauneChargeeDepuisSauvegarde = true;
 				return;
 			}
-			string chemin = ObtenirCheminFichierFaune();
+			int dimensionActive = ObtenirDimensionLocaleActiveId();
+			string cheminDimension = ObtenirCheminFichierFauneDimension(dimensionActive);
+			string cheminLegacy = ObtenirCheminFichierFauneLegacy(dimensionActive);
+			string chemin = cheminDimension;
+			bool lectureLegacy = false;
 			if (!File.Exists(chemin))
 			{
-				_fauneChargeeDepuisSauvegarde = true;
-				return;
+				if (!File.Exists(cheminLegacy))
+				{
+					_fauneChargeeDepuisSauvegarde = true;
+					return;
+				}
+				chemin = cheminLegacy;
+				lectureLegacy = true;
+				GD.Print($"ZERO-K Faune : Migration legacy détectée ({Path.GetFileName(cheminLegacy)} -> {Path.GetFileName(cheminDimension)}).");
 			}
 
 			foreach (BoeufSauvage b in _boeufs)
@@ -232,6 +282,8 @@ public partial class GestionnaireFauneBoeufs : Node3D
 			}
 			SynchroniserStreamingFaune();
 			_fauneChargeeDepuisSauvegarde = true;
+			if (lectureLegacy)
+				GD.Print($"ZERO-K Faune : Migration effectuée vers {Path.GetFileName(cheminDimension)} à la prochaine sauvegarde.");
 		}
 		catch (Exception ex)
 		{

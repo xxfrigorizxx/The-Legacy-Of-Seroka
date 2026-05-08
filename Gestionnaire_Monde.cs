@@ -131,6 +131,9 @@ public partial class Gestionnaire_Monde : Node3D
 	/// <summary>Assombrissement plein écran avant TP portail (client).</summary>
 	private CanvasLayer _overlayPortailTransition;
 	private ColorRect _rectAssombrissementPortail;
+	private ColorRect _rectEffetVitessePortail;
+	private ShaderMaterial _materiauEffetVitessePortail;
+	private Tween _tweenTransitionPortail;
 	private double _cooldownPulseReveilPierresTp;
 	private const double IntervallePulseReveilPierresTpSec = 0.30;
 	private bool _verrouMarcheAbysseActif;
@@ -488,6 +491,7 @@ public partial class Gestionnaire_Monde : Node3D
 	public bool EstVerrouSecuriteAbysseActif() => _gateTpDimensionActif;
 
 	public bool EstDimensionLocaleAbysse() => _dimensionLocaleActive == (int)DimensionJeu.Abysse;
+	public int ObtenirDimensionLocaleActiveId() => _dimensionLocaleActive;
 
 	/// <summary>Vrai si la zone locale du joueur est prête pour un déplacement physique sûr.</summary>
 	public bool EstDeplacementLocalPret()
@@ -620,6 +624,46 @@ public partial class Gestionnaire_Monde : Node3D
 		float ySpawn = hauteurTerrain + 10f;
 		if (hauteurTerrain < 103) ySpawn = Mathf.Max(ySpawn, 142f);
 		return new Vector3(meilleurX + 0.5f, ySpawn, meilleurZ + 0.5f);
+	}
+
+	private static double CalculerDistanceHoraireCirculaire(double heureA, double heureB)
+	{
+		double delta = Math.Abs(heureA - heureB) % 24.0;
+		return delta > 12.0 ? 24.0 - delta : delta;
+	}
+
+	private static int ObtenirPrioriteDimensionAlphaLike(int dimensionId)
+	{
+		if (dimensionId == (int)DimensionJeu.Alpha) return 0;
+		if (dimensionId == (int)DimensionJeu.Beta) return 1;
+		if (dimensionId == (int)DimensionJeu.Omega) return 2;
+		if (dimensionId == (int)DimensionJeu.Delta) return 3;
+		return 99;
+	}
+
+	private int SelectionnerDimensionInitialeParFuseauReel(out double offsetLocalHeures, out double distanceHeures)
+	{
+		offsetLocalHeures = DateTimeOffset.Now.Offset.TotalHours;
+		double heureLocaleJoueur = DateTime.UtcNow.AddHours(offsetLocalHeures).TimeOfDay.TotalHours;
+		int dimensionChoisie = (int)DimensionJeu.Alpha;
+		double meilleurScore = double.MaxValue;
+		int meilleurePriorite = int.MaxValue;
+
+		foreach (var info in ConstantesDimensions.ToutesAlphaLike())
+		{
+			double heureDimension = DateTime.UtcNow.AddHours(FuseauHoraireHeures + info.FuseauOffsetHeures).TimeOfDay.TotalHours;
+			double score = CalculerDistanceHoraireCirculaire(heureLocaleJoueur, heureDimension);
+			int priorite = ObtenirPrioriteDimensionAlphaLike(info.Id);
+			if (score < meilleurScore || (Math.Abs(score - meilleurScore) < 0.0001 && priorite < meilleurePriorite))
+			{
+				meilleurScore = score;
+				meilleurePriorite = priorite;
+				dimensionChoisie = info.Id;
+			}
+		}
+
+		distanceHeures = meilleurScore;
+		return dimensionChoisie;
 	}
 
 	/// <summary>Garantit un spawn au-dessus du terrain local pour éviter un joueur sous la map, et ramène au voisinage du sol si la position est restée « dans le ciel ».</summary>
@@ -908,6 +952,13 @@ public partial class Gestionnaire_Monde : Node3D
 		else
 		{
 			// Nouveau monde: spawn déterministe basé sur la seed (et pas uniquement la position fixe de la scène).
+			double offsetLocal;
+			double distanceHeures;
+			dimensionReconnexion = SelectionnerDimensionInitialeParFuseauReel(out offsetLocal, out distanceHeures);
+			_dimensionLocaleActive = dimensionReconnexion;
+			DefinirDimensionPeer(Multiplayer.GetUniqueId(), _dimensionLocaleActive);
+			string nomDimension = ConstantesDimensions.ObtenirNomCanonique(dimensionReconnexion);
+			GD.Print($"ZERO-K : Spawn initial dimension={nomDimension} (id={dimensionReconnexion}) offsetLocal={offsetLocal:0.##}h ecart={distanceHeures:0.##}h");
 			posSpawn = CalculerSpawnInitialDepuisSeed();
 			GD.Print($"ZERO-K : Spawn initial seed={SeedTerrain} -> {posSpawn}");
 		}
@@ -1081,29 +1132,102 @@ void fragment() {
 		_rectAssombrissementPortail.OffsetRight = 0f;
 		_rectAssombrissementPortail.OffsetBottom = 0f;
 		_overlayPortailTransition.AddChild(_rectAssombrissementPortail);
+		_rectEffetVitessePortail = new ColorRect
+		{
+			Name = "RectEffetVitessePortail",
+			MouseFilter = Control.MouseFilterEnum.Ignore,
+			Color = new Color(1f, 1f, 1f, 0f),
+			Modulate = new Color(1f, 1f, 1f, 0f)
+		};
+		_rectEffetVitessePortail.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+		_rectEffetVitessePortail.OffsetLeft = 0f;
+		_rectEffetVitessePortail.OffsetTop = 0f;
+		_rectEffetVitessePortail.OffsetRight = 0f;
+		_rectEffetVitessePortail.OffsetBottom = 0f;
+		var shaderVitesse = new Shader();
+		shaderVitesse.Code = @"
+shader_type canvas_item;
+uniform float warp_strength : hint_range(0.0, 1.0) = 0.0;
+uniform float line_density : hint_range(40.0, 380.0) = 165.0;
+uniform float speed : hint_range(4.0, 90.0) = 38.0;
+
+float hash1(float x) { return fract(sin(x * 127.1) * 43758.5453); }
+
+void fragment()
+{
+	vec2 uv = UV;
+	float rows = max(12.0, line_density);
+	float row = floor(uv.y * rows);
+	float seed = hash1(row + floor(TIME * 4.0));
+	float xCenter = fract(seed + TIME * speed * 0.045);
+	float width = mix(0.0018, 0.020, warp_strength);
+	float dist = abs(uv.x - xCenter);
+	float line = smoothstep(width, 0.0, dist);
+	float fadeEdges = smoothstep(0.05, 0.40, uv.x) * smoothstep(1.0, 0.72, uv.x);
+	float sparkle = 0.55 + 0.45 * hash1(row * 0.91 + floor(TIME * 18.0));
+	float alpha = line * fadeEdges * sparkle * warp_strength;
+	COLOR = vec4(vec3(1.0), alpha);
+}
+";
+		_materiauEffetVitessePortail = new ShaderMaterial { Shader = shaderVitesse };
+		_materiauEffetVitessePortail.SetShaderParameter("warp_strength", 0.0f);
+		_rectEffetVitessePortail.Material = _materiauEffetVitessePortail;
+		_overlayPortailTransition.AddChild(_rectEffetVitessePortail);
 		_overlayPortailTransition.Visible = false;
 		AddChild(_overlayPortailTransition);
 	}
 
-	/// <summary>Fondu noir ~3 s puis masquage (appelé en local sur chaque client concerné).</summary>
+	private void CalculerPhasesTransitionPortail(float dureeTotaleSec, out float fadeIn, out float phaseVitesse, out float fadeOut)
+	{
+		float d = Mathf.Max(0.35f, dureeTotaleSec);
+		fadeIn = Mathf.Clamp(d * 0.30f, 0.22f, 1.0f);
+		fadeOut = Mathf.Clamp(d * 0.26f, 0.20f, 0.85f);
+		phaseVitesse = Mathf.Max(0.10f, d - fadeIn - fadeOut);
+	}
+
+	/// <summary>Transition immersive portail : noir progressif, lignes de vitesse blanches, puis éclaircissement.</summary>
 	public void AfficherAssombrissementPortailTransition(float dureeTotaleSec)
 	{
 		AssurerOverlayPortailTransition();
-		if (_rectAssombrissementPortail == null) return;
+		if (_rectAssombrissementPortail == null || _rectEffetVitessePortail == null) return;
+		if (_tweenTransitionPortail != null && GodotObject.IsInstanceValid(_tweenTransitionPortail))
+			_tweenTransitionPortail.Kill();
 		_overlayPortailTransition.Visible = true;
 		_rectAssombrissementPortail.Color = new Color(0f, 0f, 0f, 0f);
-		float d = Mathf.Max(0.35f, dureeTotaleSec);
-		float fadeIn = Mathf.Clamp(d * 0.32f, 0.45f, 1.2f);
-		float fadeOut = Mathf.Clamp(d * 0.22f, 0.25f, 0.7f);
-		float maintien = Mathf.Max(0.15f, d - fadeIn - fadeOut);
+		_rectEffetVitessePortail.Modulate = new Color(1f, 1f, 1f, 0f);
+		_materiauEffetVitessePortail?.SetShaderParameter("warp_strength", 0.0f);
+		CalculerPhasesTransitionPortail(dureeTotaleSec, out float fadeIn, out float phaseVitesse, out float fadeOut);
+		float demiVitesse = Mathf.Max(0.05f, phaseVitesse * 0.5f);
 		Tween tween = CreateTween();
-		tween.TweenProperty(_rectAssombrissementPortail, "color", new Color(0f, 0f, 0f, 0.88f), fadeIn);
-		tween.TweenInterval(maintien);
+		_tweenTransitionPortail = tween;
+		tween.TweenProperty(_rectAssombrissementPortail, "color", new Color(0f, 0f, 0f, 0.98f), fadeIn);
+		tween.Parallel().TweenProperty(_rectEffetVitessePortail, "modulate", new Color(1f, 1f, 1f, 0.14f), fadeIn);
+		tween.Parallel().TweenMethod(Callable.From<float>(v =>
+		{
+			_materiauEffetVitessePortail?.SetShaderParameter("warp_strength", v);
+		}), 0.0f, 0.50f, fadeIn);
+		tween.TweenProperty(_rectEffetVitessePortail, "modulate", new Color(1f, 1f, 1f, 0.48f), demiVitesse);
+		tween.Parallel().TweenMethod(Callable.From<float>(v =>
+		{
+			_materiauEffetVitessePortail?.SetShaderParameter("warp_strength", v);
+		}), 0.50f, 1.00f, demiVitesse);
+		tween.TweenProperty(_rectEffetVitessePortail, "modulate", new Color(1f, 1f, 1f, 0.24f), demiVitesse);
+		tween.Parallel().TweenMethod(Callable.From<float>(v =>
+		{
+			_materiauEffetVitessePortail?.SetShaderParameter("warp_strength", v);
+		}), 1.00f, 0.35f, demiVitesse);
 		tween.TweenProperty(_rectAssombrissementPortail, "color", new Color(0f, 0f, 0f, 0f), fadeOut);
+		tween.Parallel().TweenProperty(_rectEffetVitessePortail, "modulate", new Color(1f, 1f, 1f, 0f), fadeOut);
+		tween.Parallel().TweenMethod(Callable.From<float>(v =>
+		{
+			_materiauEffetVitessePortail?.SetShaderParameter("warp_strength", v);
+		}), 0.35f, 0.0f, fadeOut);
 		tween.TweenCallback(Callable.From(() =>
 		{
 			if (_overlayPortailTransition != null && GodotObject.IsInstanceValid(_overlayPortailTransition))
 				_overlayPortailTransition.Visible = false;
+			if (_rectEffetVitessePortail != null && GodotObject.IsInstanceValid(_rectEffetVitessePortail))
+				_rectEffetVitessePortail.Modulate = new Color(1f, 1f, 1f, 0f);
 		}));
 	}
 
@@ -1672,10 +1796,17 @@ void fragment() {
 		}
 		if (_joueur is Joueur j)
 		{
-			if (_restaurationPersistantObjetsSolFaite)
-				j.SauvegarderEtatPersistantMonde(GetTree());
+			if (_restaurationPersistantPhaseJoueurFaite)
+			{
+				if (_restaurationPersistantObjetsSolFaite)
+					j.SauvegarderEtatPersistantMonde(GetTree());
+				else
+					j.SauvegarderEtatPersistantJoueurSeulement();
+			}
 			else
-				j.SauvegarderEtatPersistantJoueurSeulement();
+			{
+				GD.Print("ZERO-K : Sauvegarde joueur différée (phase restauration joueur pas encore exécutée).");
+			}
 		}
 		if (UseArchitectureReseau)
 		{
@@ -2165,7 +2296,8 @@ void fragment() {
 		_attenteChunksParDimension[(int)DimensionJeu.Abysse] = new Dictionary<Vector3I, HashSet<long>>();
 
 		_mondeServeur = _mondeServeurAlpha;
-		_dimensionLocaleActive = (int)DimensionJeu.Alpha;
+		if (!_serveurParDimension.ContainsKey(_dimensionLocaleActive))
+			_dimensionLocaleActive = (int)DimensionJeu.Alpha;
 		DefinirDimensionPeer(Multiplayer.GetUniqueId(), _dimensionLocaleActive);
 
 		_mondeClient = new Monde_Client();
@@ -2457,6 +2589,75 @@ void fragment() {
 		return ObtenirMeilleurXZPortailOrigineAlphaLike(dimensionId, SeedTerrain);
 	}
 
+	/// <summary>Delai de TP pendant la transition immersive portail (noir + vitesse), aligné avec l'orchestration visuelle client.</summary>
+	public float ObtenirDelaiTeleportPendantTransitionPortail(float dureeTotaleSec)
+	{
+		float d = Mathf.Max(0.35f, dureeTotaleSec);
+		float fadeIn = Mathf.Clamp(d * 0.30f, 0.22f, 1.0f);
+		float fadeOut = Mathf.Clamp(d * 0.26f, 0.20f, 0.85f);
+		float phaseVitesse = Mathf.Max(0.10f, d - fadeIn - fadeOut);
+		return Mathf.Clamp(fadeIn + phaseVitesse * 0.50f, 0.20f, d);
+	}
+
+	/// <summary>Retourne un point d'arrivée à distance fixe devant l’ouverture du portail (membrane), sur le plan horizontal — évite un spawn sous l’arche ou « dans » le cadre.</summary>
+	public bool EssayerObtenirPointArriveeDevantPortailNexus(int dimensionIdCible, PointCardinal liaison, bool versApisara, float distanceMetres, out Vector3 pointMonde)
+	{
+		pointMonde = Vector3.Zero;
+		Portail portailCible = TrouverPortailNexusDimension(dimensionIdCible, liaison, versApisara);
+		if (portailCible == null)
+			return false;
+
+		Transform3D gt = portailCible.GlobalTransform;
+		// Pivot à l’ouverture (aligné trigger / visuel), pas seulement l’origine au sol du nœud.
+		Vector3 pivotMembrane = gt * portailCible.PositionLocaleMembrane;
+		Vector3 basisZ = gt.Basis.Z;
+		// Côté « monde » après traversée : opposé à la direction d’entrée (−Z local = regard à travers le portail). Sortie = +Z local → projection horizontale de +Basis.Z (évite −Z qui replaçait sous l’arche / vers Apisara).
+		Vector3 dirHoriz = new Vector3(basisZ.X, 0f, basisZ.Z);
+		if (dirHoriz.LengthSquared() < 1e-8f)
+		{
+			Vector3 dir3 = basisZ;
+			if (dir3.LengthSquared() < 1e-8f)
+				dir3 = Vector3.Back;
+			dirHoriz = dir3.Normalized();
+		}
+		else
+			dirHoriz = dirHoriz.Normalized();
+
+		float distance = Mathf.Max(2f, distanceMetres);
+		Vector3 cible = pivotMembrane + dirHoriz * distance;
+		pointMonde = new Vector3(cible.X, pivotMembrane.Y, cible.Z);
+		return true;
+	}
+
+	/// <summary>Applique un cooldown sur le portail de destination pour éviter les boucles TP immédiates.</summary>
+	public void ArmerCooldownPortailNexus(int dimensionIdCible, PointCardinal liaison, bool versApisara, float cooldownSec)
+	{
+		Portail portailCible = TrouverPortailNexusDimension(dimensionIdCible, liaison, versApisara);
+		if (portailCible != null)
+			portailCible.ArmerCooldownPortailArrivee(cooldownSec);
+	}
+
+	private Portail TrouverPortailNexusDimension(int dimensionIdCible, PointCardinal liaison, bool versApisara)
+	{
+		if (!_racineParDimension.TryGetValue(dimensionIdCible, out Node3D racine) || racine == null)
+			return null;
+		foreach (Node enfant in racine.GetChildren())
+		{
+			if (enfant is not Portail p || !GodotObject.IsInstanceValid(p))
+				continue;
+			if (versApisara)
+			{
+				if (p.AncreSurApisara && p.Liaison == liaison)
+					return p;
+				continue;
+			}
+			// Arrivée depuis APISARA vers un quadrant : le portail « vers APISARA » du monde cible doit matcher le cardinal (sinon le 1er enfant renvoyait un mauvais axe → spawn sur le portail / hors sol).
+			if (!p.AncreSurApisara && p.Liaison == liaison)
+				return p;
+		}
+		return null;
+	}
+
 	private void MettreAJourVisibilitePortailsParDimension(int dimensionIdActif)
 	{
 		if (!UseArchitectureReseau || _racineParDimension.Count == 0) return;
@@ -2684,43 +2885,93 @@ void fragment() {
 	{
 		if (!UseArchitectureReseau || !Multiplayer.IsServer()) return;
 		string cmd = (commande ?? "").Trim();
-		if (string.Equals(cmd, "/DIMANASIO APISARA", StringComparison.OrdinalIgnoreCase))
-		{
-			TransfererPeerVersDimension(peerId, (int)DimensionJeu.Abysse, ObtenirPointTeleportAvecMemoireDimension((int)DimensionJeu.Abysse), $"Transfert vers {ConstantesDimensionAbysse.Apisara}.");
-			return;
-		}
-		if (string.Equals(cmd, "/DIMANASIO ARAPA", StringComparison.OrdinalIgnoreCase))
-		{
-			TransfererPeerVersDimension(peerId, (int)DimensionJeu.Alpha, ObtenirPointTeleportAvecMemoireDimension((int)DimensionJeu.Alpha), "Retour vers Alpha.");
-			return;
-		}
-		if (string.Equals(cmd, "/DIMANASIO PETA", StringComparison.OrdinalIgnoreCase))
-		{
-			TransfererPeerVersDimension(peerId, (int)DimensionJeu.Beta, ObtenirPointTeleportAvecMemoireDimension((int)DimensionJeu.Beta), $"Transfert vers {ConstantesDimensions.NomBeta}.");
-			return;
-		}
-		if (string.Equals(cmd, "/DIMANASIO OMEGA", StringComparison.OrdinalIgnoreCase))
-		{
-			TransfererPeerVersDimension(peerId, (int)DimensionJeu.Omega, ObtenirPointTeleportAvecMemoireDimension((int)DimensionJeu.Omega), $"Transfert vers {ConstantesDimensions.NomOmega}.");
-			return;
-		}
-		if (string.Equals(cmd, "/DIMANASIO DERATA", StringComparison.OrdinalIgnoreCase))
-		{
-			TransfererPeerVersDimension(peerId, (int)DimensionJeu.Delta, ObtenirPointTeleportAvecMemoireDimension((int)DimensionJeu.Delta), $"Transfert vers {ConstantesDimensions.NomDelta}.");
-			return;
-		}
 		Monde_Serveur serveurCourant = ObtenirServeurDimension(ObtenirDimensionPeer(peerId)) ?? _mondeServeur;
 		if (serveurCourant == null) return;
-		if (!serveurCourant.EssayerTraiterCommandeAdmin(peerId, commande, out bool modeCreatif, out bool noclip, out string messageServeur))
+
+		if (serveurCourant.EssayerBootstrapAdmin(peerId, cmd, out bool succesBootstrap, out string msgBootstrap))
+		{
+			if (succesBootstrap)
+			{
+				SynchroniserPeerAdminToutesDimensions(peerId);
+				Monde_Serveur pourPersist = _mondeServeurAlpha ?? serveurCourant;
+				pourPersist.PersisterWhitelistAdmin();
+			}
+			EnvoyerMessageAdminAuPeer(peerId, msgBootstrap);
 			return;
+		}
+
+		if (cmd.StartsWith("/DIMANASIO", StringComparison.OrdinalIgnoreCase))
+		{
+			if (!serveurCourant.EstPeerAdmin(peerId))
+			{
+				EnvoyerMessageAdminAuPeer(peerId, "Accès refusé: vous n'êtes pas admin.");
+				return;
+			}
+			if (string.Equals(cmd, "/DIMANASIO APISARA", StringComparison.OrdinalIgnoreCase))
+			{
+				TransfererPeerVersDimension(peerId, (int)DimensionJeu.Abysse, ObtenirPointTeleportAvecMemoireDimension((int)DimensionJeu.Abysse), $"Transfert vers {ConstantesDimensionAbysse.Apisara}.");
+				return;
+			}
+			if (string.Equals(cmd, "/DIMANASIO ARAPA", StringComparison.OrdinalIgnoreCase))
+			{
+				TransfererPeerVersDimension(peerId, (int)DimensionJeu.Alpha, ObtenirPointTeleportAvecMemoireDimension((int)DimensionJeu.Alpha), $"Retour vers {ConstantesDimensions.NomAlpha}.");
+				return;
+			}
+			if (string.Equals(cmd, "/DIMANASIO PETA", StringComparison.OrdinalIgnoreCase))
+			{
+				TransfererPeerVersDimension(peerId, (int)DimensionJeu.Beta, ObtenirPointTeleportAvecMemoireDimension((int)DimensionJeu.Beta), $"Transfert vers {ConstantesDimensions.NomBeta}.");
+				return;
+			}
+			if (string.Equals(cmd, "/DIMANASIO OMEGA", StringComparison.OrdinalIgnoreCase))
+			{
+				TransfererPeerVersDimension(peerId, (int)DimensionJeu.Omega, ObtenirPointTeleportAvecMemoireDimension((int)DimensionJeu.Omega), $"Transfert vers {ConstantesDimensions.NomOmega}.");
+				return;
+			}
+			if (string.Equals(cmd, "/DIMANASIO DERATA", StringComparison.OrdinalIgnoreCase))
+			{
+				TransfererPeerVersDimension(peerId, (int)DimensionJeu.Delta, ObtenirPointTeleportAvecMemoireDimension((int)DimensionJeu.Delta), $"Transfert vers {ConstantesDimensions.NomDelta}.");
+				return;
+			}
+			EnvoyerMessageAdminAuPeer(peerId, "Commande dimension inconnue.");
+			return;
+		}
+
+		if (!serveurCourant.EssayerTraiterCommandeAdmin(peerId, commande, out bool modeCreatif, out bool noclip, out string messageServeur))
+		{
+			if (!string.IsNullOrWhiteSpace(messageServeur))
+				EnvoyerMessageAdminAuPeer(peerId, messageServeur);
+			return;
+		}
 
 		if (peerId == Multiplayer.GetUniqueId())
 			AppliquerEtatModeCreatifLocal(modeCreatif, noclip, messageServeur);
 		else
 		{
-			// Réponse autoritaire vers le client émetteur (remote uniquement).
 			RpcId((int)peerId, nameof(RecevoirEtatModeCreatifRPC), modeCreatif ? 1 : 0, noclip ? 1 : 0, messageServeur ?? "");
 		}
+	}
+
+	/// <summary>Réplique l’ID admin sur chaque <see cref="Monde_Serveur"/> (dimensions distinctes, même fichier whitelist).</summary>
+	private void SynchroniserPeerAdminToutesDimensions(long peerId)
+	{
+		foreach (var kv in _serveurParDimension)
+			kv.Value?.AjouterPeerAdmin(peerId);
+	}
+
+	private void EnvoyerMessageAdminAuPeer(long peerId, string message)
+	{
+		if (string.IsNullOrWhiteSpace(message)) return;
+		if (peerId == Multiplayer.GetUniqueId())
+			Joueur.AlerteSqueletteBoiteNoire(message);
+		else
+			RpcId((int)peerId, nameof(RecevoirMessageChatAdminRPC), message ?? "");
+	}
+
+	[Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = false)]
+	private void RecevoirMessageChatAdminRPC(string message)
+	{
+		if (!string.IsNullOrWhiteSpace(message))
+			Joueur.AlerteSqueletteBoiteNoire(message);
 	}
 
 	[Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = false)]
@@ -2743,7 +2994,11 @@ void fragment() {
 		Monde_Serveur serveurCourant = ObtenirServeurDimension(ObtenirDimensionPeer(peerId)) ?? _mondeServeur;
 		if (serveurCourant == null) return;
 		if (!serveurCourant.EssayerConstruireSlotInjectionCreatif(peerId, id, indexMorphologique, indexChimique, indexTaille, indexBotanique, out SlotInventaire slot, out string messageServeur))
+		{
+			if (!string.IsNullOrWhiteSpace(messageServeur))
+				EnvoyerMessageAdminAuPeer(peerId, messageServeur);
 			return;
+		}
 
 		if (peerId == Multiplayer.GetUniqueId())
 			AppliquerInjectionItemCreatifLocale(slot, messageServeur);
@@ -2851,23 +3106,31 @@ void fragment() {
 		}
 	}
 
-	private void AlignerJoueurPortailSurSolDeferred(float mondeX, float mondeZ)
+	private void AlignerJoueurPortailSurSolDeferred(float mondeX, float mondeZ, int tentative = 0)
 	{
 		if (_joueur == null || !GodotObject.IsInstanceValid(_joueur)) return;
 		var approx = new Vector3(mondeX, 0f, mondeZ);
 		if (EssayerTrouverSolParRaycast(approx, out Vector3 pointSol))
 		{
+			// Même règle que <see cref="FinaliserSpawnInitialAuSol"/> : pieds sur la surface du raycast, sans décalage arbitraire.
 			if (_joueur is Joueur jo)
-				_joueur.GlobalPosition = new Vector3(mondeX, jo.CalculerYOriginePourPiedsSurSurface(pointSol.Y + 0.08f), mondeZ);
+				_joueur.GlobalPosition = new Vector3(mondeX, jo.CalculerYOriginePourPiedsSurSurface(pointSol.Y), mondeZ);
 			else
 				_joueur.GlobalPosition = pointSol + Vector3.Up * 1.2f;
 			_joueur.Velocity = Vector3.Zero;
 			return;
 		}
-		Vector3 fb = AssurerSpawnAuDessusDuSol(new Vector3(mondeX, ConstantesDimensions.ObtenirInfoOuAlpha(_dimensionLocaleActive).PointTeleportDefaut.Y, mondeZ));
-		_joueur.GlobalPosition = fb;
+		// Tant que la collision n’est pas prête : même repli hauteur voxel qu’au spawn initial (évite rester sous le portail / dans le vide).
+		Vector3 repliTerrain = AssurerSpawnAuDessusDuSol(new Vector3(mondeX, ConstantesDimensions.ObtenirInfoOuAlpha(_dimensionLocaleActive).PointTeleportDefaut.Y, mondeZ));
+		_joueur.GlobalPosition = repliTerrain;
 		_joueur.Velocity = Vector3.Zero;
-		GD.PushWarning("ZERO-K Portail : raycast sol sans impact, fallback spawn.");
+		if (tentative < 18 && GetTree() != null)
+		{
+			float delai = 0.12f + tentative * 0.07f;
+			GetTree().CreateTimer(delai).Timeout += () => AlignerJoueurPortailSurSolDeferred(mondeX, mondeZ, tentative + 1);
+			return;
+		}
+		GD.PushWarning("ZERO-K Portail : raycast sol sans impact après attente, position hauteur voxel conservée.");
 	}
 
 	[Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = false)]
@@ -2895,6 +3158,8 @@ void fragment() {
 		{
 			_joueur.GlobalPosition = positionCible;
 			_joueur.Velocity = Vector3.Zero;
+			if (_joueur is Joueur joueurPersistant)
+				joueurPersistant.RechargerEtatPersistantDimensionActive();
 		}
 		_chargementAbysseEnCours = dimensionId == (int)DimensionJeu.Abysse;
 		_chargementAbysseEnCours = false; // Abysse suit le chargement Alpha (pas de verrou dédié).
@@ -3678,10 +3943,13 @@ FinBlocOverlay:
 		}
 		if (_joueur is Joueur j)
 		{
-			if (_restaurationPersistantObjetsSolFaite)
-				j.SauvegarderEtatPersistantMonde(GetTree());
-			else
-				j.SauvegarderEtatPersistantJoueurSeulement();
+			if (_restaurationPersistantPhaseJoueurFaite)
+			{
+				if (_restaurationPersistantObjetsSolFaite)
+					j.SauvegarderEtatPersistantMonde(GetTree());
+				else
+					j.SauvegarderEtatPersistantJoueurSeulement();
+			}
 		}
 
 		if (UseArchitectureReseau)

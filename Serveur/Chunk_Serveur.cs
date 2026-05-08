@@ -1742,9 +1742,12 @@ public bool RecolterBaiesBuisson(Vector3 pointImpactGlobal, float rayon, out int
 			float rayon2 = rayonExplosion * rayonExplosion;
 			bool modifie = false;
 
-			for (int x = 0; x <= TailleChunk; x++)
-				for (int y = 0; y <= HauteurMax; y++)
-					for (int z = 0; z <= TailleChunk; z++)
+			// IMPORTANT: on modifie uniquement le volume "réel" du chunk.
+			// La couche de padding (x/z==TailleChunk, y==HauteurMax) doit rester dérivée des voisins
+			// via la réplication, sinon on crée des déchirures visuelles sur les bords.
+			for (int x = 0; x < TailleChunk; x++)
+				for (int y = 0; y < HauteurMax; y++)
+					for (int z = 0; z < TailleChunk; z++)
 					{
 						if (y <= 2) continue;
 						float dx = pointLocal.X - x, dy = pointLocal.Y - y, dz = pointLocal.Z - z;
@@ -1786,9 +1789,10 @@ public bool RecolterBaiesBuisson(Vector3 pointImpactGlobal, float rayon, out int
 		lock (_verrouVoxel)
 		{
 			float rayon2 = rayon * rayon;
-			for (int x = 0; x <= TailleChunk; x++)
-				for (int y = 0; y <= HauteurMax; y++)
-					for (int z = 0; z <= TailleChunk; z++)
+			// Même règle qu'en destruction: ne pas écrire dans le padding de bord.
+			for (int x = 0; x < TailleChunk; x++)
+				for (int y = 0; y < HauteurMax; y++)
+					for (int z = 0; z < TailleChunk; z++)
 					{
 						if (y <= 2) continue;
 						float dx = pointLocal.X - x, dy = pointLocal.Y - y, dz = pointLocal.Z - z;

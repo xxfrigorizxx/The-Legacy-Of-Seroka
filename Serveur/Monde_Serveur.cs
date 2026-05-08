@@ -15,7 +15,7 @@ public partial class Monde_Serveur : Node
 	[Export] public int SeedTerrain = 19847;
 	[Export] public int RayonMondeChunks = 1000;
 	[Export] public int RenderDistance = 200;
-	[Export] public string NomDimension = "Dimension_Alpha";
+	[Export] public string NomDimension = "ARAPA";
 	[Export] public bool ActiverGenerationAbysse = false;
 
 	/// <summary>Matériel du terrain pour les débris (BlocChutant). Assigné par Gestionnaire_Monde.</summary>
@@ -50,6 +50,7 @@ public partial class Monde_Serveur : Node
 	private readonly Dictionary<long, bool> _modeCreatifParPeer = new Dictionary<long, bool>();
 	private readonly Dictionary<long, bool> _noclipParPeer = new Dictionary<long, bool>();
 	private const string CheminAdminWhitelist = "user://admin_whitelist.json";
+	private const string PrefixeCommandeBootstrapAdmin = "/ADAMINISATATORA";
 
 	private readonly List<DemandeChunk> _chunksEnAttenteEnvoi = new List<DemandeChunk>();
 	private readonly List<Vector3I> _clesChunksAbysseARetirerTemp = new List<Vector3I>();
@@ -195,11 +196,9 @@ public partial class Monde_Serveur : Node
 	private void ChargerAdminWhitelist()
 	{
 		_adminPeerIds.Clear();
-		// Hôte local autorisé par défaut pour dev/administration.
-		_adminPeerIds.Add(1L);
 		if (!FileAccess.FileExists(CheminAdminWhitelist))
 		{
-			GD.Print($"ZERO-K ADMIN : whitelist absente ({CheminAdminWhitelist}), fallback hôte local (peer 1).");
+			GD.Print($"ZERO-K ADMIN : fichier absent ({CheminAdminWhitelist}). Aucun admin persiste ; bootstrap via /ADAMINISATATORA <NomPersonnage>.");
 			return;
 		}
 
@@ -210,18 +209,101 @@ public partial class Monde_Serveur : Node
 			string contenu = file.GetAsText();
 			if (string.IsNullOrWhiteSpace(contenu)) return;
 			using var doc = JsonDocument.Parse(contenu);
-			if (!doc.RootElement.TryGetProperty("admin_peer_ids", out JsonElement admins) || admins.ValueKind != JsonValueKind.Array)
-				return;
-			foreach (JsonElement e in admins.EnumerateArray())
+			if (doc.RootElement.TryGetProperty("admin_peer_ids", out JsonElement admins) && admins.ValueKind == JsonValueKind.Array)
 			{
-				if (e.ValueKind == JsonValueKind.Number && e.TryGetInt64(out long id) && id > 0)
-					_adminPeerIds.Add(id);
+				foreach (JsonElement e in admins.EnumerateArray())
+				{
+					if (e.ValueKind == JsonValueKind.Number && e.TryGetInt64(out long id) && id > 0)
+						_adminPeerIds.Add(id);
+				}
 			}
 		}
 		catch (Exception ex)
 		{
 			GD.PrintErr($"ZERO-K ADMIN : lecture whitelist impossible ({CheminAdminWhitelist}) -> {ex.Message}");
 		}
+	}
+
+	/// <summary>Ajoute un peer admin (idempotent). Utilisé après bootstrap pour synchroniser toutes les dimensions.</summary>
+	public void AjouterPeerAdmin(long peerId)
+	{
+		if (peerId > 0)
+			_adminPeerIds.Add(peerId);
+	}
+
+	/// <summary>Persiste les IDs admin sur disque (la whitelist sert juste à se souvenir des peers déjà promus).</summary>
+	public void PersisterWhitelistAdmin()
+	{
+		try
+		{
+			var liste = new List<long>(_adminPeerIds);
+			liste.Sort();
+			string json = JsonSerializer.Serialize(new
+			{
+				admin_peer_ids = liste
+			});
+			using var file = FileAccess.Open(CheminAdminWhitelist, FileAccess.ModeFlags.Write);
+			if (file == null)
+			{
+				GD.PrintErr($"ZERO-K ADMIN : impossible d’écrire {CheminAdminWhitelist}.");
+				return;
+			}
+			file.StoreString(json);
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"ZERO-K ADMIN : écriture whitelist impossible -> {ex.Message}");
+		}
+	}
+
+	/// <summary>
+	/// Traite <c>/ADAMINISATATORA &lt;NomPersonnage&gt;</c> : compare l’argument au nom du personnage donné à la
+	/// création du monde (<see cref="GameState.NomPersonnageJoue"/>). Comparaison insensible à la casse et aux
+	/// espaces de bord. Le secret historique (<c>bootstrap_secret</c>) n’est plus utilisé.
+	/// </summary>
+	/// <returns>Vrai si la chaîne est bien cette commande (succès ou échec).</returns>
+	public bool EssayerBootstrapAdmin(long peerId, string commandeBrute, out bool succes, out string messageServeur)
+	{
+		succes = false;
+		messageServeur = "";
+		string commande = (commandeBrute ?? "").Trim();
+		if (!commande.StartsWith(PrefixeCommandeBootstrapAdmin, StringComparison.OrdinalIgnoreCase))
+			return false;
+
+		string argumentNom = commande.Length > PrefixeCommandeBootstrapAdmin.Length
+			? commande.Substring(PrefixeCommandeBootstrapAdmin.Length).Trim()
+			: "";
+
+		string nomPersonnageAttendu = (GameState.Instance?.NomPersonnageJoue ?? "").Trim();
+		if (string.IsNullOrEmpty(nomPersonnageAttendu))
+		{
+			GD.PrintErr("ZERO-K ADMIN : NomPersonnageJoue indisponible (aucun monde chargé ?).");
+			messageServeur = "Configuration administrateur indisponible.";
+			return true;
+		}
+
+		if (string.IsNullOrEmpty(argumentNom))
+		{
+			messageServeur = "Refus : précisez le nom du personnage (/ADAMINISATATORA <NomPersonnage>).";
+			return true;
+		}
+
+		if (!string.Equals(argumentNom, nomPersonnageAttendu, StringComparison.OrdinalIgnoreCase))
+		{
+			messageServeur = "Nom de personnage invalide.";
+			return true;
+		}
+
+		succes = true;
+		if (_adminPeerIds.Contains(peerId))
+			messageServeur = "Droits administrateur déjà accordés.";
+		else
+		{
+			AjouterPeerAdmin(peerId);
+			messageServeur = $"Droits administrateur accordés à « {nomPersonnageAttendu} ».";
+			GD.Print($"ZERO-K ADMIN : bootstrap réussi peer={peerId} nom='{nomPersonnageAttendu}'.");
+		}
+		return true;
 	}
 
 	public bool EstPeerAdmin(long peerId) => peerId > 0 && _adminPeerIds.Contains(peerId);
@@ -1217,7 +1299,7 @@ public partial class Monde_Serveur : Node
 
 	private string ObtenirNomDimensionNormalise()
 	{
-		string brut = string.IsNullOrWhiteSpace(NomDimension) ? "Dimension_Alpha" : NomDimension.Trim();
+		string brut = string.IsNullOrWhiteSpace(NomDimension) ? "ARAPA" : NomDimension.Trim();
 		return brut.Replace("/", "_").Replace("\\", "_").Replace(" ", "_");
 	}
 
@@ -1389,6 +1471,7 @@ public partial class Monde_Serveur : Node
 		var matTerrain = MaterielTerrain ?? GD.Load<Material>("res://Manteau_Planetaire.tres");
 		var bloc = BlocChutant.Creer(pos, mat, matTerrain, brancheTailléeBuisson, indexCouleurBaie);
 		_parentPourBlocsChutants.AddChild(bloc);
+		bloc.SetMeta("DimensionId", _dimensionServeurId);
 		// Fibres (fauchage) : léger décalage vers le haut pour éviter d’être coincées dans le sol / la collision.
 		Vector3 posPose = mat == 15 ? pos + new Vector3(0f, 0.12f, 0f) : pos;
 		bloc.GlobalPosition = posPose;
@@ -1635,17 +1718,23 @@ public partial class Monde_Serveur : Node
 	private void ReveillerPierresDansRayon()
 	{
 		if (_parentPourBlocsChutants == null || _obtenirPositionJoueur == null) return;
-		Vector3 posJoueur = _obtenirPositionJoueur();
 		int dimensionActive = _obtenirDimensionActive?.Invoke() ?? _dimensionServeurId;
+		Vector3 posJoueur = _obtenirPositionJoueur();
 		float rayonCarre = RayonActivationPierres * RayonActivationPierres;
 		foreach (Node child in _parentPourBlocsChutants.GetChildren())
 		{
 			if (child is not RigidBody3D rb) continue;
+			// Chaque Monde_Serveur ne doit traiter que ses propres corps : sinon <see cref="TerrainChargeAutourPosition"/>
+			// utilise la grille <c>_chunks</c> de cette instance (ex. Alpha) alors que le caillou appartient à Beta → gel permanent en l’air.
 			if (rb.HasMeta("DimensionId"))
 			{
-				int dimRb = rb.GetMeta("DimensionId").AsInt32();
-				if (dimRb != dimensionActive)
+				if (rb.GetMeta("DimensionId").AsInt32() != _dimensionServeurId)
 					continue;
+			}
+			else if (_dimensionServeurId != (int)DimensionJeu.Alpha && !ActiverGenerationAbysse)
+			{
+				// Héritage : clones Alpha-like utilisent toujours DimensionId ; Alpha + APISARA peuvent encore avoir d’anciens corps sans balise.
+				continue;
 			}
 			int id = 0;
 			if (rb is ItemPhysique item)
@@ -1653,8 +1742,20 @@ public partial class Monde_Serveur : Node
 			else if (rb.HasMeta("ID_Matiere"))
 				id = rb.GetMeta("ID_Matiere").AsInt32();
 			if (!TryGetPositionMonde(rb, out Vector3 posRb)) continue;
-			float distCarre = posRb.DistanceSquaredTo(posJoueur);
 			bool structureFixe = id == 200 || id == Joueur.IdObjetRackBatons || id == Joueur.IdObjetRackBuches || id == Joueur.IdObjetCoffreBoisTier0;
+			// Le joueur « dimensionnel » n’est pas dans ce monde : on regèle pour éviter des corps actifs fantômes.
+			if (dimensionActive != _dimensionServeurId)
+			{
+				if (!structureFixe)
+				{
+					rb.LinearVelocity = Vector3.Zero;
+					rb.AngularVelocity = Vector3.Zero;
+					rb.Sleeping = true;
+					rb.Freeze = true;
+				}
+				continue;
+			}
+			float distCarre = posRb.DistanceSquaredTo(posJoueur);
 			if (distCarre <= rayonCarre)
 			{
 				bool terrainPret = TerrainChargeAutourPosition(posRb);

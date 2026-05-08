@@ -6132,25 +6132,25 @@ public partial class Joueur : CharacterBody3D
             velocity.Z = Mathf.MoveToward(velocity.Z, 0, vitesseMouvement);
         }
 
+        bool zoneLocalePrete = _gestionnaireMonde == null || _gestionnaireMonde.EstDeplacementLocalPret();
         if (enAbysseLocal)
         {
             _cooldownRetourSolAbysse = Mathf.Max(0f, _cooldownRetourSolAbysse - dt);
-            bool zoneLocalePrete = _gestionnaireMonde == null || _gestionnaireMonde.EstDeplacementLocalPret();
             if (zoneLocalePrete && IsOnFloor())
             {
                 _positionSolideAbysseValide = true;
                 _dernierePositionSolideAbysse = GlobalPosition;
             }
-			if (!zoneLocalePrete)
-			{
-				// Sécurité anti-chute sans hard-lock WASD: frein très fort jusqu'au retour
-				// de la collision locale active. Pas de téléport arrière : le vide chargé est géré côté Monde_Client.
-				float freinHoriz = Mathf.Max(10f, vitesseMouvement * 4.0f);
-				velocity.X = Mathf.MoveToward(velocity.X, 0f, freinHoriz * dt);
-				velocity.Z = Mathf.MoveToward(velocity.Z, 0f, freinHoriz * dt);
-				if (velocity.Y < -1.2f)
-					velocity.Y = -1.2f;
-			}
+        }
+        if (!zoneLocalePrete)
+        {
+            // Uniformise le ressenti inter-dimensions: même garde-fou que l'Abysse
+            // quand la collision locale n'est pas encore prête.
+            float freinHoriz = Mathf.Max(10f, vitesseMouvement * 4.0f);
+            velocity.X = Mathf.MoveToward(velocity.X, 0f, freinHoriz * dt);
+            velocity.Z = Mathf.MoveToward(velocity.Z, 0f, freinHoriz * dt);
+            if (velocity.Y < -1.2f)
+                velocity.Y = -1.2f;
         }
 
         MettreAJourAnimationHumain(dt, velocity, inputDir, auSolPourAnim, sprintActif, estDansEau);

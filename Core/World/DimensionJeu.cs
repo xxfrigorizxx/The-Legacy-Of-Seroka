@@ -25,21 +25,21 @@ public enum PointCardinal
 
 /// <summary>
 /// Nexus APISARA ↔ quadrants : visuel unique <c>res://Modeles/structure/portaille/Portaille.glb</c>.
-/// Quatre mondes « surface » (même seed, sauvegardes séparées) : <see cref="DimensionJeu.Alpha"/>,
-/// <see cref="DimensionJeu.Beta"/> (lore « Delta » +6 h), <see cref="DimensionJeu.Omega"/> (lore « Gamma » +12 h),
-/// <see cref="DimensionJeu.Delta"/> (lore « Omega » +18 h) — chacun a un portail à l’<b>origine monde (0, 0)</b> vers l’ancre APISARA sur l’axe correspondant.
+/// Quatre mondes « surface » (même seed, sauvegardes séparées) : nom affiché <see cref="ConstantesDimensions.NomAlpha"/> (<see cref="DimensionJeu.Alpha"/>),
+/// <see cref="ConstantesDimensions.NomBeta"/> +6 h, <see cref="ConstantesDimensions.NomOmega"/> +12 h, <see cref="ConstantesDimensions.NomDelta"/> +18 h
+/// — chacun a un portail à l’<b>origine monde (0, 0)</b> vers l’ancre APISARA sur l’axe correspondant.
 /// Le Y de ces portails « vers APISARA » est aligné sur la surface voxel du chunk origine côté serveur puis synchronisé (RPC) ; les portails de retour sur APISARA conservent leur placement existant.
 /// Sur la première prairie d’APISARA : quatre portails sur les axes N / E / S / O (plaine extérieure ~1280 m), chacun renvoie vers le portail (0,0) du monde lié.
 /// </summary>
 public static class NexusCoords
 {
-	/// <summary>Prairie APISARA — liaison lore « Alpha » (Nord).</summary>
+	/// <summary>Prairie APISARA — Nord → monde <see cref="ConstantesDimensions.NomAlpha"/> (<see cref="DimensionJeu.Alpha"/>).</summary>
 	public static readonly Vector3 ApisaraNord = new Vector3(0f, 5f, -1280f);
-	/// <summary>Prairie APISARA — liaison lore « Delta » +6h (Est) → dimension <see cref="DimensionJeu.Beta"/>.</summary>
+	/// <summary>Prairie APISARA — Est (+6 h) → <see cref="ConstantesDimensions.NomBeta"/> (<see cref="DimensionJeu.Beta"/>).</summary>
 	public static readonly Vector3 ApisaraEst = new Vector3(1280f, 5f, 0f);
-	/// <summary>Prairie APISARA — liaison lore « Gamma » +12h (Sud) → dimension <see cref="DimensionJeu.Omega"/>.</summary>
+	/// <summary>Prairie APISARA — Sud (+12 h) → <see cref="ConstantesDimensions.NomOmega"/> (<see cref="DimensionJeu.Omega"/>).</summary>
 	public static readonly Vector3 ApisaraSud = new Vector3(0f, 5f, 1280f);
-	/// <summary>Prairie APISARA — liaison lore « Omega » +18h (Ouest) → dimension <see cref="DimensionJeu.Delta"/>.</summary>
+	/// <summary>Prairie APISARA — Ouest (+18 h) → <see cref="ConstantesDimensions.NomDelta"/> (<see cref="DimensionJeu.Delta"/>).</summary>
 	public static readonly Vector3 ApisaraOuest = new Vector3(-1280f, 5f, 0f);
 	/// <summary>Point de retour XZ commun vers les mondes Alpha-like (Y résolu par raycast).</summary>
 	public static readonly Vector3 BaseZero = new Vector3(0f, 5f, 0f);
@@ -58,18 +58,18 @@ public static class NexusCoords
 }
 
 /// <summary>
-/// Dictionnaire lore et correspondance cardinal ↔ dimension de jeu (les noms « Delta/Gamma/Omega » sont lore, pas l’enum <see cref="DimensionJeu"/>).
+/// Libellés UI des portails nexus ↔ noms canoniques <see cref="ConstantesDimensions"/>.
 /// Bijection fixe : <see cref="PointCardinal.NORD"/>↔<see cref="DimensionJeu.Alpha"/>, <see cref="PointCardinal.EST"/>↔<see cref="DimensionJeu.Beta"/>,
-/// <see cref="PointCardinal.SUD"/>↔<see cref="DimensionJeu.Omega"/>, <see cref="PointCardinal.OUEST"/>↔<see cref="DimensionJeu.Delta"/> (APISARA → quadrant via <see cref="ObtenirIdDimensionQuadrant"/> ; retour via <see cref="ObtenirCardinalPourDimensionAlphaLike"/>).
+/// <see cref="PointCardinal.SUD"/>↔<see cref="DimensionJeu.Omega"/>, <see cref="PointCardinal.OUEST"/>↔<see cref="DimensionJeu.Delta"/>.
 /// </summary>
 public static class NexusPortailsApisara
 {
 	public static readonly Dictionary<PointCardinal, string> MappingPortailsApisara = new Dictionary<PointCardinal, string>
 	{
-		{ PointCardinal.NORD, "Alpha" },
-		{ PointCardinal.EST, "Delta" },
-		{ PointCardinal.SUD, "Gamma" },
-		{ PointCardinal.OUEST, "Omega" }
+		{ PointCardinal.NORD, ConstantesDimensions.NomAlpha },
+		{ PointCardinal.EST, ConstantesDimensions.NomBeta },
+		{ PointCardinal.SUD, ConstantesDimensions.NomOmega },
+		{ PointCardinal.OUEST, ConstantesDimensions.NomDelta }
 	};
 
 	/// <summary>Quadrant temporel associé au point cardinal (hors APISARA).</summary>
@@ -99,10 +99,11 @@ public static class NexusPortailsApisara
 }
 
 /// <summary>Table centralisée des dimensions : nom de dossier de sauvegarde (suffixe <c>chunks_*</c>),
-/// décalage de fuseau horaire en heures par rapport à Alpha, point de téléportation par défaut, et drapeau « heure figée ».</summary>
+/// décalage de fuseau horaire en heures par rapport à <see cref="NomAlpha"/> (monde Nord), point de téléportation par défaut, et drapeau « heure figée ».</summary>
 public static class ConstantesDimensions
 {
-	public const string NomAlpha = "Dimension_Alpha";
+	/// <summary>Nom dossier sous <c>user://saves/.../</c> : <c>chunks_ARAPA</c>. Migr. manuelle : <c>chunks_Dimension_Alpha</c> → <c>chunks_ARAPA</c>.</summary>
+	public const string NomAlpha = "ARAPA";
 	public const string NomBeta = "PETA";
 	public const string NomOmega = "OMEGA";
 	public const string NomDelta = "DERATA";

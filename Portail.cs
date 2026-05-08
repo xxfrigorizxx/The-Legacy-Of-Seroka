@@ -25,6 +25,8 @@ public partial class Portail : Node3D
 	[Export] public float RayonTriggerMetres { get; set; } = 4.8f;
 	/// <summary>Temps resté dans la zone membrane après l’entrée : assombrissement dès le contact, TP à l’échéance si toujours présent (serveur).</summary>
 	[Export] public float DureeStationnairePourTeleporterSecondes { get; set; } = 3f;
+	/// <summary>Point d'arrivée: distance en mètres devant le portail destination (pour éviter réapparition dans la membrane).</summary>
+	[Export] public float DistanceApparitionDevantPortailMetres { get; set; } = 20f;
 	/// <summary>Durée du fondu overlay (solo / compat.) ; en jeu normal on utilise <see cref="DureeStationnairePourTeleporterSecondes"/> pour overlay + délai TP.</summary>
 	[Export] public float DureeAssombrissementAvantTpSecondes { get; set; } = 3f;
 	/// <summary>Si vrai : <c>Area3D</c> sur le quad membrane (boîte). Si faux : sphère à l’origine du portail (rayon <see cref="RayonTriggerMetres"/>).</summary>
@@ -98,6 +100,12 @@ public partial class Portail : Node3D
 	private bool _hintServeurSurfaceRecu;
 	private float _yHintServeurSurfaceNexus;
 	private float _cooldownAlignementPhysique;
+
+	/// <summary>Protège contre la boucle TP instantanée à l'arrivée (portail destination).</summary>
+	public void ArmerCooldownPortailArrivee(float secondes)
+	{
+		_cooldownRestant = Math.Max(_cooldownRestant, Mathf.Max(0.05f, secondes));
+	}
 
 	public override void _Ready()
 	{
@@ -492,8 +500,9 @@ public partial class Portail : Node3D
 		float d = Mathf.Max(0.35f, DureeStationnairePourTeleporterSecondes);
 		long peerId = gm.ObtenirPeerIdPourNoeudJoueur(_joueurStationnaireDansZone);
 		gm.DiffuserAssombrissementPortailAuxClients(peerId, d);
+		float delaiTeleport = gm.ObtenirDelaiTeleportPendantTransitionPortail(d);
 
-		_timerApresAssombrissement = new Godot.Timer { OneShot = true, WaitTime = d };
+		_timerApresAssombrissement = new Godot.Timer { OneShot = true, WaitTime = delaiTeleport };
 		AddChild(_timerApresAssombrissement);
 		_timerApresAssombrissement.Timeout += SurTimerTpApresAssombrissement;
 		_timerApresAssombrissement.Start();
@@ -535,6 +544,7 @@ public partial class Portail : Node3D
 			: $"Transfert vers {ConstantesDimensionAbysse.Apisara} ({cleLore}).";
 
 		gm.TransfererJoueurViaPortail(joueur, dimCible, cibleXZ, msg);
+		gm.ArmerCooldownPortailNexus(dimCible, Liaison, versApisara: !AncreSurApisara, Mathf.Max(0.25f, CooldownPortailSecondes + 0.8f));
 		_cooldownRestant = CooldownPortailSecondes;
 	}
 
@@ -560,26 +570,62 @@ public partial class Portail : Node3D
 	private void ObtenirDimensionEtPositionCible(out int dimensionId, out Vector3 positionXZLogique)
 	{
 		AppliquerLiaisonNexusCanoniqueSiApplicable();
+		Gestionnaire_Monde gm = ObtenirGestionnaireMonde();
+		// Au moins 20 m : évite de réapparaître sous l’arche ; l’export peut augmenter au-delà.
+		float distanceDevant = Mathf.Max(20f, DistanceApparitionDevantPortailMetres);
 		if (AncreSurApisara)
 		{
 			dimensionId = NexusPortailsApisara.ObtenirIdDimensionQuadrant(Liaison);
-			Gestionnaire_Monde gm = ObtenirGestionnaireMonde();
 			if (gm != null)
 			{
+				if (gm.EssayerObtenirPointArriveeDevantPortailNexus(dimensionId, Liaison, versApisara: false, distanceDevant, out Vector3 pointArrivee))
+				{
+					positionXZLogique = pointArrivee;
+					return;
+				}
 				Vector2 xz = gm.ObtenirXZPortailVersApisaraPourDimension(dimensionId);
-				positionXZLogique = new Vector3(xz.X, 5f, xz.Y);
+				float d = distanceDevant;
+				switch (Liaison)
+				{
+					case PointCardinal.NORD:
+						positionXZLogique = new Vector3(xz.X, 5f, xz.Y + d);
+						break;
+					case PointCardinal.SUD:
+						positionXZLogique = new Vector3(xz.X, 5f, xz.Y - d);
+						break;
+					case PointCardinal.EST:
+						positionXZLogique = new Vector3(xz.X + d, 5f, xz.Y);
+						break;
+					case PointCardinal.OUEST:
+						positionXZLogique = new Vector3(xz.X - d, 5f, xz.Y);
+						break;
+					default:
+						positionXZLogique = new Vector3(xz.X, 5f, xz.Y + d);
+						break;
+				}
 			}
 			else
 			{
 				var b = NexusCoords.BaseZero;
-				positionXZLogique = new Vector3(b.X, b.Y, b.Z);
+				positionXZLogique = new Vector3(b.X + distanceDevant, b.Y, b.Z);
 			}
 		}
 		else
 		{
 			dimensionId = (int)DimensionJeu.Abysse;
+			if (gm != null && gm.EssayerObtenirPointArriveeDevantPortailNexus(dimensionId, Liaison, versApisara: true, distanceDevant, out Vector3 pointArrivee))
+			{
+				positionXZLogique = pointArrivee;
+				return;
+			}
 			var a = NexusCoords.ObtenirAncreApisara(Liaison);
-			positionXZLogique = new Vector3(a.X, a.Y, a.Z);
+			Vector3 centrePrairie = NexusCoords.BaseZero;
+			Vector3 delta = new Vector3(centrePrairie.X - a.X, 0f, centrePrairie.Z - a.Z);
+			if (delta.LengthSquared() < 0.25f)
+				delta = Vector3.Forward;
+			Vector3 dirVersCentre = delta.Normalized();
+			positionXZLogique = a + dirVersCentre * distanceDevant;
+			positionXZLogique.Y = a.Y;
 		}
 	}
 

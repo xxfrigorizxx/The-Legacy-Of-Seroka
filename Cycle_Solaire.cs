@@ -132,10 +132,11 @@ public partial class Cycle_Solaire : Node
 			float b = rng.RandfRange(0.55f, 1f);
 			var c = new Color(b, b, b, 1f);
 			img.SetPixel(x, y, c);
-			img.SetPixel(x - 1, y, c * 0.5f);
-			img.SetPixel(x + 1, y, c * 0.5f);
-			img.SetPixel(x, y - 1, c * 0.5f);
-			img.SetPixel(x, y + 1, c * 0.5f);
+			// Halos plus marqués sur l’axe vertical (perception « défilant » haut-bas sur la voûte).
+			img.SetPixel(x, y - 1, c * 0.58f);
+			img.SetPixel(x, y + 1, c * 0.58f);
+			img.SetPixel(x - 1, y, c * 0.35f);
+			img.SetPixel(x + 1, y, c * 0.35f);
 		}
 		var tex = ImageTexture.CreateFromImage(img);
 		skyMat.SkyCover = tex;
@@ -203,6 +204,11 @@ public partial class Cycle_Solaire : Node
 			return;
 		}
 
+		// Rotation céleste : même pendant le chargement (overlay), sinon le ciel procédural / étoiles semblent « figés ».
+		_soleil.RotationDegrees = new Vector3(angleX, -30f, 0f);
+		if (_lune != null)
+			_lune.RotationDegrees = new Vector3(angleX + 180f, -30f, 0f);
+
 		if (_chargementMondeActif)
 		{
 			// Luminaires masqués (anti-flash spawn), mais le ciel procédural / brouillard suivent l'heure.
@@ -213,13 +219,6 @@ public partial class Cycle_Solaire : Node
 
 		// GD.Print("Heure Universelle Relative : " + heureDansCeMonde.ToString("HH:mm:ss") + " | Angle : " + angleX);
 		_soleil.Visible = true;
-		_soleil.RotationDegrees = new Vector3(angleX, -30f, 0f);
-
-		// L'angle de la lune (toujours à l'opposé du soleil)
-		if (_lune != null)
-		{
-			_lune.RotationDegrees = new Vector3(angleX + 180f, -30f, 0f);
-		}
 
 		// --- GESTION DE LA NUIT ET DE L'ATMOSPHÈRE ---
 		// Le soleil s'éteint sous l'horizon, la lune s'allume

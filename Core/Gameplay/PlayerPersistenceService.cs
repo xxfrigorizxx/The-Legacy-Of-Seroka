@@ -13,11 +13,55 @@ public partial class Joueur
     private bool _persistantObjetsSolCharges;
     /// <summary>Évite d’écrire <c>placed_objects.dat</c> pendant le remplacement des objets (fenêtre vide = tout effacé au disque).</summary>
     private bool _chargementObjetsPosesMondeEnCours;
+    private const string NomFichierObjetsPosesLegacy = "placed_objects.dat";
+    private const string NomFichierBlocsChutantsLegacy = "dropped_blocks.dat";
 
     private static string ObtenirCheminDossierSauvegardeMonde()
     {
         string nomMonde = GameState.Instance?.NomMondeActuel ?? "MonMonde";
         return ProjectSettings.GlobalizePath($"user://saves/{nomMonde}");
+    }
+
+    private int ObtenirDimensionLocaleActiveId()
+    {
+        if (_gestionnaireMonde != null && GodotObject.IsInstanceValid(_gestionnaireMonde))
+            return _gestionnaireMonde.ObtenirDimensionLocaleActiveId();
+        Node racine = Engine.GetMainLoop() is SceneTree arbre ? arbre.CurrentScene : null;
+        Gestionnaire_Monde gestionnaire = racine?.GetNodeOrNull<Gestionnaire_Monde>("Gestionnaire_Monde");
+        return gestionnaire != null ? gestionnaire.ObtenirDimensionLocaleActiveId() : (int)DimensionJeu.Alpha;
+    }
+
+    private string ObtenirSuffixeDimensionCanoniqueActive()
+    {
+        return ConstantesDimensions.ObtenirNomCanonique(ObtenirDimensionLocaleActiveId());
+    }
+
+    private static string ObtenirNomFichierObjetsPosesDimension(string suffixeDimensionCanonique)
+        => $"placed_objects.{suffixeDimensionCanonique}.dat";
+
+    private static string ObtenirNomFichierBlocsChutantsDimension(string suffixeDimensionCanonique)
+        => $"dropped_blocks.{suffixeDimensionCanonique}.dat";
+
+    private string ObtenirCheminObjetsPosesDimensionActive()
+    {
+        string dossier = ObtenirCheminDossierSauvegardeMonde();
+        return Path.Combine(dossier, ObtenirNomFichierObjetsPosesDimension(ObtenirSuffixeDimensionCanoniqueActive()));
+    }
+
+    private string ObtenirCheminObjetsPosesLegacy()
+    {
+        return Path.Combine(ObtenirCheminDossierSauvegardeMonde(), NomFichierObjetsPosesLegacy);
+    }
+
+    private string ObtenirCheminBlocsChutantsDimensionActive()
+    {
+        string dossier = ObtenirCheminDossierSauvegardeMonde();
+        return Path.Combine(dossier, ObtenirNomFichierBlocsChutantsDimension(ObtenirSuffixeDimensionCanoniqueActive()));
+    }
+
+    private string ObtenirCheminBlocsChutantsLegacy()
+    {
+        return Path.Combine(ObtenirCheminDossierSauvegardeMonde(), NomFichierBlocsChutantsLegacy);
     }
 
     private static void EcrireSlot(BinaryWriter w, SlotInventaire s)
@@ -120,6 +164,13 @@ public partial class Joueur
     /// </summary>
     private void SauvegarderFichiersJoueurHorsObjetsAuSol()
     {
+        // Protection anti-écrasement : si la phase joueur n'a pas encore été restaurée, les slots sont
+        // encore à l'état par défaut en mémoire. Les écrire ici viderait inventaire + carnet au disque.
+        if (!_persistantPhaseJoueurChargee)
+        {
+            GD.Print("ZERO-K : Sauvegarde joueur ignorée (restauration joueur non initialisée).");
+            return;
+        }
         SauvegarderProgressionJoueurMonde();
         SauvegarderInventaireMonde();
         SauvegarderCarnetSavoirMonde();
@@ -160,6 +211,16 @@ public partial class Joueur
         {
             _persistantObjetsSolCharges = true;
         }
+        RafraichirHUD();
+    }
+
+    /// <summary>Recharge l'état persistant lié à la dimension active (objets posés, blocs chutants, faune) après un transfert dimensionnel.</summary>
+    public void RechargerEtatPersistantDimensionActive()
+    {
+        ChargerObjetsPosesMonde();
+        ChargerBlocsChutantsMonde();
+        ObtenirGestionnaireFauneCourant(null)?.ChargerFauneMonde();
+        _persistantObjetsSolCharges = true;
         RafraichirHUD();
     }
 
@@ -534,7 +595,8 @@ public partial class Joueur
             }
             string dossier = ObtenirCheminDossierSauvegardeMonde();
             Directory.CreateDirectory(dossier);
-            string chemin = Path.Combine(dossier, "placed_objects.dat");
+            string chemin = ObtenirCheminObjetsPosesDimensionActive();
+            string nomFichier = Path.GetFileName(chemin);
             var aSauver = new List<(SlotInventaire slot, Vector3 pos, Vector3 rot, SlotInventaire[] atelier, SlotInventaire[] coffre)>();
             foreach (Node n in tree.GetNodesInGroup("BlocsPoses"))
             {
@@ -564,7 +626,7 @@ public partial class Joueur
                 else if (id == IdObjetCoffreBoisTier0) nbCoffre++;
                 else nbAutres++;
             }
-            GD.Print($"ZERO-K : Sauvegarde objets posés → placed_objects.dat : {aSauver.Count} objet(s) " +
+            GD.Print($"ZERO-K : Sauvegarde objets posés → {nomFichier} : {aSauver.Count} objet(s) " +
                 $"(atelier craft 200={nbAtelier200}, racks={nbRack}, coffres={nbCoffre}, autres={nbAutres}) — monde {GameState.Instance?.NomMondeActuel ?? "?"}");
 
             if (aSauver.Count == 0 && !_persistantObjetsSolCharges && File.Exists(chemin))
@@ -611,8 +673,17 @@ public partial class Joueur
     {
         try
         {
-            string chemin = Path.Combine(ObtenirCheminDossierSauvegardeMonde(), "placed_objects.dat");
-            if (!File.Exists(chemin)) return;
+            string cheminDimension = ObtenirCheminObjetsPosesDimensionActive();
+            string cheminLegacy = ObtenirCheminObjetsPosesLegacy();
+            string chemin = cheminDimension;
+            bool lectureLegacy = false;
+            if (!File.Exists(chemin))
+            {
+                if (!File.Exists(cheminLegacy)) return;
+                chemin = cheminLegacy;
+                lectureLegacy = true;
+                GD.Print($"ZERO-K : Migration legacy objets posés détectée ({Path.GetFileName(cheminLegacy)} -> {Path.GetFileName(cheminDimension)}).");
+            }
 
             // Lecture intégrale AVANT toute destruction : sinon fichier vide / version inconnue / erreur
             // supprime tout l’existant sans rien respawner (ateliers, racks, roches au sol « posées », etc.).
@@ -622,7 +693,7 @@ public partial class Joueur
                 int version = r.ReadInt32();
                 if (version < 1 || version > VersionPersistenceObjetsPoses)
                 {
-                    GD.PrintErr($"ZERO-K : placed_objects.dat version {version} non prise en charge — les objets déjà en scène sont conservés.");
+                    GD.PrintErr($"ZERO-K : {Path.GetFileName(chemin)} version {version} non prise en charge — les objets déjà en scène sont conservés.");
                     return;
                 }
                 bool lireExtras = version >= 3;
@@ -668,7 +739,7 @@ public partial class Joueur
                 else if (id == IdObjetCoffreBoisTier0) nbCoffreL++;
                 else nbAutresL++;
             }
-            GD.Print($"ZERO-K : Chargement objets posés depuis placed_objects.dat : {entrees.Count} entrée(s) " +
+            GD.Print($"ZERO-K : Chargement objets posés depuis {Path.GetFileName(chemin)} : {entrees.Count} entrée(s) " +
                 $"(atelier 200={nbAtelier200L}, racks={nbRackL}, coffres={nbCoffreL}, autres={nbAutresL}) — monde {GameState.Instance?.NomMondeActuel ?? "?"}");
 
             // Référencer les anciens avant de respawner : évite une fenêtre où le groupe BlocsPoses est vide
@@ -733,6 +804,8 @@ public partial class Joueur
             {
                 _chargementObjetsPosesMondeEnCours = false;
             }
+            if (lectureLegacy)
+                GD.Print($"ZERO-K : Migration objets posés effectuée vers {Path.GetFileName(cheminDimension)} à la prochaine sauvegarde.");
         }
         catch (Exception ex)
         {
@@ -747,7 +820,7 @@ public partial class Joueur
             if (tree == null) return;
             string dossier = ObtenirCheminDossierSauvegardeMonde();
             Directory.CreateDirectory(dossier);
-            string chemin = Path.Combine(dossier, "dropped_blocks.dat");
+            string chemin = ObtenirCheminBlocsChutantsDimensionActive();
             var aSauver = new List<(byte id, Vector3 pos, Vector3 rot)>();
             foreach (Node n in tree.GetNodesInGroup("PersistantsBlocChutant"))
             {
@@ -776,8 +849,17 @@ public partial class Joueur
     {
         try
         {
-            string chemin = Path.Combine(ObtenirCheminDossierSauvegardeMonde(), "dropped_blocks.dat");
-            if (!File.Exists(chemin)) return;
+            string cheminDimension = ObtenirCheminBlocsChutantsDimensionActive();
+            string cheminLegacy = ObtenirCheminBlocsChutantsLegacy();
+            string chemin = cheminDimension;
+            bool lectureLegacy = false;
+            if (!File.Exists(chemin))
+            {
+                if (!File.Exists(cheminLegacy)) return;
+                chemin = cheminLegacy;
+                lectureLegacy = true;
+                GD.Print($"ZERO-K : Migration legacy blocs chutants détectée ({Path.GetFileName(cheminLegacy)} -> {Path.GetFileName(cheminDimension)}).");
+            }
 
             var entrees = new List<(byte id, Vector3 pos, Vector3 rot)>();
             using (var r = new BinaryReader(File.Open(chemin, FileMode.Open, System.IO.FileAccess.Read, FileShare.Read)))
@@ -785,7 +867,7 @@ public partial class Joueur
                 int version = r.ReadInt32();
                 if (version < 1 || version > VersionPersistenceObjetsPoses)
                 {
-                    GD.PrintErr($"ZERO-K : dropped_blocks.dat version {version} non prise en charge — blocs persistants conservés.");
+                    GD.PrintErr($"ZERO-K : {Path.GetFileName(chemin)} version {version} non prise en charge — blocs persistants conservés.");
                     return;
                 }
                 int count = r.ReadInt32();
@@ -820,6 +902,8 @@ public partial class Joueur
                     EnregistrerGelRestaurationSolSiBesoin(bloc);
                 }
             }
+            if (lectureLegacy)
+                GD.Print($"ZERO-K : Migration blocs chutants effectuée vers {Path.GetFileName(cheminDimension)} à la prochaine sauvegarde.");
         }
         catch (Exception ex)
         {
