@@ -18,7 +18,6 @@ public partial class FutureState_UI : CanvasLayer
 
     private Joueur _joueur;
     private VBoxContainer _listeStats;
-    private Label _lblMax;
     private Label _lblTitre;
     private Button _btnOngletInventaire;
     private Button _btnOngletProgression;
@@ -173,8 +172,6 @@ public partial class FutureState_UI : CanvasLayer
             }
         }
 
-        if (_lblMax != null)
-            _lblMax.Text = $"Niveau max global: {FormaterNiveau(Joueur.NiveauMaxFutureState)}";
     }
 
     private void OuvrirInventaireDepuisOnglet()
@@ -325,16 +322,6 @@ public partial class FutureState_UI : CanvasLayer
         aide.AddThemeFontSizeOverride("font_size", 14);
         aide.AddThemeColorOverride("font_color", new Color(0.68f, 0.75f, 0.9f));
         colonne.AddChild(aide);
-
-        _lblMax = new Label
-        {
-            HorizontalAlignment = HorizontalAlignment.Center,
-            SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
-            AutowrapMode = TextServer.AutowrapMode.WordSmart
-        };
-        _lblMax.AddThemeFontSizeOverride("font_size", 15);
-        _lblMax.AddThemeColorOverride("font_color", new Color(1f, 0.86f, 0.35f));
-        colonne.AddChild(_lblMax);
 
         var sep = new HSeparator();
         colonne.AddChild(sep);
