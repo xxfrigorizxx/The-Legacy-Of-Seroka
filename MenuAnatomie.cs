@@ -2560,6 +2560,22 @@ public partial class MenuAnatomie : Control
 			Ajouter(new SlotInventaire { ID = Joueur.IdObjetRackBatons, IndexBotanique = essence, Quantite = 1 }, CategorieCreatifAdmin.Structures, $"Rack bâtons {NomEssence(essence)}");
 			Ajouter(new SlotInventaire { ID = Joueur.IdObjetRackBuches, IndexBotanique = essence, Quantite = 1 }, CategorieCreatifAdmin.Structures, $"Rack bûches {NomEssence(essence)}");
 			Ajouter(new SlotInventaire { ID = Joueur.IdObjetFondationBois, IndexBotanique = essence, Quantite = 1 }, CategorieCreatifAdmin.Structures, $"Fondation bois {NomEssence(essence)}");
+			Ajouter(new SlotInventaire { ID = Joueur.IdObjetMailletBois, IndexBotanique = essence, Quantite = 1 }, CategorieCreatifAdmin.Structures, $"Maillet {NomEssence(essence)}");
+			Ajouter(new SlotInventaire { ID = Joueur.IdObjetBolBois, IndexBotanique = essence, Quantite = 1 }, CategorieCreatifAdmin.Structures, $"Bol {NomEssence(essence)}");
+		}
+		foreach (byte essenceBol in essencesBois)
+		{
+			foreach (byte essencePilon in essencesBois)
+			{
+				Ajouter(new SlotInventaire
+				{
+					ID = Joueur.IdObjetMortierPilonBois,
+					IndexBotanique = essenceBol,
+					IndexChimique = essencePilon,
+					GenomeAssemblage = $"MORTIERPILON:{essenceBol},{essencePilon}",
+					Quantite = 1
+				}, CategorieCreatifAdmin.Structures, $"Mortier {NomEssence(essenceBol)} + pilon {NomEssence(essencePilon)}");
+			}
 		}
 		foreach (byte tagLig in tagsLigatures)
 		{

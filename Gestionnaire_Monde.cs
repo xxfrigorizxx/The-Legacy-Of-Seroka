@@ -2623,7 +2623,8 @@ void fragment()
 		else
 			dirHoriz = dirHoriz.Normalized();
 
-		float distance = Mathf.Max(2f, distanceMetres);
+		// Sécurité globale Nexus: jamais moins de 20 m devant la membrane pour éviter une réapparition dans/près du portail.
+		float distance = Mathf.Max(20f, distanceMetres);
 		Vector3 cible = pivotMembrane + dirHoriz * distance;
 		pointMonde = new Vector3(cible.X, pivotMembrane.Y, cible.Z);
 		return true;
@@ -2641,21 +2642,51 @@ void fragment()
 	{
 		if (!_racineParDimension.TryGetValue(dimensionIdCible, out Node3D racine) || racine == null)
 			return null;
+		Portail meilleur = null;
+		float meilleureDistance2 = float.MaxValue;
+		Vector3 cibleCanonique = Vector3.Zero;
+		bool cibleCanoniqueValide = false;
+		if (versApisara)
+		{
+			cibleCanonique = NexusCoords.ObtenirAncreApisara(liaison);
+			cibleCanoniqueValide = true;
+		}
+		else if (ConstantesDimensions.EssayerObtenirInfo(dimensionIdCible, out var infoDim) && infoDim.EstAlphaLike)
+		{
+			Vector2 xz = ObtenirXZPortailVersApisaraPourDimension(dimensionIdCible);
+			cibleCanonique = new Vector3(xz.X, 0f, xz.Y);
+			cibleCanoniqueValide = true;
+		}
 		foreach (Node enfant in racine.GetChildren())
 		{
 			if (enfant is not Portail p || !GodotObject.IsInstanceValid(p))
 				continue;
 			if (versApisara)
 			{
-				if (p.AncreSurApisara && p.Liaison == liaison)
-					return p;
+				if (!p.AncreSurApisara || p.Liaison != liaison)
+					continue;
+			}
+			else
+			{
+				if (p.AncreSurApisara || p.Liaison != liaison)
+					continue;
+			}
+			if (cibleCanoniqueValide)
+			{
+				Vector3 pp = p.GlobalPosition;
+				Vector3 pc = new Vector3(pp.X, 0f, pp.Z);
+				Vector3 cc = new Vector3(cibleCanonique.X, 0f, cibleCanonique.Z);
+				float d2 = pc.DistanceSquaredTo(cc);
+				if (d2 < meilleureDistance2)
+				{
+					meilleureDistance2 = d2;
+					meilleur = p;
+				}
 				continue;
 			}
-			// Arrivée depuis APISARA vers un quadrant : le portail « vers APISARA » du monde cible doit matcher le cardinal (sinon le 1er enfant renvoyait un mauvais axe → spawn sur le portail / hors sol).
-			if (!p.AncreSurApisara && p.Liaison == liaison)
-				return p;
+			return p;
 		}
-		return null;
+		return meilleur;
 	}
 
 	private void MettreAJourVisibilitePortailsParDimension(int dimensionIdActif)

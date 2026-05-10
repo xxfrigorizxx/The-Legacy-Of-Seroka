@@ -30,7 +30,11 @@ public partial class Joueur
 		Silex = 1 << 17,
 		RocheSulfuree = 1 << 18,
 		PitFeu = 1 << 19,
-		RocheMatiere = 1 << 20
+		RocheMatiere = 1 << 20,
+		MiniBucheHuitieme = 1 << 21,
+		DaguePrimitive = 1 << 22,
+		MailletBois = 1 << 23,
+		BolBois = 1 << 24
 	}
 
 	private sealed class RecetteAnalysable
@@ -191,6 +195,33 @@ public partial class Joueur
 			Titre = "Faux primitive",
 			LegendeSymboles = new[] { "R = Petite roche en pointe", "T = Baton faconne en T", "L = Ligature", "B = Baton faconne" },
 			PatronCraft = new[] { "(  )(R)(  )", "(T)(L)(T)", "(  )(B)(  )" }
+		},
+		new RecetteAnalysable
+		{
+			CleCraft = "id_128",
+			IdResultat = IdObjetMailletBois,
+			Masque = CategorieAnalyse.MiniBucheHuitieme,
+			Titre = "Maillet en bois",
+			LegendeSymboles = new[] { "mB = Mini morceau de bûche (1/4 longueur + 1/8 cylindre)" },
+			PatronCraft = new[] { "Établi 3x3 : placer 1 mB seul dans n'importe quelle case." }
+		},
+		new RecetteAnalysable
+		{
+			CleCraft = "id_129",
+			IdResultat = IdObjetBolBois,
+			Masque = CategorieAnalyse.MiniBucheHuitieme | CategorieAnalyse.DaguePrimitive,
+			Titre = "Bol en bois",
+			LegendeSymboles = new[] { "mB = Mini morceau de bûche (1/4 longueur + 1/8 cylindre)", "D = Dague (non consommée, -2 durabilité)" },
+			PatronCraft = new[] { "Établi 3x3 : 1 mB + 1 D, positions libres." }
+		},
+		new RecetteAnalysable
+		{
+			CleCraft = "id_130",
+			IdResultat = IdObjetMortierPilonBois,
+			Masque = CategorieAnalyse.BolBois | CategorieAnalyse.MailletBois,
+			Titre = "Mortier avec pilon",
+			LegendeSymboles = new[] { "B = Bol en bois", "P = Pilon/Maillet en bois" },
+			PatronCraft = new[] { "Établi 3x3 : 1 B + 1 P, positions libres." }
 		},
 		new RecetteAnalysable
 		{
@@ -442,7 +473,11 @@ public partial class Joueur
 		{
 			if (s.IndexMorphologique == 1) c |= CategorieAnalyse.DemiBuche;
 			if (s.IndexMorphologique == 0) c |= CategorieAnalyse.BuchePleine;
+			if (s.IndexMorphologique == 3 && s.IndexTaille == 3) c |= CategorieAnalyse.MiniBucheHuitieme;
 		}
+		if (s.ID == 105) c |= CategorieAnalyse.DaguePrimitive;
+		if (s.ID == IdObjetMailletBois) c |= CategorieAnalyse.MailletBois;
+		if (s.ID == IdObjetBolBois) c |= CategorieAnalyse.BolBois;
 		if (s.ID == IdObjetPochetteTier0) c |= CategorieAnalyse.Pochette;
 		if (s.ID == IdObjetCeinturePoches) c |= CategorieAnalyse.CeinturePoches;
 		if (s.ID == 2) c |= CategorieAnalyse.RocheVoxelBrute;

@@ -1297,6 +1297,7 @@ public partial class Joueur
         BoeufSauvage boeufTouche = ObtenirBoeufDepuisCollider(objetTouche);
         if (boeufTouche != null)
         {
+            bool etaitCadavreDepecable = boeufTouche.EstCadavreDepecable();
             string nomZone = NomZoneDepuisColliderRaycast(_rayon.GetCollider());
             float intensite = CalculerIntensiteImpactPhysique(
                 massePoing,
@@ -1318,6 +1319,8 @@ public partial class Joueur
                 (ulong)GetInstanceId());
             if (applique)
                 AjouterXpFutureState("Force", 1UL);
+            if (applique && !etaitCadavreDepecable && boeufTouche.EstCadavreDepecable())
+                AjouterXpMetier("Chasseur", 1UL);
             return;
         }
 
@@ -1617,6 +1620,7 @@ public partial class Joueur
                     GD.Print("ZERO-K : Maintenez clic gauche 3s avec la dague pour dépiter ce cadavre.");
                 return;
             }
+            bool etaitCadavreDepecable = boeufTouche.EstCadavreDepecable();
 
             bool tranchant = false;
             if (mainActive.ID == 105)
@@ -1660,6 +1664,8 @@ public partial class Joueur
 
             if (applique)
                 AjouterXpFutureState("Force", 2UL);
+            if (applique && !etaitCadavreDepecable && boeufTouche.EstCadavreDepecable())
+                AjouterXpMetier("Chasseur", 1UL);
             if (applique && (mainActive.ID == 105 || mainActive.ID == IdObjetFauxPierreTier0 || mainActive.ID == 106 || mainActive.ID == IdObjetPellePierreTier0 || mainActive.ID == IdObjetPiochePierreTier0 || mainActive.ID == IdObjetLancePierreTier0 || mainActive.ID == 100))
                 AppliquerUsureOutilMainActive(0.85f + (baseDegats * 0.024f));
             return;
@@ -2118,6 +2124,7 @@ public partial class Joueur
             rbI.ApplyCentralImpulse(orth * 0.26f + Vector3.Up * 0.34f + dir * 0.18f);
 
         boeuf.FinaliserCadavreApresDepecage();
+        AjouterXpMetier("Boucher", 1UL);
         GD.Print("ZERO-K : Viande, os, cuir et intestins récupérés sur la carcasse.");
     }
 

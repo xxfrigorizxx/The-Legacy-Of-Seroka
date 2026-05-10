@@ -649,6 +649,39 @@ public static class Atlas_Matiere
             return "Fondation bois sole roche";
         if (id == Joueur.IdObjetFondationRocheSoleBois)
             return "Fondation roche sole bois";
+        if (id == Joueur.IdObjetMailletBois)
+        {
+            string essence = slot.IndexBotanique switch { 0 => "Chêne", 1 => "Bouleau", 2 => "Pin", 3 => "Sapin", 4 => "Fromager", _ => "Bois" };
+            return $"Maillet en {essence}";
+        }
+        if (id == Joueur.IdObjetBolBois)
+        {
+            string essence = slot.IndexBotanique switch { 0 => "Chêne", 1 => "Bouleau", 2 => "Pin", 3 => "Sapin", 4 => "Fromager", _ => "Bois" };
+            return $"Bol en {essence}";
+        }
+        if (id == Joueur.IdObjetMortierPilonBois)
+        {
+            string EssenceBois(byte idx) => idx switch { 0 => "Chêne", 1 => "Bouleau", 2 => "Pin", 3 => "Sapin", 4 => "Fromager", _ => "Bois" };
+            byte essenceBol = slot.IndexBotanique;
+            byte essencePilon = (byte)Mathf.Clamp(slot.IndexChimique, 0, 255);
+            string g = slot.GenomeAssemblage ?? "";
+            if (g.StartsWith("MORTIERPILON:", StringComparison.Ordinal))
+            {
+                string[] morceaux = g.Substring("MORTIERPILON:".Length).Split(',');
+                if (morceaux.Length >= 2)
+                {
+                    if (byte.TryParse(morceaux[0], out byte b))
+                        essenceBol = b;
+                    if (byte.TryParse(morceaux[1], out byte p))
+                        essencePilon = p;
+                }
+            }
+            string nomBol = EssenceBois(essenceBol);
+            string nomPilon = EssenceBois(essencePilon);
+            return nomBol == nomPilon
+                ? $"Mortier avec pilon ({nomBol})"
+                : $"Mortier {nomBol} + pilon {nomPilon}";
+        }
         if (id == Joueur.IdObjetAllumeFeu)
         {
             string pierre = slot.IndexChimique switch { 10 => "Marcassite", 11 => "Pyrite", _ => "Sulfure" };
@@ -814,6 +847,27 @@ public static class Atlas_Matiere
         if (ingredients.Count == 1)
         {
             var br = ingredients[0];
+            // Établi 3x3 uniquement : mini morceau de bûche (court + fendu en 8)
+            // => maillet bois (conserve l'essence source).
+            bool estMiniMorceauBucheMaillet = br.ID == 30
+                && !br.EstUnEclat
+                && br.IndexTaille == 3
+                && br.IndexMorphologique == 3;
+            if (grilleCraft3x3Table && estMiniMorceauBucheMaillet)
+            {
+                return new SlotInventaire
+                {
+                    ID = Joueur.IdObjetMailletBois,
+                    IndexBotanique = br.IndexBotanique,
+                    IndexChimique = 0,
+                    IndexMorphologique = 0,
+                    IndexTaille = 0,
+                    ScaleEclat = Vector3.One,
+                    EstUnEclat = false,
+                    MeshEclat = null,
+                    NiveauFracture = 0
+                };
+            }
             if (br.ID == 32 && br.IndexChimique == 0)
             {
                 return new SlotInventaire
@@ -858,6 +912,60 @@ public static class Atlas_Matiere
             }
             SlotInventaire sA = ingredients[0];
             SlotInventaire sB = ingredients[1];
+
+            bool EstMiniMorceauBucheBol(SlotInventaire s) =>
+                !s.EstVide
+                && s.ID == 30
+                && !s.EstUnEclat
+                && s.IndexTaille == 3
+                && s.IndexMorphologique == 3;
+
+            bool aBucheBol = EstMiniMorceauBucheBol(sA);
+            bool bBucheBol = EstMiniMorceauBucheBol(sB);
+            bool aDague = sA.ID == 105;
+            bool bDague = sB.ID == 105;
+            if (grilleCraft3x3Table && ((aBucheBol && bDague) || (bBucheBol && aDague)))
+            {
+                SlotInventaire sourceBois = aBucheBol ? sA : sB;
+                return new SlotInventaire
+                {
+                    ID = Joueur.IdObjetBolBois,
+                    IndexBotanique = sourceBois.IndexBotanique,
+                    IndexChimique = 0,
+                    IndexMorphologique = 0,
+                    IndexTaille = 0,
+                    ScaleEclat = Vector3.One,
+                    EstUnEclat = false,
+                    MeshEclat = null,
+                    NiveauFracture = 0
+                };
+            }
+
+            bool aBol = sA.ID == Joueur.IdObjetBolBois;
+            bool bBol = sB.ID == Joueur.IdObjetBolBois;
+            bool aMaillet = sA.ID == Joueur.IdObjetMailletBois;
+            bool bMaillet = sB.ID == Joueur.IdObjetMailletBois;
+            if (grilleCraft3x3Table && ((aBol && bMaillet) || (bBol && aMaillet)))
+            {
+                SlotInventaire slotBol = aBol ? sA : sB;
+                SlotInventaire slotMaillet = aMaillet ? sA : sB;
+                byte essenceBol = slotBol.IndexBotanique;
+                byte essencePilon = slotMaillet.IndexBotanique;
+                return new SlotInventaire
+                {
+                    ID = Joueur.IdObjetMortierPilonBois,
+                    IndexBotanique = essenceBol,
+                    IndexChimique = essencePilon,
+                    IndexMorphologique = 0,
+                    IndexTaille = 0,
+                    ScaleEclat = Vector3.One,
+                    EstUnEclat = false,
+                    MeshEclat = null,
+                    NiveauFracture = 0,
+                    GenomeAssemblage = $"MORTIERPILON:{essenceBol},{essencePilon}"
+                };
+            }
+
             bool aSilex = ItemPhysique.EstMatiereSilexParIdObjet(sA.ID);
             bool bSilex = ItemPhysique.EstMatiereSilexParIdObjet(sB.ID);
             bool aSulfure = ItemPhysique.EstIdRocheMatiere(sA.ID)

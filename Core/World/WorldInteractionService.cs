@@ -294,7 +294,7 @@ public partial class Joueur
     {
         if (s.EstVide || s.ID == 0) return false;
         if (EstIdTerrainVoxelPosable(s.ID)) return true;
-        return s.ID == 999 || s.ID == 10 || s.ID == 11 || s.ID == BlocChutant.ID_BRANCHE || s.ID == IdObjetBaie || ItemPhysique.EstIdRocheMatiere(s.ID) || s.ID == 30 || s.ID == 32 || s.ID == 34 || s.ID == 21 || s.ID == IdObjetCeinturePoches || s.ID == IdObjetCeintureSacoches || s.ID == IdObjetPochetteTier0 || s.ID == IdObjetSacTier0 || s.ID == IdObjetPellePierreTier0 || s.ID == IdObjetPiochePierreTier0 || s.ID == IdObjetLancePierreTier0 || s.ID == IdObjetFauxPierreTier0 || s.ID == IdObjetAllumeFeu || s.ID == 200 || s.ID == IdObjetRackBatons || s.ID == IdObjetRackBuches || s.ID == IdObjetCoffreBoisTier0 || s.ID == IdObjetPitFeuRoche || EstIdFondation(s.ID);
+        return s.ID == 999 || s.ID == 10 || s.ID == 11 || s.ID == BlocChutant.ID_BRANCHE || s.ID == IdObjetBaie || ItemPhysique.EstIdRocheMatiere(s.ID) || s.ID == 30 || s.ID == 32 || s.ID == 34 || s.ID == 21 || s.ID == IdObjetCeinturePoches || s.ID == IdObjetCeintureSacoches || s.ID == IdObjetPochetteTier0 || s.ID == IdObjetSacTier0 || s.ID == IdObjetPellePierreTier0 || s.ID == IdObjetPiochePierreTier0 || s.ID == IdObjetLancePierreTier0 || s.ID == IdObjetFauxPierreTier0 || s.ID == IdObjetAllumeFeu || s.ID == 200 || s.ID == IdObjetRackBatons || s.ID == IdObjetRackBuches || s.ID == IdObjetCoffreBoisTier0 || s.ID == IdObjetPitFeuRoche || s.ID == IdObjetMortierPilonBois || EstIdFondation(s.ID);
     }
 
     /// <summary>Corde (20) : accrocher au point de visée si surface valide (sol, roche, arbre, bloc posé).</summary>
@@ -547,6 +547,35 @@ public partial class Joueur
         ExecuterPlacementAvecOptions(mainActive, depuisInteragir: false);
     }
 
+    private bool ExecuterPlacementModeGhostLancer(SlotInventaire mainActive)
+    {
+        if (mainActive.EstVide || !EstObjetLancableAuMaintien(mainActive))
+            return false;
+
+        if (!EssayerCalculerApercuPlacementObjetLancable(
+            mainActive,
+            out Vector3 pointDeChute,
+            out Vector3 pointAligne,
+            out Vector3 rotationDeg,
+            out bool poseValide))
+            return false;
+        if (!poseValide)
+            return false;
+
+        Node3D nePose = CreerBlocPose(pointDeChute, mainActive);
+        if (nePose == null)
+            return false;
+
+        AppliquerTransformPoseStructure(nePose, pointAligne, rotationDeg);
+        ConsommerUneUniteMainActive();
+        ReinitialiserRotationManuelle();
+        RafraichirHUD();
+
+        if (!Engine.IsEditorHint())
+            SauvegarderEtatPersistantMonde(GetTree());
+        return true;
+    }
+
     private void ExecuterPlacementAvecOptions(SlotInventaire mainActive, bool depuisInteragir)
     {
         if (mainActive.EstVide) return;
@@ -731,6 +760,35 @@ public partial class Joueur
         if (!_rayon.IsColliding())
             return false;
         return EssayerCalculerPoseStructureFixe(mainActive, depuisInteragir, out pointDeChute, out pointAligne, out rotationDeg, out poseValide);
+    }
+
+    private bool EssayerCalculerApercuPlacementObjetLancable(
+        SlotInventaire mainActive,
+        out Vector3 pointDeChute,
+        out Vector3 pointAligne,
+        out Vector3 rotationDeg,
+        out bool poseValide)
+    {
+        pointDeChute = Vector3.Zero;
+        pointAligne = Vector3.Zero;
+        rotationDeg = Vector3.Zero;
+        poseValide = false;
+        if (mainActive.EstVide || !EstObjetLancableAuMaintien(mainActive))
+            return false;
+
+        _rayon.ForceRaycastUpdate();
+        if (!_rayon.IsColliding())
+            return false;
+
+        Vector3 pointImpact = _rayon.GetCollisionPoint();
+        Vector3 normaleImpact = _rayon.GetCollisionNormal();
+        pointDeChute = pointImpact + (normaleImpact * 0.1f);
+        pointAligne = pointDeChute;
+        rotationDeg = new Vector3(_rotationManuelleX, _rotationManuelleY, _rotationManuelleZ);
+
+        float distance = GlobalPosition.DistanceTo(pointDeChute);
+        poseValide = distance >= 0.55f;
+        return true;
     }
 
     /// <summary>Structures fixes: conserve la rotation manuelle et fige X/Z sur la visée, seul Y reste recalé par la physique.</summary>

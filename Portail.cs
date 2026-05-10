@@ -289,6 +289,7 @@ public partial class Portail : Node3D
 			return;
 		}
 
+		float yProcA = Gestionnaire_Monde.EstimerAltitudeTerrainPortail(x, z, IdDimensionConteneur);
 		World3D worldA = GetWorld3D();
 		if (worldA?.DirectSpaceState != null)
 		{
@@ -305,17 +306,22 @@ public partial class Portail : Node3D
 			if (hit.Count > 0 && hit.ContainsKey("position"))
 			{
 				var p = (Vector3)hit["position"];
-				FinaliserPortailAuSolConfirme(p.X, p.Y, p.Z, arretAlignementAutomatique: true);
-				return;
+				// APISARA: filtre les faux positifs de raycast trop hauts (collision intermédiaire),
+				// sinon le portail peut rester "dans les airs" au-dessus du vrai sol terrain.
+				const float seuilEcartRaycastProceduralApisaraMetres = 2.0f;
+				if (p.Y <= yProcA + seuilEcartRaycastProceduralApisaraMetres)
+				{
+					FinaliserPortailAuSolConfirme(p.X, p.Y, p.Z, arretAlignementAutomatique: true);
+					return;
+				}
 			}
 		}
 
-		float yProcA = Gestionnaire_Monde.EstimerAltitudeTerrainPortail(x, z, IdDimensionConteneur);
 		_ySurfaceSolMondeRaycast = yProcA;
 		GlobalPosition = new Vector3(x, yProcA - enf, z);
 		PlanifierReconstructionCollisionsPortaille();
-		if (AncreSurApisara)
-			PlanifierRemblaiSocleSousPortail();
+		// APISARA: ne jamais remblayer sur simple altitude procédurale.
+		// Le socle n'est autorisé qu'après confirmation sol (raycast/voxel) via FinaliserPortailAuSolConfirme().
 		Callable.From(ConfigurerFormeEtPositionZoneTrigger).CallDeferred();
 		RafraichirVisibiliteCombinee();
 	}
@@ -333,9 +339,10 @@ public partial class Portail : Node3D
 	private void FinaliserPortailAuSolConfirme(float x, float ySolMonde, float z, bool arretAlignementAutomatique = true)
 	{
 		_ySurfaceSolMondeRaycast = ySolMonde;
+		// Le raycast/voxel a confirmé un sol fiable pour ce portail (APISARA inclus).
+		_alignementYSolConfirmeParRaycastMesh = arretAlignementAutomatique;
 		if (!AncreSurApisara)
 		{
-			_alignementYSolConfirmeParRaycastMesh = arretAlignementAutomatique;
 			_solSurfaceConfirmePourAffichage = true;
 		}
 		float enfoncement = Mathf.Max(0f, EnfoncementBaseAuSolMetres);
@@ -405,7 +412,8 @@ public partial class Portail : Node3D
 		Gestionnaire_Monde gm = ObtenirGestionnaireMonde();
 		if (gm == null) return;
 		if (Multiplayer.HasMultiplayerPeer() && !Multiplayer.IsServer()) return;
-		if (!AncreSurApisara && !_alignementYSolConfirmeParRaycastMesh)
+		// Sécurité globale: aucun remblai tant qu'un alignement sol fiable n'a pas été confirmé.
+		if (!_alignementYSolConfirmeParRaycastMesh)
 			return;
 		float ySol = _ySurfaceSolMondeRaycast;
 		int r = Mathf.Max(0, RayonSocleVoxelsRemblai);
@@ -556,15 +564,31 @@ public partial class Portail : Node3D
 		if (AncreSurApisara)
 		{
 			if (IdDimensionConteneur != (int)DimensionJeu.Abysse) return;
-			string nom = Name.ToString();
-			const string prefix = "PortailDepuisApisara_";
-			if (!nom.StartsWith(prefix, StringComparison.Ordinal)) return;
-			string suffix = nom[prefix.Length..];
-			if (Enum.TryParse(suffix, ignoreCase: false, out PointCardinal c))
-				Liaison = c;
+			// APISARA: robustesse anti dérive nom de noeud / duplicats.
+			// On lie le portail à l'ancre cardinale la plus proche de sa position réelle.
+			Liaison = DeterminerLiaisonDepuisAncreApisaraLaPlusProche(GlobalPosition);
 		}
 		else if (ConstantesDimensions.EssayerObtenirInfo(IdDimensionConteneur, out var inf) && inf.EstAlphaLike)
 			Liaison = NexusPortailsApisara.ObtenirCardinalPourDimensionAlphaLike(IdDimensionConteneur);
+	}
+
+	private static PointCardinal DeterminerLiaisonDepuisAncreApisaraLaPlusProche(Vector3 positionMonde)
+	{
+		Vector2 p = new Vector2(positionMonde.X, positionMonde.Z);
+		PointCardinal meilleur = PointCardinal.NORD;
+		float dist2Min = float.MaxValue;
+		foreach (PointCardinal c in Enum.GetValues(typeof(PointCardinal)))
+		{
+			Vector3 a = NexusCoords.ObtenirAncreApisara(c);
+			Vector2 axz = new Vector2(a.X, a.Z);
+			float d2 = p.DistanceSquaredTo(axz);
+			if (d2 < dist2Min)
+			{
+				dist2Min = d2;
+				meilleur = c;
+			}
+		}
+		return meilleur;
 	}
 
 	private void ObtenirDimensionEtPositionCible(out int dimensionId, out Vector3 positionXZLogique)
@@ -764,7 +788,7 @@ public partial class Portail : Node3D
 	/// <summary>Après raycast sol : si le bas du maillage reste nettement au-dessus de la surface détectée, abaisse le nœud (GLB pivot / AABB).</summary>
 	private void CorrigerEnfoncementSiMaillagePlaneAuDessusDuRaycastSol()
 	{
-		if (AncreSurApisara || !_alignementYSolConfirmeParRaycastMesh) return;
+		if (!_alignementYSolConfirmeParRaycastMesh) return;
 		float ySurface = _ySurfaceSolMondeRaycast;
 		const float toleranceMetres = 0.22f;
 		for (int passe = 0; passe < 5; passe++)

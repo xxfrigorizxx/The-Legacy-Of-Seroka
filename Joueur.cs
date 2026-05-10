@@ -144,6 +144,12 @@ public partial class Joueur : CharacterBody3D
     public const int IdObjetFondationBoisSoleRoche = 126;
     /// <summary>Fondation mixte : base roche, sole bois.</summary>
     public const int IdObjetFondationRocheSoleBois = 127;
+    /// <summary>Maillet en bois (outil simple, craft établi avec mini morceau de bûche).</summary>
+    public const int IdObjetMailletBois = 128;
+    /// <summary>Bol en bois (artisanat établi, sculpté avec dague).</summary>
+    public const int IdObjetBolBois = 129;
+    /// <summary>Mortier avec pilon (assemblage bol + pilon, essences séparées par mesh).</summary>
+    public const int IdObjetMortierPilonBois = 130;
     /// <summary>Objet posé au sol : quantité dans l’inventaire au ramassage (>1).</summary>
     public const string MetaQuantiteObjetPose = "QuantiteObjetPose";
     /// <summary>Rack Ã  bÃ¢tons (stockage dÃ©diÃ©).</summary>
@@ -406,6 +412,8 @@ public partial class Joueur : CharacterBody3D
     private float _dernierBlendLocomotion = float.NaN;
     private float _derniereVitesseAnimationHumain = float.NaN;
     private const float DureeTamponSautSecondes = 0.28f;
+    private const ulong NiveauxParSautAdditionnelAgiliter = 250UL;
+    private int _sautsAeriensEffectues;
     /// <summary>Capsule de rÃ©fÃ©rence dans la scÃ¨ne (souvent dÃ©sactivÃ©e) : bas local utilisÃ© pour aligner les pieds du mesh.</summary>
     private const string NomCollisionReferencePieds = "CollisionShape3D";
     [Export] public Vector3 OffsetAimantMainDroiteFpsLocal { get; set; } = new Vector3(0.42f, -0.25f, -0.26f);
@@ -528,6 +536,9 @@ public partial class Joueur : CharacterBody3D
     private const string MetaSignaturePitFeuRoche122 = "SigPitFeuRoche122";
     private const string MetaSignatureFondation = "SigFondation";
     private const string MetaSignatureAllumeFeu121 = "SigAllumeFeu121";
+    private const string MetaSignatureMailletBois128 = "SigMailletBois128";
+    private const string MetaSignatureBolBois129 = "SigBolBois129";
+    private const string MetaSignatureMortierPilon130 = "SigMortierPilon130";
     private const string MetaSignatureCarnet114 = "SigCarnet114";
     private const string MetaSignatureBaie35 = "SigBaie35";
     private SubViewportContainer _viewportSlotGauche;
@@ -542,6 +553,7 @@ public partial class Joueur : CharacterBody3D
     private float _rotationManuelleX = 0f;
     private float _rotationManuelleZ = 0f;
     private bool _modePlacementStructureActif;
+    private bool _modePlacementLancerShiftActif;
     private Node3D _ghostPlacementStructure;
     private bool _ghostPlacementValide;
     private int _ghostPlacementId = -1;
@@ -571,26 +583,46 @@ public partial class Joueur : CharacterBody3D
     private readonly Dictionary<string, ulong> _futureStates = new(StringComparer.OrdinalIgnoreCase)
     {
         ["Force"] = 0UL,
+        ["Constitution"] = 0UL,
         ["Dextiriter"] = 0UL,
+        ["Agiliter"] = 0UL,
         ["Metaboliste"] = 0UL,
         ["Intelligence"] = 0UL
     };
     private readonly Dictionary<string, UInt128> _futureStateXp = new(StringComparer.OrdinalIgnoreCase)
     {
         ["Force"] = 0UL,
+        ["Constitution"] = 0UL,
         ["Dextiriter"] = 0UL,
+        ["Agiliter"] = 0UL,
         ["Metaboliste"] = 0UL,
         ["Intelligence"] = 0UL
     };
     private readonly Dictionary<string, ulong> _metiers = new(StringComparer.OrdinalIgnoreCase)
     {
         ["Bucheron"] = 0UL,
-        ["Traisage"] = 0UL
+        ["Traisage"] = 0UL,
+        ["Artisana"] = 0UL,
+        ["Batisseur"] = 0UL,
+        ["Mineur"] = 0UL,
+        ["Forgeron"] = 0UL,
+        ["Terrassier"] = 0UL,
+        ["Cuisinier"] = 0UL,
+        ["Boucher"] = 0UL,
+        ["Chasseur"] = 0UL
     };
     private readonly Dictionary<string, UInt128> _metierXp = new(StringComparer.OrdinalIgnoreCase)
     {
         ["Bucheron"] = 0UL,
-        ["Traisage"] = 0UL
+        ["Traisage"] = 0UL,
+        ["Artisana"] = 0UL,
+        ["Batisseur"] = 0UL,
+        ["Mineur"] = 0UL,
+        ["Forgeron"] = 0UL,
+        ["Terrassier"] = 0UL,
+        ["Cuisinier"] = 0UL,
+        ["Boucher"] = 0UL,
+        ["Chasseur"] = 0UL
     };
 
     private static PhysicsMaterial _physMatRocheRonde;
@@ -609,6 +641,8 @@ public partial class Joueur : CharacterBody3D
     private const float BonusGameplayParPointStat = 0.0001f; // +0,01%
     private const float BonusChargeKgParPointForce = 0.01f; // +0,01 kg par point
     private const float BonusPvParPointConstitution = 0.01f; // +0,01 PV par section
+    private const int DegatsParPointXpConstitution = 10;
+    private ulong _degatsCumulesConstitution;
     private const float ChanceAnalyseBase = 0.50f;
     private const float ChanceAnalyseMin = 0.05f;
     private const float ChanceAnalyseMax = 0.95f;
@@ -794,6 +828,15 @@ public partial class Joueur : CharacterBody3D
             return;
 
         string section = NormaliserCleSectionCorps(cleSection);
+        float pvAvant = section switch
+        {
+            SectionCorpsTete => _pvTete,
+            SectionCorpsBrasGauche => _pvBrasGauche,
+            SectionCorpsBrasDroit => _pvBrasDroit,
+            SectionCorpsJambeGauche => _pvJambeGauche,
+            SectionCorpsJambeDroite => _pvJambeDroite,
+            _ => _pvTorse
+        };
         switch (section)
         {
             case SectionCorpsTete:
@@ -815,8 +858,34 @@ public partial class Joueur : CharacterBody3D
                 _pvTorse = Mathf.Max(0, _pvTorse - degats);
                 break;
         }
+        float pvApres = section switch
+        {
+            SectionCorpsTete => _pvTete,
+            SectionCorpsBrasGauche => _pvBrasGauche,
+            SectionCorpsBrasDroit => _pvBrasDroit,
+            SectionCorpsJambeGauche => _pvJambeGauche,
+            SectionCorpsJambeDroite => _pvJambeDroite,
+            _ => _pvTorse
+        };
+        int degatsEffectifs = Mathf.Max(0, Mathf.RoundToInt(Mathf.Max(0f, pvAvant - pvApres)));
+        AjouterXpConstitutionDepuisDegats(degatsEffectifs);
         RafraichirHUD();
         VerifierMortTorseSiNecessaire();
+    }
+
+    private void AjouterXpConstitutionDepuisDegats(int degatsEffectifs)
+    {
+        if (degatsEffectifs <= 0)
+            return;
+        AjouterFutureStateSiAbsent("Constitution", 0UL);
+        ulong gain = (ulong)degatsEffectifs;
+        _degatsCumulesConstitution = _degatsCumulesConstitution > ulong.MaxValue - gain
+            ? ulong.MaxValue
+            : _degatsCumulesConstitution + gain;
+        ulong xpConstitution = _degatsCumulesConstitution / (ulong)DegatsParPointXpConstitution;
+        _degatsCumulesConstitution %= (ulong)DegatsParPointXpConstitution;
+        if (xpConstitution > 0UL)
+            AjouterXpFutureState("Constitution", xpConstitution);
     }
 
     private const float GainFaimConsommationBaieRouge = 10f;
@@ -1932,9 +2001,9 @@ public partial class Joueur : CharacterBody3D
     {
         float dt = (float)delta;
         SlotInventaire mainActive = MainGaucheEstActive ? MainGauche : MainDroite;
-        if (_modePlacementStructureActif)
+        if (EstModePlacementGhostActif())
         {
-            if (EstUiJoueurBloquanteOuverte() || mainActive.EstVide || !EstStructureSupporteeModePlacement(mainActive.ID))
+            if (EstUiJoueurBloquanteOuverte() || !EstModePlacementGhostActifPourSlot(mainActive))
                 AnnulerModePlacementStructure(reinitialiserRotation: false);
             else
                 MettreAJourGhostPlacementStructure(mainActive);
@@ -2639,12 +2708,50 @@ public partial class Joueur : CharacterBody3D
             || EstIdFondation(id);
     }
 
+    private bool EstModePlacementStructurePourSlot(SlotInventaire mainActive)
+    {
+        return _modePlacementStructureActif
+            && !mainActive.EstVide
+            && EstStructureSupporteeModePlacement(mainActive.ID);
+    }
+
+    private bool EstModePlacementLancerShiftPourSlot(SlotInventaire mainActive)
+    {
+        return _modePlacementLancerShiftActif
+            && !mainActive.EstVide
+            && EstObjetLancableAuMaintien(mainActive);
+    }
+
+    private bool EstModePlacementGhostActifPourSlot(SlotInventaire mainActive)
+    {
+        return EstModePlacementStructurePourSlot(mainActive) || EstModePlacementLancerShiftPourSlot(mainActive);
+    }
+
+    private bool EstModePlacementGhostActif()
+    {
+        return _modePlacementStructureActif || _modePlacementLancerShiftActif;
+    }
+
     private void DemarrerModePlacementStructure(SlotInventaire mainActive)
     {
         if (mainActive.EstVide || !EstStructureSupporteeModePlacement(mainActive.ID))
             return;
 
+        _modePlacementLancerShiftActif = false;
         _modePlacementStructureActif = true;
+        _ghostPlacementValide = false;
+        if (_ghostPlacementStructure == null || !GodotObject.IsInstanceValid(_ghostPlacementStructure) || _ghostPlacementId != mainActive.ID)
+            RecreerGhostPlacementStructure(mainActive);
+        MettreAJourGhostPlacementStructure(mainActive);
+    }
+
+    private void DemarrerModePlacementLancerShift(SlotInventaire mainActive)
+    {
+        if (mainActive.EstVide || !EstObjetLancableAuMaintien(mainActive))
+            return;
+
+        _modePlacementStructureActif = false;
+        _modePlacementLancerShiftActif = true;
         _ghostPlacementValide = false;
         if (_ghostPlacementStructure == null || !GodotObject.IsInstanceValid(_ghostPlacementStructure) || _ghostPlacementId != mainActive.ID)
             RecreerGhostPlacementStructure(mainActive);
@@ -2654,6 +2761,7 @@ public partial class Joueur : CharacterBody3D
     private void AnnulerModePlacementStructure(bool reinitialiserRotation)
     {
         _modePlacementStructureActif = false;
+        _modePlacementLancerShiftActif = false;
         _ghostPlacementValide = false;
         _ghostPlacementId = -1;
         _ghostPlacementCouleur = Colors.Transparent;
@@ -2669,31 +2777,70 @@ public partial class Joueur : CharacterBody3D
         if (_ghostPlacementStructure != null && GodotObject.IsInstanceValid(_ghostPlacementStructure))
             _ghostPlacementStructure.QueueFree();
 
-        _ghostPlacementStructure = new Node3D { Name = "GhostPlacementStructure" };
+        if (EstModePlacementLancerShiftPourSlot(mainActive))
+        {
+            _ghostPlacementStructure = CreerBlocPose(Vector3.Zero, mainActive, modeGhost: true);
+            if (_ghostPlacementStructure == null)
+                _ghostPlacementStructure = new Node3D { Name = "GhostPlacementStructure" };
+            ConfigurerNoeudGhostPlacement(_ghostPlacementStructure);
+        }
+        else
+        {
+            _ghostPlacementStructure = new Node3D { Name = "GhostPlacementStructure" };
+            var meshRoot = new Node3D { Name = "GhostMeshRoot" };
+            _ghostPlacementStructure.AddChild(meshRoot);
+
+            if (mainActive.ID == 200)
+                InstancierModeleAtelierPrimitif(meshRoot, mainActive, 1.2f, true);
+            else if (mainActive.ID == IdObjetRackBatons)
+                InstancierModeleRackBatons(meshRoot, mainActive, 1.05f, true);
+            else if (mainActive.ID == IdObjetRackBuches)
+                InstancierModeleRackBuches(meshRoot, mainActive, 1.05f, true);
+            else if (mainActive.ID == IdObjetCoffreBoisTier0)
+                InstancierModeleCoffreBoisTier0(meshRoot, mainActive, 0.88f, true);
+            else if (mainActive.ID == IdObjetPitFeuRoche)
+                InstancierModelePitFeuRoche(meshRoot, mainActive, 0.96f, true);
+            else if (mainActive.ID == IdObjetPitFeu)
+                InstancierModelePitFeu(meshRoot, mainActive, 0.92f, true);
+            else if (EstIdFondation(mainActive.ID))
+                InstancierModeleFondation(meshRoot, mainActive, 4.0f, true);
+        }
+
         _ghostPlacementStructure.SetMeta("ID_Matiere", mainActive.ID);
         _ghostPlacementStructure.TopLevel = true;
         GetParent()?.AddChild(_ghostPlacementStructure);
-
-        var meshRoot = new Node3D { Name = "GhostMeshRoot" };
-        _ghostPlacementStructure.AddChild(meshRoot);
         _ghostPlacementId = mainActive.ID;
 
-        if (mainActive.ID == 200)
-            InstancierModeleAtelierPrimitif(meshRoot, mainActive, 1.2f, true);
-        else if (mainActive.ID == IdObjetRackBatons)
-            InstancierModeleRackBatons(meshRoot, mainActive, 1.05f, true);
-        else if (mainActive.ID == IdObjetRackBuches)
-            InstancierModeleRackBuches(meshRoot, mainActive, 1.05f, true);
-        else if (mainActive.ID == IdObjetCoffreBoisTier0)
-            InstancierModeleCoffreBoisTier0(meshRoot, mainActive, 0.88f, true);
-        else if (mainActive.ID == IdObjetPitFeuRoche)
-            InstancierModelePitFeuRoche(meshRoot, mainActive, 0.96f, true);
-        else if (mainActive.ID == IdObjetPitFeu)
-            InstancierModelePitFeu(meshRoot, mainActive, 0.92f, true);
-        else if (EstIdFondation(mainActive.ID))
-            InstancierModeleFondation(meshRoot, mainActive, 4.0f, true);
-
         AppliquerCouleurGhostPlacementStructure(estValide: false);
+    }
+
+    private static void ConfigurerNoeudGhostPlacement(Node racine)
+    {
+        if (racine == null)
+            return;
+        var pile = new List<Node> { racine };
+        for (int i = 0; i < pile.Count; i++)
+        {
+            Node noeud = pile[i];
+            foreach (Node enfant in noeud.GetChildren())
+                pile.Add(enfant);
+
+            if (noeud is CollisionShape3D collisionShape)
+                collisionShape.Disabled = true;
+            if (noeud is CollisionObject3D collisionObject)
+            {
+                collisionObject.CollisionLayer = 0;
+                collisionObject.CollisionMask = 0;
+            }
+            if (noeud is RigidBody3D rb)
+            {
+                rb.Freeze = true;
+                rb.GravityScale = 0f;
+                rb.LinearVelocity = Vector3.Zero;
+                rb.AngularVelocity = Vector3.Zero;
+                rb.Sleeping = true;
+            }
+        }
     }
 
     private static List<MeshInstance3D> ListerMeshesGhost(Node racine)
@@ -2766,7 +2913,7 @@ public partial class Joueur : CharacterBody3D
 
     private void MettreAJourGhostPlacementStructure(SlotInventaire mainActive)
     {
-        if (!_modePlacementStructureActif || mainActive.EstVide || !EstStructureSupporteeModePlacement(mainActive.ID))
+        if (!EstModePlacementGhostActifPourSlot(mainActive))
             return;
 
         if (_ghostPlacementStructure == null || !GodotObject.IsInstanceValid(_ghostPlacementStructure) || _ghostPlacementId != mainActive.ID)
@@ -2774,13 +2921,30 @@ public partial class Joueur : CharacterBody3D
         if (_ghostPlacementStructure == null || !GodotObject.IsInstanceValid(_ghostPlacementStructure))
             return;
 
-        bool affiche = EssayerCalculerApercuPlacementStructure(
-            mainActive,
-            depuisInteragir: false,
-            out Vector3 pointDeChute,
-            out Vector3 pointAligne,
-            out Vector3 rotationDeg,
-            out bool poseValide);
+        Vector3 pointDeChute;
+        Vector3 pointAligne;
+        Vector3 rotationDeg;
+        bool poseValide;
+        bool affiche;
+        if (EstModePlacementStructurePourSlot(mainActive))
+        {
+            affiche = EssayerCalculerApercuPlacementStructure(
+                mainActive,
+                depuisInteragir: false,
+                out pointDeChute,
+                out pointAligne,
+                out rotationDeg,
+                out poseValide);
+        }
+        else
+        {
+            affiche = EssayerCalculerApercuPlacementObjetLancable(
+                mainActive,
+                out pointDeChute,
+                out pointAligne,
+                out rotationDeg,
+                out poseValide);
+        }
         if (!affiche)
         {
             _ghostPlacementStructure.Visible = false;
@@ -2842,7 +3006,7 @@ public partial class Joueur : CharacterBody3D
 
         if (_menuAnatomie != null && @event.IsActionPressed("inventaire"))
         {
-            if (_modePlacementStructureActif)
+            if (EstModePlacementGhostActif())
                 AnnulerModePlacementStructure(reinitialiserRotation: false);
             if (ChatInGameOuvert())
                 FermerChatInGame();
@@ -2895,7 +3059,7 @@ public partial class Joueur : CharacterBody3D
             return;
         }
 
-        if (_modePlacementStructureActif
+        if (EstModePlacementGhostActif()
             && (@event.IsActionPressed("ui_cancel")
                 || (@event is InputEventKey ekEscPlacement && ekEscPlacement.Pressed && !ekEscPlacement.Echo && ekEscPlacement.Keycode == Key.Escape)))
         {
@@ -3000,7 +3164,7 @@ public partial class Joueur : CharacterBody3D
             SlotInventaire mainActive = MainGaucheEstActive ? MainGauche : MainDroite;
             if (!mainActive.EstVide)
             {
-                if (!_modePlacementStructureActif || !EstStructureSupporteeModePlacement(mainActive.ID))
+                if (!EstModePlacementGhostActifPourSlot(mainActive))
                     _forceLancer = 0f; // MAIN PLEINE = DÃ‰BUT CHARGE LANCER/POSER
             }
             else if (_cooldownGainFaimClicDroit <= 0f)
@@ -3014,12 +3178,26 @@ public partial class Joueur : CharacterBody3D
         {
             SlotInventaire mainActive = MainGaucheEstActive ? MainGauche : MainDroite;
             bool estStructureModePlacement = !mainActive.EstVide && EstStructureSupporteeModePlacement(mainActive.ID);
+            bool estObjetLancable = !mainActive.EstVide && EstObjetLancableAuMaintien(mainActive);
+            bool shiftMaintenu = Input.IsPhysicalKeyPressed(Key.Shift);
             if (estStructureModePlacement && _modePlacementStructureActif)
             {
                 MettreAJourGhostPlacementStructure(mainActive);
                 if (_ghostPlacementValide)
                 {
                     ExecuterPlacement();
+                    AnnulerModePlacementStructure(reinitialiserRotation: false);
+                }
+                _forceLancer = 0f;
+                GetViewport().SetInputAsHandled();
+                return;
+            }
+            if (estObjetLancable && _modePlacementLancerShiftActif)
+            {
+                MettreAJourGhostPlacementStructure(mainActive);
+                if (_ghostPlacementValide)
+                {
+                    ExecuterPlacementModeGhostLancer(mainActive);
                     AnnulerModePlacementStructure(reinitialiserRotation: false);
                 }
                 _forceLancer = 0f;
@@ -3052,6 +3230,13 @@ public partial class Joueur : CharacterBody3D
                 bool estCoffreEnMain = mainActive.ID == IdObjetCoffreBoisTier0;
                 bool estPitFeuEnMain = EstIdPitFeu(mainActive.ID) || EstIdFondation(mainActive.ID);
                 bool estBuissonEnMain = mainActive.ID == 10 || mainActive.ID == 11;
+                if (shiftMaintenu && estObjetLancable)
+                {
+                    DemarrerModePlacementLancerShift(mainActive);
+                    _forceLancer = 0f;
+                    GetViewport().SetInputAsHandled();
+                    return;
+                }
                 if (estStructureModePlacement)
                 {
                     DemarrerModePlacementStructure(mainActive);
@@ -3114,7 +3299,7 @@ public partial class Joueur : CharacterBody3D
         }
         else if (@event.IsActionPressed("changer_main"))
         {
-            if (_modePlacementStructureActif)
+            if (EstModePlacementGhostActif())
                 AnnulerModePlacementStructure(reinitialiserRotation: false);
             MainGaucheEstActive = !MainGaucheEstActive;
             ReinitialiserRotationManuelle();
@@ -3929,6 +4114,9 @@ public partial class Joueur : CharacterBody3D
         IdObjetFondationRoche => 62f,
         IdObjetFondationBoisSoleRoche => 54f,
         IdObjetFondationRocheSoleBois => 58f,
+        IdObjetMailletBois => 0.72f,
+        IdObjetBolBois => 0.28f,
+        IdObjetMortierPilonBois => 0.98f,
         _ => 0.5f
     };
 
@@ -4074,6 +4262,14 @@ public partial class Joueur : CharacterBody3D
         }
     }
 
+    private int ObtenirNombreSautsMaxAgiliter()
+    {
+        ulong paliers = ObtenirNiveauFutureState("Agiliter") / NiveauxParSautAdditionnelAgiliter;
+        if (paliers >= (ulong)(int.MaxValue - 1))
+            return int.MaxValue;
+        return 1 + (int)paliers;
+    }
+
     public bool PeutPorterSlotSupplementaire(SlotInventaire slot)
     {
         _ = slot;
@@ -4083,10 +4279,10 @@ public partial class Joueur : CharacterBody3D
     public void RafraichirHUD()
     {
         AssurerDurabiliteOutilsSurLesMains();
-        if (_modePlacementStructureActif)
+        if (EstModePlacementGhostActif())
         {
             SlotInventaire mainActive = MainGaucheEstActive ? MainGauche : MainDroite;
-            if (mainActive.EstVide || !EstStructureSupporteeModePlacement(mainActive.ID))
+            if (!EstModePlacementGhostActifPourSlot(mainActive))
                 AnnulerModePlacementStructure(reinitialiserRotation: false);
         }
         MettreAJourSlotUI(_slotGauche, MainGauche, MainGaucheEstActive);
@@ -4309,6 +4505,9 @@ public partial class Joueur : CharacterBody3D
         else if (id == IdObjetPitFeu) return null; // GLB pit à feu via InstancierModelePitFeu
         else if (id == IdObjetPitFeuRoche) return null; // GLB pit à feu roche via InstancierModelePitFeuRoche
         else if (id == IdObjetAllumeFeu) return null; // GLB allume-feu via InstancierModeleAllumeFeu
+        else if (id == IdObjetMailletBois) return null; // GLB maillet via InstancierModeleMailletBois
+        else if (id == IdObjetBolBois) return null; // GLB bol via InstancierModeleBolBois
+        else if (id == IdObjetMortierPilonBois) return null; // GLB mortier+pilon via InstancierModeleMortierPilonBois
         else if (EstIdFondation(id)) return null; // GLB fondations via InstancierModeleFondation
         else if (id == 30 || id == 32)
         {
@@ -4577,6 +4776,12 @@ public partial class Joueur : CharacterBody3D
             forceDegats *= 2.5f;
 
         _gestionnaireMonde?.AppliquerDestructionGlobale(pointImpactVoxel, RAYON_SCULPTURE, forceDegats);
+        bool extractionRoche = ItemPhysique.EstIdRocheMatiere(idExtrait);
+        if (extractionRoche)
+            AjouterXpMetier("Mineur", 1UL);
+        else
+            AjouterXpMetier("Terrassier", 1UL);
+        AjouterXpFutureState("Force", 1UL);
 
         var nouveauSlot = new SlotInventaire { ID = idExtrait, IndexMorphologique = 0, IndexChimique = 0 };
         if (MainGaucheEstActive)
@@ -4703,7 +4908,7 @@ public partial class Joueur : CharacterBody3D
     }
 
     /// <summary>CrÃ©e un bloc physique posÃ© avec IndexCacheMemoire assignÃ© (forme exacte conservÃ©e au rejet). Retourne le nÅ“ud crÃ©Ã© (pour lancer avec impulsion). ItemPhysique est le RigidBody3D racine.</summary>
-    private Node3D CreerBlocPose(Vector3 pointDeChute, SlotInventaire mainActive)
+    private Node3D CreerBlocPose(Vector3 pointDeChute, SlotInventaire mainActive, bool modeGhost = false)
     {
         int id = mainActive.ID;
         Node3D corps;
@@ -5084,6 +5289,83 @@ public partial class Joueur : CharacterBody3D
                     ? new Vector3(0.94f, 0.34f, 0.94f)
                     : new Vector3(0.86f, 0.32f, 0.86f);
                 item.AddChild(new CollisionShape3D { Shape = new BoxShape3D { Size = tailleBox }, Position = new Vector3(0f, 0.16f, 0f) });
+            }
+            corps = item;
+        }
+        else if (id == IdObjetMailletBois)
+        {
+            var item = new ItemPhysique
+            {
+                ID_Objet = id,
+                IndexBotanique = mainActive.IndexBotanique,
+                IndexChimique = mainActive.IndexChimique,
+                IndexCacheMemoire = mainActive.IndexMorphologique,
+                Name = "ItemPhysique",
+                ContinuousCd = true
+            };
+            var meshRoot = new Node3D { Name = "MeshInstance3D" };
+            InstancierModeleMailletBois(meshRoot, mainActive, 0.70f, false);
+            item.AddChild(meshRoot);
+            if (AjouterCollisionsConvexesDepuisMeshesSousRacineItem(item, meshRoot) == 0)
+            {
+                item.AddChild(new CollisionShape3D
+                {
+                    Name = "CollisionShape3D",
+                    Shape = new CapsuleShape3D { Radius = 0.06f, Height = 0.36f }
+                });
+            }
+            corps = item;
+        }
+        else if (id == IdObjetBolBois)
+        {
+            var item = new ItemPhysique
+            {
+                ID_Objet = id,
+                IndexBotanique = mainActive.IndexBotanique,
+                IndexChimique = mainActive.IndexChimique,
+                IndexCacheMemoire = mainActive.IndexMorphologique,
+                Name = "ItemPhysique",
+                ContinuousCd = true
+            };
+            var meshRoot = new Node3D { Name = "MeshInstance3D" };
+            InstancierModeleBolBois(meshRoot, mainActive, 0.62f, false);
+            item.AddChild(meshRoot);
+            if (AjouterCollisionsConvexesDepuisMeshesSousRacineItem(item, meshRoot) == 0)
+            {
+                item.AddChild(new CollisionShape3D
+                {
+                    Name = "CollisionShape3D",
+                    Shape = new BoxShape3D { Size = new Vector3(0.22f, 0.10f, 0.22f) },
+                    Position = new Vector3(0f, 0.05f, 0f)
+                });
+            }
+            corps = item;
+        }
+        else if (id == IdObjetMortierPilonBois)
+        {
+            var item = new ItemPhysique
+            {
+                ID_Objet = id,
+                IndexBotanique = mainActive.IndexBotanique,
+                IndexChimique = mainActive.IndexChimique,
+                IndexCacheMemoire = mainActive.IndexMorphologique,
+                GenomeAssemblage = mainActive.GenomeAssemblage ?? "",
+                Name = "ItemPhysique",
+                ContinuousCd = true
+            };
+            if (!string.IsNullOrEmpty(item.GenomeAssemblage))
+                item.SetMeta(MetaGenomeAssemblage, item.GenomeAssemblage);
+            var meshRoot = new Node3D { Name = "MeshInstance3D" };
+            InstancierModeleMortierPilonBois(meshRoot, mainActive, 0.72f, false);
+            item.AddChild(meshRoot);
+            if (AjouterCollisionsConvexesDepuisMeshesSousRacineItem(item, meshRoot) == 0)
+            {
+                item.AddChild(new CollisionShape3D
+                {
+                    Name = "CollisionShape3D",
+                    Shape = new BoxShape3D { Size = new Vector3(0.34f, 0.24f, 0.34f) },
+                    Position = new Vector3(0f, 0.12f, 0f)
+                });
             }
             corps = item;
         }
@@ -5570,15 +5852,20 @@ public partial class Joueur : CharacterBody3D
         corps.SetMeta("ID_Matiere", id);
         if (corps is ItemPhysique ipQuantite && mainActive.Quantite > 1)
             ipQuantite.SetMeta(MetaQuantiteObjetPose, mainActive.Quantite);
-        corps.AddToGroup("BlocsPoses");
-        GetParent().AddChild(corps);
-        // Placement pur : pas de translation Y supplÃ©mentaire (Ã©vite double offset / lÃ©vitation atelier).
-        corps.GlobalPosition = pointDeChute;
         bool enChargementPersistant = _chargementObjetsPosesMondeEnCours;
         bool estFondationPose = EstIdFondation(id);
+        if (!modeGhost)
+        {
+            corps.AddToGroup("BlocsPoses");
+            GetParent().AddChild(corps);
+            // Placement pur : pas de translation Y supplÃ©mentaire (Ã©vite double offset / lÃ©vitation atelier).
+            corps.GlobalPosition = pointDeChute;
+        }
+        if (estFondationPose && !enChargementPersistant && !modeGhost)
+            AjouterXpMetier("Batisseur", 1UL);
         bool alignerEtageFondation = false;
         float yEtageFondation = 0f;
-        if (estFondationPose && !enChargementPersistant)
+        if (estFondationPose && !enChargementPersistant && !modeGhost)
         {
             var nodes = GetTree()?.GetNodesInGroup("BlocsPoses");
             if (nodes != null)
@@ -5604,7 +5891,7 @@ public partial class Joueur : CharacterBody3D
                 }
             }
         }
-        if (id == IdObjetRackBatons || id == IdObjetRackBuches || id == IdObjetCoffreBoisTier0 || EstIdPitFeu(id) || EstIdFondation(id))
+        if (!modeGhost && (id == IdObjetRackBatons || id == IdObjetRackBuches || id == IdObjetCoffreBoisTier0 || EstIdPitFeu(id) || EstIdFondation(id)))
         {
             // Snap sol robuste pour le rack: corrige les cas oÃ¹ le raycast vise une surface dÃ©calÃ©e.
             var espace = GetWorld3D()?.DirectSpaceState;
@@ -5916,14 +6203,18 @@ public partial class Joueur : CharacterBody3D
             ReinitialiserReferencePositionMetaboliste();
         SlotInventaire mainActive = MainGaucheEstActive ? MainGauche : MainDroite;
         bool uiBloquanteOuverte = EstUiJoueurBloquanteOuverte();
-        if (_modePlacementStructureActif && uiBloquanteOuverte)
+        if (EstModePlacementGhostActif() && uiBloquanteOuverte)
             AnnulerModePlacementStructure(reinitialiserRotation: false);
 
         if (!uiBloquanteOuverte)
         {
-            bool bloquerChargePlacement = _modePlacementStructureActif && EstStructureSupporteeModePlacement(mainActive.ID);
+            bool bloquerChargePlacement = EstModePlacementGhostActifPourSlot(mainActive);
             if (!mainActive.EstVide && Input.IsActionPressed("clic_droit") && !bloquerChargePlacement)
-                _forceLancer = Mathf.Min(5.0f, _forceLancer + (VitesseChargeBras * 2.5f) * dt);
+            {
+                bool shiftDeclenchePlacementLancer = Input.IsPhysicalKeyPressed(Key.Shift) && EstObjetLancableAuMaintien(mainActive);
+                if (!shiftDeclenchePlacementLancer)
+                    _forceLancer = Mathf.Min(5.0f, _forceLancer + (VitesseChargeBras * 2.5f) * dt);
+            }
             if (_gaucheMaintenu && (mainActive.EstVide || mainActive.ID == 105 || mainActive.ID == 106 || mainActive.ID == IdObjetPellePierreTier0 || mainActive.ID == IdObjetPiochePierreTier0 || mainActive.ID == IdObjetLancePierreTier0 || mainActive.ID == IdObjetFauxPierreTier0))
                 MettreAJourMinageMainNueOuAtelier(dt, mainActive);
             else
@@ -6048,6 +6339,7 @@ public partial class Joueur : CharacterBody3D
         {
             _bufferSolCoyoteAnim = 0.18f;
             _bufferCoyoteSaut = 0.28f;
+            _sautsAeriensEffectues = 0;
         }
         else
         {
@@ -6095,11 +6387,19 @@ public partial class Joueur : CharacterBody3D
         bool sautDepuisSolStable = !estDansEau
             && _tamponSautRestant > 0f
             && solAccepteSaut;
-        if (!uiBloquanteOuverte && sautDepuisSolStable)
+        int sautsAeriensMax = Mathf.Max(0, ObtenirNombreSautsMaxAgiliter() - 1);
+        bool sautAerienDisponible = !estDansEau
+            && !solAccepteSaut
+            && _tamponSautRestant > 0f
+            && _sautsAeriensEffectues < sautsAeriensMax;
+        if (!uiBloquanteOuverte && (sautDepuisSolStable || sautAerienDisponible))
         {
             velocity.Y = JumpVelocity;
             _tamponSautRestant = 0f;
             _bufferCoyoteSaut = 0f;
+            if (sautAerienDisponible)
+                _sautsAeriensEffectues++;
+            AjouterXpFutureState("Agiliter", 1UL);
         }
 
         Vector2 inputDir = uiBloquanteOuverte ? Vector2.Zero : Input.GetVector("move_left", "move_right", "move_forward", "move_backward");

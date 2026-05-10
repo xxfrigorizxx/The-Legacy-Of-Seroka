@@ -351,6 +351,13 @@ public partial class ItemPhysique : RigidBody3D
 		return _gestionnaireMondeCache;
 	}
 
+	private Joueur ObtenirJoueurMonde()
+	{
+		SceneTree arbre = GetTree();
+		Node scene = arbre?.CurrentScene;
+		return scene?.GetNodeOrNull<Joueur>("Joueur");
+	}
+
 	private void ActiverVisuelPitFeu(bool actif)
 	{
 		if (ID_Objet != Joueur.IdObjetPitFeu && ID_Objet != Joueur.IdObjetPitFeuRoche)
@@ -835,6 +842,7 @@ public partial class ItemPhysique : RigidBody3D
 			int qCru = Joueur.ObtenirQuantiteSlot(slotCuisson) - 1;
 			if (qCru <= 0) slotCuisson = new SlotInventaire();
 			else slotCuisson.Quantite = qCru;
+			ObtenirJoueurMonde()?.AjouterXpMetier("Cuisinier", 1UL);
 
 			_pitFeuRocheProgressCuissonSec -= DureeCuissonPitFeuRocheSteakSec;
 			conversion = true;

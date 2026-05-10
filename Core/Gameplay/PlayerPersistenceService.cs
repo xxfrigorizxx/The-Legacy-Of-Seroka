@@ -8,7 +8,7 @@ public partial class Joueur
 {
     private const int VersionPersistenceJoueur = 5;
     private const int VersionPersistenceObjetsPoses = 4;
-    private const int VersionPersistenceProgression = 2;
+    private const int VersionPersistenceProgression = 3;
     private bool _persistantPhaseJoueurChargee;
     private bool _persistantObjetsSolCharges;
     /// <summary>Évite d’écrire <c>placed_objects.dat</c> pendant le remplacement des objets (fenêtre vide = tout effacé au disque).</summary>
@@ -230,6 +230,24 @@ public partial class Joueur
             _gestionnaireMonde?.EnregistrerRigidBodyRestaurationSolSiCollisionManquante(rb);
     }
 
+    private void AjouterBlocChutantAuParent(BlocChutant bloc, Vector3 positionGlobale, Vector3 rotationGlobaleDegres)
+    {
+        if (bloc == null || !GodotObject.IsInstanceValid(bloc))
+            return;
+
+        Node parent = GetParent();
+        if (parent == null || !GodotObject.IsInstanceValid(parent))
+        {
+            bloc.QueueFree();
+            return;
+        }
+
+        parent.AddChild(bloc);
+        bloc.GlobalPosition = positionGlobale;
+        bloc.GlobalRotationDegrees = rotationGlobaleDegres;
+        EnregistrerGelRestaurationSolSiBesoin(bloc);
+    }
+
     private GestionnaireFauneBoeufs ObtenirGestionnaireFauneCourant(SceneTree arbreScene)
     {
         if (_gestionnaireMonde != null && GodotObject.IsInstanceValid(_gestionnaireMonde))
@@ -271,6 +289,7 @@ public partial class Joueur
                 w.Write(kv.Value);
                 EcrireUInt128(w, ObtenirXpMetier(kv.Key));
             }
+            w.Write(_degatsCumulesConstitution);
         }
         catch (Exception ex)
         {
@@ -315,12 +334,23 @@ public partial class Joueur
                 _metiers[nom] = Math.Min(niveau, NiveauMaxFutureState);
                 _metierXp[nom] = xp;
             }
+            _degatsCumulesConstitution = version >= 3 ? r.ReadUInt64() : 0UL;
             AjouterFutureStateSiAbsent("Force", 0UL);
+            AjouterFutureStateSiAbsent("Constitution", 0UL);
             AjouterFutureStateSiAbsent("Dextiriter", 0UL);
+            AjouterFutureStateSiAbsent("Agiliter", 0UL);
             AjouterFutureStateSiAbsent("Metaboliste", 0UL);
             AjouterFutureStateSiAbsent("Intelligence", 0UL);
             AjouterMetierSiAbsent("Bucheron", 0UL);
             AjouterMetierSiAbsent("Traisage", 0UL);
+            AjouterMetierSiAbsent("Artisana", 0UL);
+            AjouterMetierSiAbsent("Batisseur", 0UL);
+            AjouterMetierSiAbsent("Mineur", 0UL);
+            AjouterMetierSiAbsent("Forgeron", 0UL);
+            AjouterMetierSiAbsent("Terrassier", 0UL);
+            AjouterMetierSiAbsent("Cuisinier", 0UL);
+            AjouterMetierSiAbsent("Boucher", 0UL);
+            AjouterMetierSiAbsent("Chasseur", 0UL);
         }
         catch (Exception ex)
         {
@@ -896,10 +926,10 @@ public partial class Joueur
                 if (bloc == null) continue;
                 if (GetParent() != null)
                 {
-                    GetParent().AddChild(bloc);
-                    bloc.GlobalPosition = e.pos;
-                    bloc.GlobalRotationDegrees = e.rot;
-                    EnregistrerGelRestaurationSolSiBesoin(bloc);
+                    if (IsInsideTree())
+                        CallDeferred(nameof(AjouterBlocChutantAuParent), bloc, e.pos, e.rot);
+                    else
+                        AjouterBlocChutantAuParent(bloc, e.pos, e.rot);
                 }
             }
             if (lectureLegacy)

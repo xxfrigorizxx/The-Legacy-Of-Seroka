@@ -8,7 +8,7 @@ public partial class Joueur
     private static bool EstObjetAvecVisuel(int id)
     {
         if (id >= 1 && id <= 9) return true;
-        return ItemPhysique.EstIdRocheMatiere(id) || id == 10 || id == 11 || id == BlocChutant.ID_BRANCHE || id == 15 || id == 16 || id == 17 || id == 20 || id == 21 || id == Joueur.IdObjetCeinturePoches || id == Joueur.IdObjetCeintureSacoches || id == Joueur.IdObjetPochetteTier0 || id == Joueur.IdObjetSacTier0 || id == Joueur.IdObjetCarnetSavoir || id == Joueur.IdObjetSteakCru || id == Joueur.IdObjetSteakCuit || id == Joueur.IdObjetOsBoeuf || id == Joueur.IdObjetCuirBoeuf || id == Joueur.IdObjetIntestinBoeuf || id == Joueur.IdObjetIntestinBoeufNettoye || id == 30 || id == 32 || id == 34 || id == Joueur.IdObjetBaie || id == 100 || id == 105 || id == 106 || id == Joueur.IdObjetPellePierreTier0 || id == Joueur.IdObjetPiochePierreTier0 || id == Joueur.IdObjetLancePierreTier0 || id == Joueur.IdObjetFauxPierreTier0 || id == 200 || id == Joueur.IdObjetRackBatons || id == Joueur.IdObjetRackBuches || id == Joueur.IdObjetCoffreBoisTier0 || id == Joueur.IdObjetPitFeu || id == Joueur.IdObjetPitFeuRoche || id == Joueur.IdObjetAllumeFeu || EstIdFondation(id);
+        return ItemPhysique.EstIdRocheMatiere(id) || id == 10 || id == 11 || id == BlocChutant.ID_BRANCHE || id == 15 || id == 16 || id == 17 || id == 20 || id == 21 || id == Joueur.IdObjetCeinturePoches || id == Joueur.IdObjetCeintureSacoches || id == Joueur.IdObjetPochetteTier0 || id == Joueur.IdObjetSacTier0 || id == Joueur.IdObjetCarnetSavoir || id == Joueur.IdObjetSteakCru || id == Joueur.IdObjetSteakCuit || id == Joueur.IdObjetOsBoeuf || id == Joueur.IdObjetCuirBoeuf || id == Joueur.IdObjetIntestinBoeuf || id == Joueur.IdObjetIntestinBoeufNettoye || id == 30 || id == 32 || id == 34 || id == Joueur.IdObjetBaie || id == 100 || id == 105 || id == 106 || id == Joueur.IdObjetPellePierreTier0 || id == Joueur.IdObjetPiochePierreTier0 || id == Joueur.IdObjetLancePierreTier0 || id == Joueur.IdObjetFauxPierreTier0 || id == 200 || id == Joueur.IdObjetRackBatons || id == Joueur.IdObjetRackBuches || id == Joueur.IdObjetCoffreBoisTier0 || id == Joueur.IdObjetPitFeu || id == Joueur.IdObjetPitFeuRoche || id == Joueur.IdObjetAllumeFeu || id == Joueur.IdObjetMailletBois || id == Joueur.IdObjetBolBois || id == Joueur.IdObjetMortierPilonBois || EstIdFondation(id);
     }
 
     public static void NettoyerModelesEnfants(Node3D parent)
@@ -49,6 +49,12 @@ public partial class Joueur
             parent.RemoveMeta(MetaSignatureLootCuir117);
         if (parent.HasMeta(MetaSignatureAllumeFeu121))
             parent.RemoveMeta(MetaSignatureAllumeFeu121);
+        if (parent.HasMeta(MetaSignatureMailletBois128))
+            parent.RemoveMeta(MetaSignatureMailletBois128);
+        if (parent.HasMeta(MetaSignatureBolBois129))
+            parent.RemoveMeta(MetaSignatureBolBois129);
+        if (parent.HasMeta(MetaSignatureMortierPilon130))
+            parent.RemoveMeta(MetaSignatureMortierPilon130);
         if (parent.HasMeta(MetaSignatureFondation))
             parent.RemoveMeta(MetaSignatureFondation);
     }
@@ -1176,6 +1182,128 @@ public partial class Joueur
         }
 
         ParcourirMeshesAllumeFeu(modele);
+        if (ancrerBaseAuSol)
+            NormaliserEchelleTableAtelierAuSol(modele, tailleMaxMetres);
+        else
+            NormaliserEchelleEtCentrerModeleArme(modele, tailleMaxMetres);
+        parent.AddChild(modele);
+    }
+
+    /// <summary>Maillet en bois: GLB dédié avec matière bois de l'essence craftée.</summary>
+    public static void InstancierModeleMailletBois(Node3D parent, SlotInventaire slot, float tailleMaxMetres = 0.42f, bool ancrerBaseAuSol = false)
+    {
+        const string cheminGlb = "res://Modeles/materials/pillon+en+bois.glb";
+        PackedScene scene = GD.Load<PackedScene>(cheminGlb);
+        byte essenceBois = slot.IndexBotanique;
+        if (essenceBois == Joueur.TagVarianteLiane || essenceBois == Joueur.TagVarianteHerbeSolide || essenceBois == Joueur.TagVarianteIntestin || essenceBois == Joueur.TagVarianteIntestinSolide)
+            essenceBois = LSystem_Botanique.IndexChene;
+        if (scene == null)
+        {
+            var fallback = new MeshInstance3D
+            {
+                Name = "ModeleArme",
+                Mesh = new CapsuleMesh { Radius = 0.06f, Height = 0.28f },
+                MaterialOverride = ArbreVivant.ObtenirMaterielBoisTriplanar(essenceBois)
+            };
+            parent.AddChild(fallback);
+            return;
+        }
+
+        Node3D modele = scene.Instantiate<Node3D>();
+        modele.Name = "ModeleArme";
+        foreach (MeshInstance3D mi in ListerMeshes(modele))
+            mi.MaterialOverride = ArbreVivant.ObtenirMaterielBoisTriplanar(essenceBois);
+        if (ancrerBaseAuSol)
+            NormaliserEchelleTableAtelierAuSol(modele, tailleMaxMetres);
+        else
+            NormaliserEchelleEtCentrerModeleArme(modele, tailleMaxMetres);
+        parent.AddChild(modele);
+    }
+
+    /// <summary>Bol en bois: GLB dédié avec matériau bois de l'essence utilisée au craft.</summary>
+    public static void InstancierModeleBolBois(Node3D parent, SlotInventaire slot, float tailleMaxMetres = 0.32f, bool ancrerBaseAuSol = false)
+    {
+        const string cheminGlb = "res://Modeles/materials/Bowl+en+bois.glb";
+        PackedScene scene = GD.Load<PackedScene>(cheminGlb);
+        byte essenceBois = slot.IndexBotanique;
+        if (essenceBois == Joueur.TagVarianteLiane || essenceBois == Joueur.TagVarianteHerbeSolide || essenceBois == Joueur.TagVarianteIntestin || essenceBois == Joueur.TagVarianteIntestinSolide)
+            essenceBois = LSystem_Botanique.IndexChene;
+        if (scene == null)
+        {
+            var fallback = new MeshInstance3D
+            {
+                Name = "ModeleArme",
+                Mesh = new SphereMesh { Radius = 0.10f, Height = 0.08f },
+                MaterialOverride = ArbreVivant.ObtenirMaterielBoisTriplanar(essenceBois)
+            };
+            parent.AddChild(fallback);
+            return;
+        }
+
+        Node3D modele = scene.Instantiate<Node3D>();
+        modele.Name = "ModeleArme";
+        foreach (MeshInstance3D mi in ListerMeshes(modele))
+            mi.MaterialOverride = ArbreVivant.ObtenirMaterielBoisTriplanar(essenceBois);
+        if (ancrerBaseAuSol)
+            NormaliserEchelleTableAtelierAuSol(modele, tailleMaxMetres);
+        else
+            NormaliserEchelleEtCentrerModeleArme(modele, tailleMaxMetres);
+        parent.AddChild(modele);
+    }
+
+    private static bool ExtraireEssencesMortierPilon(SlotInventaire slot, out byte essenceBol, out byte essencePilon)
+    {
+        essenceBol = slot.IndexBotanique;
+        essencePilon = (byte)Mathf.Clamp(slot.IndexChimique, 0, 255);
+        string g = slot.GenomeAssemblage ?? "";
+        if (!g.StartsWith("MORTIERPILON:", StringComparison.Ordinal))
+            return false;
+        string[] morceaux = g.Substring("MORTIERPILON:".Length).Split(',');
+        if (morceaux.Length < 2)
+            return false;
+        bool okBol = byte.TryParse(morceaux[0], out byte b);
+        bool okPilon = byte.TryParse(morceaux[1], out byte p);
+        if (okBol) essenceBol = b;
+        if (okPilon) essencePilon = p;
+        return okBol || okPilon;
+    }
+
+    /// <summary>Mortier + pilon: deux matériaux bois séparés (mortier hérite bol, pilon hérite pilon source).</summary>
+    public static void InstancierModeleMortierPilonBois(Node3D parent, SlotInventaire slot, float tailleMaxMetres = 0.44f, bool ancrerBaseAuSol = false)
+    {
+        const string cheminGlb = "res://Modeles/materials/mortier+et+pillon.glb";
+        PackedScene scene = GD.Load<PackedScene>(cheminGlb);
+        ExtraireEssencesMortierPilon(slot, out byte essenceBol, out byte essencePilon);
+        if (scene == null)
+        {
+            var fallback = new MeshInstance3D
+            {
+                Name = "ModeleArme",
+                Mesh = new CylinderMesh { TopRadius = 0.10f, BottomRadius = 0.12f, Height = 0.20f },
+                MaterialOverride = ArbreVivant.ObtenirMaterielBoisTriplanar(essenceBol)
+            };
+            parent.AddChild(fallback);
+            return;
+        }
+
+        Node3D modele = scene.Instantiate<Node3D>();
+        modele.Name = "ModeleArme";
+        Material matBol = ArbreVivant.ObtenirMaterielBoisTriplanar(essenceBol);
+        Material matPilon = ArbreVivant.ObtenirMaterielBoisTriplanar(essencePilon);
+        int ordinal = 0;
+        foreach (MeshInstance3D mi in ListerMeshes(modele))
+        {
+            string nom = mi.Name.ToString().ToLowerInvariant();
+            bool estPilon = nom.Contains("pilon") || nom.Contains("pestle") || nom.Contains("club");
+            bool estBolMortier = nom.Contains("mortier") || nom.Contains("bol") || nom.Contains("bowl") || nom.Contains("mortar");
+            if (estPilon)
+                mi.MaterialOverride = matPilon;
+            else if (estBolMortier)
+                mi.MaterialOverride = matBol;
+            else
+                mi.MaterialOverride = ordinal++ == 0 ? matBol : matPilon;
+        }
+
         if (ancrerBaseAuSol)
             NormaliserEchelleTableAtelierAuSol(modele, tailleMaxMetres);
         else
