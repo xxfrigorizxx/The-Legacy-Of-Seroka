@@ -1,0 +1,25 @@
+{
+  "SchemaVersion": 1,
+  "Channel": "alpha",
+  "Version": "0.1.0-alpha.1",
+  "BuildId": "smoke.1",
+  "PublishedAtUtc": "2026-05-10T22:30:10Z",
+  "EntryExecutable": "SEROKAFrozenLegacy.exe",
+  "Notes": "Genere automatiquement.",
+  "Files": [
+    {
+      "Path": "SEROKAFrozenLegacy.exe",
+      "Size": 100841984,
+      "Sha256": "050cfb32124938abd6ea54ddaed7f297f647eb267fd5493b9724eaf3d15af5b4",
+      "Url": "../payload/SEROKAFrozenLegacy.exe",
+      "Required": true
+    },
+    {
+      "Path": "SEROKAFrozenLegacy.pck",
+      "Size": 103885544,
+      "Sha256": "f774c56b57c5fd4d49a6afc9c90ce9ccbe2b2ed57ddbdacf3a776961b07948af",
+      "Url": "../payload/SEROKAFrozenLegacy.pck",
+      "Required": true
+    }
+  ]
+}

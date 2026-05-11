@@ -1,0 +1,17 @@
+[2026-05-10T22:30:33.7045131Z] INFO Demarrage SEROKALauncher.
+[2026-05-10T22:30:33.7574376Z] INFO Canal=alpha, Plateforme=windows-x64
+[2026-05-10T22:30:33.7585162Z] WARN Manifest local absent: c:\dev\Zero-K-Frozen-Legacy-main\artifacts\launcher_smoke\install\manifests\local-manifest.json
+[2026-05-10T22:30:33.7700030Z] INFO Source manifest locale: c:\dev\Zero-K-Frozen-Legacy-main\artifacts\launcher_smoke\install\manifests\source-manifest.json
+[2026-05-10T22:30:33.8074400Z] INFO 2 fichier(s) a mettre a jour.
+[2026-05-10T22:30:33.8091820Z] INFO Telechargement SEROKAFrozenLegacy.exe (tentative 1/2)...
+[2026-05-10T22:30:39.6059900Z] INFO Demarrage SEROKALauncher.
+[2026-05-10T22:30:39.6462776Z] INFO Canal=alpha, Plateforme=windows-x64
+[2026-05-10T22:30:39.6481978Z] WARN Manifest local absent: c:\dev\Zero-K-Frozen-Legacy-main\artifacts\launcher_smoke\install\manifests\local-manifest.json
+[2026-05-10T22:30:39.6593934Z] INFO Source manifest locale: c:\dev\Zero-K-Frozen-Legacy-main\artifacts\launcher_smoke\install\manifests\source-manifest.json
+[2026-05-10T22:30:39.6948360Z] INFO 2 fichier(s) a mettre a jour.
+[2026-05-10T22:30:39.6965163Z] INFO Telechargement SEROKAFrozenLegacy.exe (tentative 1/2)...
+[2026-05-10T22:30:40.1325183Z] INFO Mise a jour appliquee: SEROKAFrozenLegacy.exe
+[2026-05-10T22:30:40.1331590Z] INFO Telechargement SEROKAFrozenLegacy.pck (tentative 1/2)...
+[2026-05-10T22:30:40.5549376Z] INFO Mise a jour appliquee: SEROKAFrozenLegacy.pck
+[2026-05-10T22:30:41.1662079Z] INFO Validation fichiers requis OK.
+[2026-05-10T22:30:41.1666184Z] INFO Verification uniquement demandee (--check-only).

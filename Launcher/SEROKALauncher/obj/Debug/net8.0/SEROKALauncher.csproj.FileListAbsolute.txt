@@ -1,0 +1,15 @@
+C:\dev\Zero-K-Frozen-Legacy-main\Launcher\SEROKALauncher\bin\Debug\net8.0\SEROKALauncher.exe
+C:\dev\Zero-K-Frozen-Legacy-main\Launcher\SEROKALauncher\bin\Debug\net8.0\SEROKALauncher.deps.json
+C:\dev\Zero-K-Frozen-Legacy-main\Launcher\SEROKALauncher\bin\Debug\net8.0\SEROKALauncher.runtimeconfig.json
+C:\dev\Zero-K-Frozen-Legacy-main\Launcher\SEROKALauncher\bin\Debug\net8.0\SEROKALauncher.dll
+C:\dev\Zero-K-Frozen-Legacy-main\Launcher\SEROKALauncher\bin\Debug\net8.0\SEROKALauncher.pdb
+C:\dev\Zero-K-Frozen-Legacy-main\Launcher\SEROKALauncher\obj\Debug\net8.0\SEROKALauncher.GeneratedMSBuildEditorConfig.editorconfig
+C:\dev\Zero-K-Frozen-Legacy-main\Launcher\SEROKALauncher\obj\Debug\net8.0\SEROKALauncher.AssemblyInfoInputs.cache
+C:\dev\Zero-K-Frozen-Legacy-main\Launcher\SEROKALauncher\obj\Debug\net8.0\SEROKALauncher.AssemblyInfo.cs
+C:\dev\Zero-K-Frozen-Legacy-main\Launcher\SEROKALauncher\obj\Debug\net8.0\SEROKALauncher.csproj.CoreCompileInputs.cache
+C:\dev\Zero-K-Frozen-Legacy-main\Launcher\SEROKALauncher\obj\Debug\net8.0\SEROKALauncher.sourcelink.json
+C:\dev\Zero-K-Frozen-Legacy-main\Launcher\SEROKALauncher\obj\Debug\net8.0\SEROKALauncher.dll
+C:\dev\Zero-K-Frozen-Legacy-main\Launcher\SEROKALauncher\obj\Debug\net8.0\refint\SEROKALauncher.dll
+C:\dev\Zero-K-Frozen-Legacy-main\Launcher\SEROKALauncher\obj\Debug\net8.0\SEROKALauncher.pdb
+C:\dev\Zero-K-Frozen-Legacy-main\Launcher\SEROKALauncher\obj\Debug\net8.0\SEROKALauncher.genruntimeconfig.cache
+C:\dev\Zero-K-Frozen-Legacy-main\Launcher\SEROKALauncher\obj\Debug\net8.0\ref\SEROKALauncher.dll

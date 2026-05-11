@@ -107,13 +107,15 @@ public partial class Gestionnaire_Monde : Node3D
 	private bool _emerukedesiParotaromaStage1Actif;
 	private bool _emerukedesiParotaromaStage1FonduSortieActif;
 	private double _emerukedesiParotaromaStage1TempsFonduRestant;
-	/// <summary>Gain vertical minimal (m) pour déclencher la manifestation, dans la fenêtre temporelle ci-dessous.</summary>
+	/// <summary>Gain vertical minimal (m) cumulés pour déclencher la manifestation, sans contrainte de vitesse/temps.</summary>
 	private const float SeuilDeclenchementRemonteeAbysseMetres = 2f;
-	/// <summary>Durée max (s) pour atteindre le seuil de remontée : au-delà, la base Y est réinitialisée (pas de déclenchement sur une montée « trop lente »).</summary>
-	private const double DureeMaxAccumulationRemonteeParotaromaSec = 60.0;
-	private double _chronoMonteeEmerukedesiParotaromaSec;
-	private const float SeuilVitesseMonteeAbysse = 0.25f;
-	private const float SeuilVitesseDescenteAbysse = -0.25f;
+	/// <summary>Progression verticale minimale par frame (m) pour considérer une remontée effective (ignore le bruit physique).</summary>
+	private const float SeuilProgressionMonteeAbysseMetres = 0.01f;
+	/// <summary>Descente cumulée par frame (m) considérée comme « vraie redescente » pour repartir la base de cumul.</summary>
+	private const float SeuilRedescenteNetteAbysseMetres = 0.20f;
+	/// <summary>Délai anti-yoyo avant lancement du fondu quand la remontée cesse (immobile/descente légère).</summary>
+	private const double DelaiArretMonteeAvantFonduParotaromaSec = 0.30;
+	private double _secondesSansMonteeAbysse;
 	/// <summary>Durée du fondu quand la remontée cesse, pour l'effet palier 1 de l'<see cref="EmerukedesiParotaroma"/>.</summary>
 	private const double DureeFonduEmerukedesiParotaromaStage1Sec = 15.0;
 	private bool _chargementAbysseEnCours;
@@ -1255,8 +1257,8 @@ void fragment()
 	{
 		_dernierYRemonteeAbysse = float.NaN;
 		_yDepartMonteeAbysse = float.NaN;
-		_chronoMonteeEmerukedesiParotaromaSec = 0.0;
 		_monteeAbysseContinue = false;
+		_secondesSansMonteeAbysse = 0.0;
 		_emerukedesiParotaromaStage1Actif = false;
 		_emerukedesiParotaromaStage1FonduSortieActif = false;
 		_emerukedesiParotaromaStage1TempsFonduRestant = 0.0;
@@ -1283,50 +1285,29 @@ void fragment()
 			return;
 		}
 
-		float vitesseY = _joueur.Velocity.Y;
-		bool monte = vitesseY > SeuilVitesseMonteeAbysse;
-		bool descend = vitesseY < SeuilVitesseDescenteAbysse;
-
 		if (float.IsNaN(_dernierYRemonteeAbysse))
 			_dernierYRemonteeAbysse = yActuel;
 
+		float deltaY = yActuel - _dernierYRemonteeAbysse;
+		bool remonteeEffective = deltaY > SeuilProgressionMonteeAbysseMetres;
+		bool redescenteNette = deltaY < -SeuilRedescenteNetteAbysseMetres;
+
+		if (float.IsNaN(_yDepartMonteeAbysse))
+			_yDepartMonteeAbysse = yActuel;
+
 		float intensite = 0f;
-		if (descend)
+		if (remonteeEffective)
 		{
-			// À la descente, l'EMERUKEDESI PAROTAROMA ne s'applique pas (aucune manifestation).
-			_emerukedesiParotaromaStage1Actif = false;
-			_emerukedesiParotaromaStage1FonduSortieActif = false;
-			_emerukedesiParotaromaStage1TempsFonduRestant = 0.0;
-			_monteeAbysseContinue = false;
-			_yDepartMonteeAbysse = float.NaN;
-			_chronoMonteeEmerukedesiParotaromaSec = 0.0;
-		}
-		else if (monte)
-		{
-			if (!_monteeAbysseContinue)
-			{
-				_monteeAbysseContinue = true;
-				_yDepartMonteeAbysse = yActuel;
-				_chronoMonteeEmerukedesiParotaromaSec = 0.0;
-			}
-			else
-			{
-				_chronoMonteeEmerukedesiParotaromaSec += delta;
-				// Fenêtre d'1 min : sans gain suffisant, on repart d'une nouvelle base (même en montée continue lente).
-				if (_chronoMonteeEmerukedesiParotaromaSec > DureeMaxAccumulationRemonteeParotaromaSec)
-				{
-					_yDepartMonteeAbysse = yActuel;
-					_chronoMonteeEmerukedesiParotaromaSec = 0.0;
-				}
-			}
+			_monteeAbysseContinue = true;
+			_secondesSansMonteeAbysse = 0.0;
 
-			bool gainSuffisantDansFenetre = !float.IsNaN(_yDepartMonteeAbysse)
-				&& (yActuel - _yDepartMonteeAbysse) >= SeuilDeclenchementRemonteeAbysseMetres
-				&& _chronoMonteeEmerukedesiParotaromaSec <= DureeMaxAccumulationRemonteeParotaromaSec;
-
-			if (_emerukedesiParotaromaStage1Actif || gainSuffisantDansFenetre)
-			{
+			bool gainSuffisant = !float.IsNaN(_yDepartMonteeAbysse)
+				&& (yActuel - _yDepartMonteeAbysse) >= SeuilDeclenchementRemonteeAbysseMetres;
+			if (!_emerukedesiParotaromaStage1Actif && gainSuffisant)
 				_emerukedesiParotaromaStage1Actif = true;
+
+			if (_emerukedesiParotaromaStage1Actif)
+			{
 				_emerukedesiParotaromaStage1FonduSortieActif = false;
 				_emerukedesiParotaromaStage1TempsFonduRestant = DureeFonduEmerukedesiParotaromaStage1Sec;
 				intensite = 1f;
@@ -1334,16 +1315,18 @@ void fragment()
 		}
 		else
 		{
-			if (_monteeAbysseContinue)
+			_monteeAbysseContinue = false;
+			_secondesSansMonteeAbysse += delta;
+
+			if (redescenteNette)
+				_yDepartMonteeAbysse = yActuel;
+
+			if (_emerukedesiParotaromaStage1Actif
+				&& !_emerukedesiParotaromaStage1FonduSortieActif
+				&& _secondesSansMonteeAbysse >= DelaiArretMonteeAvantFonduParotaromaSec)
 			{
-				_monteeAbysseContinue = false;
-				_yDepartMonteeAbysse = float.NaN;
-				_chronoMonteeEmerukedesiParotaromaSec = 0.0;
-				if (_emerukedesiParotaromaStage1Actif && !_emerukedesiParotaromaStage1FonduSortieActif)
-				{
-					_emerukedesiParotaromaStage1FonduSortieActif = true;
-					_emerukedesiParotaromaStage1TempsFonduRestant = DureeFonduEmerukedesiParotaromaStage1Sec;
-				}
+				_emerukedesiParotaromaStage1FonduSortieActif = true;
+				_emerukedesiParotaromaStage1TempsFonduRestant = DureeFonduEmerukedesiParotaromaStage1Sec;
 			}
 
 			if (_emerukedesiParotaromaStage1FonduSortieActif)
@@ -1354,8 +1337,14 @@ void fragment()
 				{
 					_emerukedesiParotaromaStage1FonduSortieActif = false;
 					_emerukedesiParotaromaStage1Actif = false;
+					_yDepartMonteeAbysse = yActuel;
 					intensite = 0f;
 				}
+			}
+			else if (_emerukedesiParotaromaStage1Actif)
+			{
+				// Pendant le délai anti-yoyo, on conserve l'intensité pleine pour éviter une coupure visuelle brutale.
+				intensite = 1f;
 			}
 		}
 

@@ -1,0 +1,5 @@
+C:\dev\Zero-K-Frozen-Legacy-main\Launcher\SEROKALauncher\bin\Release\net8.0\publish\SEROKALauncher.exe
+C:\dev\Zero-K-Frozen-Legacy-main\Launcher\SEROKALauncher\bin\Release\net8.0\publish\SEROKALauncher.dll
+C:\dev\Zero-K-Frozen-Legacy-main\Launcher\SEROKALauncher\bin\Release\net8.0\publish\SEROKALauncher.deps.json
+C:\dev\Zero-K-Frozen-Legacy-main\Launcher\SEROKALauncher\bin\Release\net8.0\publish\SEROKALauncher.runtimeconfig.json
+C:\dev\Zero-K-Frozen-Legacy-main\Launcher\SEROKALauncher\bin\Release\net8.0\publish\SEROKALauncher.pdb
