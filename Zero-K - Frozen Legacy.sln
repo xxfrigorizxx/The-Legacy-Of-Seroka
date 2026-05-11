@@ -2,11 +2,15 @@
 # Visual Studio 2012
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Zero-K - Frozen Legacy", "Zero-K - Frozen Legacy.csproj", "{1A983999-F28C-43C5-84A2-6692A32104EC}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Launcher", "Launcher", "{64B84242-1DF6-4BCB-BE3F-C43F24A7E06B}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SEROKALauncher", "Launcher\SEROKALauncher\SEROKALauncher.csproj", "{591D6B47-51FB-451C-B13F-F26E5DC0321F}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
-	Debug|Any CPU = Debug|Any CPU
-	ExportDebug|Any CPU = ExportDebug|Any CPU
-	ExportRelease|Any CPU = ExportRelease|Any CPU
+		Debug|Any CPU = Debug|Any CPU
+		ExportDebug|Any CPU = ExportDebug|Any CPU
+		ExportRelease|Any CPU = ExportRelease|Any CPU
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
 		{1A983999-F28C-43C5-84A2-6692A32104EC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
@@ -15,5 +19,14 @@ Global
 		{1A983999-F28C-43C5-84A2-6692A32104EC}.ExportDebug|Any CPU.Build.0 = ExportDebug|Any CPU
 		{1A983999-F28C-43C5-84A2-6692A32104EC}.ExportRelease|Any CPU.ActiveCfg = ExportRelease|Any CPU
 		{1A983999-F28C-43C5-84A2-6692A32104EC}.ExportRelease|Any CPU.Build.0 = ExportRelease|Any CPU
+		{591D6B47-51FB-451C-B13F-F26E5DC0321F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{591D6B47-51FB-451C-B13F-F26E5DC0321F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{591D6B47-51FB-451C-B13F-F26E5DC0321F}.ExportDebug|Any CPU.ActiveCfg = Debug|Any CPU
+		{591D6B47-51FB-451C-B13F-F26E5DC0321F}.ExportDebug|Any CPU.Build.0 = Debug|Any CPU
+		{591D6B47-51FB-451C-B13F-F26E5DC0321F}.ExportRelease|Any CPU.ActiveCfg = Debug|Any CPU
+		{591D6B47-51FB-451C-B13F-F26E5DC0321F}.ExportRelease|Any CPU.Build.0 = Debug|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{591D6B47-51FB-451C-B13F-F26E5DC0321F} = {64B84242-1DF6-4BCB-BE3F-C43F24A7E06B}
 	EndGlobalSection
 EndGlobal

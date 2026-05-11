@@ -1,0 +1,11 @@
+{
+  "channel": "alpha",
+  "platform": "windows-x64",
+  "manifestUrl": "",
+  "entryExecutable": "SEROKAFrozenLegacy.exe",
+  "gameDirectoryName": "game",
+  "allowPrerelease": true,
+  "localSourceManifestPath": "..\\manifests\\source-manifest.json",
+  "networkTimeoutSeconds": 15,
+  "networkRetryCount": 2
+}

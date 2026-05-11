@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://seroka.example/schemas/manifest.schema.json",
+  "title": "SEROKA Launcher Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "channel",
+    "version",
+    "buildId",
+    "publishedAtUtc",
+    "entryExecutable",
+    "files"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "channel": {
+      "type": "string",
+      "enum": ["alpha", "beta", "stable"]
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "buildId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "publishedAtUtc": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "entryExecutable": {
+      "type": "string",
+      "const": "SEROKAFrozenLegacy.exe"
+    },
+    "notes": {
+      "type": "string"
+    },
+    "files": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "size", "sha256", "url", "required"],
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "required": {
+            "type": "boolean"
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "channel": "alpha",
+  "version": "0.1.0-alpha.1",
+  "buildId": "2026.05.10.01",
+  "publishedAtUtc": "2026-05-10T22:00:00Z",
+  "entryExecutable": "SEROKAFrozenLegacy.exe",
+  "notes": "Premiere alpha externe.",
+  "files": [
+    {
+      "path": "SEROKAFrozenLegacy.exe",
+      "size": 123456789,
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "url": "https://cdn.seroka.example/alpha/0.1.0-alpha.1/SEROKAFrozenLegacy.exe",
+      "required": true
+    },
+    {
+      "path": "SEROKAFrozenLegacy.pck",
+      "size": 987654321,
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "url": "https://cdn.seroka.example/alpha/0.1.0-alpha.1/SEROKAFrozenLegacy.pck",
+      "required": true
+    }
+  ]
+}

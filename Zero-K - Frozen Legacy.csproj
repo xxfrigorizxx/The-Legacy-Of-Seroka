@@ -5,4 +5,7 @@
     <EnableDynamicLoading>true</EnableDynamicLoading>
     <RootNamespace>ZeroKFrozenLegacy</RootNamespace>
   </PropertyGroup>
+  <ItemGroup>
+    <Compile Remove="Launcher\**\*.cs" />
+  </ItemGroup>
 </Project>

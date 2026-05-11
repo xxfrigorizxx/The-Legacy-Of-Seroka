@@ -1,0 +1,1334 @@
+﻿{
+    "schemaVersion":  1,
+    "channel":  "alpha",
+    "version":  "0.1.0-alpha.1",
+    "buildId":  "2026.05.10.03",
+    "publishedAtUtc":  "2026-05-11T00:16:49Z",
+    "entryExecutable":  "SEROKAFrozenLegacy.exe",
+    "notes":  "Genere automatiquement.",
+    "files":  [
+                  {
+                      "path":  "SEROKAFrozenLegacy.exe",
+                      "size":  100841984,
+                      "sha256":  "050cfb32124938abd6ea54ddaed7f297f647eb267fd5493b9724eaf3d15af5b4",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/SEROKAFrozenLegacy.exe",
+                      "required":  true
+                  },
+                  {
+                      "path":  "SEROKAFrozenLegacy.pck",
+                      "size":  103885544,
+                      "sha256":  "f774c56b57c5fd4d49a6afc9c90ce9ccbe2b2ed57ddbdacf3a776961b07948af",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/SEROKAFrozenLegacy.pck",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/clretwrc.dll",
+                      "size":  311048,
+                      "sha256":  "7c793f3789e59091f333f538113df82f6e749d006c29a78a9062ce1b34608709",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/clretwrc.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/clrgc.dll",
+                      "size":  668424,
+                      "sha256":  "664021c58f47be9547ab258f45aef7e2a14072c9d969fb5e963578a4f44be86f",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/clrgc.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/clrjit.dll",
+                      "size":  1779000,
+                      "sha256":  "4058cbcf9ce69938e29e6ab8bdcbcd75266fde7aad5c016394e0bde0ba690441",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/clrjit.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/coreclr.dll",
+                      "size":  4995856,
+                      "sha256":  "bdcf2dabaaf30e293a59ecdada775cb9bc052b75c08147e19ea2fa82a348499a",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/coreclr.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/createdump.exe",
+                      "size":  71992,
+                      "sha256":  "d2056bdea4f2de7205b5ac2764e8ebc8267b44c90d2dc9a6f654d7a826e13f19",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/createdump.exe",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/GodotSharp.dll",
+                      "size":  5767680,
+                      "sha256":  "04bdf582202ed0320bb74a673ae7328ad3a28b132b566579f080fd8ec5d6f457",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/GodotSharp.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/hostfxr.dll",
+                      "size":  366856,
+                      "sha256":  "6030fa4943ff98b4d29787c1b3045a98d4fd03dd644a3de223f0aac2ed984b3f",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/hostfxr.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/hostpolicy.dll",
+                      "size":  407344,
+                      "sha256":  "d6fd9ce40c9e2ff31f552313773b8c870249fe8e5f0140808a2bd26a238afcb6",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/hostpolicy.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/Microsoft.CSharp.dll",
+                      "size":  1005832,
+                      "sha256":  "00bc667b3a609e7a5f54f5121ee554eb3cd37506be8e41a816b684fddcfa00d1",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/Microsoft.CSharp.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/Microsoft.DiaSymReader.Native.amd64.dll",
+                      "size":  2195504,
+                      "sha256":  "315a61c47c41b8d4c815f4274bb6584c1d24b4640c7eedc354ed5b03a9a1361e",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/Microsoft.DiaSymReader.Native.amd64.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/Microsoft.VisualBasic.Core.dll",
+                      "size":  1247496,
+                      "sha256":  "38d05f341045b2b269b79343b58d5d4c1667628479fca994099e859be847c90a",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/Microsoft.VisualBasic.Core.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/Microsoft.VisualBasic.dll",
+                      "size":  17672,
+                      "sha256":  "2675625b4cdf121d71d8b4298d801372726e1d61ba5fa2b1c0662d533061c41e",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/Microsoft.VisualBasic.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/Microsoft.Win32.Primitives.dll",
+                      "size":  15624,
+                      "sha256":  "50e52f74a18cf64efd7e3635c4489264a39207b221c69180999371c5597d899b",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/Microsoft.Win32.Primitives.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/Microsoft.Win32.Registry.dll",
+                      "size":  121104,
+                      "sha256":  "fa268218302f35a460d30f0480323428a95bf67bcb957ba8cd757a6593a1586b",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/Microsoft.Win32.Registry.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/mscordaccore.dll",
+                      "size":  1345880,
+                      "sha256":  "e7bab60aec361207e71443aaaee2234d9a38da343cb8ebe9e913d316d09ade4d",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/mscordaccore.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/mscordaccore_amd64_amd64_8.0.2626.16921.dll",
+                      "size":  1345880,
+                      "sha256":  "e7bab60aec361207e71443aaaee2234d9a38da343cb8ebe9e913d316d09ade4d",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/mscordaccore_amd64_amd64_8.0.2626.16921.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/mscordbi.dll",
+                      "size":  1234264,
+                      "sha256":  "4df2a7b5cd80430e2ed1acab143d2450118b79dfdf5ec122bdd70c783fa3c08f",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/mscordbi.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/mscorlib.dll",
+                      "size":  59656,
+                      "sha256":  "314ce67a1b2b08ed5b5e70bad1724efd5797e45d7cbfbfd757089afb64812d8f",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/mscorlib.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/mscorrc.dll",
+                      "size":  136968,
+                      "sha256":  "17ce716781db8e8e4bf39f3dc50399dd70d2dd03670fcf86213bef71d1a25299",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/mscorrc.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/msquic.dll",
+                      "size":  524320,
+                      "sha256":  "bb89d7a5dfe8f5e794929bf48bbe2e29b35ed7b7246fabb9e74f486abc1afeeb",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/msquic.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/netstandard.dll",
+                      "size":  101176,
+                      "sha256":  "44e97c5183223e1460f6bd2526b6df6b3e7bdef19d11a262c2404d7f7b2f0158",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/netstandard.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.AppContext.dll",
+                      "size":  15624,
+                      "sha256":  "59cc1cbcd021987f6e1d2cb55a80d16c59c4a3fbc63f11cafc0a190ba89b17ef",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.AppContext.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Buffers.dll",
+                      "size":  15624,
+                      "sha256":  "7b4401fd5f665b7c2d3a693c7a00fa8e7aa250d2ce2f0925c548b44bfcf634bf",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Buffers.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Collections.Concurrent.dll",
+                      "size":  276784,
+                      "sha256":  "bfa79a1ec116472c7fd043b37608d9faa552aef614dea198b2eaea2c9b301b05",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Collections.Concurrent.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Collections.dll",
+                      "size":  260408,
+                      "sha256":  "43f1812c74be62e65bb6e232d2a61a24f1ad732d014ed5adc6fe1f13e454de8e",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Collections.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Collections.Immutable.dll",
+                      "size":  837896,
+                      "sha256":  "1d94d76703ccef97ff962d60701c10009bb83b2ed65b5f4f28c8535adf17ecbc",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Collections.Immutable.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Collections.NonGeneric.dll",
+                      "size":  104760,
+                      "sha256":  "8a4845d14b6c46234a34b4ff1fa9ee0eb157339928b58e708212daca68048294",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Collections.NonGeneric.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Collections.Specialized.dll",
+                      "size":  104760,
+                      "sha256":  "b96fd8a86a0105ff787075a10d2ab58c72ba01d02dc0d31dae582cbd78d3aee0",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Collections.Specialized.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.ComponentModel.Annotations.dll",
+                      "size":  198920,
+                      "sha256":  "167881e697c95ee81ece1993d2df7d97c99741b05a1abd89c9af1a6409723e9b",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.ComponentModel.Annotations.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.ComponentModel.DataAnnotations.dll",
+                      "size":  17168,
+                      "sha256":  "119868db42ae173208c740cd3a6c07b6875f3d249a14114f800704c0a6fad804",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.ComponentModel.DataAnnotations.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.ComponentModel.dll",
+                      "size":  31032,
+                      "sha256":  "b23622cfffd90b711fb5921441f8a4076d5930cdbac9fdd94b47dec9cb2f7afc",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.ComponentModel.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.ComponentModel.EventBasedAsync.dll",
+                      "size":  47368,
+                      "sha256":  "f0f271957e6557597d0a7efa940a37fd6f35617c273e0fb4dff470ea5927a623",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.ComponentModel.EventBasedAsync.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.ComponentModel.Primitives.dll",
+                      "size":  80144,
+                      "sha256":  "719473d4afdabd721abe970b1f2bf20e40f3e447da6d0b784a579badb82b5a50",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.ComponentModel.Primitives.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.ComponentModel.TypeConverter.dll",
+                      "size":  747784,
+                      "sha256":  "abe3fae4b5a977534fb10f014f26bc0cfff7d4c702108b85eac4b26d162f1d01",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.ComponentModel.TypeConverter.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Configuration.dll",
+                      "size":  19720,
+                      "sha256":  "14c00adf0d864858d81275aade56664ed4892546c36a9c793017f354c1c0a782",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Configuration.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Console.dll",
+                      "size":  174392,
+                      "sha256":  "f9d86c84318b60fd970691dfe820586a6746a5bd2dbfb55eade2bdc2088ebacb",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Console.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Core.dll",
+                      "size":  23816,
+                      "sha256":  "ec05d16a1f4d37c1bfe38dd8bd991f1c39a1cb053362b76549471f970732eea0",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Core.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Data.Common.dll",
+                      "size":  2861368,
+                      "sha256":  "b9f9aaee9097c72d68e394b6366093170846a02ba95a89fe7e1113df7c27ffc3",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Data.Common.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Data.DataSetExtensions.dll",
+                      "size":  16136,
+                      "sha256":  "f9115938ff7e2ebc315c0a71b676f42c9c0df8dcc3555fcbb4fbb514b88f04da",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Data.DataSetExtensions.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Data.dll",
+                      "size":  25392,
+                      "sha256":  "c8ae100cf8e822266275e428ed4480699a689722b36beff14df47f7e7c492bf6",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Data.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Diagnostics.Contracts.dll",
+                      "size":  16696,
+                      "sha256":  "8721369e000d6e623e16c4292a9a062233cadf6194566f8c42e62a313ae8c6b0",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Diagnostics.Contracts.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Diagnostics.Debug.dll",
+                      "size":  16184,
+                      "sha256":  "71fa39187aed0e29a98a0c7ac1c344cbb4d6fe7bbb8a7830a7673e181dc37778",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Diagnostics.Debug.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Diagnostics.DiagnosticSource.dll",
+                      "size":  416008,
+                      "sha256":  "269b3a1dba411fbcd44c647ccfba184c3fa9ae01bada673ddf7e70ebc60728ca",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Diagnostics.DiagnosticSource.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Diagnostics.FileVersionInfo.dll",
+                      "size":  47368,
+                      "sha256":  "62eb38cf45f8850765cc6f4b88967ef3682ee4fcd2ebc92d3f200b5ac1224be9",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Diagnostics.FileVersionInfo.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Diagnostics.Process.dll",
+                      "size":  338232,
+                      "sha256":  "03abe0088509b77206a19d3a1f57fb4fad654cc21a57a7f342520936c05dcf32",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Diagnostics.Process.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Diagnostics.StackTrace.dll",
+                      "size":  47368,
+                      "sha256":  "7b4ad728ab9a3dcd24cb5c359988231776a6240ad7042ca1e3f2254802aa7a37",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Diagnostics.StackTrace.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Diagnostics.TextWriterTraceListener.dll",
+                      "size":  67848,
+                      "sha256":  "93c0ce4844bca5b5e9cf8f3103663397e760a1e1fa0bc8ea4b966a9f6aafb705",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Diagnostics.TextWriterTraceListener.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Diagnostics.Tools.dll",
+                      "size":  15624,
+                      "sha256":  "3f02837fd73f0764c3ff92f4438c65d7d8096e386ccd6cc201fe8ecea952777b",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Diagnostics.Tools.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Diagnostics.TraceSource.dll",
+                      "size":  145680,
+                      "sha256":  "fede54bf79c6d6bb5d57929b29d36122e5d335f674984af99aacde9f936553e6",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Diagnostics.TraceSource.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Diagnostics.Tracing.dll",
+                      "size":  16688,
+                      "sha256":  "57aa3cd37e582f4f3080a53a5ad99fde95d0aba6edd8d7fafd73017552349676",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Diagnostics.Tracing.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.dll",
+                      "size":  50440,
+                      "sha256":  "70c311552fe48f721504566197a6be39284c8b17690d095b54c12c45a5d5ad1c",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Drawing.dll",
+                      "size":  20744,
+                      "sha256":  "9c375d561ecb36a6582b220c6093b782efcaea12a13335e0d9a84d59c7b44999",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Drawing.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Drawing.Primitives.dll",
+                      "size":  133384,
+                      "sha256":  "6433eb85dc325f24548232ca9bc345168e720a5f29f7c911425aadf11af4b2da",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Drawing.Primitives.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Dynamic.Runtime.dll",
+                      "size":  16648,
+                      "sha256":  "d0c34d62d0e12a52c693bdadc5b8e492790f63960dc2866eae055179e26fcc56",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Dynamic.Runtime.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Formats.Asn1.dll",
+                      "size":  243976,
+                      "sha256":  "0b6f2250f52232bcbe6b8709ec4b8a4ac85e708f70bec8016deb93cdea7433fb",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Formats.Asn1.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Formats.Tar.dll",
+                      "size":  272648,
+                      "sha256":  "2aef4c9a51d5d1b872fdd5a8ac026271504a94251597fa0e92c4c0b82ac7024e",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Formats.Tar.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Globalization.Calendars.dll",
+                      "size":  16184,
+                      "sha256":  "42024e9d549552249f51d1a071b1cc369b603866b1cf2cf6e1794290fc14bec3",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Globalization.Calendars.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Globalization.dll",
+                      "size":  16184,
+                      "sha256":  "c50eab637a7c22d2fd83484f25b22d906a59bdd3c2039d156ea7961365bb7246",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Globalization.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Globalization.Extensions.dll",
+                      "size":  15632,
+                      "sha256":  "c1176de3edf2aece6aedf065305eb13c59700f8d9b56fdd9ea1cea074b015ee2",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Globalization.Extensions.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.IO.Compression.Brotli.dll",
+                      "size":  84272,
+                      "sha256":  "7229367a32858011fabb51612c7500609dbea42c74675d9d861ee3786e6c9484",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.IO.Compression.Brotli.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.IO.Compression.dll",
+                      "size":  264456,
+                      "sha256":  "b4f48c2d349b78fc139d65e681eb4bea1e4e2d037b5e3c4b48b6b4da16d6c133",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.IO.Compression.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.IO.Compression.FileSystem.dll",
+                      "size":  15624,
+                      "sha256":  "ab03c7052d93c4d672e83f03e506e168a783ab1adaf4f8ee5c125a362b412426",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.IO.Compression.FileSystem.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.IO.Compression.Native.dll",
+                      "size":  829192,
+                      "sha256":  "7e496cd16a2d66f65ca14582c618cae9b64b33b5965548f76dc12ea41760a7da",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.IO.Compression.Native.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.IO.Compression.ZipFile.dll",
+                      "size":  55560,
+                      "sha256":  "137519e782f09c8ee0b0360e22ad3d8a95de68119ca0bcaafc22954c32a0082d",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.IO.Compression.ZipFile.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.IO.dll",
+                      "size":  16176,
+                      "sha256":  "385a83262943e752dd2062bc0c643c4d571dc31e7f03f92e736bcdf016a54a42",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.IO.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.IO.FileSystem.AccessControl.dll",
+                      "size":  104712,
+                      "sha256":  "85ca7642fffaab85f6ce4fe46928d6bf0a71ce5eb3107ea418eb0e72aa610fab",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.IO.FileSystem.AccessControl.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.IO.FileSystem.dll",
+                      "size":  16184,
+                      "sha256":  "e4f98c936748e5e7c44d3228088d15c3e1c3298bc5a8eeda7e6c9211b8016c1f",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.IO.FileSystem.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.IO.FileSystem.DriveInfo.dll",
+                      "size":  55560,
+                      "sha256":  "1686f1a398cebaf778136ce9c230a16bc2a5039b2f9887be423d0ab708a281b8",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.IO.FileSystem.DriveInfo.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.IO.FileSystem.Primitives.dll",
+                      "size":  15672,
+                      "sha256":  "d012862c50356854f55e4c614caa3e66319fd02e0b662c98d8dd2a8813d7595b",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.IO.FileSystem.Primitives.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.IO.FileSystem.Watcher.dll",
+                      "size":  88368,
+                      "sha256":  "9ce1ae9ce0a7142b16079546fa9812f4a3e4c4518d9b14b60f5ff613886fb09b",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.IO.FileSystem.Watcher.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.IO.IsolatedStorage.dll",
+                      "size":  92432,
+                      "sha256":  "167199fff05c32a51c5f7be6f5db9bf4cd4975eea43e9c7e66b402431d2be9a6",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.IO.IsolatedStorage.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.IO.MemoryMappedFiles.dll",
+                      "size":  84232,
+                      "sha256":  "f4ee432371921617ed49becae461257e9f33b0fdc11582e94b22e9e69bf4a0c1",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.IO.MemoryMappedFiles.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.IO.Pipes.AccessControl.dll",
+                      "size":  16648,
+                      "sha256":  "17d6f966974fe783b440b4a783c52f7a27c844001133d94a12871edc392391b5",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.IO.Pipes.AccessControl.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.IO.Pipes.dll",
+                      "size":  166152,
+                      "sha256":  "ea6c6f0d1ff5abacd210337a3bfdf3255f1a28da726edc90ed12713c2e47d399",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.IO.Pipes.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.IO.UnmanagedMemoryStream.dll",
+                      "size":  15672,
+                      "sha256":  "8d55d65cd3668b2637b0585708471866ca0b0a95f56da3d55510c15a09b0269e",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.IO.UnmanagedMemoryStream.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Linq.dll",
+                      "size":  542992,
+                      "sha256":  "02640836e88e14fa8f85c90141d2cbcebf2919c2d8681123e9c309b92df8449e",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Linq.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Linq.Expressions.dll",
+                      "size":  3676424,
+                      "sha256":  "da698ffb44ba32ea5db9a158fcc58ac53df334ac4f0b5baabc0a28895134f1ad",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Linq.Expressions.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Linq.Parallel.dll",
+                      "size":  805128,
+                      "sha256":  "7dc094d4e1fe68b2c839ab1ec39f24b3def69fa547739d102b16d292e193af9d",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Linq.Parallel.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Linq.Queryable.dll",
+                      "size":  174344,
+                      "sha256":  "bab1c6267122c36a4388b56ee5e1d1728b1c16c47710de0b7d6eec00e0abf368",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Linq.Queryable.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Memory.dll",
+                      "size":  158000,
+                      "sha256":  "cb69cadc77e09c964dd7c07151c0297ca33ccc617de68386abc66dd782c8d2a8",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Memory.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Net.dll",
+                      "size":  17672,
+                      "sha256":  "400880e96562556e979d59860ed76f45841df46696f934e32f79edaea1d76376",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Net.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Net.Http.dll",
+                      "size":  1730864,
+                      "sha256":  "7f95d4356ec6c5f909ab2cf1f2c29d3c279c1f0a1a97b40fb5cccfdf39972ebf",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Net.Http.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Net.Http.Json.dll",
+                      "size":  129288,
+                      "sha256":  "1d54a77bbcf189b5a31157e134d95f83f60ec6e6675cdd2195fd865bdd0328d3",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Net.Http.Json.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Net.HttpListener.dll",
+                      "size":  551224,
+                      "sha256":  "215b7987069293a0b44318619399aa5551e4177c5a050aea000e7ce10204b435",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Net.HttpListener.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Net.Mail.dll",
+                      "size":  432400,
+                      "sha256":  "96636279914656b55bb49b7f0a4096709f261a1bf25acdef5d1eef38eee7aea8",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Net.Mail.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Net.NameResolution.dll",
+                      "size":  112904,
+                      "sha256":  "b04c4387dee622062a9c219bf9385f8cd4a17c882874f852474d9a0ad7ddbb8e",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Net.NameResolution.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Net.NetworkInformation.dll",
+                      "size":  157960,
+                      "sha256":  "16bc5a8e415c49871790c76ca7a4df3ba2d9dd44402961c117ad3f5b3a94422b",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Net.NetworkInformation.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Net.Ping.dll",
+                      "size":  96520,
+                      "sha256":  "caa328652e25e05279051faa807bffa18b3563eb8cbd25f733b8b5174070e22d",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Net.Ping.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Net.Primitives.dll",
+                      "size":  231728,
+                      "sha256":  "7e6667e15d7400a02659474e1e8b795377b89057c9ffe1c41ab3df9de94626b8",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Net.Primitives.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Net.Quic.dll",
+                      "size":  284944,
+                      "sha256":  "81cb8552abcc8287c48e091a64b836bd04c88330a6caddc2eb3cbbd701b13678",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Net.Quic.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Net.Requests.dll",
+                      "size":  346424,
+                      "sha256":  "c6e6e394475e9d913e5e7ce29b425d2f0f96401a85cb21d79b2126005dc03497",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Net.Requests.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Net.Security.dll",
+                      "size":  669960,
+                      "sha256":  "5e5f39bd0ddb55528764bfbe03cf2f9a0632d4d9fb313dee064fbf893c5ae98a",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Net.Security.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Net.ServicePoint.dll",
+                      "size":  47376,
+                      "sha256":  "ec8ab3c1a8533272d82c6007d150fadd791f77e1b99c474180d891e1a7c4d090",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Net.ServicePoint.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Net.Sockets.dll",
+                      "size":  547080,
+                      "sha256":  "f709731620552a3f5190fe630945659e408a2d596448ae21391a691ee5eec3e4",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Net.Sockets.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Net.WebClient.dll",
+                      "size":  170248,
+                      "sha256":  "905378a33752d9649d7e656f58e0d764c85e5f32f688a9d13fc8de3294c64b9b",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Net.WebClient.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Net.WebHeaderCollection.dll",
+                      "size":  67856,
+                      "sha256":  "80501b5c752c8ef56bf3e9cf3d23b6752a97400d571332ff298f4d3ec6741e75",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Net.WebHeaderCollection.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Net.WebProxy.dll",
+                      "size":  43272,
+                      "sha256":  "c3a885c6b6bfb54ff1793cecc195ae6c79b85b271fbbeff1c98a689c5f8ac4f8",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Net.WebProxy.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Net.WebSockets.Client.dll",
+                      "size":  100664,
+                      "sha256":  "52f83f98c5b92e6bcaa5bcbf9e7869e4914f0826424200adf513ac60e249c893",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Net.WebSockets.Client.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Net.WebSockets.dll",
+                      "size":  190728,
+                      "sha256":  "8fd04f7b6a387fe26c5df245446c7dc68e0508fe84a85de3cd1093f10b2a0322",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Net.WebSockets.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Numerics.dll",
+                      "size":  15632,
+                      "sha256":  "ccab410e33742d73c3f1543f85faac517656b1c819ede8e02419da5f35f2f3fd",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Numerics.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Numerics.Vectors.dll",
+                      "size":  16136,
+                      "sha256":  "20acce02f6b53a20ca702f8634bc042b1017c42ed1b03f471f3012ce79ba0f27",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Numerics.Vectors.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.ObjectModel.dll",
+                      "size":  80136,
+                      "sha256":  "934a1b87711d9ff84f44956ef4e5436ad615bbd2b62f1d96fe0e2676723a3113",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.ObjectModel.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Private.CoreLib.dll",
+                      "size":  13175048,
+                      "sha256":  "09c5898352069d4971591723371be70537bea18503c2bf7c6b9dd11f74760382",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Private.CoreLib.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Private.DataContractSerialization.dll",
+                      "size":  2083120,
+                      "sha256":  "5fa3e7be3879968c0ba82f4117c7002388315f9a5817e9da6e7f3955be168bbf",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Private.DataContractSerialization.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Private.Uri.dll",
+                      "size":  260360,
+                      "sha256":  "b762dfa0e052d5fd9fd05309b4ae9e03d6ae46f262b620cfaad961a6070ef7fe",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Private.Uri.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Private.Xml.dll",
+                      "size":  7997704,
+                      "sha256":  "2ef8cce40566cfec7afc2d171495e7b26b96a5ea13f66647bcf2d0bb45beb955",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Private.Xml.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Private.Xml.Linq.dll",
+                      "size":  403720,
+                      "sha256":  "0b8e738deb443240a61ed5cd488bb5c3c1c798d6bab6372b804d82997db2e35b",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Private.Xml.Linq.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Reflection.DispatchProxy.dll",
+                      "size":  76040,
+                      "sha256":  "4566f4554a44558b47cc3348777308a7058e2659bf7b15b451f2df940306e607",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Reflection.DispatchProxy.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Reflection.dll",
+                      "size":  16648,
+                      "sha256":  "e009e3e10cedf08cbc277ab86c7c19c0a172d78bceefd6453467485eb1c30729",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Reflection.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Reflection.Emit.dll",
+                      "size":  129328,
+                      "sha256":  "54597b2d592e87fe1c52cb090097096517ba6491d12a5cd43605fb49492d59f6",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Reflection.Emit.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Reflection.Emit.ILGeneration.dll",
+                      "size":  16184,
+                      "sha256":  "dc2252b802fa859791d008d7051a3ca1ca663b225b954b3b09c333bd0df30b34",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Reflection.Emit.ILGeneration.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Reflection.Emit.Lightweight.dll",
+                      "size":  16136,
+                      "sha256":  "030906fbce1ccdbe10669816b367628d07b82f3ac1a2f6b726d76e5cd11dc578",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Reflection.Emit.Lightweight.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Reflection.Extensions.dll",
+                      "size":  15624,
+                      "sha256":  "652c7a96cd208300c9eead829a40fe11352be304f2ba30d018688bb7d0619702",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Reflection.Extensions.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Reflection.Metadata.dll",
+                      "size":  1116464,
+                      "sha256":  "d83d8eb3cf2dfce9a5d51cd6883e2cd78a76166c6e45060cf9893493f1464320",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Reflection.Metadata.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Reflection.Primitives.dll",
+                      "size":  16144,
+                      "sha256":  "09323158b397821544bba9cc9f0d1d295cd8052f4d49870f4471c4d68db0cae4",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Reflection.Primitives.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Reflection.TypeExtensions.dll",
+                      "size":  43312,
+                      "sha256":  "a56aa5d46bdd20090779fae1b364f7bb7155a5517163148bb74b230dcaef86be",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Reflection.TypeExtensions.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Resources.Reader.dll",
+                      "size":  15624,
+                      "sha256":  "b0b3910b8c7ed6b16b051907a4c3933dfa1c6added8def30f16092a5a09b9460",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Resources.Reader.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Resources.ResourceManager.dll",
+                      "size":  16184,
+                      "sha256":  "83605a7370363e938c6d77cd4253ce2acc67a5edb4e14c75ce73c8d2c7804da1",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Resources.ResourceManager.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Resources.Writer.dll",
+                      "size":  51464,
+                      "sha256":  "021ec46f1e615130a54486a6148cc2ddaed9455c7f7bad641289a599e4283eb9",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Resources.Writer.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Runtime.CompilerServices.Unsafe.dll",
+                      "size":  15624,
+                      "sha256":  "f3429b51a99bc6559912c56f26620e493fc9e567eb4a8fd5fe755e1be4d9464c",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Runtime.CompilerServices.Unsafe.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Runtime.CompilerServices.VisualC.dll",
+                      "size":  31024,
+                      "sha256":  "4f0b694621b954307243f61a176938ee78ad46ce45d00d6e43331aefc1b54de0",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Runtime.CompilerServices.VisualC.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Runtime.dll",
+                      "size":  43784,
+                      "sha256":  "55242c750d5817ab526ab17be00a604d88458c49001eb520c0538194a9a46f26",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Runtime.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Runtime.Extensions.dll",
+                      "size":  18192,
+                      "sha256":  "7211259add4a0a9b0ad045ec5c4b22c8e8a6ce04d66de63952b7899d28a9774a",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Runtime.Extensions.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Runtime.Handles.dll",
+                      "size":  15624,
+                      "sha256":  "06f9fe79db460ebddaf8905784bb87bacf85adcbb05af262817fc6512936144c",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Runtime.Handles.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Runtime.InteropServices.dll",
+                      "size":  96520,
+                      "sha256":  "7c53e031183b36fe378205ac894b1ddc41bca992393b153c7e68b951dc14f657",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Runtime.InteropServices.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Runtime.InteropServices.JavaScript.dll",
+                      "size":  51472,
+                      "sha256":  "4452556418ae319a0c004c214948bbe195068ee279e37612983d34bf25086ddc",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Runtime.InteropServices.JavaScript.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Runtime.InteropServices.RuntimeInformation.dll",
+                      "size":  15624,
+                      "sha256":  "5b76cfe29421c9bc3e742699beaaf5f77fa0b1e80b036271c056f5410bd5078d",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Runtime.InteropServices.RuntimeInformation.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Runtime.Intrinsics.dll",
+                      "size":  17208,
+                      "sha256":  "0a118c3b5959df187480ae30e4bbe107e429ce980db0de85b4ab914ff4faee25",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Runtime.Intrinsics.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Runtime.Loader.dll",
+                      "size":  16184,
+                      "sha256":  "b1e2ccf8449aabd0598ee95fa6ff3459387b7dbdc89fc67a85581917ed9667c7",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Runtime.Loader.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Runtime.Numerics.dll",
+                      "size":  329992,
+                      "sha256":  "299ad70ed8d1bae97cc81358da46ab87240e117c013b7020eb21390587a27cf8",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Runtime.Numerics.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Runtime.Serialization.dll",
+                      "size":  17208,
+                      "sha256":  "6501d8b5b5082a5cadbcbf8a1eb46c1bf08ca8e73af8365d4c3150b9f3927cbd",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Runtime.Serialization.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Runtime.Serialization.Formatters.dll",
+                      "size":  309512,
+                      "sha256":  "e59e2f12e7b1e70869b32214529ae9dc3e0cbb35aa8f75c3889c148a8d3f336b",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Runtime.Serialization.Formatters.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Runtime.Serialization.Json.dll",
+                      "size":  16136,
+                      "sha256":  "1378d2d38d408eabe5a1fd6672be44673f6dacb63ac87ba5b0ef93b26032c332",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Runtime.Serialization.Json.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Runtime.Serialization.Primitives.dll",
+                      "size":  39176,
+                      "sha256":  "715a11ec99fa307db93c0e3a99c808c4c39bb06fa775d96aac36c9087a2c1bc6",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Runtime.Serialization.Primitives.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Runtime.Serialization.Xml.dll",
+                      "size":  17160,
+                      "sha256":  "8047a03bb5cd9a870b8cefe4c5fc694e6d6cf3dc47a1460c03801548ba1eb361",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Runtime.Serialization.Xml.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Security.AccessControl.dll",
+                      "size":  231736,
+                      "sha256":  "29df7e2b5ef2b34c07c46cb3b236fbf8b3bf100192fe764cded2e0e19af781a6",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Security.AccessControl.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Security.Claims.dll",
+                      "size":  100616,
+                      "sha256":  "ac1f1eb247de9e1df0451b8407c74e426034385639a61594b2489bd9c8b145ed",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Security.Claims.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Security.Cryptography.Algorithms.dll",
+                      "size":  17672,
+                      "sha256":  "8a9aeade4d5b13456c2a4428b6f84a44c9cb9eb63da3cc92867c1adfb55be748",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Security.Cryptography.Algorithms.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Security.Cryptography.Cng.dll",
+                      "size":  16648,
+                      "sha256":  "0009f0c26e374cd49b9ba25c8e8e1afc1adf2c97cdaf8f834536894343096f67",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Security.Cryptography.Cng.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Security.Cryptography.Csp.dll",
+                      "size":  16144,
+                      "sha256":  "27b090a102284cb892b189c651cb7a59136d16618c18ece91b1be29950ae5457",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Security.Cryptography.Csp.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Security.Cryptography.dll",
+                      "size":  2050312,
+                      "sha256":  "2d87acc3aa3f516d13562f163651c0efbacf8542b9a72389e69b5ecd124ffefc",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Security.Cryptography.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Security.Cryptography.Encoding.dll",
+                      "size":  16144,
+                      "sha256":  "912717ad94c06f62c87097b7c48cd7497d695653750f04342b5b96e42cde2461",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Security.Cryptography.Encoding.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Security.Cryptography.OpenSsl.dll",
+                      "size":  15664,
+                      "sha256":  "96f9f7b99086ad5058e83784396ff91778a5fef6f33b10f7a2062345cfda49ef",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Security.Cryptography.OpenSsl.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Security.Cryptography.Primitives.dll",
+                      "size":  16136,
+                      "sha256":  "858dc470f9be30133bda0dd74bcd94ce5dc06cc72bf37513adf92ddda255984f",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Security.Cryptography.Primitives.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Security.Cryptography.X509Certificates.dll",
+                      "size":  17160,
+                      "sha256":  "1729d0907dd401b5d1a893c8be872414ca40cf8b8b01ed422799433f58ab06c6",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Security.Cryptography.X509Certificates.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Security.dll",
+                      "size":  18696,
+                      "sha256":  "b2146df4a8cfaa5cc82372af1d35a9dd2c3a77f7b3fb802c75b61a3322989d17",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Security.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Security.Principal.dll",
+                      "size":  15624,
+                      "sha256":  "17ccbcfc65f4844f1e5873a0ffa589fa4e78fc9a48e9046db443f42882a986fb",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Security.Principal.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Security.Principal.Windows.dll",
+                      "size":  186632,
+                      "sha256":  "11e680be9aa72c030916a4427dc3283cc1ea250e5e59ec9abd7cf6dd9365d144",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Security.Principal.Windows.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Security.SecureString.dll",
+                      "size":  15624,
+                      "sha256":  "3385e3447acdb4d581b9a1f39e2b670d0dfa53b0fafb8fb98ed736ce554de643",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Security.SecureString.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.ServiceModel.Web.dll",
+                      "size":  17160,
+                      "sha256":  "48b56c7f9f848f00663db65e76f395cc65890c11965551bdeabccc104d5755a3",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.ServiceModel.Web.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.ServiceProcess.dll",
+                      "size":  16136,
+                      "sha256":  "5c87dbbe44dfef2f536e074a83285ff89262b9102a38e7a186672e45f5028511",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.ServiceProcess.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Text.Encoding.CodePages.dll",
+                      "size":  862512,
+                      "sha256":  "14aa77967f5e2983e5b965a2156b862e788809c6c8ec9665a2bae8126a2eee70",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Text.Encoding.CodePages.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Text.Encoding.dll",
+                      "size":  16184,
+                      "sha256":  "634bba61c91a5b6a478b55cc5b5595850240a12ecaaa69050e39323fd2dd68dd",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Text.Encoding.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Text.Encoding.Extensions.dll",
+                      "size":  16136,
+                      "sha256":  "038082536705e63ff31a8f0038f3f87601d347c6f71d4dfa99a5bbb7f78ef2c1",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Text.Encoding.Extensions.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Text.Encodings.Web.dll",
+                      "size":  133432,
+                      "sha256":  "292b4f4fb2f7b16cf574bcd33905148d6a03837437f4ad2b8237b066a57e90a0",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Text.Encodings.Web.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Text.Json.dll",
+                      "size":  1501448,
+                      "sha256":  "61dd1e919e85962de35fc839f45651d3f22809ffac193c9bc2d71ac58347d31d",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Text.Json.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Text.RegularExpressions.dll",
+                      "size":  1022264,
+                      "sha256":  "3b76484a412d102e56e935d7f462f6a3dae5ae3f449b3804272d5858ae7de2ff",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Text.RegularExpressions.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Threading.Channels.dll",
+                      "size":  133432,
+                      "sha256":  "da18306b43fe949684e33e196d119845bbd3e484f687f9714fe0cad9cb91faaa",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Threading.Channels.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Threading.dll",
+                      "size":  84232,
+                      "sha256":  "72e11fd27c4e00cf5f1b78d009bc782d4d594a9d149f9c455c067f0be7f38f4b",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Threading.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Threading.Overlapped.dll",
+                      "size":  16136,
+                      "sha256":  "cedd91c1080c7aa2348feff3556974074ef81124532593dba3b4315d933e9a74",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Threading.Overlapped.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Threading.Tasks.Dataflow.dll",
+                      "size":  489776,
+                      "sha256":  "5b6158835b2bea9d3ffe667cda7237b95a89511863d927e033a52815ac2da862",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Threading.Tasks.Dataflow.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Threading.Tasks.dll",
+                      "size":  17160,
+                      "sha256":  "f6b8b4447fd619afcdf6e98912047ca3ec21ceede5ade10de2cd0bb15789c234",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Threading.Tasks.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Threading.Tasks.Extensions.dll",
+                      "size":  16176,
+                      "sha256":  "5f0a2f73cf5ee77bd2b4948d0fe75c173be261f44c5548143f379f9cbaa2acbe",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Threading.Tasks.Extensions.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Threading.Tasks.Parallel.dll",
+                      "size":  133392,
+                      "sha256":  "6f07885971f0568eeefaffd41c7f6fce28ea485c78f9371697f05f735593f403",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Threading.Tasks.Parallel.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Threading.Thread.dll",
+                      "size":  16136,
+                      "sha256":  "61d68e044876e5f4767c8d77c2d2be15fc292478e4f6a1833546613771f24d0b",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Threading.Thread.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Threading.ThreadPool.dll",
+                      "size":  16136,
+                      "sha256":  "afe1c2fbf97374fa207830690d804372c2a57bb86624628a72824e2b8809bded",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Threading.ThreadPool.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Threading.Timer.dll",
+                      "size":  15632,
+                      "sha256":  "bbf9b7c05f7ff7a07b6b681cdca403f0fbb71c753225ace3049585f8cb4ffb75",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Threading.Timer.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Transactions.dll",
+                      "size":  16648,
+                      "sha256":  "ea426cb967c39332a96bdc29ea01eaf3bb1c818c4e050f7d37c5eb9eed5194ce",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Transactions.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Transactions.Local.dll",
+                      "size":  661768,
+                      "sha256":  "7fa1df1a867aabbf22a5b9def207ee46cd6a00aa626777902f85c0a6f0fac5e9",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Transactions.Local.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.ValueTuple.dll",
+                      "size":  15624,
+                      "sha256":  "486d40612b631c86ddda6017fffd2b7f09e037f288b700873e328ce524c3c68c",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.ValueTuple.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Web.dll",
+                      "size":  15624,
+                      "sha256":  "564136f13dfecc4e16b8b565c5478168b3737d49e6d77b342db89cf4d13823b9",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Web.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Web.HttpUtility.dll",
+                      "size":  59664,
+                      "sha256":  "d5336dbffe22bd381e0fd58753472aad6dec985dac150a006a8759574f5ce7b1",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Web.HttpUtility.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Windows.dll",
+                      "size":  16136,
+                      "sha256":  "8a10dd08d84fffd9cc7c6abd0fc674130a78640c880bc954f28c6afdf80a85e4",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Windows.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Xml.dll",
+                      "size":  23816,
+                      "sha256":  "397e11924a40fb81bf2a39bd3fef19546c2617da8f991cbf3cd0ac67545b2a7f",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Xml.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Xml.Linq.dll",
+                      "size":  16184,
+                      "sha256":  "6ec4e0d824f5b415df8f8d58a0d5378dae1bd68daf582f3badab3acc0b8acecf",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Xml.Linq.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Xml.ReaderWriter.dll",
+                      "size":  22280,
+                      "sha256":  "0ec354529c989e708b71db0813fcf0835a4be1deeac0a18be2c0f655d2ea6758",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Xml.ReaderWriter.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Xml.Serialization.dll",
+                      "size":  16656,
+                      "sha256":  "b17261c14f89950113311083a614b6fdf8c8b789b9d7c022249def4b21d986b5",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Xml.Serialization.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Xml.XDocument.dll",
+                      "size":  16184,
+                      "sha256":  "4a06159cedc51469dff4a78ff572e4581faea83a966649a24b7ebf9e759005d1",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Xml.XDocument.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Xml.XmlDocument.dll",
+                      "size":  16184,
+                      "sha256":  "48474c7ca2e8aec7e5c650c73a36780d382a05f7e356937c8f5232ad0e6181d9",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Xml.XmlDocument.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Xml.XmlSerializer.dll",
+                      "size":  18184,
+                      "sha256":  "851c9002ddd3aa9359b5b3b3aeed0d8b39c215df32afc0af78d03a896f7a92e3",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Xml.XmlSerializer.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Xml.XPath.dll",
+                      "size":  16136,
+                      "sha256":  "4fbcbcbdba63bf1191e83a00d1fd706cf0bc7b6c4ca59ea9cef206d2ec6f0634",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Xml.XPath.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/System.Xml.XPath.XDocument.dll",
+                      "size":  31024,
+                      "sha256":  "88bf85af6337509a2367ed1d910471ea467421ebd06d94f1e062f3f2fc4022ce",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/System.Xml.XPath.XDocument.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/WindowsBase.dll",
+                      "size":  16688,
+                      "sha256":  "0f77d52c98321216ddba743f2f57c48ab57c94eee6c399a5559f8e627ea6b794",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/WindowsBase.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/Zero-K - Frozen Legacy.deps.json",
+                      "size":  28064,
+                      "sha256":  "7aa837c75b6c4158f5740b5d4f2743a026030069fc1e947eb735f7c6b50a62a3",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/Zero-K - Frozen Legacy.deps.json",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/Zero-K - Frozen Legacy.dll",
+                      "size":  1933824,
+                      "sha256":  "cff5c64987767f9e2889ea036f8902d835c9cf239b9d25a977289dd18cfbe398",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/Zero-K - Frozen Legacy.dll",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/Zero-K - Frozen Legacy.pdb",
+                      "size":  1191404,
+                      "sha256":  "8662ea2842e70129629ed65b9f9633d02da5e4c37024552714d935b4289f0230",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/Zero-K - Frozen Legacy.pdb",
+                      "required":  true
+                  },
+                  {
+                      "path":  "data_Zero-K - Frozen Legacy_windows_x86_64/Zero-K - Frozen Legacy.runtimeconfig.json",
+                      "size":  372,
+                      "sha256":  "ac9248778962c11c614017172e848d42c3ae84b0ecd7567fba1a4eae611b3ddd",
+                      "url":  "https://f006.backblazeb2.com/file/Serok-alpha-game/0.1.0-alpha.1/data_Zero-K - Frozen Legacy_windows_x86_64/Zero-K - Frozen Legacy.runtimeconfig.json",
+                      "required":  true
+                  }
+              ]
+}
