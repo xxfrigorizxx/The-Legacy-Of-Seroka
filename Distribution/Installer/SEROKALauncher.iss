@@ -34,6 +34,7 @@ Source: "{#LauncherBuild}\SEROKALauncher.exe"; DestDir: "{app}\launcher"; Flags:
 Source: "{#LauncherBuild}\SEROKALauncher.dll"; DestDir: "{app}\launcher"; Flags: ignoreversion
 Source: "{#LauncherBuild}\SEROKALauncher.runtimeconfig.json"; DestDir: "{app}\launcher"; Flags: ignoreversion
 Source: "{#LauncherBuild}\SEROKALauncher.deps.json"; DestDir: "{app}\launcher"; Flags: ignoreversion
+Source: "{#SourceRoot}\Launcher\SEROKALauncher\Assets\launcher.ico"; DestDir: "{app}\launcher"; Flags: ignoreversion
 Source: "{#SourceRoot}\Launcher\SEROKALauncher\examples\launcher-config.remote.example.json"; DestDir: "{app}\launcher"; DestName: "launcher-config.json"; Flags: ignoreversion
 
 ; Manifest local initial
@@ -45,8 +46,8 @@ Source: "{#SourceRoot}\SEROKAFrozenLegacy.pck"; DestDir: "{app}\game"; DestName:
 Source: "{#SourceRoot}\data_Zero-K - Frozen Legacy_windows_x86_64\*"; DestDir: "{app}\game\data_Zero-K - Frozen Legacy_windows_x86_64"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{autodesktop}\SEROKA Frozen Legacy"; Filename: "{app}\launcher\{#LauncherExeName}"
-Name: "{autoprograms}\SEROKA Frozen Legacy"; Filename: "{app}\launcher\{#LauncherExeName}"
+Name: "{autodesktop}\SEROKA Frozen Legacy"; Filename: "{app}\launcher\{#LauncherExeName}"; IconFilename: "{app}\launcher\launcher.ico"
+Name: "{autoprograms}\SEROKA Frozen Legacy"; Filename: "{app}\launcher\{#LauncherExeName}"; IconFilename: "{app}\launcher\launcher.ico"
 
 [Run]
 Filename: "{app}\launcher\{#LauncherExeName}"; Description: "Lancer SEROKA Frozen Legacy"; Flags: nowait postinstall skipifsilent

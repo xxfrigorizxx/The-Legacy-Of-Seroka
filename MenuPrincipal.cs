@@ -4,7 +4,6 @@ using Godot;
 public partial class MenuPrincipal : Control
 {
 	private const string CheminTextureFondAccueil = "res://textures/ui/menu/menu.png";
-	private const string CheminTextureLogoAccueil = "res://textures/ui/menu/logo.png";
 
 	private Panel _panelMenuPrincipal;
 	private Panel _panelEtapeMonde;
@@ -144,29 +143,6 @@ public partial class MenuPrincipal : Control
 		else
 			GD.PushWarning($"MenuPrincipal: texture de fond introuvable ({CheminTextureFondAccueil}).");
 
-		Texture2D textureLogo = ResourceLoader.Load<Texture2D>(CheminTextureLogoAccueil);
-		if (textureLogo != null && _vboxPrincipal != null)
-		{
-			var logoAccueil = _vboxPrincipal.GetNodeOrNull<TextureRect>("LogoAccueil");
-			if (logoAccueil == null)
-			{
-				logoAccueil = new TextureRect
-				{
-					Name = "LogoAccueil",
-					CustomMinimumSize = new Vector2(320, 120),
-					MouseFilter = MouseFilterEnum.Ignore,
-					SizeFlagsHorizontal = SizeFlags.ShrinkCenter
-				};
-				_vboxPrincipal.AddChild(logoAccueil);
-				_vboxPrincipal.MoveChild(logoAccueil, 0);
-			}
-
-			logoAccueil.Texture = textureLogo;
-			logoAccueil.ExpandMode = (TextureRect.ExpandModeEnum)1;
-			logoAccueil.StretchMode = (TextureRect.StretchModeEnum)0;
-		}
-		else if (textureLogo == null)
-			GD.PushWarning($"MenuPrincipal: texture logo introuvable ({CheminTextureLogoAccueil}).");
 	}
 
 	private GameState Etat => GetNode<GameState>("/root/GameState");

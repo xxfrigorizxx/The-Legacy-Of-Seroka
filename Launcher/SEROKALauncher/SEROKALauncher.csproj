@@ -8,6 +8,7 @@
     <AssemblyName>SEROKALauncher</AssemblyName>
     <RootNamespace>SEROKALauncher</RootNamespace>
     <LangVersion>latest</LangVersion>
+    <ApplicationIcon>Assets\launcher.ico</ApplicationIcon>
   </PropertyGroup>
 
 </Project>
