@@ -398,6 +398,9 @@ public partial class BoeufSauvage : CharacterBody3D
 	private string _clipCourse = "";
 	private string _clipManger = "";
 	private string _clipMort = "";
+	private bool _animationMortDoitEtreFigee;
+	private bool _animationMortFigee;
+	private const float EpsilonFinAnimationMortSec = 0.02f;
 	private string _clipTrot = "";
 	private string _clipNage = "";
 	private string _clipSaut = "";
@@ -1333,6 +1336,7 @@ public partial class BoeufSauvage : CharacterBody3D
 
 		if (_etat == EtatBoeuf.Mort)
 		{
+			MettreAJourAnimationMortEtFigerSiTerminee();
 			GererMort(dt);
 			if (ActiverProfilagePerfBovin)
 				PerfBudgetMonitor.End("Faune/BovinFrame", debutFrameUs);
@@ -3110,9 +3114,12 @@ public partial class BoeufSauvage : CharacterBody3D
 		_coupsDepecageDagueValides = 0;
 		_tempsMort = float.MaxValue;
 		Velocity = Vector3.Zero;
+		_animationMortDoitEtreFigee = true;
+		_animationMortFigee = false;
 		EmitSignal(SignalName.EvolutionEvenement, "mort_faim", 1f, _niveau, _ageSecondes / 3600f);
 		if (!string.IsNullOrEmpty(_clipMort) && _animationPlayer != null && _animationPlayer.HasAnimation(_clipMort))
 		{
+			ConfigurerClipMortEnOneShot();
 			if (_animationTreeFaune != null)
 				_animationTreeFaune.Active = false;
 			_animationPlayer.Play(ObtenirStringNameAnimation(_clipMort), 0.12f);
@@ -3120,7 +3127,49 @@ public partial class BoeufSauvage : CharacterBody3D
 		else if (_playbackEtatFaune != null && _machineAPorteMort)
 			_playbackEtatFaune.Travel(NomNoeudMortString);
 		else if (!string.IsNullOrEmpty(_clipMort) && _animationPlayer != null)
+		{
+			ConfigurerClipMortEnOneShot();
 			_animationPlayer.Play(ObtenirStringNameAnimation(_clipMort), 0.12f);
+		}
+	}
+
+	private void ConfigurerClipMortEnOneShot()
+	{
+		if (string.IsNullOrEmpty(_clipMort) || _animationPlayer == null || !_animationPlayer.HasAnimation(_clipMort))
+			return;
+		Animation animMort = _animationPlayer.GetAnimation(_clipMort);
+		if (animMort != null)
+			animMort.LoopMode = Animation.LoopModeEnum.None;
+	}
+
+	private void MettreAJourAnimationMortEtFigerSiTerminee()
+	{
+		if (!_animationMortDoitEtreFigee || _animationMortFigee || string.IsNullOrEmpty(_clipMort))
+			return;
+		if (_animationPlayer == null || !GodotObject.IsInstanceValid(_animationPlayer) || !_animationPlayer.HasAnimation(_clipMort))
+			return;
+
+		Animation animMort = _animationPlayer.GetAnimation(_clipMort);
+		if (animMort == null)
+			return;
+		double longueur = animMort.Length;
+		if (longueur <= 0.0)
+			return;
+
+		string animationCourante = _animationPlayer.CurrentAnimation.ToString();
+		bool litClipMort = string.Equals(animationCourante, _clipMort, StringComparison.Ordinal);
+		if (!litClipMort)
+			return;
+
+		double position = _animationPlayer.CurrentAnimationPosition;
+		bool animationTerminee = !_animationPlayer.IsPlaying() || position >= longueur - EpsilonFinAnimationMortSec;
+		if (!animationTerminee)
+			return;
+
+		double positionFinale = Math.Max(0.0, longueur - 0.001);
+		_animationPlayer.Seek(positionFinale, true);
+		_animationPlayer.Pause();
+		_animationMortFigee = true;
 	}
 
 	private void GererMort(float dt)

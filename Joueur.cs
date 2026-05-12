@@ -1499,15 +1499,11 @@ public partial class Joueur : CharacterBody3D
         return false;
     }
 
-    /// <summary>Place tÃªte/cou sur le calque 2 : la camÃ©ra FPS (cull 1) ne les dessine pas â€” Ã©vite lâ€™intÃ©rieur du crÃ¢ne / cheveux.</summary>
+    /// <summary>Place tout le rig local sur le calque cache FPS (2) pour ne jamais voir son propre corps en premiere personne.</summary>
     private static void AssignerCalquesTetePourVueFps(Node n)
     {
         if (n is MeshInstance3D mi && mi.Mesh != null)
-        {
-            string l = n.Name.ToString().ToLowerInvariant();
-            if (EstNomMailleTeteOuCouPourFps(l))
-                mi.Layers = CalqueRenduTeteFpsCachee;
-        }
+            mi.Layers = CalqueRenduTeteFpsCachee;
         foreach (Node c in n.GetChildren())
             AssignerCalquesTetePourVueFps(c);
     }
