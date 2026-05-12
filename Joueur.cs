@@ -1908,7 +1908,7 @@ public partial class Joueur : CharacterBody3D
         _rayon = activerTps ? _rayonTps : _rayonFps;
 
         if (_rigHumain != null && GodotObject.IsInstanceValid(_rigHumain))
-            _rigHumain.Visible = true;
+            _rigHumain.Visible = activerTps;
 
         AppliquerCullMasksCamerasJoueur();
         MettreAJourObjetTenueTps();
