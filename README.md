@@ -1,4 +1,4 @@
-# Zero-K-Frozen-Legacy
+# Seroka-Frozen-Legacy
 
 ## Distribution / Launcher
 
