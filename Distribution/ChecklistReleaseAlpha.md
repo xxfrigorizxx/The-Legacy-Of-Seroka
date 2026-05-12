@@ -1,9 +1,9 @@
 # Checklist release alpha (launcher)
 
-## 1) Build launcher
+## 1) Build launcher (self-contained)
 
 - `dotnet publish "Launcher/SEROKALauncher/SEROKALauncher.csproj" -c Release`
-- Verifier presence de `SEROKALauncher.exe` dans `Launcher/SEROKALauncher/bin/Release/net8.0/`
+- Verifier presence de `SEROKALauncher.exe` et des DLL runtime dans `Launcher/SEROKALauncher/bin/Release/net8.0/publish/`
 
 ## 2) Build jeu
 

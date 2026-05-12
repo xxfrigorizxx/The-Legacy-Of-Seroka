@@ -9,6 +9,11 @@
     <RootNamespace>SEROKALauncher</RootNamespace>
     <LangVersion>latest</LangVersion>
     <ApplicationIcon>Assets\launcher.ico</ApplicationIcon>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSelfContained>true</PublishSelfContained>
+    <PublishTrimmed>false</PublishTrimmed>
+    <PublishSingleFile>false</PublishSingleFile>
   </PropertyGroup>
 
 </Project>

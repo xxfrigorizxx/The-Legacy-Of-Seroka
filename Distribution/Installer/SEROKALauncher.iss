@@ -7,7 +7,7 @@
 #define LauncherExeName "SEROKALauncher.exe"
 #define GameExeName "SEROKAFrozenLegacy.exe"
 #define SourceRoot "..\\.."
-#define LauncherBuild "..\\..\\Launcher\\SEROKALauncher\\bin\\Release\\net8.0"
+#define LauncherBuild "..\\..\\Launcher\\SEROKALauncher\\bin\\Release\\net8.0\\win-x64\\publish"
 #define DistRoot ".."
 
 [Setup]
@@ -30,10 +30,7 @@ Name: "french"; MessagesFile: "compiler:Languages\French.isl"
 
 [Files]
 ; Launcher
-Source: "{#LauncherBuild}\SEROKALauncher.exe"; DestDir: "{app}\launcher"; Flags: ignoreversion
-Source: "{#LauncherBuild}\SEROKALauncher.dll"; DestDir: "{app}\launcher"; Flags: ignoreversion
-Source: "{#LauncherBuild}\SEROKALauncher.runtimeconfig.json"; DestDir: "{app}\launcher"; Flags: ignoreversion
-Source: "{#LauncherBuild}\SEROKALauncher.deps.json"; DestDir: "{app}\launcher"; Flags: ignoreversion
+Source: "{#LauncherBuild}\*"; DestDir: "{app}\launcher"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#SourceRoot}\Launcher\SEROKALauncher\Assets\launcher.ico"; DestDir: "{app}\launcher"; Flags: ignoreversion
 Source: "{#SourceRoot}\Launcher\SEROKALauncher\examples\launcher-config.remote.example.json"; DestDir: "{app}\launcher"; DestName: "launcher-config.json"; Flags: ignoreversion
 

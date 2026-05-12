@@ -5,6 +5,14 @@
     <EnableDynamicLoading>true</EnableDynamicLoading>
     <RootNamespace>ZeroKFrozenLegacy</RootNamespace>
   </PropertyGroup>
+  <PropertyGroup Condition=" '$(GodotTargetPlatform)' == 'windows' ">
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSelfContained>true</PublishSelfContained>
+    <PublishTrimmed>false</PublishTrimmed>
+    <PublishSingleFile>false</PublishSingleFile>
+    <UseAppHost>true</UseAppHost>
+  </PropertyGroup>
   <ItemGroup>
     <Compile Remove="Launcher\**\*.cs" />
   </ItemGroup>
