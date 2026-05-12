@@ -1245,8 +1245,10 @@ void fragment()
 		if (Multiplayer.HasMultiplayerPeer())
 		{
 			if (!Multiplayer.IsServer()) return;
-			RpcId((int)peerId, nameof(RpcRecevoirAssombrissementPortail), dureeSec);
-			if (peerId == Multiplayer.GetUniqueId())
+			// Godot interdit RpcId vers soi-même quand CallLocal=false.
+			if (peerId != Multiplayer.GetUniqueId())
+				RpcId((int)peerId, nameof(RpcRecevoirAssombrissementPortail), dureeSec);
+			else
 				AfficherAssombrissementPortailTransition(dureeSec);
 		}
 		else
@@ -3138,6 +3140,7 @@ void fragment()
 			else
 				_joueur.GlobalPosition = pointSol + Vector3.Up * 1.2f;
 			_joueur.Velocity = Vector3.Zero;
+			FinaliserSortiePortailApresAlignement();
 			return;
 		}
 		// Tant que la collision n’est pas prête : même repli hauteur voxel qu’au spawn initial (évite rester sous le portail / dans le vide).
@@ -3151,6 +3154,77 @@ void fragment()
 			return;
 		}
 		GD.PushWarning("ZERO-K Portail : raycast sol sans impact après attente, position hauteur voxel conservée.");
+	}
+
+	private void FinaliserSortiePortailApresAlignement()
+	{
+		// Dès qu'un alignement sol est validé, on relâche immédiatement le verrou de TP.
+		_gateTpDimensionActif = false;
+		_secondesGateTpDimension = 0.0;
+		EjecterJoueurHorsMembranePortailSiNecessaire();
+	}
+
+	private void EjecterJoueurHorsMembranePortailSiNecessaire()
+	{
+		if (_joueur == null || !GodotObject.IsInstanceValid(_joueur))
+			return;
+		if (!_racineParDimension.TryGetValue(_dimensionLocaleActive, out Node3D racine) || racine == null)
+			return;
+
+		Portail portailProche = null;
+		float meilleureDistance2 = float.MaxValue;
+		foreach (Node enfant in racine.GetChildren())
+		{
+			if (enfant is not Portail p || !GodotObject.IsInstanceValid(p))
+				continue;
+			Vector3 centreMembrane = p.GlobalTransform * p.PositionLocaleMembrane;
+			float d2 = centreMembrane.DistanceSquaredTo(_joueur.GlobalPosition);
+			if (d2 < meilleureDistance2)
+			{
+				meilleureDistance2 = d2;
+				portailProche = p;
+			}
+		}
+
+		if (portailProche == null)
+			return;
+
+		Vector3 centre = portailProche.GlobalTransform * portailProche.PositionLocaleMembrane;
+		Vector2 deltaJoueur = new Vector2(_joueur.GlobalPosition.X - centre.X, _joueur.GlobalPosition.Z - centre.Z);
+		float rayonSecurite = Mathf.Max(6f, portailProche.RayonTriggerMetres * 0.95f);
+		if (deltaJoueur.LengthSquared() > rayonSecurite * rayonSecurite)
+			return;
+
+		Vector3 axeSortie3 = portailProche.GlobalTransform.Basis.Z;
+		Vector2 axeSortie = new Vector2(axeSortie3.X, axeSortie3.Z);
+		if (axeSortie.LengthSquared() < 1e-6f)
+			axeSortie = Vector2.Right;
+		else
+			axeSortie = axeSortie.Normalized();
+
+		float signe = Mathf.Sign(deltaJoueur.Dot(axeSortie));
+		if (Mathf.IsZeroApprox(signe))
+			signe = 1f;
+
+		float distanceSortie = Mathf.Max(22f, Mathf.Max(portailProche.DistanceApparitionDevantPortailMetres, portailProche.RayonTriggerMetres + 6f));
+		Vector3 xzCible = new Vector3(
+			centre.X + axeSortie.X * distanceSortie * signe,
+			_joueur.GlobalPosition.Y,
+			centre.Z + axeSortie.Y * distanceSortie * signe);
+
+		if (EssayerTrouverSolParRaycast(new Vector3(xzCible.X, 0f, xzCible.Z), out Vector3 pointSol))
+		{
+			if (_joueur is Joueur jo)
+				_joueur.GlobalPosition = new Vector3(xzCible.X, jo.CalculerYOriginePourPiedsSurSurface(pointSol.Y), xzCible.Z);
+			else
+				_joueur.GlobalPosition = pointSol + Vector3.Up * 1.2f;
+		}
+		else
+		{
+			_joueur.GlobalPosition = AssurerSpawnAuDessusDuSol(new Vector3(xzCible.X, _joueur.GlobalPosition.Y, xzCible.Z));
+		}
+
+		_joueur.Velocity = Vector3.Zero;
 	}
 
 	[Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = false)]

@@ -475,6 +475,15 @@ public partial class Portail : Node3D
 		if (gm == null) return;
 		if (gm.EstVerrouSecuriteAbysseActif()) return;
 
+		// Sécurité anti-softlock : un portail "vers APISARA" ne doit pas téléporter
+		// tant que son assise au sol n'a pas été réellement confirmée.
+		if (!AncreSurApisara)
+		{
+			AlignerPortailSurSurface();
+			if (!_alignementYSolConfirmeParRaycastMesh)
+				return;
+		}
+
 		AnnulerSequenceTpSiEnCours();
 		_joueurStationnaireDansZone = j;
 		DemarrerSequenceAssombrissementPuisTp(gm);

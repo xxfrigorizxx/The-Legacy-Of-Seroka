@@ -40,8 +40,8 @@ Source: "{#SourceRoot}\Launcher\SEROKALauncher\examples\launcher-config.remote.e
 Source: "{#DistRoot}\manifest.alpha.json"; DestDir: "{app}\manifests"; DestName: "local-manifest.json"; Flags: ignoreversion
 
 ; Game payload initial (alpha)
-Source: "{#SourceRoot}\ZeroKFrozenLegacy.exe"; DestDir: "{app}\game"; DestName: "{#GameExeName}"; Flags: ignoreversion
-Source: "{#SourceRoot}\ZeroKFrozenLegacy.pck"; DestDir: "{app}\game"; DestName: "SEROKAFrozenLegacy.pck"; Flags: ignoreversion
+Source: "{#SourceRoot}\SEROKAFrozenLegacy.exe"; DestDir: "{app}\game"; DestName: "{#GameExeName}"; Flags: ignoreversion
+Source: "{#SourceRoot}\SEROKAFrozenLegacy.pck"; DestDir: "{app}\game"; DestName: "SEROKAFrozenLegacy.pck"; Flags: ignoreversion
 Source: "{#SourceRoot}\data_Zero-K - Frozen Legacy_windows_x86_64\*"; DestDir: "{app}\game\data_Zero-K - Frozen Legacy_windows_x86_64"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]

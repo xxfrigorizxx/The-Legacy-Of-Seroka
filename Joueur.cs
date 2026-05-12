@@ -3025,7 +3025,10 @@ public partial class Joueur : CharacterBody3D
 
         // Le chat ne doit jamais voler le focus pendant que le menu inventaire/creatif est affiché.
         if (_menuAnatomie != null && _menuAnatomie.EstOuvert)
+        {
+            MettreAJourVisibiliteChatSelonUiBloquante();
             return;
+        }
 
         if (EssayerBasculerChatInGameDepuisInput(@event))
         {

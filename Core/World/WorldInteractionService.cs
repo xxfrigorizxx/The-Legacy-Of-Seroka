@@ -565,6 +565,7 @@ public partial class Joueur
         Node3D nePose = CreerBlocPose(pointDeChute, mainActive);
         if (nePose == null)
             return false;
+        ForcerQuantiteObjetPoseUnitaireSiItemPhysique(nePose);
 
         AppliquerTransformPoseStructure(nePose, pointAligne, rotationDeg);
         ConsommerUneUniteMainActive();
@@ -574,6 +575,12 @@ public partial class Joueur
         if (!Engine.IsEditorHint())
             SauvegarderEtatPersistantMonde(GetTree());
         return true;
+    }
+
+    private void ForcerQuantiteObjetPoseUnitaireSiItemPhysique(Node3D noeudPose)
+    {
+        if (noeudPose is ItemPhysique itemPose)
+            itemPose.SetMeta(MetaQuantiteObjetPose, 1);
     }
 
     private void ExecuterPlacementAvecOptions(SlotInventaire mainActive, bool depuisInteragir)
@@ -652,6 +659,8 @@ public partial class Joueur
             // Clic droit rapide : un objet lançable doit se déposer au sol sans mini-impulsion.
             // La poussée douce reste utile pour les poses via touche Interagir.
             bool estLancable = EstObjetLancableAuMaintien(mainActive);
+            if (estLancable)
+                ForcerQuantiteObjetPoseUnitaireSiItemPhysique(nePose);
             bool appliquerImpulsionPose = !structureFixe && (depuisInteragir || !estLancable);
             if (appliquerImpulsionPose)
                 AppliquerImpulsionLacherDoux(nePose);

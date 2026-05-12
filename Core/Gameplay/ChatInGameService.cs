@@ -382,6 +382,9 @@ public partial class Joueur
     {
         if (_racineChat == null || !GodotObject.IsInstanceValid(_racineChat))
             return;
+        MettreAJourVisibiliteChatSelonUiBloquante();
+        if (UiJoueurBloquanteHorsChatOuverte() && !_chatEditionOuverte)
+            return;
         _racineChat.Visible = true;
         if (!_chatEditionOuverte && _ligneSaisieChat != null)
             _ligneSaisieChat.Visible = false;
@@ -442,6 +445,8 @@ public partial class Joueur
 
     public void OuvrirChatInGame()
     {
+        if (UiJoueurBloquanteHorsChatOuverte())
+            return;
         if (_racineChat == null || !GodotObject.IsInstanceValid(_racineChat))
             InitialiserChatInGame();
         _chatEditionOuverte = true;
@@ -471,6 +476,17 @@ public partial class Joueur
         _timerMasquageChatPassif?.Stop();
         if (_racineChat != null && GodotObject.IsInstanceValid(_racineChat))
             _racineChat.Visible = false;
+    }
+
+    private void MettreAJourVisibiliteChatSelonUiBloquante()
+    {
+        if (_chatEditionOuverte)
+            return;
+        if (!UiJoueurBloquanteHorsChatOuverte())
+            return;
+        if (_racineChat != null && GodotObject.IsInstanceValid(_racineChat))
+            _racineChat.Visible = false;
+        _timerMasquageChatPassif?.Stop();
     }
 
     /// <summary>À appeler depuis les branches UI qui bloquent le clavier (menu Q, menu K) pour que T ouvre quand même le chat.</summary>

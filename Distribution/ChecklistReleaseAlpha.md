@@ -7,7 +7,10 @@
 
 ## 2) Build jeu
 
-- Export Godot Windows release
+- Export Godot **Windows release** (pas debug):
+  - `godot --path . --export-release "Windows Desktop" "..\\SEROKAFrozenLegacy.exe"`
+- Verifier qu'aucun suffixe `(debug)` n'apparait dans la fenetre du jeu apres installation.
+- Ne pas utiliser `--export-debug` pour le payload distribution.
 - Renommer sortie jeu en:
   - `SEROKAFrozenLegacy.exe`
   - `SEROKAFrozenLegacy.pck`
