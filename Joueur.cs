@@ -1907,8 +1907,7 @@ public partial class Joueur : CharacterBody3D
         _camera = activerTps ? _cameraTps : _cameraFps;
         _rayon = activerTps ? _rayonTps : _rayonFps;
 
-        if (_rigHumain != null && GodotObject.IsInstanceValid(_rigHumain))
-            _rigHumain.Visible = activerTps;
+        AppliquerVisibiliteCorpsLocalSelonVue();
 
         AppliquerCullMasksCamerasJoueur();
         MettreAJourObjetTenueTps();
@@ -1979,6 +1978,24 @@ public partial class Joueur : CharacterBody3D
         }
     }
 
+    private void AppliquerVisibiliteCorpsLocalSelonVue()
+    {
+        if (_rigHumain == null || !GodotObject.IsInstanceValid(_rigHumain))
+            return;
+        bool afficherCorps = _vueTroisiemePersonne;
+        if (_rigHumain.Visible != afficherCorps)
+            _rigHumain.Visible = afficherCorps;
+        AppliquerVisibiliteRecursiveRig(_rigHumain, afficherCorps);
+    }
+
+    private static void AppliquerVisibiliteRecursiveRig(Node n, bool visible)
+    {
+        if (n is Node3D n3d)
+            n3d.Visible = visible;
+        foreach (Node enfant in n.GetChildren())
+            AppliquerVisibiliteRecursiveRig(enfant, visible);
+    }
+
     private void ImpulserPoseBrasFrappe(TypeMouvementFrappe type)
     {
         _impulsionIkFrappePoids = 1f;
@@ -1996,6 +2013,7 @@ public partial class Joueur : CharacterBody3D
     public override void _Process(double delta)
     {
         float dt = (float)delta;
+        AppliquerVisibiliteCorpsLocalSelonVue();
         SlotInventaire mainActive = MainGaucheEstActive ? MainGauche : MainDroite;
         if (EstModePlacementGhostActif())
         {
