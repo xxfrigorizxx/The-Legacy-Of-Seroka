@@ -470,10 +470,14 @@ public partial class Joueur
         if (@event is not InputEventKey ek || !ek.Pressed || ek.Echo)
             return false;
         bool estT = ek.Keycode == Key.T || ek.PhysicalKeycode == Key.T;
+        bool estEntree = ek.Keycode == Key.Enter
+            || ek.Keycode == Key.KpEnter
+            || ek.PhysicalKeycode == Key.Enter
+            || ek.PhysicalKeycode == Key.KpEnter;
         bool modifieur = ek.CtrlPressed || ek.MetaPressed || ek.AltPressed;
         if (_chatEditionOuverte)
         {
-            // T en mode édition recentre le focus pour continuer à écrire sans fermer/réouvrir.
+            // Uniquement T en mode édition: recentre le focus sans bloquer Entrée (soumission).
             if (estT && !modifieur && _ligneSaisieChat != null && GodotObject.IsInstanceValid(_ligneSaisieChat))
             {
                 _ligneSaisieChat.CallDeferred(LineEdit.MethodName.GrabFocus);
@@ -485,7 +489,7 @@ public partial class Joueur
             return false;
         if (SaisieTexteUiEnCours())
             return false;
-        if (!estT)
+        if (!estT && !estEntree)
             return false;
         if (modifieur)
             return false;
