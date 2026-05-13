@@ -2779,22 +2779,33 @@ public partial class Monde_Serveur : Node
 
 		int chunkY = CoordYDepuisMondeY(posGlobal.Y, HauteurMax);
 		int localY = LocalYDepuisMondeY(posGlobal.Y, HauteurMax);
-		if (localX == 0 && _chunks.TryGetValue(new Vector2I(cx - 1, cz), out var vx) && vx.ChunkOffsetY == chunkY)
-			vx.SetVoxelLocal(TailleChunk, localY, localZ, id);
-		if (localX == TailleChunk - 1 && _chunks.TryGetValue(new Vector2I(cx + 1, cz), out var vxp) && vxp.ChunkOffsetY == chunkY)
-			vxp.SetVoxelLocal(0, localY, localZ, id);
-		if (localZ == 0 && _chunks.TryGetValue(new Vector2I(cx, cz - 1), out var vz) && vz.ChunkOffsetY == chunkY)
-			vz.SetVoxelLocal(localX, localY, TailleChunk, id);
-		if (localZ == TailleChunk - 1 && _chunks.TryGetValue(new Vector2I(cx, cz + 1), out var vzp) && vzp.ChunkOffsetY == chunkY)
-			vzp.SetVoxelLocal(localX, localY, 0, id);
-		if (localX == 0 && localZ == 0 && _chunks.TryGetValue(new Vector2I(cx - 1, cz - 1), out var vxz) && vxz.ChunkOffsetY == chunkY)
-			vxz.SetVoxelLocal(TailleChunk, localY, TailleChunk, id);
-		if (localX == TailleChunk - 1 && localZ == 0 && _chunks.TryGetValue(new Vector2I(cx + 1, cz - 1), out var vxpz) && vxpz.ChunkOffsetY == chunkY)
-			vxpz.SetVoxelLocal(0, localY, TailleChunk, id);
-		if (localX == 0 && localZ == TailleChunk - 1 && _chunks.TryGetValue(new Vector2I(cx - 1, cz + 1), out var vxzp) && vxzp.ChunkOffsetY == chunkY)
-			vxzp.SetVoxelLocal(TailleChunk, localY, 0, id);
-		if (localX == TailleChunk - 1 && localZ == TailleChunk - 1 && _chunks.TryGetValue(new Vector2I(cx + 1, cz + 1), out var vxpzp) && vxpzp.ChunkOffsetY == chunkY)
-			vxpzp.SetVoxelLocal(0, localY, 0, id);
+
+		Chunk_Serveur ObtenirVoisinPadding(int chunkX, int chunkZ)
+		{
+			var coordVoisine = new Vector2I(chunkX, chunkZ);
+			if (TryGetChunkRuntime(coordVoisine, chunkY, out var voisin) && voisin != null)
+				return voisin;
+			// Garantit la persistance des bords : si le voisin n'était pas chargé, on le crée
+			// et on réplique quand même le padding pour éviter les coutures au chargement tardif.
+			return ObtenirOuCreerChunk(coordVoisine, chunkY);
+		}
+
+		if (localX == 0)
+			ObtenirVoisinPadding(cx - 1, cz)?.SetVoxelLocal(TailleChunk, localY, localZ, id);
+		if (localX == TailleChunk - 1)
+			ObtenirVoisinPadding(cx + 1, cz)?.SetVoxelLocal(0, localY, localZ, id);
+		if (localZ == 0)
+			ObtenirVoisinPadding(cx, cz - 1)?.SetVoxelLocal(localX, localY, TailleChunk, id);
+		if (localZ == TailleChunk - 1)
+			ObtenirVoisinPadding(cx, cz + 1)?.SetVoxelLocal(localX, localY, 0, id);
+		if (localX == 0 && localZ == 0)
+			ObtenirVoisinPadding(cx - 1, cz - 1)?.SetVoxelLocal(TailleChunk, localY, TailleChunk, id);
+		if (localX == TailleChunk - 1 && localZ == 0)
+			ObtenirVoisinPadding(cx + 1, cz - 1)?.SetVoxelLocal(0, localY, TailleChunk, id);
+		if (localX == 0 && localZ == TailleChunk - 1)
+			ObtenirVoisinPadding(cx - 1, cz + 1)?.SetVoxelLocal(TailleChunk, localY, 0, id);
+		if (localX == TailleChunk - 1 && localZ == TailleChunk - 1)
+			ObtenirVoisinPadding(cx + 1, cz + 1)?.SetVoxelLocal(0, localY, 0, id);
 	}
 
 	private void DemanderMiseAJourMesh(Vector3I pos)

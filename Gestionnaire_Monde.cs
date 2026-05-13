@@ -4189,15 +4189,12 @@ FinBlocOverlay:
 	{
 		if (!terrainPret)
 			return;
-		// APISARA : la surface réelle ne suit pas ObtenirHauteurTerrainMonde (relief monde Alpha uniquement).
-		// Recaler avec Y « alpha » téléporte fibres / cailloux vers le ciel ou sous le vide → disparition côté joueur.
-		if (_dimensionLocaleActive == (int)DimensionJeu.Abysse)
-			return;
 		float yObjet = rb.GlobalPosition.Y;
-		int h = Generateur_Voxel.ObtenirHauteurTerrainMonde(
-			Mathf.FloorToInt(rb.GlobalPosition.X),
-			Mathf.FloorToInt(rb.GlobalPosition.Z),
-			SeedTerrain);
+		int x = Mathf.FloorToInt(rb.GlobalPosition.X);
+		int z = Mathf.FloorToInt(rb.GlobalPosition.Z);
+		int h = _dimensionLocaleActive == (int)DimensionJeu.Abysse
+			? ApisaraHauteurTerrain.ObtenirHauteurSolMonde(x, z, SeedTerrain)
+			: Generateur_Voxel.ObtenirHauteurTerrainMonde(x, z, SeedTerrain);
 		float ySurface = h + 1.0f;
 		float seuil = ySurface - Mathf.Max(0.35f, SeuilEnfouissementObjetsMetres);
 		if (yObjet >= seuil)

@@ -2866,11 +2866,27 @@ public partial class Monde_Client : Node3D
 			_sectionsAReconstruire.Add((cx + 1, vxpzp.CoordChunkY, cz + 1, sec));
 		}
 
-		if (sec >= 0 && sec < 45) _sectionsAReconstruire.Add((cx, data.CoordChunkY, cz, sec));
-		if (localYSection == 0 && localVoxelY > 0 && sec - 1 >= 0) _sectionsAReconstruire.Add((cx, data.CoordChunkY, cz, sec - 1));
-		if (localYSection == 15 && sec + 1 < 45) _sectionsAReconstruire.Add((cx, data.CoordChunkY, cz, sec + 1));
-		if (localX == TailleChunk - 1) _sectionsAReconstruire.Add((cx + 1, data.CoordChunkY, cz, sec));
-		if (localZ == TailleChunk - 1) _sectionsAReconstruire.Add((cx, data.CoordChunkY, cz + 1, sec));
+		void MarquerSectionsChunkSiPresent(int chunkX, int chunkZ)
+		{
+			if (!TryGetChunkDataPourCoordY(new Vector2I(chunkX, chunkZ), coordY, out var chunkCible))
+				return;
+			if (sec >= 0 && sec < 45)
+				_sectionsAReconstruire.Add((chunkX, chunkCible.CoordChunkY, chunkZ, sec));
+			if (localYSection == 0 && localVoxelY > 0 && sec - 1 >= 0)
+				_sectionsAReconstruire.Add((chunkX, chunkCible.CoordChunkY, chunkZ, sec - 1));
+			if (localYSection == 15 && sec + 1 < 45)
+				_sectionsAReconstruire.Add((chunkX, chunkCible.CoordChunkY, chunkZ, sec + 1));
+		}
+
+		MarquerSectionsChunkSiPresent(cx, cz);
+		if (localX == 0) MarquerSectionsChunkSiPresent(cx - 1, cz);
+		if (localX == TailleChunk - 1) MarquerSectionsChunkSiPresent(cx + 1, cz);
+		if (localZ == 0) MarquerSectionsChunkSiPresent(cx, cz - 1);
+		if (localZ == TailleChunk - 1) MarquerSectionsChunkSiPresent(cx, cz + 1);
+		if (localX == 0 && localZ == 0) MarquerSectionsChunkSiPresent(cx - 1, cz - 1);
+		if (localX == TailleChunk - 1 && localZ == 0) MarquerSectionsChunkSiPresent(cx + 1, cz - 1);
+		if (localX == 0 && localZ == TailleChunk - 1) MarquerSectionsChunkSiPresent(cx - 1, cz + 1);
+		if (localX == TailleChunk - 1 && localZ == TailleChunk - 1) MarquerSectionsChunkSiPresent(cx + 1, cz + 1);
 	}
 
 	[Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = false)]

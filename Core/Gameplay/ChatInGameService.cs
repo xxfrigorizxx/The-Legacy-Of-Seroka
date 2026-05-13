@@ -29,16 +29,21 @@ public partial class Joueur
     private Label _labelSuggestionsChat;
     private Timer _timerMasquageChatPassif;
     private bool _chatEditionOuverte;
+    private bool _messagesRecentsEnAttenteAffichageApresUi;
     private string[] _suggestionsCommandesActives = Array.Empty<string>();
     private int _indexSuggestionCommande = -1;
     private bool _miseAJourTexteSuggestionInterne;
     private const int MaxLignesFilSquelette = 18;
     private const float DelaiMasquageChatPassifSec = 15f;
+    private const float DelaiMasquageChatAnalyseurSec = 2f;
+    private float _delaiMasquageMessageEnAttenteSec = DelaiMasquageChatPassifSec;
 
     public bool ChatInGameOuvert() => _chatEditionOuverte;
 
     public void InitialiserChatInGame()
     {
+        if (!EstJoueurLocalPourChat())
+            return;
         _joueurFilSquelette = this;
         if (_coucheFilSquelette != null && GodotObject.IsInstanceValid(_coucheFilSquelette))
             return;
@@ -46,7 +51,8 @@ public partial class Joueur
         _coucheFilSquelette = new CanvasLayer
         {
             Name = "FilSqueletteBoiteNoire",
-            Layer = 102
+            // Sous l'UI joueur, donc jamais bloquant visuellement.
+            Layer = 99
         };
         AddChild(_coucheFilSquelette);
 
@@ -54,15 +60,17 @@ public partial class Joueur
         {
             Name = "RacineChatInGame",
             Visible = false,
-            MouseFilter = Control.MouseFilterEnum.Stop
+            // Le flux passif ne capte pas les clics.
+            MouseFilter = Control.MouseFilterEnum.Ignore
         };
-        _racineChat.SetAnchorsPreset(Control.LayoutPreset.BottomWide);
-        _racineChat.AnchorTop = 1f;
-        _racineChat.AnchorBottom = 1f;
+        // Zone en haut d'ecran: visible meme quand des panneaux joueur occupent le bas.
+        _racineChat.SetAnchorsPreset(Control.LayoutPreset.TopWide);
+        _racineChat.AnchorTop = 0f;
+        _racineChat.AnchorBottom = 0f;
         _racineChat.OffsetLeft = 8f;
         _racineChat.OffsetRight = -8f;
-        _racineChat.OffsetTop = -260f;
-        _racineChat.OffsetBottom = -8f;
+        _racineChat.OffsetTop = 8f;
+        _racineChat.OffsetBottom = 260f;
         _coucheFilSquelette.AddChild(_racineChat);
 
         var vbox = new VBoxContainer
@@ -76,7 +84,7 @@ public partial class Joueur
 
         var lblAide = new Label
         {
-            Text = "Chat — T ouvrir | Entree envoyer | Echap fermer | Messages squelette 15 s",
+            Text = "Chat — T ouvrir | Entree envoyer | Echap fermer | Messages squelette 15 s (analyseur 2 s)",
             AutowrapMode = TextServer.AutowrapMode.WordSmart
         };
         lblAide.AddThemeFontSizeOverride("font_size", 11);
@@ -108,6 +116,7 @@ public partial class Joueur
             PlaceholderText = "Message (solo pour l'instant, pas de reponse)...",
             MaxLength = 256,
             ClearButtonEnabled = true,
+            KeepEditingOnTextSubmit = true,
             SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
             CustomMinimumSize = new Vector2(0, 32)
         };
@@ -150,17 +159,16 @@ public partial class Joueur
     {
         string t = texteBrut?.Trim() ?? "";
         if (string.IsNullOrEmpty(t))
-        {
-            _ligneSaisieChat?.ReleaseFocus();
             return;
-        }
         if (string.Equals(t, "/ADIUTO", StringComparison.OrdinalIgnoreCase))
         {
             AfficherAideCommandesChat();
             MasquerSuggestionsCommandesChat();
             if (_ligneSaisieChat != null && GodotObject.IsInstanceValid(_ligneSaisieChat))
+            {
                 _ligneSaisieChat.Text = "";
-            _ligneSaisieChat?.CallDeferred(LineEdit.MethodName.GrabFocus);
+                _ligneSaisieChat.CaretColumn = 0;
+            }
             return;
         }
         if (t.StartsWith("/ADAMINISATATORA", StringComparison.OrdinalIgnoreCase))
@@ -172,8 +180,10 @@ public partial class Joueur
                 PousserLigneChatHistorique("[Erreur] commande admin impossible hors mode reseau serveur.", prefixerSquelette: false);
             MasquerSuggestionsCommandesChat();
             if (_ligneSaisieChat != null && GodotObject.IsInstanceValid(_ligneSaisieChat))
+            {
                 _ligneSaisieChat.Text = "";
-            _ligneSaisieChat?.CallDeferred(LineEdit.MethodName.GrabFocus);
+                _ligneSaisieChat.CaretColumn = 0;
+            }
             return;
         }
         if (t.StartsWith("/MODUSA", StringComparison.OrdinalIgnoreCase))
@@ -185,8 +195,10 @@ public partial class Joueur
                 PousserLigneChatHistorique("[Erreur] commande admin impossible hors mode reseau serveur.", prefixerSquelette: false);
             MasquerSuggestionsCommandesChat();
             if (_ligneSaisieChat != null && GodotObject.IsInstanceValid(_ligneSaisieChat))
+            {
                 _ligneSaisieChat.Text = "";
-            _ligneSaisieChat?.CallDeferred(LineEdit.MethodName.GrabFocus);
+                _ligneSaisieChat.CaretColumn = 0;
+            }
             return;
         }
         if (t.StartsWith("/DIMANASIO", StringComparison.OrdinalIgnoreCase))
@@ -198,16 +210,20 @@ public partial class Joueur
                 PousserLigneChatHistorique("[Erreur] commande dimension impossible hors mode reseau serveur.", prefixerSquelette: false);
             MasquerSuggestionsCommandesChat();
             if (_ligneSaisieChat != null && GodotObject.IsInstanceValid(_ligneSaisieChat))
+            {
                 _ligneSaisieChat.Text = "";
-            _ligneSaisieChat?.CallDeferred(LineEdit.MethodName.GrabFocus);
+                _ligneSaisieChat.CaretColumn = 0;
+            }
             return;
         }
         PousserLigneChatHistorique("[Moi] " + t, prefixerSquelette: false);
         GD.Print($"ZERO-K Chat joueur : {t}");
         MasquerSuggestionsCommandesChat();
         if (_ligneSaisieChat != null && GodotObject.IsInstanceValid(_ligneSaisieChat))
+        {
             _ligneSaisieChat.Text = "";
-        _ligneSaisieChat?.CallDeferred(LineEdit.MethodName.GrabFocus);
+            _ligneSaisieChat.CaretColumn = 0;
+        }
     }
 
     private void AfficherAideCommandesChat()
@@ -235,6 +251,13 @@ public partial class Joueur
     {
         if (@event is not InputEventKey keyEvent || !keyEvent.Pressed || keyEvent.Echo)
             return;
+
+        if (keyEvent.Keycode == Key.Enter || keyEvent.Keycode == Key.KpEnter)
+        {
+            // Evite que ui_accept (Entrée) retombe vers les handlers gameplay.
+            _ligneSaisieChat?.AcceptEvent();
+            return;
+        }
 
         if (keyEvent.Keycode == Key.Up)
         {
@@ -350,12 +373,13 @@ public partial class Joueur
         }
     }
 
-    private void RedemarrerTimerMasquagePassif()
+    private void RedemarrerTimerMasquagePassif(float delaiSec = DelaiMasquageChatPassifSec)
     {
         if (_timerMasquageChatPassif == null || !GodotObject.IsInstanceValid(_timerMasquageChatPassif))
             return;
         if (_chatEditionOuverte)
             return;
+        _timerMasquageChatPassif.WaitTime = Mathf.Max(0.1f, delaiSec);
         _timerMasquageChatPassif.Stop();
         _timerMasquageChatPassif.Start();
     }
@@ -378,13 +402,20 @@ public partial class Joueur
         CallDeferred(nameof(DefilerFilSqueletteEnBas));
     }
 
-    private void AfficherPanneauChatPourMessage()
+    private void AfficherPanneauChatPourMessage(float delaiMasquageSec)
     {
         if (_racineChat == null || !GodotObject.IsInstanceValid(_racineChat))
             return;
-        MettreAJourVisibiliteChatSelonUiBloquante();
-        if (UiJoueurBloquanteHorsChatOuverte() && !_chatEditionOuverte)
+        bool uiBloquanteOuverte = UiJoueurBloquanteHorsChatOuverte();
+        if (!_chatEditionOuverte && uiBloquanteOuverte)
+        {
+            _messagesRecentsEnAttenteAffichageApresUi = true;
+            _delaiMasquageMessageEnAttenteSec = delaiMasquageSec;
+            _racineChat.Visible = false;
+            _racineChat.MouseFilter = Control.MouseFilterEnum.Ignore;
             return;
+        }
+        _messagesRecentsEnAttenteAffichageApresUi = false;
         _racineChat.Visible = true;
         if (!_chatEditionOuverte && _ligneSaisieChat != null)
             _ligneSaisieChat.Visible = false;
@@ -392,14 +423,20 @@ public partial class Joueur
         _racineChat.MouseFilter = _chatEditionOuverte
             ? Control.MouseFilterEnum.Stop
             : Control.MouseFilterEnum.Ignore;
-        RedemarrerTimerMasquagePassif();
+        RedemarrerTimerMasquagePassif(delaiMasquageSec);
     }
 
     private void PousserMessageDansFilSquelette(string message)
     {
         if (string.IsNullOrWhiteSpace(message))
             return;
-        AfficherPanneauChatPourMessage();
+        if (_racineChat == null || !GodotObject.IsInstanceValid(_racineChat))
+            InitialiserChatInGame();
+        if (_racineChat == null || !GodotObject.IsInstanceValid(_racineChat))
+            return;
+        bool estMessageAnalyseur = message.TrimStart().StartsWith("Analyseur :", StringComparison.OrdinalIgnoreCase);
+        float delaiMasquage = estMessageAnalyseur ? DelaiMasquageChatAnalyseurSec : DelaiMasquageChatPassifSec;
+        AfficherPanneauChatPourMessage(delaiMasquage);
         PousserLigneChatHistorique(message, prefixerSquelette: true);
     }
 
@@ -418,8 +455,13 @@ public partial class Joueur
             return;
         GD.Print($"ZERO-K Squelette : {message}");
         Joueur j = _joueurFilSquelette;
-        if (j != null && GodotObject.IsInstanceValid(j))
-            j.PousserMessageDansFilSquelette(message);
+        if (j == null || !GodotObject.IsInstanceValid(j) || !j.EstJoueurLocalPourChat())
+            j = TrouverJoueurLocalPourChat();
+        if (j == null || !GodotObject.IsInstanceValid(j))
+            return;
+        if (j._racineChat == null || !GodotObject.IsInstanceValid(j._racineChat))
+            j.InitialiserChatInGame();
+        j.PousserMessageDansFilSquelette(message);
     }
 
     /// <summary>T ouvre le chat pour écrire. Quand le chat est déjà ouvert à l’édition, T n’est pas consommé (frappe dans le champ).</summary>
@@ -427,16 +469,25 @@ public partial class Joueur
     {
         if (@event is not InputEventKey ek || !ek.Pressed || ek.Echo)
             return false;
+        bool estT = ek.Keycode == Key.T || ek.PhysicalKeycode == Key.T;
+        bool modifieur = ek.CtrlPressed || ek.MetaPressed || ek.AltPressed;
         if (_chatEditionOuverte)
+        {
+            // T en mode édition recentre le focus pour continuer à écrire sans fermer/réouvrir.
+            if (estT && !modifieur && _ligneSaisieChat != null && GodotObject.IsInstanceValid(_ligneSaisieChat))
+            {
+                _ligneSaisieChat.CallDeferred(LineEdit.MethodName.GrabFocus);
+                return true;
+            }
             return false;
+        }
         if (UiJoueurBloquanteHorsChatOuverte())
             return false;
         if (SaisieTexteUiEnCours())
             return false;
-        bool estT = ek.Keycode == Key.T || ek.PhysicalKeycode == Key.T;
         if (!estT)
             return false;
-        if (ek.CtrlPressed || ek.MetaPressed || ek.AltPressed)
+        if (modifieur)
             return false;
 
         OuvrirChatInGame();
@@ -480,13 +531,48 @@ public partial class Joueur
 
     private void MettreAJourVisibiliteChatSelonUiBloquante()
     {
-        if (_chatEditionOuverte)
+        if (_chatEditionOuverte || _racineChat == null || !GodotObject.IsInstanceValid(_racineChat))
             return;
-        if (!UiJoueurBloquanteHorsChatOuverte())
+        bool uiBloquanteOuverte = UiJoueurBloquanteHorsChatOuverte();
+        if (uiBloquanteOuverte)
+        {
+            _racineChat.MouseFilter = Control.MouseFilterEnum.Ignore;
             return;
-        if (_racineChat != null && GodotObject.IsInstanceValid(_racineChat))
-            _racineChat.Visible = false;
-        _timerMasquageChatPassif?.Stop();
+        }
+        if (_messagesRecentsEnAttenteAffichageApresUi)
+        {
+            _messagesRecentsEnAttenteAffichageApresUi = false;
+            _racineChat.Visible = true;
+            RedemarrerTimerMasquagePassif(_delaiMasquageMessageEnAttenteSec);
+        }
+        _racineChat.MouseFilter = Control.MouseFilterEnum.Ignore;
+    }
+
+    private bool EstJoueurLocalPourChat()
+    {
+        if (!Multiplayer.HasMultiplayerPeer())
+            return true;
+        return IsMultiplayerAuthority() || GetMultiplayerAuthority() == Multiplayer.GetUniqueId();
+    }
+
+    private static Joueur TrouverJoueurLocalPourChat()
+    {
+        if (Engine.GetMainLoop() is not SceneTree arbre)
+            return null;
+        return TrouverJoueurLocalPourChatRecursif(arbre.Root);
+    }
+
+    private static Joueur TrouverJoueurLocalPourChatRecursif(Node noeud)
+    {
+        if (noeud is Joueur joueur && joueur.EstJoueurLocalPourChat())
+            return joueur;
+        foreach (Node enfant in noeud.GetChildren())
+        {
+            Joueur trouve = TrouverJoueurLocalPourChatRecursif(enfant);
+            if (trouve != null)
+                return trouve;
+        }
+        return null;
     }
 
     /// <summary>À appeler depuis les branches UI qui bloquent le clavier (menu Q, menu K) pour que T ouvre quand même le chat.</summary>

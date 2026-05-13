@@ -6,6 +6,7 @@ public partial class Joueur
     private const float DureeMinageMainNueSecondes = 3.0f;
     private const float DureeMinagePiochePierreSecondes = 4.0f;
     private const float IntervalleParticulesMinageMainNue = 0.12f;
+    private const float DureeGracePerteCibleMinageSecondes = 0.24f;
     private const float DureeRecuperationAtelierMainNue = 5.0f;
     private const float DureeRecuperationAtelierHachette = 2.85f;
     private const float DureeRecuperationRackMainNue = 2.8f;
@@ -16,6 +17,11 @@ public partial class Joueur
     private const float IntervalleParticulesRecuperationAtelier = 0.14f;
     private float _progressionMinageMainNue;
     private float _cooldownParticulesMinageMainNue;
+    private float _tempsPerteCibleMinage;
+    private bool _aCibleMinageActive;
+    private Vector3 _pointCibleMinage;
+    private Vector3 _normaleCibleMinage = Vector3.Up;
+    private int _idCibleMinage = -1;
     private float _progressionRecuperationAtelier;
     private float _cooldownParticulesRecuperationAtelier;
     private float _cooldownMessageRecuperationFondation;
@@ -59,6 +65,19 @@ public partial class Joueur
         return idMatiere == 2;
     }
 
+    private void AttribuerXpMetierExtractionTerrain(int idMatiereExtraite)
+    {
+        // Distribution métier basée sur la matière réellement modifiée.
+        if (idMatiereExtraite == 2)
+            AjouterXpMetier("Mineur", 1UL);
+        else if (idMatiereExtraite == 1 || idMatiereExtraite == 3 || idMatiereExtraite == 5 || idMatiereExtraite == 6 || idMatiereExtraite == 7 || idMatiereExtraite == 8 || idMatiereExtraite == 9)
+            AjouterXpMetier("Terrassier", 1UL);
+        else
+            return;
+
+        AjouterXpFutureState("Force", 1UL);
+    }
+
     /// <summary>Roche matière plate, ovale ou en pointe : même convention que l’entaille d’<see cref="ArbreVivant"/> vivant.</summary>
     private static bool EstRocheTranchantePourBois(SlotInventaire slot)
     {
@@ -94,6 +113,11 @@ public partial class Joueur
     {
         _progressionMinageMainNue = 0f;
         _cooldownParticulesMinageMainNue = 0f;
+        _tempsPerteCibleMinage = 0f;
+        _aCibleMinageActive = false;
+        _pointCibleMinage = Vector3.Zero;
+        _normaleCibleMinage = Vector3.Up;
+        _idCibleMinage = -1;
         _progressionRecuperationAtelier = 0f;
         _cooldownParticulesRecuperationAtelier = 0f;
         _cooldownMessageRecuperationFondation = 0f;
@@ -219,7 +243,7 @@ public partial class Joueur
             return true;
 
         Vector3 directionFrappe = _camera != null ? -_camera.GlobalTransform.Basis.Z.Normalized() : -GlobalTransform.Basis.Z.Normalized();
-        AppliquerUsureOutilMainActive(0.95f);
+        AppliquerUsureOutilMainActive(1f);
         ExecuterLootDepecageCadavreBoeuf(boeuf, _pointDepecageCadavre, directionFrappe);
         _bloquerActionClicGaucheApresDepecage = true;
         ReinitialiserDepecageCadavreDagueProgression();
@@ -854,8 +878,36 @@ public partial class Joueur
             cibleValide = EssayerObtenirCibleMinageMainNue(out pointImpactVoxel, out normaleImpact, out idExtrait);
         if (!cibleValide)
         {
-            ReinitialiserMinageMainNueProgression();
-            return;
+            if (!_aCibleMinageActive)
+            {
+                ReinitialiserMinageMainNueProgression();
+                return;
+            }
+            _tempsPerteCibleMinage += dt;
+            if (_tempsPerteCibleMinage > DureeGracePerteCibleMinageSecondes)
+            {
+                ReinitialiserMinageMainNueProgression();
+                return;
+            }
+            pointImpactVoxel = _pointCibleMinage;
+            normaleImpact = _normaleCibleMinage;
+            idExtrait = _idCibleMinage;
+        }
+        else
+        {
+            _tempsPerteCibleMinage = 0f;
+            bool cibleChangee = _aCibleMinageActive
+                && (idExtrait != _idCibleMinage
+                    || pointImpactVoxel.DistanceSquaredTo(_pointCibleMinage) > 0.42f * 0.42f);
+            if (cibleChangee)
+            {
+                _progressionMinageMainNue = 0f;
+                _cooldownParticulesMinageMainNue = 0f;
+            }
+            _aCibleMinageActive = true;
+            _pointCibleMinage = pointImpactVoxel;
+            _normaleCibleMinage = normaleImpact;
+            _idCibleMinage = idExtrait;
         }
 
         _progressionMinageMainNue += dt;
@@ -870,11 +922,11 @@ public partial class Joueur
         if (_progressionMinageMainNue < dureeMinage)
             return;
 
-        ExecuterMinageVoxelMainNue(pointImpactVoxel, idExtrait);
+        ExecuterMinageVoxelMainNue(pointImpactVoxel, idExtrait, pelle || pioche);
         ReinitialiserMinageMainNueProgression();
     }
 
-    private void ExecuterMinageVoxelMainNue(Vector3 pointImpactVoxel, int idExtrait)
+    private void ExecuterMinageVoxelMainNue(Vector3 pointImpactVoxel, int idExtrait, bool consommerUsureOutil)
     {
         if (!EstMatiereMinableMainNue(idExtrait) && !EstMatiereMinablePioche(idExtrait))
             return;
@@ -885,6 +937,9 @@ public partial class Joueur
         _gestionnaireMonde?.AppliquerDestructionGlobale(pointImpactVoxel, RAYON_SCULPTURE, 5.0f);
         if (!EssayerAjouterDansInventaire(nouveauSlot))
             return;
+        if (consommerUsureOutil)
+            AppliquerUsureOutilMainActive(1f);
+        AttribuerXpMetierExtractionTerrain(idExtrait);
         RafraichirHUD();
     }
 
@@ -1455,9 +1510,11 @@ public partial class Joueur
         else if ((mainActive.ID == 105 || mainActive.ID == IdObjetFauxPierreTier0) && efficacitePelle >= 0.6f)
         {
             // Dague mal orientée en « pelle » : le creusage formel est trop faible, mais on gratte quand même un peu + fauchage herbe.
+            int idMatiereImpact = _gestionnaireMonde?.ObtenirMatiereExacte(pointImpact - (_rayon.GetCollisionNormal() * 0.45f)) ?? 0;
             _gestionnaireMonde?.AppliquerDestructionGlobale(pointImpact, 0.95f, 4.5f);
             _gestionnaireMonde?.AppliquerFauchageGlobal(pointImpact, 2.8f);
             AppliquerUsureOutilMainActive(2.4f);
+            AttribuerXpMetierExtractionTerrain(idMatiereImpact);
             GD.Print(mainActive.ID == IdObjetFauxPierreTier0
                 ? "ZERO-K : La faux racle la surface (coup orienté pelle, peu de pénétration)."
                 : "ZERO-K : La dague racle la surface (coup orienté pelle, peu de pénétration).");

@@ -1248,6 +1248,73 @@ public partial class Joueur
     /// <summary>Même rendu que les previews HUD, pour les panels G/D du menu anatomie.</summary>
     public void SynchroniserPreviewSlotMenu(MeshInstance3D meshNode, SlotInventaire slot) => MettreAJourPreviewSlot(meshNode, slot);
 
+    private static ulong CalculerEmpreinteSlotApercuAvatar(in SlotInventaire slot)
+    {
+        if (slot.EstVide)
+            return 0UL;
+        var hc = new HashCode();
+        hc.Add(slot.ID);
+        hc.Add(slot.IndexMorphologique);
+        hc.Add(slot.IndexChimique);
+        hc.Add(slot.IndexTaille);
+        hc.Add(slot.NiveauFracture);
+        hc.Add(slot.EstUnEclat);
+        hc.Add(slot.IndexBotanique);
+        hc.Add(slot.Quantite);
+        hc.Add(slot.GenomeAssemblage ?? "");
+        hc.Add(slot.CleConteneur ?? "");
+        hc.Add(Mathf.RoundToInt(slot.DurabiliteOutilActuelle * 1000f));
+        hc.Add(Mathf.RoundToInt(slot.DurabiliteOutilMax * 1000f));
+        hc.Add(slot.IndexTailleLameRoche);
+        hc.Add(slot.ScaleEclat.X);
+        hc.Add(slot.ScaleEclat.Y);
+        hc.Add(slot.ScaleEclat.Z);
+        if (slot.EstUnEclat && slot.MeshEclat != null && GodotObject.IsInstanceValid(slot.MeshEclat))
+            hc.Add(slot.MeshEclat.GetInstanceId());
+        return unchecked((ulong)(uint)hc.ToHashCode());
+    }
+
+    /// <summary>Empreinte visuelle de l'avatar (corps + apparence + équipements) pour décider de régénérer le clone UI.</summary>
+    public ulong CalculerEmpreinteAvatarApercuUi()
+    {
+        var hc = new HashCode();
+        RaceJoueur race = GameState.Instance?.RaceJoueurCourante ?? RaceJoueur.Humain;
+        SexeJoueur sexe = GameState.Instance?.SexeJoueurCourante ?? SexeJoueur.Masculin;
+        hc.Add((int)race);
+        hc.Add((int)sexe);
+        hc.Add(CouleurPeauHumain);
+        hc.Add(CouleurSousVetementHumain);
+        hc.Add(TexturePeauHumain?.GetInstanceId() ?? 0UL);
+        hc.Add(TextureSousVetementHumain?.GetInstanceId() ?? 0UL);
+        hc.Add(CalculerEmpreinteSlotApercuAvatar(EquipementCeinture));
+        hc.Add(CalculerEmpreinteSlotApercuAvatar(EquipementSacDos));
+        hc.Add(CalculerEmpreinteSlotApercuAvatar(EquipementCarnet));
+        return unchecked((ulong)(uint)hc.ToHashCode());
+    }
+
+    /// <summary>Clone du rig gameplay pour un rendu UI isolé dans un SubViewport dédié.</summary>
+    public Node3D CreerCloneAvatarApercuUi()
+    {
+        if (_rigHumain == null || !GodotObject.IsInstanceValid(_rigHumain))
+            return null;
+        if (_rigHumain.Duplicate() is not Node3D clone)
+            return null;
+        clone.Name = "HumainRigApercuUi";
+        clone.Visible = true;
+        return clone;
+    }
+
+    /// <summary>Maintient le clone UI aligné avec l'orientation/pose globale du rig local.</summary>
+    public void SynchroniserTransformAvatarApercuUi(Node3D avatarApercu)
+    {
+        if (avatarApercu == null || !GodotObject.IsInstanceValid(avatarApercu))
+            return;
+        if (_rigHumain == null || !GodotObject.IsInstanceValid(_rigHumain))
+            return;
+        avatarApercu.Transform = _rigHumain.Transform;
+        avatarApercu.Visible = true;
+    }
+
     /// <summary>Cache le SubViewport quand pas d'objet avec visuel (pierre, fibre, corde), pour laisser voir la couleur du slot.</summary>
     private void MettreAJourVisibilitePreviews()
     {

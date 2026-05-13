@@ -336,6 +336,7 @@ public partial class Joueur : CharacterBody3D
     private RayCast3D _rayon;
     private Camera3D _cameraFps;
     private Camera3D _cameraTps;
+    private Vector3 _positionLocaleBaseCameraFps = new Vector3(0f, 0.56f, -0.07f);
     private RayCast3D _rayonFps;
     private RayCast3D _rayonTps;
     /// <summary>Limite les appels à <see cref="MenuAnatomie.RafraichirMenu"/> depuis le HUD (évite coût SubViewport par frame).</summary>
@@ -350,6 +351,8 @@ public partial class Joueur : CharacterBody3D
     /// <summary>Sur lâ€™os cou/tÃªte Mixamo la camÃ©ra peut viser lâ€™arriÃ¨re du crÃ¢ne : rotation Y locale Ï€ pour regarder devant.</summary>
     private float _yawCorrectionCameraFpsRad;
     private Node3D _rigHumain;
+    private Vector3 _positionRigHumainVisible = Vector3.Zero;
+    private bool _positionRigHumainVisibleInitialisee;
     private AnimationPlayer _animationHumain;
     private Skeleton3D _squeletteHumain;
     private int _osBrasDroit = -1;
@@ -421,7 +424,7 @@ public partial class Joueur : CharacterBody3D
     [Export] public Texture2D TexturePeauHumain { get; set; }
     [Export] public Color CouleurSousVetementHumain { get; set; } = new Color(0.19f, 0.22f, 0.27f, 1f);
     [Export] public Texture2D TextureSousVetementHumain { get; set; }
-    [Export] public float AvanceCameraFpsMetres { get; set; } = 0.20f;
+    [Export] public float AvanceCameraFpsMetres { get; set; } = 0.25f;
     [Export] public Vector3 OffsetCeintureEquipeLocal { get; set; } = new Vector3(0f, -0.04f, -0.01f);
     [Export] public Vector3 RotationCeintureEquipeDeg { get; set; } = Vector3.Zero;
     [Export] public Vector3 OffsetSacDosEquipeLocal { get; set; } = new Vector3(0f, 0.18f, -0.22f);
@@ -510,13 +513,19 @@ public partial class Joueur : CharacterBody3D
     [ExportGroup("Diagnostic performance")]
     [Export] public bool ActiverProfilagePerfJoueur = false;
     [Export(PropertyHint.Range, "0.2,10,0.1")] public float IntervalleLogProfilageJoueurSec = 2.0f;
+    [ExportGroup("Diagnostic visuels FPS")]
+    [Export] public bool ActiverDiagnosticVisuelsFpsAuto = false;
+    [Export(PropertyHint.Range, "0.2,10,0.1")] public float IntervalleDiagnosticVisuelsFpsSec = 1.0f;
     private float _cooldownDrainProfilageJoueur = 0f;
+    private float _cooldownDiagnosticVisuelsFps = 0f;
+    private float _cooldownDiagnosticAnomalieVisuelleFps = 0f;
     private int _dernierPourcentageFaimHud = -1;
     private int _dernierPourcentageEnduranceHud = -1;
     private float _derniereValeurBarreFaimHud = float.NaN;
     private float _derniereValeurBarreEnduranceHud = float.NaN;
     private readonly Dictionary<int, StyleBoxFlat> _cacheStyleSlotsHud = new Dictionary<int, StyleBoxFlat>();
     private MeshInstance3D _objetEnMain;
+    private readonly HashSet<ulong> _instanceIdsVisuelsMasquesFps = new();
     private const string MetaSignatureDague105 = "SigDague105";
     private const string MetaSignatureHachette106 = "SigHachette106";
     private const string MetaSignaturePelle107 = "SigPelle107";
@@ -691,6 +700,7 @@ public partial class Joueur : CharacterBody3D
 
         _cameraFps = GetNode<Camera3D>("Camera3D");
         _rayonFps = GetNode<RayCast3D>("Camera3D/RayCast3D");
+        _positionLocaleBaseCameraFps = _cameraFps.Position;
         _camera = _cameraFps;
         _rayon = _rayonFps;
         _rayonFps.TargetPosition = new Vector3(0f, 0f, -12f);
@@ -1302,7 +1312,11 @@ public partial class Joueur : CharacterBody3D
         // RÃ©fÃ©rence visage : lÃ©gÃ¨rement en avant et un peu sous la ligne des yeux (proche bouche).
         if (_cameraFps.GetParent() != this)
             _cameraFps.Reparent(this);
-        _cameraFps.Position = new Vector3(0f, 0.56f, -0.07f - Mathf.Max(0f, AvanceCameraFpsMetres));
+        float avanceCamera = Mathf.Max(0f, AvanceCameraFpsMetres);
+        _cameraFps.Position = new Vector3(
+            _positionLocaleBaseCameraFps.X,
+            _positionLocaleBaseCameraFps.Y,
+            _positionLocaleBaseCameraFps.Z - avanceCamera);
         _pitchCameraBaseRad = 0f;
         _yawCorrectionCameraFpsRad = 0f;
         _cameraFps.Rotation = new Vector3(_pitchCameraBaseRad + _pitchCamera, _yawCorrectionCameraFpsRad, 0f);
@@ -1499,11 +1513,11 @@ public partial class Joueur : CharacterBody3D
         return false;
     }
 
-    /// <summary>Place tout le rig local sur le calque cache FPS (2) pour ne jamais voir son propre corps en premiere personne.</summary>
+    /// <summary>Place tous les visuels du rig local sur le calque cache FPS (2).</summary>
     private static void AssignerCalquesTetePourVueFps(Node n)
     {
-        if (n is MeshInstance3D mi && mi.Mesh != null)
-            mi.Layers = CalqueRenduTeteFpsCachee;
+        if (n is VisualInstance3D vi)
+            vi.Layers = CalqueRenduTeteFpsCachee;
         foreach (Node c in n.GetChildren())
             AssignerCalquesTetePourVueFps(c);
     }
@@ -1862,6 +1876,8 @@ public partial class Joueur : CharacterBody3D
         float basPourPieds = CalculerBasPourAlignementPiedsDuMesh();
         float yRig = basPourPieds + HauteurPiedsSousPivotRigMixamo * _rigHumain.Scale.Y + DecalageYRigHumain;
         _rigHumain.Position = new Vector3(0f, yRig, 0f);
+        _positionRigHumainVisible = _rigHumain.Position;
+        _positionRigHumainVisibleInitialisee = true;
 
         Vector3 man = CorrectionManuelleEulerRigHumainDeg;
         _rigHumain.RotationDegrees = new Vector3(man.X, YawRigMixamoVersGodotDeg + man.Y, man.Z);
@@ -1978,14 +1994,34 @@ public partial class Joueur : CharacterBody3D
         }
     }
 
+    private bool DoitAfficherCorpsLocal()
+    {
+        // Règle stricte: en local, le corps est rendu uniquement en vue TPS.
+        return _vueTroisiemePersonne;
+    }
+
     private void AppliquerVisibiliteCorpsLocalSelonVue()
     {
         if (_rigHumain == null || !GodotObject.IsInstanceValid(_rigHumain))
             return;
-        bool afficherCorps = _vueTroisiemePersonne;
+        if (!_positionRigHumainVisibleInitialisee)
+        {
+            _positionRigHumainVisible = _rigHumain.Position;
+            _positionRigHumainVisibleInitialisee = true;
+        }
+        // Sécurise le calque même si des sous-noeuds visuels sont ajoutés/rechargés.
+        AssignerCalquesTetePourVueFps(_rigHumain);
+        bool afficherCorps = DoitAfficherCorpsLocal();
+        Vector3 positionCibleRig = afficherCorps
+            ? _positionRigHumainVisible
+            : _positionRigHumainVisible + new Vector3(0f, -1000f, 0f);
+        if (_rigHumain.Position != positionCibleRig)
+            _rigHumain.Position = positionCibleRig;
         if (_rigHumain.Visible != afficherCorps)
             _rigHumain.Visible = afficherCorps;
         AppliquerVisibiliteRecursiveRig(_rigHumain, afficherCorps);
+        bool forcerMasquageGlobalFps = !_vueTroisiemePersonne && !afficherCorps;
+        AppliquerMasquageVisuelsJoueurEnFps(forcerMasquageGlobalFps);
     }
 
     private static void AppliquerVisibiliteRecursiveRig(Node n, bool visible)
@@ -1994,6 +2030,117 @@ public partial class Joueur : CharacterBody3D
             n3d.Visible = visible;
         foreach (Node enfant in n.GetChildren())
             AppliquerVisibiliteRecursiveRig(enfant, visible);
+    }
+
+    private void AppliquerMasquageVisuelsJoueurEnFps(bool activerMasquage)
+    {
+        if (activerMasquage)
+        {
+            _instanceIdsVisuelsMasquesFps.Clear();
+            MasquerVisuelsJoueurRecursif(this);
+            return;
+        }
+        RestaurerVisuelsMasquesFpsRecursif(this);
+        _instanceIdsVisuelsMasquesFps.Clear();
+    }
+
+    private void MasquerVisuelsJoueurRecursif(Node n)
+    {
+        foreach (Node enfant in n.GetChildren())
+        {
+            if (enfant is VisualInstance3D vi && GodotObject.IsInstanceValid(vi) && !DoitConserverVisualVisibleEnFps(vi))
+            {
+                if (vi.Visible)
+                {
+                    _instanceIdsVisuelsMasquesFps.Add(vi.GetInstanceId());
+                    vi.Visible = false;
+                }
+            }
+            MasquerVisuelsJoueurRecursif(enfant);
+        }
+    }
+
+    private void RestaurerVisuelsMasquesFpsRecursif(Node n)
+    {
+        foreach (Node enfant in n.GetChildren())
+        {
+            if (enfant is VisualInstance3D vi && GodotObject.IsInstanceValid(vi))
+            {
+                if (_instanceIdsVisuelsMasquesFps.Contains(vi.GetInstanceId()))
+                    vi.Visible = true;
+            }
+            RestaurerVisuelsMasquesFpsRecursif(enfant);
+        }
+    }
+
+    private bool DoitConserverVisualVisibleEnFps(VisualInstance3D vi)
+    {
+        if (_objetEnMain == null || !GodotObject.IsInstanceValid(_objetEnMain))
+            return false;
+        return vi == _objetEnMain || vi.IsAncestorOf(_objetEnMain) || _objetEnMain.IsAncestorOf(vi);
+    }
+
+    private void DiagnostiquerVisuelsFpsRuntime()
+    {
+        if (_cameraFps == null || !GodotObject.IsInstanceValid(_cameraFps))
+            return;
+
+        uint cullMaskFps = _cameraFps.CullMask;
+        var lignes = new List<string>();
+        CollecterDiagnosticsVisuelsRecursif(this, cullMaskFps, lignes);
+        GD.Print($"ZERO-K [DiagFPS] --- debut snapshot (fps={(!_vueTroisiemePersonne)}) ---");
+        GD.Print($"ZERO-K [DiagFPS] cameraCullMask={cullMaskFps} visuelsTrouves={lignes.Count}");
+        foreach (string l in lignes)
+            GD.Print(l);
+        GD.Print("ZERO-K [DiagFPS] --- fin snapshot ---");
+    }
+
+    private void CollecterDiagnosticsVisuelsRecursif(Node n, uint cullMaskFps, List<string> lignes)
+    {
+        foreach (Node enfant in n.GetChildren())
+        {
+            if (enfant is VisualInstance3D vi && GodotObject.IsInstanceValid(vi))
+            {
+                bool visibleArbre = vi.IsVisibleInTree();
+                bool passeCullFps = (vi.Layers & cullMaskFps) != 0;
+                bool sousRig = _rigHumain != null && GodotObject.IsInstanceValid(_rigHumain) && (_rigHumain == vi || _rigHumain.IsAncestorOf(vi));
+                bool estObjetMain = DoitConserverVisualVisibleEnFps(vi);
+                Vector3 pos = vi is Node3D n3d ? n3d.GlobalPosition : Vector3.Zero;
+                lignes.Add($"ZERO-K [DiagFPS] node={vi.GetPath()} type={vi.GetType().Name} vis={visibleArbre} layers={vi.Layers} passeCullFps={passeCullFps} sousRig={sousRig} objetMain={estObjetMain} pos=({pos.X:F2},{pos.Y:F2},{pos.Z:F2})");
+            }
+            CollecterDiagnosticsVisuelsRecursif(enfant, cullMaskFps, lignes);
+        }
+    }
+
+    private bool DetecterAnomalieVisuelleCorpsEnFps(out List<string> details)
+    {
+        details = new List<string>();
+        if (_cameraFps == null || !GodotObject.IsInstanceValid(_cameraFps))
+            return false;
+        if (_rigHumain == null || !GodotObject.IsInstanceValid(_rigHumain))
+            return false;
+
+        uint cullMaskFps = _cameraFps.CullMask;
+        CollecterAnomaliesRigRecursif(_rigHumain, cullMaskFps, details);
+        return details.Count > 0;
+    }
+
+    private void CollecterAnomaliesRigRecursif(Node n, uint cullMaskFps, List<string> details)
+    {
+        foreach (Node enfant in n.GetChildren())
+        {
+            if (enfant is VisualInstance3D vi && GodotObject.IsInstanceValid(vi) && !DoitConserverVisualVisibleEnFps(vi))
+            {
+                bool visibleArbre = vi.IsVisibleInTree();
+                bool passeCullFps = (vi.Layers & cullMaskFps) != 0;
+                if (visibleArbre && passeCullFps)
+                {
+                    Vector3 pos = vi is Node3D n3d ? n3d.GlobalPosition : Vector3.Zero;
+                    details.Add($"ZERO-K [DiagFPS-Alerte] node={vi.GetPath()} type={vi.GetType().Name} layers={vi.Layers} cullMask={cullMaskFps} pos=({pos.X:F2},{pos.Y:F2},{pos.Z:F2})");
+                }
+            }
+            CollecterAnomaliesRigRecursif(enfant, cullMaskFps, details);
+        }
     }
 
     private void ImpulserPoseBrasFrappe(TypeMouvementFrappe type)
@@ -2014,6 +2161,26 @@ public partial class Joueur : CharacterBody3D
     {
         float dt = (float)delta;
         AppliquerVisibiliteCorpsLocalSelonVue();
+        if (ActiverDiagnosticVisuelsFpsAuto && !_vueTroisiemePersonne)
+        {
+            _cooldownDiagnosticVisuelsFps -= dt;
+            if (_cooldownDiagnosticVisuelsFps <= 0f)
+            {
+                _cooldownDiagnosticVisuelsFps = Mathf.Max(0.2f, IntervalleDiagnosticVisuelsFpsSec);
+                DiagnostiquerVisuelsFpsRuntime();
+            }
+        }
+        if (!_vueTroisiemePersonne && !DoitAfficherCorpsLocal())
+        {
+            _cooldownDiagnosticAnomalieVisuelleFps -= dt;
+            if (_cooldownDiagnosticAnomalieVisuelleFps <= 0f && DetecterAnomalieVisuelleCorpsEnFps(out var detailsAnomalie))
+            {
+                _cooldownDiagnosticAnomalieVisuelleFps = 0.75f;
+                GD.Print($"ZERO-K [DiagFPS-Alerte] visuels corps rendus en FPS ({detailsAnomalie.Count}).");
+                foreach (string ligne in detailsAnomalie)
+                    GD.Print(ligne);
+            }
+        }
         SlotInventaire mainActive = MainGaucheEstActive ? MainGauche : MainDroite;
         if (EstModePlacementGhostActif())
         {
@@ -3032,6 +3199,7 @@ public partial class Joueur : CharacterBody3D
                 RackBatonsOuvert = null;
             }
             _menuAnatomie.BasculerVisibilite();
+            MettreAJourVisibiliteChatSelonUiBloquante();
             RafraichirHUD();
             GetViewport().SetInputAsHandled();
             return;
@@ -3043,6 +3211,8 @@ public partial class Joueur : CharacterBody3D
             MettreAJourVisibiliteChatSelonUiBloquante();
             return;
         }
+
+        MettreAJourVisibiliteChatSelonUiBloquante();
 
         if (EssayerBasculerChatInGameDepuisInput(@event))
         {
@@ -3354,6 +3524,13 @@ public partial class Joueur : CharacterBody3D
 
     public override void _UnhandledInput(InputEvent @event)
     {
+        if (@event is InputEventKey diagKey && diagKey.Pressed && !diagKey.Echo && diagKey.Keycode == Key.F10)
+        {
+            DiagnostiquerVisuelsFpsRuntime();
+            GetViewport()?.SetInputAsHandled();
+            return;
+        }
+
         if (EstToggleCameraF5(@event))
         {
             BasculerModeCamera();
@@ -3371,6 +3548,9 @@ public partial class Joueur : CharacterBody3D
             return;
 
         if (_menuAnatomie != null && _menuAnatomie.EstOuvert)
+            return;
+
+        if (ChatInGameOuvert())
             return;
 
         // Tampon saut : captÃ© ici pour ne pas perdre la frame si un autre nÅ“ud consomme lâ€™input avant _PhysicsProcess.
@@ -6096,6 +6276,7 @@ public partial class Joueur : CharacterBody3D
     private bool _verrouSpawnActif = true;
     private bool _verrouAntiChuteAbysseActif;
     private float _cooldownSortieVerrouAbysse;
+    private float _graceCollisionLocaleRestante;
     private bool _positionSolideAbysseValide;
     private Vector3 _dernierePositionSolideAbysse;
     private float _cooldownRetourSolAbysse;
@@ -6450,6 +6631,10 @@ public partial class Joueur : CharacterBody3D
         }
 
         bool zoneLocalePrete = _gestionnaireMonde == null || _gestionnaireMonde.EstDeplacementLocalPret();
+        if (zoneLocalePrete)
+            _graceCollisionLocaleRestante = 0.22f;
+        else
+            _graceCollisionLocaleRestante = Mathf.Max(0f, _graceCollisionLocaleRestante - dt);
         if (enAbysseLocal)
         {
             _cooldownRetourSolAbysse = Mathf.Max(0f, _cooldownRetourSolAbysse - dt);
@@ -6463,9 +6648,14 @@ public partial class Joueur : CharacterBody3D
         {
             // Uniformise le ressenti inter-dimensions: même garde-fou que l'Abysse
             // quand la collision locale n'est pas encore prête.
-            float freinHoriz = Mathf.Max(10f, vitesseMouvement * 4.0f);
-            velocity.X = Mathf.MoveToward(velocity.X, 0f, freinHoriz * dt);
-            velocity.Z = Mathf.MoveToward(velocity.Z, 0f, freinHoriz * dt);
+            bool auSolStable = IsOnFloor() || _bufferSolCoyoteAnim > 0f;
+            bool graceFrontiereActive = auSolStable && _graceCollisionLocaleRestante > 0f;
+            if (!graceFrontiereActive)
+            {
+                float freinHoriz = Mathf.Max(10f, vitesseMouvement * 4.0f);
+                velocity.X = Mathf.MoveToward(velocity.X, 0f, freinHoriz * dt);
+                velocity.Z = Mathf.MoveToward(velocity.Z, 0f, freinHoriz * dt);
+            }
             if (velocity.Y < -1.2f)
                 velocity.Y = -1.2f;
         }

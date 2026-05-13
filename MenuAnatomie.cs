@@ -159,13 +159,16 @@ public partial class MenuAnatomie : Control
 	private readonly Dictionary<string, ProgressBar> _barresSanteCorps = new(StringComparer.OrdinalIgnoreCase);
 	private readonly Dictionary<string, Label> _labelsSanteCorps = new(StringComparer.OrdinalIgnoreCase);
 	private readonly Dictionary<string, StyleBoxFlat> _stylesRemplissageSanteCorps = new(StringComparer.OrdinalIgnoreCase);
-	private const float DistanceCameraApercuJoueurCorps = 2.18f;
+	private const float DistanceCameraApercuJoueurCorps = 2.02f;
 	private const float DecalageLateralCameraApercuJoueurCorps = 0.00f;
 	private const float HauteurCameraApercuJoueurCorps = -0.56f;
 	private const float HauteurCibleCameraApercuJoueurCorps = -0.06f;
 	private SubViewportContainer _vpApercuJoueurCorps;
 	private SubViewport _svApercuJoueurCorps;
 	private Camera3D _cameraApercuJoueurCorps;
+	private Node3D _racineApercuJoueurCorps;
+	private Node3D _avatarApercuJoueurCorps;
+	private ulong _empreinteAvatarApercuJoueurCorps;
 
 	/// <summary>Évite <c>SynchroniserPreviewSlotMenu</c> quand le slot n’a pas changé (même rendu).</summary>
 	private ulong _empreinteMainGLast;
@@ -490,10 +493,13 @@ public partial class MenuAnatomie : Control
 		{
 			Size = new Vector2I(300, 460),
 			RenderTargetUpdateMode = SubViewport.UpdateMode.WhenVisible,
-			World3D = _joueurRef?.GetWorld3D(),
+			World3D = new World3D(),
 			TransparentBg = true
 		};
 		_vpApercuJoueurCorps.AddChild(_svApercuJoueurCorps);
+
+		_racineApercuJoueurCorps = new Node3D { Name = "RacineApercuJoueurCorps" };
+		_svApercuJoueurCorps.AddChild(_racineApercuJoueurCorps);
 
 		_cameraApercuJoueurCorps = new Camera3D
 		{
@@ -511,7 +517,7 @@ public partial class MenuAnatomie : Control
 			LightEnergy = 1.25f,
 			RotationDegrees = new Vector3(-35f, 40f, 0f)
 		};
-		// Cette lumière d'aperçu partage le World3D principal: l'empêcher de créer un disque/halo dans le ciel.
+		// Cette lumière reste confinée au World3D dédié de l'aperçu.
 		light.Set("sky_mode", 1); // LightOnly
 		light.Set("light_volumetric_fog_energy", 0.0f);
 		_svApercuJoueurCorps.AddChild(light);
@@ -524,7 +530,36 @@ public partial class MenuAnatomie : Control
 		};
 		_svApercuJoueurCorps.AddChild(lightRemplissage);
 
+		RafraichirAvatarApercuJoueurCorps(true);
 		MettreAJourCameraApercuJoueurCorps(0f);
+	}
+
+	private void RafraichirAvatarApercuJoueurCorps(bool forcerRecreation = false)
+	{
+		if (_joueurRef == null || _svApercuJoueurCorps == null || !GodotObject.IsInstanceValid(_svApercuJoueurCorps))
+			return;
+		if (_racineApercuJoueurCorps == null || !GodotObject.IsInstanceValid(_racineApercuJoueurCorps))
+			return;
+
+		ulong empreinteCourante = _joueurRef.CalculerEmpreinteAvatarApercuUi();
+		bool avatarInvalide = _avatarApercuJoueurCorps == null || !GodotObject.IsInstanceValid(_avatarApercuJoueurCorps);
+		bool doitReconstruire = forcerRecreation || avatarInvalide || empreinteCourante != _empreinteAvatarApercuJoueurCorps;
+		if (doitReconstruire)
+		{
+			if (_avatarApercuJoueurCorps != null && GodotObject.IsInstanceValid(_avatarApercuJoueurCorps))
+				_avatarApercuJoueurCorps.QueueFree();
+			_avatarApercuJoueurCorps = _joueurRef.CreerCloneAvatarApercuUi();
+			if (_avatarApercuJoueurCorps != null && GodotObject.IsInstanceValid(_avatarApercuJoueurCorps))
+			{
+				_racineApercuJoueurCorps.AddChild(_avatarApercuJoueurCorps);
+				_empreinteAvatarApercuJoueurCorps = empreinteCourante;
+			}
+			else
+				_empreinteAvatarApercuJoueurCorps = 0UL;
+		}
+
+		if (_avatarApercuJoueurCorps != null && GodotObject.IsInstanceValid(_avatarApercuJoueurCorps))
+			_joueurRef.SynchroniserTransformAvatarApercuUi(_avatarApercuJoueurCorps);
 	}
 
 	private void CreerLigneSanteCorps(VBoxContainer parent, string cleSection, string nomSection)
@@ -599,8 +634,7 @@ public partial class MenuAnatomie : Control
 		if (_joueurRef == null)
 			return;
 		AssurerPanneauSanteCorps();
-		if (_svApercuJoueurCorps != null && GodotObject.IsInstanceValid(_svApercuJoueurCorps))
-			_svApercuJoueurCorps.World3D = _joueurRef.GetWorld3D();
+		RafraichirAvatarApercuJoueurCorps();
 		if (_barresSanteCorps.Count == 0)
 			return;
 
@@ -1514,7 +1548,10 @@ public partial class MenuAnatomie : Control
 
 			_compteurFrameMenuProcess++;
 			if ((_compteurFrameMenuProcess & 1) == 0)
+			{
+				RafraichirAvatarApercuJoueurCorps();
 				MettreAJourCameraApercuJoueurCorps((float)delta);
+			}
 		}
 
 		if (_conteneurFlottantCurseur != null && _conteneurFlottantCurseur.Visible)
@@ -1526,13 +1563,15 @@ public partial class MenuAnatomie : Control
 
 	private void MettreAJourCameraApercuJoueurCorps(float delta)
 	{
-		if (_joueurRef == null || _cameraApercuJoueurCorps == null || !GodotObject.IsInstanceValid(_cameraApercuJoueurCorps))
+		if (_cameraApercuJoueurCorps == null || !GodotObject.IsInstanceValid(_cameraApercuJoueurCorps))
+			return;
+		if (_avatarApercuJoueurCorps == null || !GodotObject.IsInstanceValid(_avatarApercuJoueurCorps))
 			return;
 		_ = delta;
-		Vector3 cible = _joueurRef.GlobalPosition + new Vector3(0f, HauteurCibleCameraApercuJoueurCorps, 0f);
+		Vector3 cible = _avatarApercuJoueurCorps.GlobalPosition + new Vector3(0f, HauteurCibleCameraApercuJoueurCorps, 0f);
 		// Place la caméra côté visage (et non derrière le dos).
-		Vector3 devant = (-_joueurRef.GlobalTransform.Basis.Z).Normalized();
-		Vector3 droite = _joueurRef.GlobalTransform.Basis.X.Normalized();
+		Vector3 devant = (-_avatarApercuJoueurCorps.GlobalTransform.Basis.Z).Normalized();
+		Vector3 droite = _avatarApercuJoueurCorps.GlobalTransform.Basis.X.Normalized();
 		Vector3 posCam = cible
 			+ devant * DistanceCameraApercuJoueurCorps
 			+ droite * DecalageLateralCameraApercuJoueurCorps
@@ -2904,6 +2943,8 @@ public partial class MenuAnatomie : Control
 			if (vp != null) vp.SizeChanged -= OnViewportSizeChangedMenu;
 			_abonneViewport = false;
 		}
+		_avatarApercuJoueurCorps = null;
+		_racineApercuJoueurCorps = null;
 		base._ExitTree();
 	}
 
@@ -3055,6 +3096,7 @@ public partial class MenuAnatomie : Control
 		if (_joueurRef == null) return;
 		MettreAJourVisibiliteLigneCraftVersusCoffre();
 		RafraichirPanneauSanteCorps();
+		RafraichirAvatarApercuJoueurCorps();
 		ResoudreReferencesSlotsMains();
 		if (_lblMainGauche == null) _lblMainGauche = TrouverOuCreerLabel(MainGaucheSlot, "Main G\n[Vide]");
 		if (_lblMainDroite == null) _lblMainDroite = TrouverOuCreerLabel(MainDroiteSlot, "Main D\n[Vide]");

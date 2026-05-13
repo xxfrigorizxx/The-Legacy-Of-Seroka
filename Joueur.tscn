@@ -24,6 +24,7 @@ height = 1.65
 
 [node name="Joueur" type="CharacterBody3D" unique_id=510261729]
 script = ExtResource("1_joueur")
+ForcerBasCollisionLocalPourAlignementPieds = nan
 
 [node name="HitboxJambeG" type="CollisionShape3D" parent="." unique_id=1020862906]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.11, -0.44, 0)
@@ -57,7 +58,7 @@ disabled = true
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.357, -0.0030086637)
 
 [node name="Camera3D" type="Camera3D" parent="." unique_id=575999209]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.087361574, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.09268463, 0)
 
 [node name="RayCast3D" type="RayCast3D" parent="Camera3D" unique_id=933977458]
 target_position = Vector3(0, 0, -12)
