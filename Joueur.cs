@@ -63,16 +63,22 @@ public partial class Joueur : CharacterBody3D
         public readonly string Cle;
         public readonly string Nom;
         public readonly string Matiere;
+        public readonly string Os;
         public readonly float PointsVie;
         public readonly float PointsVieMax;
+        public readonly float IntegriteOs;
+        public readonly float IntegriteOsMax;
 
-        public SectionSanteCorps(string cle, string nom, string matiere, float pointsVie, float pointsVieMax)
+        public SectionSanteCorps(string cle, string nom, string matiere, string os, float pointsVie, float pointsVieMax, float integriteOs, float integriteOsMax)
         {
             Cle = cle;
             Nom = nom;
             Matiere = matiere;
+            Os = os;
             PointsVie = pointsVie;
             PointsVieMax = pointsVieMax;
+            IntegriteOs = integriteOs;
+            IntegriteOsMax = integriteOsMax;
         }
     }
 
@@ -150,6 +156,12 @@ public partial class Joueur : CharacterBody3D
     public const int IdObjetBolBois = 129;
     /// <summary>Mortier avec pilon (assemblage bol + pilon, essences séparées par mesh).</summary>
     public const int IdObjetMortierPilonBois = 130;
+    /// <summary>Table d'analyse tier 1 (station avancée, 8 slots analyse).</summary>
+    public const int IdObjetTableAnalyseTier1 = 131;
+    /// <summary>Hache en pierre (déblocage analyse tier 1).</summary>
+    public const int IdObjetHachePierreTier1 = 132;
+    /// <summary>Atelle de jambe (artisanat de base).</summary>
+    public const int IdObjetAtelleJambe = 133;
     /// <summary>Objet posé au sol : quantité dans l’inventaire au ramassage (>1).</summary>
     public const string MetaQuantiteObjetPose = "QuantiteObjetPose";
     /// <summary>Rack Ã  bÃ¢tons (stockage dÃ©diÃ©).</summary>
@@ -510,6 +522,8 @@ public partial class Joueur : CharacterBody3D
     private ProgressBar _barreEndurance;
     private Label _labelFaim;
     private Label _labelEndurance;
+    private PanelContainer _panneauSelectionAtelleJambe;
+    private Label _labelSelectionAtelleJambe;
     [ExportGroup("Diagnostic performance")]
     [Export] public bool ActiverProfilagePerfJoueur = false;
     [Export(PropertyHint.Range, "0.2,10,0.1")] public float IntervalleLogProfilageJoueurSec = 2.0f;
@@ -548,6 +562,8 @@ public partial class Joueur : CharacterBody3D
     private const string MetaSignatureMailletBois128 = "SigMailletBois128";
     private const string MetaSignatureBolBois129 = "SigBolBois129";
     private const string MetaSignatureMortierPilon130 = "SigMortierPilon130";
+    private const string MetaSignatureTableAnalyse131 = "SigTableAnalyse131";
+    private const string MetaSignatureAtelleJambe133 = "SigAtelleJambe133";
     private const string MetaSignatureCarnet114 = "SigCarnet114";
     private const string MetaSignatureBaie35 = "SigBaie35";
     private SubViewportContainer _viewportSlotGauche;
@@ -588,6 +604,17 @@ public partial class Joueur : CharacterBody3D
     private float _pvBrasDroit;
     private float _pvJambeGauche;
     private float _pvJambeDroite;
+    private float _integriteOsTete;
+    private float _integriteOsTorse;
+    private float _integriteOsBrasGauche;
+    private float _integriteOsBrasDroit;
+    private float _integriteOsJambeGauche;
+    private float _integriteOsJambeDroite;
+    private float _timerAtelleJambeGaucheRestant;
+    private float _timerAtelleJambeDroiteRestant;
+    private bool _selectionAtelleJambeEnCours;
+    private bool _etatAuSolPrecedent;
+    private float _sommetYChuteCourante;
     private readonly SectionSanteCorps[] _cacheSanteCorps = new SectionSanteCorps[6];
     private readonly Dictionary<string, ulong> _futureStates = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -686,6 +713,8 @@ public partial class Joueur : CharacterBody3D
     {
         Input.MouseMode = Input.MouseModeEnum.Captured;
         InitialiserSanteCorps();
+        _etatAuSolPrecedent = IsOnFloor();
+        _sommetYChuteCourante = GlobalPosition.Y;
 
         _physMatRocheRonde = new PhysicsMaterial { Friction = 0.18f, Bounce = 0.48f };
         _physMatRochePlate = new PhysicsMaterial { Friction = 0.94f, Bounce = 0.07f };
@@ -780,6 +809,12 @@ public partial class Joueur : CharacterBody3D
         _pvBrasDroit = ObtenirPvMaxSectionCorps(SectionCorpsBrasDroit);
         _pvJambeGauche = ObtenirPvMaxSectionCorps(SectionCorpsJambeGauche);
         _pvJambeDroite = ObtenirPvMaxSectionCorps(SectionCorpsJambeDroite);
+        _integriteOsTete = ObtenirIntegriteOsBaseSection(SectionCorpsTete);
+        _integriteOsTorse = ObtenirIntegriteOsBaseSection(SectionCorpsTorse);
+        _integriteOsBrasGauche = ObtenirIntegriteOsBaseSection(SectionCorpsBrasGauche);
+        _integriteOsBrasDroit = ObtenirIntegriteOsBaseSection(SectionCorpsBrasDroit);
+        _integriteOsJambeGauche = ObtenirIntegriteOsBaseSection(SectionCorpsJambeGauche);
+        _integriteOsJambeDroite = ObtenirIntegriteOsBaseSection(SectionCorpsJambeDroite);
     }
 
     private static string NormaliserCleSectionCorps(string cleSection)
@@ -817,6 +852,26 @@ public partial class Joueur : CharacterBody3D
         };
     }
 
+    private static float ObtenirIntegriteOsBaseSection(string cleSection)
+    {
+        return cleSection switch
+        {
+            SectionCorpsTete => 90f,
+            SectionCorpsTorse => 140f,
+            SectionCorpsBrasGauche => 100f,
+            SectionCorpsBrasDroit => 100f,
+            SectionCorpsJambeGauche => 120f,
+            SectionCorpsJambeDroite => 120f,
+            _ => 120f
+        };
+    }
+
+    private const float RatioEtatOsSeuilCasse = 0.35f;
+    private const float RatioEtatOsSeuilFelure = 0.70f;
+    private const float RatioIntegriteOsFixerFelure = 0.55f;
+    private const float RatioIntegriteOsFixerCasse = 0.05f;
+    private const float DureeAtelleJambeSec = 180f;
+
     private int ObtenirConstitutionEffective()
     {
         RaceJoueur race = GameState.Instance?.RaceJoueurCourante ?? RaceJoueur.Humain;
@@ -832,7 +887,393 @@ public partial class Joueur : CharacterBody3D
         return Math.Max(1f, baseSection + bonusConstitution);
     }
 
-    public void AppliquerDegatsSectionCorps(string cleSection, int degats)
+    private float ObtenirIntegriteOsSectionCorps(string cleSection)
+    {
+        return cleSection switch
+        {
+            SectionCorpsTete => _integriteOsTete,
+            SectionCorpsBrasGauche => _integriteOsBrasGauche,
+            SectionCorpsBrasDroit => _integriteOsBrasDroit,
+            SectionCorpsJambeGauche => _integriteOsJambeGauche,
+            SectionCorpsJambeDroite => _integriteOsJambeDroite,
+            _ => _integriteOsTorse
+        };
+    }
+
+    private void DefinirIntegriteOsSectionCorps(string cleSection, float valeur)
+    {
+        float maxSection = ObtenirIntegriteOsBaseSection(cleSection);
+        float clamp = Mathf.Clamp(valeur, 0f, maxSection);
+        switch (cleSection)
+        {
+            case SectionCorpsTete:
+                _integriteOsTete = clamp;
+                break;
+            case SectionCorpsBrasGauche:
+                _integriteOsBrasGauche = clamp;
+                break;
+            case SectionCorpsBrasDroit:
+                _integriteOsBrasDroit = clamp;
+                break;
+            case SectionCorpsJambeGauche:
+                _integriteOsJambeGauche = clamp;
+                break;
+            case SectionCorpsJambeDroite:
+                _integriteOsJambeDroite = clamp;
+                break;
+            default:
+                _integriteOsTorse = clamp;
+                break;
+        }
+    }
+
+    private enum EtatOsSimple
+    {
+        BonEtat,
+        Felure,
+        Casse
+    }
+
+    private EtatOsSimple EvaluerEtatOsSectionCorps(string cleSection)
+    {
+        float maxSection = Mathf.Max(1f, ObtenirIntegriteOsBaseSection(cleSection));
+        float ratio = Mathf.Clamp(ObtenirIntegriteOsSectionCorps(cleSection) / maxSection, 0f, 1f);
+        if (ratio <= RatioEtatOsSeuilCasse)
+            return EtatOsSimple.Casse;
+        if (ratio <= RatioEtatOsSeuilFelure)
+            return EtatOsSimple.Felure;
+        return EtatOsSimple.BonEtat;
+    }
+
+    private void DefinirEtatOsSectionCorps(string cleSection, EtatOsSimple etat)
+    {
+        float maxSection = Mathf.Max(1f, ObtenirIntegriteOsBaseSection(cleSection));
+        float cible = etat switch
+        {
+            EtatOsSimple.Casse => maxSection * RatioIntegriteOsFixerCasse,
+            EtatOsSimple.Felure => maxSection * RatioIntegriteOsFixerFelure,
+            _ => maxSection
+        };
+        DefinirIntegriteOsSectionCorps(cleSection, cible);
+    }
+
+    private static float CalculerChanceFissureChute(float hauteurChuteMetres)
+    {
+        int metresEntiers = Mathf.FloorToInt(Mathf.Max(0f, hauteurChuteMetres));
+        if (metresEntiers <= 5)
+            return 0f;
+        return Mathf.Clamp(metresEntiers - 5, 0, 100);
+    }
+
+    private static float CalculerChanceCasseChute(float hauteurChuteMetres)
+    {
+        int metresEntiers = Mathf.FloorToInt(Mathf.Max(0f, hauteurChuteMetres));
+        if (metresEntiers < 25)
+            return 0f;
+        return Mathf.Clamp(metresEntiers - 24, 0, 100);
+    }
+
+    private static bool TirageChanceReussit(float chancePct)
+    {
+        if (chancePct <= 0f)
+            return false;
+        if (chancePct >= 100f)
+            return true;
+        return GD.Randf() * 100f < chancePct;
+    }
+
+    private void AppliquerRisqueChuteSurJambe(string sectionJambe, float chanceFissure, float chanceCasse)
+    {
+        EtatOsSimple etatInitial = EvaluerEtatOsSectionCorps(sectionJambe);
+        if (etatInitial == EtatOsSimple.Casse)
+            return;
+
+        // Règle demandée: on lance d'abord le dé de fissure, puis le dé de casse.
+        bool fissureReussie = TirageChanceReussit(chanceFissure);
+        if (fissureReussie)
+        {
+            if (etatInitial == EtatOsSimple.BonEtat)
+                DefinirEtatOsSectionCorps(sectionJambe, EtatOsSimple.Felure);
+            else if (etatInitial == EtatOsSimple.Felure)
+                DefinirEtatOsSectionCorps(sectionJambe, EtatOsSimple.Casse);
+        }
+
+        EtatOsSimple etatApresFissure = EvaluerEtatOsSectionCorps(sectionJambe);
+        if (etatApresFissure != EtatOsSimple.Casse && TirageChanceReussit(chanceCasse))
+            DefinirEtatOsSectionCorps(sectionJambe, EtatOsSimple.Casse);
+    }
+
+    private void AppliquerRisquesChuteOsJambes(float hauteurChuteMetres)
+    {
+        float chanceFissure = CalculerChanceFissureChute(hauteurChuteMetres);
+        float chanceCasse = CalculerChanceCasseChute(hauteurChuteMetres);
+        if (chanceFissure <= 0f && chanceCasse <= 0f)
+            return;
+
+        AppliquerRisqueChuteSurJambe(SectionCorpsJambeGauche, chanceFissure, chanceCasse);
+        AppliquerRisqueChuteSurJambe(SectionCorpsJambeDroite, chanceFissure, chanceCasse);
+    }
+
+    private void SuivreEtAppliquerRisquesChuteOsJambes(bool estDansEau)
+    {
+        bool estAuSol = IsOnFloor();
+        if (!estAuSol)
+        {
+            if (_etatAuSolPrecedent)
+                _sommetYChuteCourante = GlobalPosition.Y;
+            else
+                _sommetYChuteCourante = Mathf.Max(_sommetYChuteCourante, GlobalPosition.Y);
+            _etatAuSolPrecedent = false;
+            return;
+        }
+
+        if (!_etatAuSolPrecedent && !estDansEau)
+        {
+            float hauteurChute = Mathf.Max(0f, _sommetYChuteCourante - GlobalPosition.Y);
+            AppliquerRisquesChuteOsJambes(hauteurChute);
+        }
+
+        _etatAuSolPrecedent = true;
+        _sommetYChuteCourante = GlobalPosition.Y;
+    }
+
+    private float ObtenirTimerAtelleJambe(string sectionJambe)
+        => sectionJambe == SectionCorpsJambeGauche ? _timerAtelleJambeGaucheRestant : _timerAtelleJambeDroiteRestant;
+
+    private void DefinirTimerAtelleJambe(string sectionJambe, float valeur)
+    {
+        float v = Mathf.Max(0f, valeur);
+        if (sectionJambe == SectionCorpsJambeGauche)
+            _timerAtelleJambeGaucheRestant = v;
+        else
+            _timerAtelleJambeDroiteRestant = v;
+    }
+
+    private bool MainActiveContientAtelleJambe()
+    {
+        SlotInventaire main = MainGaucheEstActive ? MainGauche : MainDroite;
+        return !main.EstVide && main.ID == IdObjetAtelleJambe;
+    }
+
+    private static string FormaterTempsAtelleMmSs(float tempsSec)
+    {
+        int sec = Mathf.Max(0, Mathf.CeilToInt(tempsSec));
+        int mm = sec / 60;
+        int ss = sec % 60;
+        return $"{mm:00}:{ss:00}";
+    }
+
+    private static string NomEtatOsSimple(EtatOsSimple etat)
+    {
+        return etat switch
+        {
+            EtatOsSimple.Casse => "CASSE",
+            EtatOsSimple.Felure => "FELURE",
+            _ => "BON ETAT"
+        };
+    }
+
+    private void AssurerUiSelectionAtelleJambe()
+    {
+        if (_panneauSelectionAtelleJambe != null && GodotObject.IsInstanceValid(_panneauSelectionAtelleJambe))
+            return;
+
+        Node parentUi = GetParent()?.GetNodeOrNull<CanvasLayer>("Gestionnaire_Monde/HUD_Inventaire");
+        if (parentUi == null && _racineMenuAnatomieViewport != null && GodotObject.IsInstanceValid(_racineMenuAnatomieViewport))
+            parentUi = _racineMenuAnatomieViewport;
+        if (parentUi == null)
+            return;
+
+        _panneauSelectionAtelleJambe = new PanelContainer
+        {
+            Name = "PanneauSelectionAtelleJambe",
+            Visible = false,
+            MouseFilter = Control.MouseFilterEnum.Ignore
+        };
+        _panneauSelectionAtelleJambe.SetAnchorsPreset(Control.LayoutPreset.CenterTop);
+        _panneauSelectionAtelleJambe.OffsetLeft = -260f;
+        _panneauSelectionAtelleJambe.OffsetTop = 26f;
+        _panneauSelectionAtelleJambe.OffsetRight = 260f;
+        _panneauSelectionAtelleJambe.OffsetBottom = 164f;
+
+        var col = new VBoxContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
+        col.AddThemeConstantOverride("separation", 5);
+        _panneauSelectionAtelleJambe.AddChild(col);
+
+        var titre = new Label
+        {
+            Text = "ATELLE JAMBE - CHOISIR CIBLE",
+            HorizontalAlignment = HorizontalAlignment.Center,
+            MouseFilter = Control.MouseFilterEnum.Ignore
+        };
+        titre.AddThemeFontSizeOverride("font_size", 14);
+        col.AddChild(titre);
+
+        _labelSelectionAtelleJambe = new Label
+        {
+            AutowrapMode = TextServer.AutowrapMode.WordSmart,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            MouseFilter = Control.MouseFilterEnum.Ignore
+        };
+        _labelSelectionAtelleJambe.AddThemeFontSizeOverride("font_size", 12);
+        col.AddChild(_labelSelectionAtelleJambe);
+
+        parentUi.AddChild(_panneauSelectionAtelleJambe);
+    }
+
+    private void RafraichirTexteSelectionAtelleJambe()
+    {
+        if (_labelSelectionAtelleJambe == null || !GodotObject.IsInstanceValid(_labelSelectionAtelleJambe))
+            return;
+
+        EtatOsSimple etatG = EvaluerEtatOsSectionCorps(SectionCorpsJambeGauche);
+        EtatOsSimple etatD = EvaluerEtatOsSectionCorps(SectionCorpsJambeDroite);
+        string timerG = _timerAtelleJambeGaucheRestant > 0f
+            ? $"Atelle active: {FormaterTempsAtelleMmSs(_timerAtelleJambeGaucheRestant)}"
+            : "Atelle: disponible";
+        string timerD = _timerAtelleJambeDroiteRestant > 0f
+            ? $"Atelle active: {FormaterTempsAtelleMmSs(_timerAtelleJambeDroiteRestant)}"
+            : "Atelle: disponible";
+
+        _labelSelectionAtelleJambe.Text =
+            $"1) Jambe gauche - Etat os: {NomEtatOsSimple(etatG)} - {timerG}\n" +
+            $"2) Jambe droite - Etat os: {NomEtatOsSimple(etatD)} - {timerD}\n" +
+            "Touches: [1] gauche, [2] droite, [Echap] annuler";
+    }
+
+    private void ReparerUnStadeJambeDepuisAtelle(string sectionJambe)
+    {
+        EtatOsSimple etat = EvaluerEtatOsSectionCorps(sectionJambe);
+        if (etat == EtatOsSimple.Casse)
+            DefinirEtatOsSectionCorps(sectionJambe, EtatOsSimple.Felure);
+        else if (etat == EtatOsSimple.Felure)
+            DefinirEtatOsSectionCorps(sectionJambe, EtatOsSimple.BonEtat);
+    }
+
+    private void MettreAJourTimersAtellesJambes(float dt)
+    {
+        if (_timerAtelleJambeGaucheRestant > 0f)
+        {
+            _timerAtelleJambeGaucheRestant = Mathf.Max(0f, _timerAtelleJambeGaucheRestant - dt);
+            if (_timerAtelleJambeGaucheRestant <= 0f)
+            {
+                ReparerUnStadeJambeDepuisAtelle(SectionCorpsJambeGauche);
+                GD.Print("ZERO-K : Atelle terminee sur jambe gauche (+1 stade de reparation).");
+                RafraichirHUD();
+            }
+        }
+        if (_timerAtelleJambeDroiteRestant > 0f)
+        {
+            _timerAtelleJambeDroiteRestant = Mathf.Max(0f, _timerAtelleJambeDroiteRestant - dt);
+            if (_timerAtelleJambeDroiteRestant <= 0f)
+            {
+                ReparerUnStadeJambeDepuisAtelle(SectionCorpsJambeDroite);
+                GD.Print("ZERO-K : Atelle terminee sur jambe droite (+1 stade de reparation).");
+                RafraichirHUD();
+            }
+        }
+
+        if (_selectionAtelleJambeEnCours)
+            RafraichirTexteSelectionAtelleJambe();
+    }
+
+    private bool EssayerAppliquerAtelleSurJambeChoisie(string sectionJambe)
+    {
+        if (!MainActiveContientAtelleJambe())
+        {
+            GD.Print("ZERO-K : Plus d'atelle en main active.");
+            return false;
+        }
+
+        if (ObtenirTimerAtelleJambe(sectionJambe) > 0f)
+        {
+            GD.Print("ZERO-K : Cette jambe a deja une atelle active. Attends la fin du timer.");
+            return false;
+        }
+
+        EtatOsSimple etat = EvaluerEtatOsSectionCorps(sectionJambe);
+        if (etat == EtatOsSimple.BonEtat)
+        {
+            GD.Print("ZERO-K : Cette jambe est deja en bon etat.");
+            return false;
+        }
+
+        DefinirTimerAtelleJambe(sectionJambe, DureeAtelleJambeSec);
+        ConsommerUneUniteMainActive();
+        RafraichirHUD();
+        string nomJambe = sectionJambe == SectionCorpsJambeGauche ? "gauche" : "droite";
+        GD.Print($"ZERO-K : Atelle appliquee sur jambe {nomJambe} (reparation dans 3 min).");
+        return true;
+    }
+
+    private void OuvrirSelectionAtelleJambe()
+    {
+        _selectionAtelleJambeEnCours = true;
+        AssurerUiSelectionAtelleJambe();
+        RafraichirTexteSelectionAtelleJambe();
+        if (_panneauSelectionAtelleJambe != null && GodotObject.IsInstanceValid(_panneauSelectionAtelleJambe))
+            _panneauSelectionAtelleJambe.Visible = true;
+        GD.Print("ZERO-K : Choix atelle -> touche 1 = jambe gauche, touche 2 = jambe droite, Echap = annuler.");
+    }
+
+    private void FermerSelectionAtelleJambe(bool consommerEvenement)
+    {
+        _selectionAtelleJambeEnCours = false;
+        if (_panneauSelectionAtelleJambe != null && GodotObject.IsInstanceValid(_panneauSelectionAtelleJambe))
+            _panneauSelectionAtelleJambe.Visible = false;
+        if (consommerEvenement)
+            GetViewport()?.SetInputAsHandled();
+    }
+
+    private bool GererInputSelectionAtelleJambe(InputEvent @event)
+    {
+        if (!_selectionAtelleJambeEnCours)
+            return false;
+
+        if (@event.IsActionPressed("ui_cancel")
+            || (@event is InputEventKey keyEsc && keyEsc.Pressed && !keyEsc.Echo && keyEsc.Keycode == Key.Escape))
+        {
+            GD.Print("ZERO-K : Selection atelle annulee.");
+            FermerSelectionAtelleJambe(consommerEvenement: true);
+            return true;
+        }
+
+        if (@event is InputEventKey key && key.Pressed && !key.Echo)
+        {
+            bool choixGauche = key.Keycode == Key.Key1 || key.Keycode == Key.Kp1;
+            bool choixDroite = key.Keycode == Key.Key2 || key.Keycode == Key.Kp2;
+            if (choixGauche || choixDroite)
+            {
+                string section = choixGauche ? SectionCorpsJambeGauche : SectionCorpsJambeDroite;
+                _ = EssayerAppliquerAtelleSurJambeChoisie(section);
+                FermerSelectionAtelleJambe(consommerEvenement: true);
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private bool TraiterClicDroitAtelleJambe()
+    {
+        if (_selectionAtelleJambeEnCours)
+            return true;
+        if (!MainActiveContientAtelleJambe())
+            return false;
+
+        OuvrirSelectionAtelleJambe();
+        return true;
+    }
+
+    private static int CalculerDegatsOsDepuisImpact(int degatsImpact)
+    {
+        if (degatsImpact <= 0)
+            return 0;
+        // Indépendant des PV restants : les os se dégradent sur l'impact brut.
+        return Mathf.Max(1, Mathf.CeilToInt(degatsImpact * 0.35f));
+    }
+
+    public void AppliquerDegatsSectionCorps(string cleSection, int degats, bool affecterOs = true)
     {
         if (degats <= 0)
             return;
@@ -878,6 +1319,12 @@ public partial class Joueur : CharacterBody3D
             _ => _pvTorse
         };
         int degatsEffectifs = Mathf.Max(0, Mathf.RoundToInt(Mathf.Max(0f, pvAvant - pvApres)));
+        if (affecterOs)
+        {
+            int degatsOs = CalculerDegatsOsDepuisImpact(degatsEffectifs);
+            if (degatsOs > 0)
+                DefinirIntegriteOsSectionCorps(section, ObtenirIntegriteOsSectionCorps(section) - degatsOs);
+        }
         AjouterXpConstitutionDepuisDegats(degatsEffectifs);
         RafraichirHUD();
         VerifierMortTorseSiNecessaire();
@@ -960,12 +1407,12 @@ public partial class Joueur : CharacterBody3D
 
     public IReadOnlyList<SectionSanteCorps> ObtenirEtatSanteCorps()
     {
-        _cacheSanteCorps[0] = new SectionSanteCorps(SectionCorpsTete, "Tete", "Os + chair", _pvTete, ObtenirPvMaxSectionCorps(SectionCorpsTete));
-        _cacheSanteCorps[1] = new SectionSanteCorps(SectionCorpsTorse, "Torse", "Os + chair", _pvTorse, ObtenirPvMaxSectionCorps(SectionCorpsTorse));
-        _cacheSanteCorps[2] = new SectionSanteCorps(SectionCorpsBrasGauche, "Bras gauche", "Os + chair", _pvBrasGauche, ObtenirPvMaxSectionCorps(SectionCorpsBrasGauche));
-        _cacheSanteCorps[3] = new SectionSanteCorps(SectionCorpsBrasDroit, "Bras droit", "Os + chair", _pvBrasDroit, ObtenirPvMaxSectionCorps(SectionCorpsBrasDroit));
-        _cacheSanteCorps[4] = new SectionSanteCorps(SectionCorpsJambeGauche, "Jambe gauche", "Os + chair", _pvJambeGauche, ObtenirPvMaxSectionCorps(SectionCorpsJambeGauche));
-        _cacheSanteCorps[5] = new SectionSanteCorps(SectionCorpsJambeDroite, "Jambe droite", "Os + chair", _pvJambeDroite, ObtenirPvMaxSectionCorps(SectionCorpsJambeDroite));
+        _cacheSanteCorps[0] = new SectionSanteCorps(SectionCorpsTete, "Tete", "Os + chair", "Crane", _pvTete, ObtenirPvMaxSectionCorps(SectionCorpsTete), _integriteOsTete, ObtenirIntegriteOsBaseSection(SectionCorpsTete));
+        _cacheSanteCorps[1] = new SectionSanteCorps(SectionCorpsTorse, "Torse", "Os + chair", "Cage thoracique", _pvTorse, ObtenirPvMaxSectionCorps(SectionCorpsTorse), _integriteOsTorse, ObtenirIntegriteOsBaseSection(SectionCorpsTorse));
+        _cacheSanteCorps[2] = new SectionSanteCorps(SectionCorpsBrasGauche, "Bras gauche", "Os + chair", "Os du bras", _pvBrasGauche, ObtenirPvMaxSectionCorps(SectionCorpsBrasGauche), _integriteOsBrasGauche, ObtenirIntegriteOsBaseSection(SectionCorpsBrasGauche));
+        _cacheSanteCorps[3] = new SectionSanteCorps(SectionCorpsBrasDroit, "Bras droit", "Os + chair", "Os du bras", _pvBrasDroit, ObtenirPvMaxSectionCorps(SectionCorpsBrasDroit), _integriteOsBrasDroit, ObtenirIntegriteOsBaseSection(SectionCorpsBrasDroit));
+        _cacheSanteCorps[4] = new SectionSanteCorps(SectionCorpsJambeGauche, "Jambe gauche", "Os + chair", "Os de la jambe", _pvJambeGauche, ObtenirPvMaxSectionCorps(SectionCorpsJambeGauche), _integriteOsJambeGauche, ObtenirIntegriteOsBaseSection(SectionCorpsJambeGauche));
+        _cacheSanteCorps[5] = new SectionSanteCorps(SectionCorpsJambeDroite, "Jambe droite", "Os + chair", "Os de la jambe", _pvJambeDroite, ObtenirPvMaxSectionCorps(SectionCorpsJambeDroite), _integriteOsJambeDroite, ObtenirIntegriteOsBaseSection(SectionCorpsJambeDroite));
         return _cacheSanteCorps;
     }
 
@@ -1315,7 +1762,7 @@ public partial class Joueur : CharacterBody3D
         float avanceCamera = Mathf.Max(0f, AvanceCameraFpsMetres);
         _cameraFps.Position = new Vector3(
             _positionLocaleBaseCameraFps.X,
-            _positionLocaleBaseCameraFps.Y,
+            _positionLocaleBaseCameraFps.Y + 0.50f,
             _positionLocaleBaseCameraFps.Z - avanceCamera);
         _pitchCameraBaseRad = 0f;
         _yawCorrectionCameraFpsRad = 0f;
@@ -1975,6 +2422,10 @@ public partial class Joueur : CharacterBody3D
             _objetEnMain.RotationDegrees = RotationObjetMainDefautDeg;
             _objetEnMain.Scale = Vector3.One * 0.9f;
         }
+        // Important: les objets procéduraux (ex: caillou) utilisent directement _objetEnMain.Mesh.
+        // Si ce MeshInstance a été basculé sur le calque "tête cachée FPS" lors du masquage du rig,
+        // il devient invisible en vue FPS (cull mask caméra = calque monde).
+        _objetEnMain.Layers = CalqueRenduCorpsEtMondeFps;
 
         SlotInventaire mainActive = MainGaucheEstActive ? MainGauche : MainDroite;
         bool visible = !mainActive.EstVide && EstObjetAvecVisuel(mainActive.ID);
@@ -2034,13 +2485,16 @@ public partial class Joueur : CharacterBody3D
 
     private void AppliquerMasquageVisuelsJoueurEnFps(bool activerMasquage)
     {
+        Node racineMasquage = _rigHumain != null && GodotObject.IsInstanceValid(_rigHumain) ? _rigHumain : this;
         if (activerMasquage)
         {
             _instanceIdsVisuelsMasquesFps.Clear();
-            MasquerVisuelsJoueurRecursif(this);
+            // Ne jamais balayer tout l'arbre du Joueur: l'UI (SubViewport previews des slots)
+            // vit sous ce même arbre et doit rester visible en FPS.
+            MasquerVisuelsJoueurRecursif(racineMasquage);
             return;
         }
-        RestaurerVisuelsMasquesFpsRecursif(this);
+        RestaurerVisuelsMasquesFpsRecursif(racineMasquage);
         _instanceIdsVisuelsMasquesFps.Clear();
     }
 
@@ -2777,7 +3231,8 @@ public partial class Joueur : CharacterBody3D
         if (_faimJoueur <= 0.001f)
         {
             int degatsFaim = Mathf.Max(1, Mathf.RoundToInt(DegatsTorseParSecondeFaimNulle * dt));
-            AppliquerDegatsSectionCorps(SectionCorpsTorse, degatsFaim);
+            // La faim détruit la chair/PV mais ne casse pas l'os.
+            AppliquerDegatsSectionCorps(SectionCorpsTorse, degatsFaim, affecterOs: false);
         }
 
         MettreAJourHudStatsSurvie();
@@ -2800,6 +3255,27 @@ public partial class Joueur : CharacterBody3D
     private float RatioEnduranceJoueur()
     {
         return Mathf.Clamp(_enduranceJoueur / EnduranceMaxJoueur, 0f, 1f);
+    }
+
+    private static float ObtenirContributionVitesseJambeDepuisRatioOs(float ratioOs)
+    {
+        if (ratioOs <= 0.35f)
+            return 0.05f; // CASSE
+        if (ratioOs <= 0.70f)
+            return 0.25f; // FELURE
+        return 0.50f; // BON ETAT
+    }
+
+    private float ObtenirFacteurVitesseSelonEtatOsJambes()
+    {
+        float maxOsJambeG = Mathf.Max(1f, ObtenirIntegriteOsBaseSection(SectionCorpsJambeGauche));
+        float maxOsJambeD = Mathf.Max(1f, ObtenirIntegriteOsBaseSection(SectionCorpsJambeDroite));
+        float ratioOsJambeG = Mathf.Clamp(_integriteOsJambeGauche / maxOsJambeG, 0f, 1f);
+        float ratioOsJambeD = Mathf.Clamp(_integriteOsJambeDroite / maxOsJambeD, 0f, 1f);
+
+        float contributionG = ObtenirContributionVitesseJambeDepuisRatioOs(ratioOsJambeG);
+        float contributionD = ObtenirContributionVitesseJambeDepuisRatioOs(ratioOsJambeD);
+        return Mathf.Clamp(contributionG + contributionD, 0.10f, 1.00f);
     }
 
     private bool PeutSprinter()
@@ -2855,6 +3331,7 @@ public partial class Joueur : CharacterBody3D
         var cam = new Camera3D();
         cam.SetOrthogonal(0.5f, 0.01f, 10f);
         cam.Position = new Vector3(0, 0, 1.2f);
+        cam.Current = true;
         viewport.AddChild(cam);
 
         var meshNode = new MeshInstance3D();
@@ -2881,6 +3358,7 @@ public partial class Joueur : CharacterBody3D
     private static bool EstStructureSupporteeModePlacement(int id)
     {
         return id == 200
+            || id == IdObjetTableAnalyseTier1
             || id == IdObjetRackBatons
             || id == IdObjetRackBuches
             || id == IdObjetCoffreBoisTier0
@@ -2973,6 +3451,8 @@ public partial class Joueur : CharacterBody3D
 
             if (mainActive.ID == 200)
                 InstancierModeleAtelierPrimitif(meshRoot, mainActive, 1.2f, true);
+            else if (mainActive.ID == IdObjetTableAnalyseTier1)
+                InstancierModeleTableAnalyseTier1(meshRoot, mainActive, 1.53f, true);
             else if (mainActive.ID == IdObjetRackBatons)
                 InstancierModeleRackBatons(meshRoot, mainActive, 1.05f, true);
             else if (mainActive.ID == IdObjetRackBuches)
@@ -3184,6 +3664,9 @@ public partial class Joueur : CharacterBody3D
             GetViewport().SetInputAsHandled();
             return;
         }
+
+        if (GererInputSelectionAtelleJambe(@event))
+            return;
 
         if (_menuAnatomie != null && @event.IsActionPressed("inventaire"))
         {
@@ -3402,6 +3885,16 @@ public partial class Joueur : CharacterBody3D
 
             if (!mainActive.EstVide)
             {
+                if (mainActive.ID == IdObjetAtelleJambe)
+                {
+                    _forceLancer = 0f;
+                    if (TraiterClicDroitAtelleJambe())
+                    {
+                        GetViewport().SetInputAsHandled();
+                        return;
+                    }
+                }
+
                 // Priorité gameplay : clic droit sur pit à feu roche avec bâton/branche = ajout de combustible,
                 // même si le clic a été maintenu assez longtemps pour entrer en mode lancer.
                 if (EssayerAjouterCombustiblePitFeuRocheSousVisee(ref mainActive))
@@ -3413,6 +3906,7 @@ public partial class Joueur : CharacterBody3D
                 // IDENTIFICATION DE LA MATIÃˆRE : Est-ce du terrain (Voxel) ?
                 bool estTerrainVoxel = mainActive.ID >= 1 && mainActive.ID <= 9;
                 bool estAtelierEnMain = mainActive.ID == 200;
+                bool estTableAnalyseEnMain = mainActive.ID == IdObjetTableAnalyseTier1;
                 bool estRackBatonsEnMain = mainActive.ID == IdObjetRackBatons || mainActive.ID == IdObjetRackBuches;
                 bool estCoffreEnMain = mainActive.ID == IdObjetCoffreBoisTier0;
                 bool estPitFeuEnMain = EstIdPitFeu(mainActive.ID) || EstIdFondation(mainActive.ID);
@@ -3433,11 +3927,11 @@ public partial class Joueur : CharacterBody3D
                 }
                 // Clic bref = poser. Maintien du clic = lancer (seuil 0,5 s).
                 // Atelier + rack (structures fixes) : jamais de lancer.
-                if (estAtelierEnMain || estRackBatonsEnMain || estCoffreEnMain || estPitFeuEnMain || estBuissonEnMain || estTerrainVoxel || _forceLancer < 0.5f)
+                if (estAtelierEnMain || estTableAnalyseEnMain || estRackBatonsEnMain || estCoffreEnMain || estPitFeuEnMain || estBuissonEnMain || estTerrainVoxel || _forceLancer < 0.5f)
                 {
                     // Clic droit court + lame / roche plate / pointe + sol : fauchage (le gauche le fait aussi).
                     // Objet lançable : le clic droit court sert à poser sous la visée — pas de vol du fauchage.
-                    if (!estAtelierEnMain && !estRackBatonsEnMain && !estCoffreEnMain && !estPitFeuEnMain && !estTerrainVoxel && _forceLancer < 0.5f
+                    if (!estAtelierEnMain && !estTableAnalyseEnMain && !estRackBatonsEnMain && !estCoffreEnMain && !estPitFeuEnMain && !estTerrainVoxel && _forceLancer < 0.5f
                         && !EstObjetLancableAuMaintien(mainActive)
                         && ExecuterFauchageSolPrioritaireClicDroit())
                     {
@@ -3641,7 +4135,7 @@ public partial class Joueur : CharacterBody3D
             int ir = Mathf.Clamp(slotData.IndexChimique, 0, ItemPhysique.TableGeologique.Length - 1);
             style.BgColor = ItemPhysique.TableGeologique[ir].CouleurBase.Lerp(new Color(0.35f, 0.28f, 0.2f), 0.35f);
         }
-        else if (idMatiere == 106)
+        else if (idMatiere == 106 || idMatiere == IdObjetHachePierreTier1)
         {
             int ir = Mathf.Clamp(slotData.IndexChimique, 0, ItemPhysique.TableGeologique.Length - 1);
             style.BgColor = ItemPhysique.TableGeologique[ir].CouleurBase.Lerp(new Color(0.42f, 0.32f, 0.18f), 0.28f);
@@ -3940,6 +4434,7 @@ public partial class Joueur : CharacterBody3D
                 break;
             case 105:
             case 106:
+            case IdObjetHachePierreTier1:
             case IdObjetPellePierreTier0:
             case IdObjetPiochePierreTier0:
             case IdObjetLancePierreTier0:
@@ -4293,6 +4788,7 @@ public partial class Joueur : CharacterBody3D
         IdObjetIntestinBoeufNettoye => 0.12f,
         105 => 0.32f,
         106 => 0.58f,
+        IdObjetHachePierreTier1 => 0.64f,
         IdObjetPellePierreTier0 => 0.62f,
         IdObjetPiochePierreTier0 => 0.66f,
         IdObjetLancePierreTier0 => 0.60f,
@@ -4301,6 +4797,7 @@ public partial class Joueur : CharacterBody3D
         34 => 0.04f,
         999 => 1.2f,
         200 => 12.0f,
+        IdObjetTableAnalyseTier1 => 11.5f,
         IdObjetRackBatons => 8.0f,
         IdObjetRackBuches => 8.0f,
         IdObjetCoffreBoisTier0 => 42f,
@@ -4314,6 +4811,7 @@ public partial class Joueur : CharacterBody3D
         IdObjetMailletBois => 0.72f,
         IdObjetBolBois => 0.28f,
         IdObjetMortierPilonBois => 0.98f,
+        IdObjetAtelleJambe => 0.34f,
         _ => 0.5f
     };
 
@@ -4513,19 +5011,19 @@ public partial class Joueur : CharacterBody3D
     {
         if (s.EstVide) return false;
         if (EstObjetProcedural(s.ID)) return true;
-        if (s.ID == 105 || s.ID == 106 || s.ID == IdObjetPellePierreTier0 || s.ID == IdObjetPiochePierreTier0 || s.ID == IdObjetLancePierreTier0 || s.ID == IdObjetFauxPierreTier0) return true;
+        if (s.ID == 105 || s.ID == 106 || s.ID == IdObjetHachePierreTier1 || s.ID == IdObjetPellePierreTier0 || s.ID == IdObjetPiochePierreTier0 || s.ID == IdObjetLancePierreTier0 || s.ID == IdObjetFauxPierreTier0) return true;
         return s.ID == 100 && s.EstUnEclat && s.MeshEclat != null;
     }
 
     private void AssurerDurabiliteOutilsSurLesMains()
     {
-        if (MainGauche.ID == 105 || MainGauche.ID == 106 || MainGauche.ID == IdObjetPellePierreTier0 || MainGauche.ID == IdObjetPiochePierreTier0 || MainGauche.ID == IdObjetLancePierreTier0 || MainGauche.ID == IdObjetFauxPierreTier0)
+        if (MainGauche.ID == 105 || MainGauche.ID == 106 || MainGauche.ID == IdObjetHachePierreTier1 || MainGauche.ID == IdObjetPellePierreTier0 || MainGauche.ID == IdObjetPiochePierreTier0 || MainGauche.ID == IdObjetLancePierreTier0 || MainGauche.ID == IdObjetFauxPierreTier0)
         {
             var m = MainGauche;
             Atlas_Matiere.InitialiserDurabiliteOutilSiBesoin(ref m);
             MainGauche = m;
         }
-        if (MainDroite.ID == 105 || MainDroite.ID == 106 || MainDroite.ID == IdObjetPellePierreTier0 || MainDroite.ID == IdObjetPiochePierreTier0 || MainDroite.ID == IdObjetLancePierreTier0 || MainDroite.ID == IdObjetFauxPierreTier0)
+        if (MainDroite.ID == 105 || MainDroite.ID == 106 || MainDroite.ID == IdObjetHachePierreTier1 || MainDroite.ID == IdObjetPellePierreTier0 || MainDroite.ID == IdObjetPiochePierreTier0 || MainDroite.ID == IdObjetLancePierreTier0 || MainDroite.ID == IdObjetFauxPierreTier0)
         {
             var m = MainDroite;
             Atlas_Matiere.InitialiserDurabiliteOutilSiBesoin(ref m);
@@ -4541,7 +5039,7 @@ public partial class Joueur : CharacterBody3D
         int idOutilCasse = 0;
         if (MainGaucheEstActive)
         {
-            if (MainGauche.ID != 105 && MainGauche.ID != 106 && MainGauche.ID != IdObjetPellePierreTier0 && MainGauche.ID != IdObjetPiochePierreTier0 && MainGauche.ID != IdObjetLancePierreTier0 && MainGauche.ID != IdObjetFauxPierreTier0) return 0;
+            if (MainGauche.ID != 105 && MainGauche.ID != 106 && MainGauche.ID != IdObjetHachePierreTier1 && MainGauche.ID != IdObjetPellePierreTier0 && MainGauche.ID != IdObjetPiochePierreTier0 && MainGauche.ID != IdObjetLancePierreTier0 && MainGauche.ID != IdObjetFauxPierreTier0) return 0;
             var m = MainGauche;
             int idOutil = m.ID;
             Atlas_Matiere.InitialiserDurabiliteOutilSiBesoin(ref m);
@@ -4557,7 +5055,7 @@ public partial class Joueur : CharacterBody3D
         }
         else
         {
-            if (MainDroite.ID != 105 && MainDroite.ID != 106 && MainDroite.ID != IdObjetPellePierreTier0 && MainDroite.ID != IdObjetPiochePierreTier0 && MainDroite.ID != IdObjetLancePierreTier0 && MainDroite.ID != IdObjetFauxPierreTier0) return 0;
+            if (MainDroite.ID != 105 && MainDroite.ID != 106 && MainDroite.ID != IdObjetHachePierreTier1 && MainDroite.ID != IdObjetPellePierreTier0 && MainDroite.ID != IdObjetPiochePierreTier0 && MainDroite.ID != IdObjetLancePierreTier0 && MainDroite.ID != IdObjetFauxPierreTier0) return 0;
             var m = MainDroite;
             int idOutil = m.ID;
             Atlas_Matiere.InitialiserDurabiliteOutilSiBesoin(ref m);
@@ -4579,6 +5077,8 @@ public partial class Joueur : CharacterBody3D
                 GD.Print("ZERO-K : La faux primitive se brise — il faut refaire l’outil (roche pointue, ligature, manche et bâtons en T).");
             else if (idOutilCasse == 106)
                 GD.Print("ZERO-K : La hachette primitive se brise â€” lame ou manche a cÃ©dÃ©. Il vous faudra refaire lâ€™outil.");
+            else if (idOutilCasse == IdObjetHachePierreTier1)
+                GD.Print("ZERO-K : La hache en pierre se brise — il faut reforger l'outil.");
             else if (idOutilCasse == IdObjetPellePierreTier0)
                 GD.Print("ZERO-K : La pelle en pierre se brise â€” il faut reforger lâ€™outil.");
             else if (idOutilCasse == IdObjetLancePierreTier0)
@@ -4592,7 +5092,7 @@ public partial class Joueur : CharacterBody3D
 
     private static void RemplirDurabiliteOutilDepuisItemPhysique(ref SlotInventaire slot, ItemPhysique item)
     {
-        if ((slot.ID != 105 && slot.ID != 106 && slot.ID != IdObjetPellePierreTier0 && slot.ID != IdObjetPiochePierreTier0 && slot.ID != IdObjetLancePierreTier0 && slot.ID != IdObjetFauxPierreTier0) || item == null) return;
+        if ((slot.ID != 105 && slot.ID != 106 && slot.ID != IdObjetHachePierreTier1 && slot.ID != IdObjetPellePierreTier0 && slot.ID != IdObjetPiochePierreTier0 && slot.ID != IdObjetLancePierreTier0 && slot.ID != IdObjetFauxPierreTier0) || item == null) return;
         if (item.HasMeta(MetaDurabiliteOutilMax))
         {
             slot.DurabiliteOutilMax = (float)item.GetMeta(MetaDurabiliteOutilMax).AsDouble();
@@ -4697,6 +5197,7 @@ public partial class Joueur : CharacterBody3D
         else if (id == IdObjetPiochePierreTier0) return null; // GLB res://Modeles/Equipements/Pioche_pierre_tier0.glb via InstancierModeleArme
         else if (id == IdObjetLancePierreTier0) return null; // GLB res://Modeles/Equipements/Lance_en_pierre_tier0.glb via InstancierModeleArme
         else if (id == IdObjetFauxPierreTier0) return null; // GLB res://Modeles/Equipements/Epe_pierre_tier0.glb via InstancierModeleArme
+        else if (id == IdObjetHachePierreTier1) return null; // GLB res://Modeles/Equipable/Hache_pierre.glb via InstancierModeleArme
         else if (id == IdObjetRackBatons || id == IdObjetRackBuches) return null; // GLB rack (bÃ¢tons / bÃ»ches) via instanciation dÃ©diÃ©e
         else if (id == IdObjetCoffreBoisTier0) return null; // GLB coffre via InstancierModeleCoffreBoisTier0
         else if (id == IdObjetPitFeu) return null; // GLB pit à feu via InstancierModelePitFeu
@@ -4705,6 +5206,7 @@ public partial class Joueur : CharacterBody3D
         else if (id == IdObjetMailletBois) return null; // GLB maillet via InstancierModeleMailletBois
         else if (id == IdObjetBolBois) return null; // GLB bol via InstancierModeleBolBois
         else if (id == IdObjetMortierPilonBois) return null; // GLB mortier+pilon via InstancierModeleMortierPilonBois
+        else if (id == IdObjetAtelleJambe) return null; // GLB res://Modeles/soin/Atelle_jambe.glb via InstancierModeleAtelleJambe
         else if (EstIdFondation(id)) return null; // GLB fondations via InstancierModeleFondation
         else if (id == 30 || id == 32)
         {
@@ -5189,7 +5691,7 @@ public partial class Joueur : CharacterBody3D
             }
             corps = item;
         }
-        else if (id == 106)
+        else if (id == 106 || id == IdObjetHachePierreTier1)
         {
             SlotInventaire slotHachette = mainActive;
             Atlas_Matiere.InitialiserDurabiliteOutilSiBesoin(ref slotHachette);
@@ -5212,7 +5714,7 @@ public partial class Joueur : CharacterBody3D
             item.AddChild(new CollisionShape3D
             {
                 Name = "CollisionShape3D",
-                Shape = new BoxShape3D { Size = new Vector3(0.1f, 0.45f, 0.2f) },
+                Shape = new BoxShape3D { Size = id == IdObjetHachePierreTier1 ? new Vector3(0.11f, 0.48f, 0.2f) : new Vector3(0.1f, 0.45f, 0.2f) },
                 Position = new Vector3(0, 0.22f, 0)
             });
             corps = item;
@@ -5566,6 +6068,34 @@ public partial class Joueur : CharacterBody3D
             }
             corps = item;
         }
+        else if (id == IdObjetAtelleJambe)
+        {
+            var item = new ItemPhysique
+            {
+                ID_Objet = id,
+                IndexBotanique = mainActive.IndexBotanique,
+                IndexChimique = mainActive.IndexChimique,
+                IndexCacheMemoire = mainActive.IndexMorphologique,
+                GenomeAssemblage = mainActive.GenomeAssemblage ?? "",
+                Name = "ItemPhysique",
+                ContinuousCd = true
+            };
+            if (!string.IsNullOrEmpty(item.GenomeAssemblage))
+                item.SetMeta(MetaGenomeAssemblage, item.GenomeAssemblage);
+            var meshRoot = new Node3D { Name = "MeshInstance3D" };
+            InstancierModeleAtelleJambe(meshRoot, mainActive, 0.66f, false);
+            item.AddChild(meshRoot);
+            if (AjouterCollisionsConvexesDepuisMeshesSousRacineItem(item, meshRoot) == 0)
+            {
+                item.AddChild(new CollisionShape3D
+                {
+                    Name = "CollisionShape3D",
+                    Shape = new BoxShape3D { Size = new Vector3(0.32f, 0.12f, 0.16f) },
+                    Position = new Vector3(0f, 0.06f, 0f)
+                });
+            }
+            corps = item;
+        }
         else if (EstIdFondation(id))
         {
             var item = new ItemPhysique
@@ -5629,6 +6159,49 @@ public partial class Joueur : CharacterBody3D
             var meshRoot = new Node3D { Name = "MeshInstance3D" };
             // FIX CRITIQUE : point zÃ©ro aux pieds du meuble (ancrerBaseAuSol = true), ~1,2 m sur la plus grande dimension.
             InstancierModeleAtelierPrimitif(meshRoot, mainActive, 1.2f, true);
+            item.AddChild(meshRoot);
+
+            var pile = new List<Node> { meshRoot };
+            for (int i = 0; i < pile.Count; i++)
+            {
+                foreach (Node c in pile[i].GetChildren())
+                {
+                    if (c is MeshInstance3D mi && mi.Mesh != null)
+                    {
+                        Shape3D shape = mi.Mesh.CreateTrimeshShape();
+                        if (shape != null)
+                        {
+                            Transform3D t = mi.Transform;
+                            Node parentNode = mi.GetParent();
+                            while (parentNode != null && parentNode != item && parentNode is Node3D n3d)
+                            {
+                                t = n3d.Transform * t;
+                                parentNode = parentNode.GetParent();
+                            }
+                            var colNode = new CollisionShape3D { Shape = shape, Transform = t };
+                            item.AddChild(colNode);
+                        }
+                    }
+                    pile.Add(c);
+                }
+            }
+            corps = item;
+        }
+        else if (id == IdObjetTableAnalyseTier1)
+        {
+            var item = new ItemPhysique
+            {
+                ID_Objet = id,
+                IndexBotanique = mainActive.IndexBotanique,
+                IndexChimique = mainActive.IndexChimique,
+                IndexCacheMemoire = mainActive.IndexMorphologique,
+                Name = "ItemPhysique",
+                ContinuousCd = true,
+                Freeze = true,
+                FreezeMode = RigidBody3D.FreezeModeEnum.Static
+            };
+            var meshRoot = new Node3D { Name = "MeshInstance3D" };
+            InstancierModeleTableAnalyseTier1(meshRoot, mainActive, 1.53f, true);
             item.AddChild(meshRoot);
 
             var pile = new List<Node> { meshRoot };
@@ -6088,7 +6661,7 @@ public partial class Joueur : CharacterBody3D
                 }
             }
         }
-        if (!modeGhost && (id == IdObjetRackBatons || id == IdObjetRackBuches || id == IdObjetCoffreBoisTier0 || EstIdPitFeu(id) || EstIdFondation(id)))
+        if (!modeGhost && (id == IdObjetTableAnalyseTier1 || id == IdObjetRackBatons || id == IdObjetRackBuches || id == IdObjetCoffreBoisTier0 || EstIdPitFeu(id) || EstIdFondation(id)))
         {
             // Snap sol robuste pour le rack: corrige les cas oÃ¹ le raycast vise une surface dÃ©calÃ©e.
             var espace = GetWorld3D()?.DirectSpaceState;
@@ -6155,7 +6728,7 @@ public partial class Joueur : CharacterBody3D
                     rbPose.AngularDamp = 0.88f;
                 }
             }
-            else if (id == 30 || id == 32 || id == 200 || id == IdObjetRackBatons || id == IdObjetRackBuches || id == IdObjetCoffreBoisTier0 || EstIdPitFeu(id) || EstIdFondation(id))
+            else if (id == 30 || id == 32 || id == 200 || id == IdObjetTableAnalyseTier1 || id == IdObjetRackBatons || id == IdObjetRackBuches || id == IdObjetCoffreBoisTier0 || EstIdPitFeu(id) || EstIdFondation(id))
             {
                 rbPose.PhysicsMaterialOverride = _physMatBois;
                 rbPose.LinearDampMode = RigidBody3D.DampMode.Replace;
@@ -6166,6 +6739,12 @@ public partial class Joueur : CharacterBody3D
                 {
                     // TrÃ¨s lourd + pas de gravitÃ© : Ã©vite tout glissement / dÃ©rive si le moteur rÃ©veille le corps un instant.
                     rbPose.Mass = 2800f;
+                    rbPose.GravityScale = 0f;
+                    rbPose.Sleeping = true;
+                }
+                else if (id == IdObjetTableAnalyseTier1)
+                {
+                    rbPose.Mass = 2400f;
                     rbPose.GravityScale = 0f;
                     rbPose.Sleeping = true;
                 }
@@ -6252,7 +6831,7 @@ public partial class Joueur : CharacterBody3D
             }
             if (id == 105 && rbPose is ItemPhysique ipDague)
                 ItemPhysique.AppliquerPhysiqueDague105(ipDague);
-            else if (id == 106 && rbPose is ItemPhysique ipHachette)
+            else if ((id == 106 || id == IdObjetHachePierreTier1) && rbPose is ItemPhysique ipHachette)
                 ItemPhysique.AppliquerPhysiqueHachette106(ipHachette);
             else if (id == IdObjetPellePierreTier0 && rbPose is ItemPhysique ipPelle)
                 ItemPhysique.AppliquerPhysiquePelle107(ipPelle);
@@ -6397,6 +6976,7 @@ public partial class Joueur : CharacterBody3D
         float dt = (float)delta;
         _cooldownEnjambementObstacle = Mathf.Max(0f, _cooldownEnjambementObstacle - dt);
         _cooldownGainFaimClicDroit = Mathf.Max(0f, _cooldownGainFaimClicDroit - dt);
+        MettreAJourTimersAtellesJambes(dt);
         if (!_positionReferenceMetabolisteInitialisee)
             ReinitialiserReferencePositionMetaboliste();
         SlotInventaire mainActive = MainGaucheEstActive ? MainGauche : MainDroite;
@@ -6516,6 +7096,7 @@ public partial class Joueur : CharacterBody3D
 
             Velocity = velocity;
             MoveAndSlide();
+            SuivreEtAppliquerRisquesChuteOsJambes(estDansEau: false);
             // Pas de contrainte verticale auto ni d'enjambement: liberté de vol stricte.
             MettreAJourProgressionMetabolisteParDeplacement();
             if (ActiverProfilagePerfJoueur)
@@ -6618,6 +7199,7 @@ public partial class Joueur : CharacterBody3D
         vitesseMouvement *= ObtenirFacteurVitesseSelonChargePortee();
         vitesseMouvement *= ObtenirMultiplicateurVitesseMetaboliste();
         vitesseMouvement *= Mathf.Lerp(0.62f, 1f, RatioEnduranceJoueur());
+        vitesseMouvement *= ObtenirFacteurVitesseSelonEtatOsJambes();
 
         if (direction != Vector3.Zero)
         {
@@ -6665,6 +7247,7 @@ public partial class Joueur : CharacterBody3D
 
         Velocity = velocity;
         MoveAndSlide();
+        SuivreEtAppliquerRisquesChuteOsJambes(estDansEau);
         if (!estDansEau
             && ActiverEnjambementObstacle
             && _cooldownEnjambementObstacle <= 0f

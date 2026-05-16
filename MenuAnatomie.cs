@@ -103,6 +103,9 @@ public partial class MenuAnatomie : Control
 	private GridContainer _grilleAnalyseur;
 	private Label _lblAnalyseurChance;
 	private Label _lblAnalyseurMessage;
+	private Label _lblAnalyseurTitre;
+	private Label _lblAnalyseurAide;
+	private VBoxContainer _colAnalyseurContenu;
 	private Button _btnAnalyser;
 	private Panel[] _slotsAnalyseur;
 	private Label[] _lblAnalyseur;
@@ -158,11 +161,12 @@ public partial class MenuAnatomie : Control
 	private Label _lblPoidsMaxSousApercu;
 	private readonly Dictionary<string, ProgressBar> _barresSanteCorps = new(StringComparer.OrdinalIgnoreCase);
 	private readonly Dictionary<string, Label> _labelsSanteCorps = new(StringComparer.OrdinalIgnoreCase);
+	private readonly Dictionary<string, Label> _labelsEtatOsCorps = new(StringComparer.OrdinalIgnoreCase);
 	private readonly Dictionary<string, StyleBoxFlat> _stylesRemplissageSanteCorps = new(StringComparer.OrdinalIgnoreCase);
-	private const float DistanceCameraApercuJoueurCorps = 2.02f;
+	private const float DistanceCameraApercuJoueurCorps = 2.55f;
 	private const float DecalageLateralCameraApercuJoueurCorps = 0.00f;
-	private const float HauteurCameraApercuJoueurCorps = -0.56f;
-	private const float HauteurCibleCameraApercuJoueurCorps = -0.06f;
+	private const float HauteurCameraApercuJoueurCorps = 0.14f;
+	private const float HauteurCibleCameraApercuJoueurCorps = 0.62f;
 	private SubViewportContainer _vpApercuJoueurCorps;
 	private SubViewport _svApercuJoueurCorps;
 	private Camera3D _cameraApercuJoueurCorps;
@@ -551,8 +555,19 @@ public partial class MenuAnatomie : Control
 			_avatarApercuJoueurCorps = _joueurRef.CreerCloneAvatarApercuUi();
 			if (_avatarApercuJoueurCorps != null && GodotObject.IsInstanceValid(_avatarApercuJoueurCorps))
 			{
-				_racineApercuJoueurCorps.AddChild(_avatarApercuJoueurCorps);
-				_empreinteAvatarApercuJoueurCorps = empreinteCourante;
+				try
+				{
+					_racineApercuJoueurCorps.AddChild(_avatarApercuJoueurCorps);
+					_empreinteAvatarApercuJoueurCorps = empreinteCourante;
+				}
+				catch (Exception ex)
+				{
+					GD.PrintErr($"ZERO-K : Echec AddChild avatar aperçu UI: {ex.Message}");
+					if (_avatarApercuJoueurCorps != null && GodotObject.IsInstanceValid(_avatarApercuJoueurCorps))
+						_avatarApercuJoueurCorps.Free();
+					_avatarApercuJoueurCorps = null;
+					_empreinteAvatarApercuJoueurCorps = 0UL;
+				}
 			}
 			else
 				_empreinteAvatarApercuJoueurCorps = 0UL;
@@ -608,6 +623,15 @@ public partial class MenuAnatomie : Control
 		barre.AddThemeStyleboxOverride("fill", remplissage);
 		ligne.AddChild(barre);
 
+		var lblEtatOs = new Label
+		{
+			HorizontalAlignment = HorizontalAlignment.Left,
+			MouseFilter = Control.MouseFilterEnum.Ignore
+		};
+		lblEtatOs.AddThemeFontSizeOverride("font_size", 11);
+		lblEtatOs.AddThemeColorOverride("font_color", new Color(0.92f, 0.92f, 0.86f));
+		ligne.AddChild(lblEtatOs);
+
 		var lblInfos = new Label
 		{
 			HorizontalAlignment = HorizontalAlignment.Left,
@@ -618,6 +642,7 @@ public partial class MenuAnatomie : Control
 		ligne.AddChild(lblInfos);
 
 		_barresSanteCorps[cleSection] = barre;
+		_labelsEtatOsCorps[cleSection] = lblEtatOs;
 		_labelsSanteCorps[cleSection] = lblInfos;
 		_stylesRemplissageSanteCorps[cleSection] = remplissage;
 	}
@@ -627,6 +652,15 @@ public partial class MenuAnatomie : Control
 		if (ratio >= 0.66f) return new Color(0.25f, 0.82f, 0.35f, 1f);
 		if (ratio >= 0.33f) return new Color(0.95f, 0.67f, 0.20f, 1f);
 		return new Color(0.88f, 0.22f, 0.22f, 1f);
+	}
+
+	private static (string symbole, string etat) EvaluerEtatOs(float ratioOs)
+	{
+		if (ratioOs <= 0.35f)
+			return ("[X]", "CASSE");
+		if (ratioOs <= 0.70f)
+			return ("[!]", "FELURE");
+		return ("[OK]", "BON ETAT");
 	}
 
 	private void RafraichirPanneauSanteCorps()
@@ -658,16 +692,18 @@ public partial class MenuAnatomie : Control
 		for (int i = 0; i < sections.Count; i++)
 		{
 			Joueur.SectionSanteCorps section = sections[i];
+			float ratioSection = section.PointsVieMax > 0 ? section.PointsVie / (float)section.PointsVieMax : 0f;
+			float ratioOs = section.IntegriteOsMax > 0 ? section.IntegriteOs / (float)section.IntegriteOsMax : 0f;
+			var etatOs = EvaluerEtatOs(ratioOs);
 			if (_barresSanteCorps.TryGetValue(section.Cle, out ProgressBar barre))
 			{
 				barre.MaxValue = Mathf.Max(1, section.PointsVieMax);
 				barre.Value = Mathf.Clamp(section.PointsVie, 0, section.PointsVieMax);
 				if (_stylesRemplissageSanteCorps.TryGetValue(section.Cle, out StyleBoxFlat styleRemplissage))
-				{
-					float ratioSection = section.PointsVieMax > 0 ? section.PointsVie / (float)section.PointsVieMax : 0f;
 					styleRemplissage.BgColor = CouleurSanteDepuisRatio(ratioSection);
-				}
 			}
+			if (_labelsEtatOsCorps.TryGetValue(section.Cle, out Label lblEtatOs))
+				lblEtatOs.Text = $"{etatOs.symbole} {section.Os}: {etatOs.etat} ({section.IntegriteOs:F0}/{section.IntegriteOsMax:F0})";
 			if (_labelsSanteCorps.TryGetValue(section.Cle, out Label lbl))
 				lbl.Text = $"{section.PointsVie:F2}/{section.PointsVieMax:F2} PV  |  Matiere: {section.Matiere}";
 		}
@@ -725,6 +761,7 @@ public partial class MenuAnatomie : Control
 		var cam = new Camera3D();
 		cam.SetOrthogonal(0.5f, 0.01f, 10f);
 		cam.Position = new Vector3(0, 0, 1.2f);
+		cam.Current = true;
 		viewport.AddChild(cam);
 
 		var meshNode = new MeshInstance3D();
@@ -936,9 +973,10 @@ public partial class MenuAnatomie : Control
 		}
 		else if (mode == 10 && craftIdx >= 0)
 		{
-			if (_joueurRef.GrilleAnalyseurManuel == null || craftIdx >= _joueurRef.GrilleAnalyseurManuel.Length)
+			SlotInventaire[] grilleAnalyse = _joueurRef.ObtenirGrilleAnalyseurActif();
+			if (grilleAnalyse == null || craftIdx >= grilleAnalyse.Length)
 				return;
-			InteragirCurseurAvecSlot(ref _joueurRef.GrilleAnalyseurManuel[craftIdx], clicGauche, clicDroit);
+			InteragirCurseurAvecSlot(ref grilleAnalyse[craftIdx], clicGauche, clicDroit);
 		}
 		else
 			return;
@@ -1569,13 +1607,10 @@ public partial class MenuAnatomie : Control
 			return;
 		_ = delta;
 		Vector3 cible = _avatarApercuJoueurCorps.GlobalPosition + new Vector3(0f, HauteurCibleCameraApercuJoueurCorps, 0f);
-		// Place la caméra côté visage (et non derrière le dos).
-		Vector3 devant = (-_avatarApercuJoueurCorps.GlobalTransform.Basis.Z).Normalized();
-		Vector3 droite = _avatarApercuJoueurCorps.GlobalTransform.Basis.X.Normalized();
+		// Cadrage fixe: la caméra reste devant l'avatar (ne suit plus son axe local),
+		// ce qui garantit un rendu "face joueur" au lieu d'un profil persistant.
 		Vector3 posCam = cible
-			+ devant * DistanceCameraApercuJoueurCorps
-			+ droite * DecalageLateralCameraApercuJoueurCorps
-			+ new Vector3(0f, HauteurCameraApercuJoueurCorps, 0f);
+			+ new Vector3(DecalageLateralCameraApercuJoueurCorps, HauteurCameraApercuJoueurCorps, DistanceCameraApercuJoueurCorps);
 		_cameraApercuJoueurCorps.GlobalPosition = posCam;
 		_cameraApercuJoueurCorps.LookAt(cible, Vector3.Up);
 	}
@@ -2203,43 +2238,44 @@ public partial class MenuAnatomie : Control
 		};
 		col.AddThemeConstantOverride("separation", 12);
 		centre.AddChild(col);
+		_colAnalyseurContenu = col;
 
-		var titre = new Label
+		_lblAnalyseurTitre = new Label
 		{
 			Text = "Analyseur manuel",
 			HorizontalAlignment = HorizontalAlignment.Center,
 			MouseFilter = Control.MouseFilterEnum.Ignore
 		};
-		titre.AddThemeFontSizeOverride("font_size", 20);
-		col.AddChild(titre);
+		_lblAnalyseurTitre.AddThemeFontSizeOverride("font_size", 20);
+		col.AddChild(_lblAnalyseurTitre);
 
-		var aide = new Label
+		_lblAnalyseurAide = new Label
 		{
 			Text = "Dépose des objets. L'analyse consomme ce que tu as mis.",
 			HorizontalAlignment = HorizontalAlignment.Center,
 			AutowrapMode = TextServer.AutowrapMode.WordSmart,
 			MouseFilter = Control.MouseFilterEnum.Ignore
 		};
-		aide.AddThemeFontSizeOverride("font_size", 13);
-		col.AddChild(aide);
+		_lblAnalyseurAide.AddThemeFontSizeOverride("font_size", 13);
+		col.AddChild(_lblAnalyseurAide);
 
 		_grilleAnalyseur = new GridContainer
 		{
 			Name = "GrilleAnalyseur",
-			Columns = Joueur.CapaciteAnalyseurManuel,
+			Columns = Joueur.CapaciteAnalyseurTableTier1,
 			MouseFilter = Control.MouseFilterEnum.Ignore
 		};
 		_grilleAnalyseur.AddThemeConstantOverride("h_separation", 12);
 		_grilleAnalyseur.AddThemeConstantOverride("v_separation", 12);
 		col.AddChild(_grilleAnalyseur);
 
-		_slotsAnalyseur = new Panel[Joueur.CapaciteAnalyseurManuel];
-		for (int i = 0; i < Joueur.CapaciteAnalyseurManuel; i++)
+		_slotsAnalyseur = new Panel[Joueur.CapaciteAnalyseurTableTier1];
+		for (int i = 0; i < Joueur.CapaciteAnalyseurTableTier1; i++)
 		{
 			var slot = new Panel
 			{
 				Name = $"AnalyseurSlot{i}",
-				CustomMinimumSize = new Vector2(96f, 96f),
+				CustomMinimumSize = new Vector2(80f, 80f),
 				MouseFilter = Control.MouseFilterEnum.Stop
 			};
 			_grilleAnalyseur.AddChild(slot);
@@ -2258,7 +2294,7 @@ public partial class MenuAnatomie : Control
 			_joueurRef.EssayerAnalyserCrafts(out string msgAnalyse);
 			RafraichirLabelChanceAnalyseur();
 			if (_lblAnalyseurMessage != null)
-				_lblAnalyseurMessage.Text = ConstruireTexteEtatAnalyseur(string.IsNullOrEmpty(msgAnalyse) ? _joueurRef.MessageAnalyseurManuel : msgAnalyse);
+				_lblAnalyseurMessage.Text = ConstruireTexteEtatAnalyseur(string.IsNullOrEmpty(msgAnalyse) ? _joueurRef.ObtenirMessageAnalyseurActif() : msgAnalyse);
 			GetViewport()?.SetInputAsHandled();
 			_joueurRef.RafraichirHUD();
 			RafraichirMenu();
@@ -2324,21 +2360,42 @@ public partial class MenuAnatomie : Control
 		AssurerPanneauAnalyseur();
 		AssurerPreviewsAnalyseur();
 		RafraichirLabelChanceAnalyseur();
+		int capaciteActive = _joueurRef.ObtenirCapaciteAnalyseurActif();
+		SlotInventaire[] grilleAnalyse = _joueurRef.ObtenirGrilleAnalyseurActif();
+		bool estTier1 = _joueurRef.AnalyseurTier1Actif;
+		if (_grilleAnalyseur != null)
+		{
+			_grilleAnalyseur.Columns = capaciteActive;
+			_grilleAnalyseur.AddThemeConstantOverride("h_separation", estTier1 ? 8 : 12);
+			_grilleAnalyseur.AddThemeConstantOverride("v_separation", estTier1 ? 8 : 12);
+		}
+		if (_colAnalyseurContenu != null && GodotObject.IsInstanceValid(_colAnalyseurContenu))
+			_colAnalyseurContenu.CustomMinimumSize = estTier1 ? new Vector2(860f, 380f) : new Vector2(560f, 360f);
+		if (_lblAnalyseurTitre != null)
+			_lblAnalyseurTitre.Text = estTier1 ? "Table d'analyse tier 1" : "Analyseur manuel";
+		if (_lblAnalyseurAide != null)
+			_lblAnalyseurAide.Text = estTier1
+				? "Dépose des objets. L'analyse T1 consomme ce que tu as mis. Les recettes des tiers inférieurs restent déblocables."
+				: "Dépose des objets. L'analyse consomme ce que tu as mis.";
 		if (_lblAnalyseurMessage != null)
-			_lblAnalyseurMessage.Text = ConstruireTexteEtatAnalyseur(string.IsNullOrEmpty(_joueurRef.MessageAnalyseurManuel)
+		{
+			_lblAnalyseurMessage.CustomMinimumSize = estTier1 ? new Vector2(860f, 80f) : new Vector2(560f, 80f);
+			_lblAnalyseurMessage.Text = ConstruireTexteEtatAnalyseur(string.IsNullOrEmpty(_joueurRef.ObtenirMessageAnalyseurActif())
 				? "Dépose des objets puis clique sur Analyser."
-				: _joueurRef.MessageAnalyseurManuel);
+				: _joueurRef.ObtenirMessageAnalyseurActif());
+		}
 		if (_slotsAnalyseur == null) return;
 		for (int i = 0; i < _slotsAnalyseur.Length; i++)
 		{
 			Panel panel = _slotsAnalyseur[i];
 			if (panel == null) continue;
-			SlotInventaire s = i < _joueurRef.GrilleAnalyseurManuel.Length ? _joueurRef.GrilleAnalyseurManuel[i] : default;
+			panel.Visible = i < capaciteActive;
+			SlotInventaire s = (grilleAnalyse != null && i < grilleAnalyse.Length) ? grilleAnalyse[i] : default;
 			bool vis = _joueurRef.InventaireSlotAunVisuel3D(s);
 			bool vpOk = _vpAnalyseur != null && i < _vpAnalyseur.Length && _vpAnalyseur[i] != null && GodotObject.IsInstanceValid(_vpAnalyseur[i]);
 			if (vpOk)
 			{
-				_vpAnalyseur[i].Visible = vis;
+				_vpAnalyseur[i].Visible = panel.Visible && vis;
 				if (vis && _meshPreviewAnalyseur != null && i < _meshPreviewAnalyseur.Length && _meshPreviewAnalyseur[i] != null)
 				{
 					ulong em = EmpreinteSlotPourPreviewMenu(s);
@@ -2387,15 +2444,33 @@ public partial class MenuAnatomie : Control
 
 	private void RestituerGrilleAnalyseurAvantFermeture()
 	{
-		if (_joueurRef == null || _joueurRef.GrilleAnalyseurManuel == null) return;
-		for (int i = 0; i < _joueurRef.GrilleAnalyseurManuel.Length; i++)
+		if (_joueurRef == null) return;
+		SlotInventaire[] grilleAnalyse = _joueurRef.ObtenirGrilleAnalyseurActif();
+		if (grilleAnalyse == null) return;
+		for (int i = 0; i < grilleAnalyse.Length; i++)
 		{
-			SlotInventaire s = _joueurRef.GrilleAnalyseurManuel[i];
+			SlotInventaire s = grilleAnalyse[i];
 			if (s.EstVide) continue;
 			if (!_joueurRef.EssayerRangerSlotInventaireOuStockage(ref s) && !s.EstVide)
 				_joueurRef.DeposerSlotAuSolDepuisMenu(s);
-			_joueurRef.GrilleAnalyseurManuel[i] = new SlotInventaire();
+			grilleAnalyse[i] = new SlotInventaire();
 		}
+		_joueurRef.FermerAnalyseurActif();
+	}
+
+	public void OuvrirAnalyseurDepuisMonde(bool tier1, ItemPhysique tableAnalyseTier1)
+	{
+		if (_joueurRef == null)
+			return;
+		if (tier1)
+			_joueurRef.OuvrirAnalyseurTier1(tableAnalyseTier1);
+		else
+			_joueurRef.OuvrirAnalyseurManuel();
+
+		if (!EstOuvert)
+			BasculerVisibilite();
+		AppliquerEcranBarre(ModeEcranBarreMenu.Analyseur);
+		RafraichirMenu();
 	}
 
 	private void AssurerPanneauCreatifAdmin()
@@ -2537,6 +2612,14 @@ public partial class MenuAnatomie : Control
 			Joueur.TagVarianteIntestinSolide => "Intestin solide",
 			_ => "Défaut"
 		};
+		static (int chimie, int morphologie) ProfilLigature(byte tag) => tag switch
+		{
+			Joueur.TagVarianteLiane => (16, 16),
+			Joueur.TagVarianteHerbeSolide => (15, 15),
+			Joueur.TagVarianteIntestin => (17, 17),
+			Joueur.TagVarianteIntestinSolide => (17, 17),
+			_ => (15, 15)
+		};
 
 		void Ajouter(SlotInventaire s, CategorieCreatifAdmin categorie, string suffixe = "")
 		{
@@ -2568,7 +2651,7 @@ public partial class MenuAnatomie : Control
 
 		int[] idsConsommables = {
 			1,2,3,4,5,6,7,8,9,
-			Joueur.IdObjetSteakCru, Joueur.IdObjetSteakCuit, Joueur.IdObjetBaie
+			Joueur.IdObjetSteakCru, Joueur.IdObjetSteakCuit, Joueur.IdObjetBaie, Joueur.IdObjetAtelleJambe
 		};
 		foreach (int id in idsConsommables)
 			Ajouter(new SlotInventaire { ID = id, Quantite = 1 }, CategorieCreatifAdmin.Consommables);
@@ -2584,15 +2667,53 @@ public partial class MenuAnatomie : Control
 		// Bois/branches/bûches avec variantes essence.
 		foreach (byte essence in essencesBois)
 		{
-			Ajouter(new SlotInventaire { ID = 30, IndexBotanique = essence, Quantite = 1 }, CategorieCreatifAdmin.Bois, $"Essence: {NomEssence(essence)}");
-			Ajouter(new SlotInventaire { ID = 32, IndexBotanique = essence, IndexChimique = 0, Quantite = 1 }, CategorieCreatifAdmin.Bois, $"Essence: {NomEssence(essence)}");
+			for (int taille = 0; taille <= 3; taille++)
+			for (int morph = 0; morph <= 3; morph++)
+				Ajouter(new SlotInventaire { ID = 30, IndexBotanique = essence, IndexTaille = taille, IndexMorphologique = morph, Quantite = 1 },
+					CategorieCreatifAdmin.Bois, $"Bûche {NomEssence(essence)} T{taille} M{morph}");
+			for (int taille = 0; taille <= 3; taille++)
+			for (int morph = 0; morph <= 3; morph++)
+				Ajouter(new SlotInventaire { ID = 32, IndexBotanique = essence, IndexChimique = 0, IndexTaille = taille, IndexMorphologique = morph, Quantite = 1 },
+					CategorieCreatifAdmin.Bois, $"Bâton brut {NomEssence(essence)} T{taille} M{morph}");
+			Ajouter(new SlotInventaire { ID = 32, IndexBotanique = essence, IndexChimique = 1, IndexMorphologique = 0, Quantite = 1 },
+				CategorieCreatifAdmin.Bois, $"Bâton façonné {NomEssence(essence)}");
+			Ajouter(new SlotInventaire { ID = 32, IndexBotanique = essence, IndexChimique = 1, IndexMorphologique = 4, Quantite = 1 },
+				CategorieCreatifAdmin.Bois, $"Bâton en T {NomEssence(essence)}");
 			Ajouter(new SlotInventaire { ID = BlocChutant.ID_BRANCHE, IndexBotanique = essence, Quantite = 1 }, CategorieCreatifAdmin.Bois, $"Essence: {NomEssence(essence)}");
+		}
+
+		// Variantes ligatures / textile / équipements souples.
+		foreach (byte tagLig in tagsLigatures)
+		{
+			var profil = ProfilLigature(tagLig);
+			string nomLig = NomLigature(tagLig);
+			Ajouter(new SlotInventaire { ID = 20, IndexChimique = profil.chimie, IndexMorphologique = profil.morphologie, IndexBotanique = tagLig, Quantite = 1 },
+				CategorieCreatifAdmin.Admin, $"Corde: {nomLig}");
+			Ajouter(new SlotInventaire { ID = 21, IndexChimique = profil.chimie, IndexMorphologique = profil.morphologie, IndexBotanique = tagLig, Quantite = 1 },
+				CategorieCreatifAdmin.Admin, $"Tissu: {nomLig}");
+			Ajouter(new SlotInventaire { ID = Joueur.IdObjetPochetteTier0, IndexChimique = profil.chimie, IndexMorphologique = profil.morphologie, IndexBotanique = tagLig, Quantite = 1 },
+				CategorieCreatifAdmin.Admin, $"Pochette: {nomLig}");
+			Ajouter(new SlotInventaire { ID = Joueur.IdObjetSacTier0, IndexChimique = profil.chimie, IndexMorphologique = profil.morphologie, IndexBotanique = tagLig, Quantite = 1 },
+				CategorieCreatifAdmin.Admin, $"Sac: {nomLig}");
+			Ajouter(new SlotInventaire { ID = Joueur.IdObjetCeinturePoches, IndexChimique = profil.chimie, IndexMorphologique = profil.morphologie, IndexBotanique = tagLig, Quantite = 1 },
+				CategorieCreatifAdmin.Admin, $"Ceinture poches: {nomLig}");
+			Ajouter(new SlotInventaire
+				{
+					ID = Joueur.IdObjetCeintureSacoches,
+					IndexChimique = profil.chimie,
+					IndexMorphologique = profil.morphologie,
+					IndexBotanique = tagLig,
+					GenomeAssemblage = Joueur.EncoderConfigPochettesCeinture(tagLig, tagLig, tagLig, tagLig),
+					Quantite = 1
+				},
+				CategorieCreatifAdmin.Admin, $"Ceinture sacoches: {nomLig}");
 		}
 
 		// Structures bois/mixes.
 		foreach (byte essence in essencesBois)
 		{
 			Ajouter(new SlotInventaire { ID = 200, IndexBotanique = essence, Quantite = 1 }, CategorieCreatifAdmin.Structures, $"Atelier {NomEssence(essence)}");
+			Ajouter(new SlotInventaire { ID = Joueur.IdObjetTableAnalyseTier1, IndexBotanique = essence, Quantite = 1 }, CategorieCreatifAdmin.Structures, $"Table analyse T1 {NomEssence(essence)}");
 			Ajouter(new SlotInventaire { ID = Joueur.IdObjetPitFeu, IndexBotanique = essence, Quantite = 1 }, CategorieCreatifAdmin.Structures, $"Essence: {NomEssence(essence)}");
 			Ajouter(new SlotInventaire { ID = Joueur.IdObjetPitFeuRoche, IndexBotanique = essence, Quantite = 1 }, CategorieCreatifAdmin.Structures, $"Essence: {NomEssence(essence)}");
 			Ajouter(new SlotInventaire { ID = Joueur.IdObjetCoffreBoisTier0, IndexBotanique = essence, Quantite = 1 }, CategorieCreatifAdmin.Structures, $"Coffre {NomEssence(essence)}");
@@ -2646,12 +2767,29 @@ public partial class MenuAnatomie : Control
 		}
 
 		// Outils pierre avec toutes chimies.
-		int[] outilsPierre = { 105, 106, Joueur.IdObjetPellePierreTier0, Joueur.IdObjetPiochePierreTier0, Joueur.IdObjetLancePierreTier0, Joueur.IdObjetFauxPierreTier0 };
+		int[] outilsPierre = { 105, 106, Joueur.IdObjetHachePierreTier1, Joueur.IdObjetPellePierreTier0, Joueur.IdObjetPiochePierreTier0, Joueur.IdObjetLancePierreTier0, Joueur.IdObjetFauxPierreTier0 };
 		foreach (int idOutil in outilsPierre)
 			for (int chim = 0; chim < ItemPhysique.TableGeologique.Length; chim++)
 				foreach (byte essence in essencesBois)
 					Ajouter(new SlotInventaire { ID = idOutil, IndexChimique = chim, IndexBotanique = essence, Quantite = 1 }, CategorieCreatifAdmin.Outils,
 						$"{ItemPhysique.TableGeologique[chim].Nom} / {NomEssence(essence)}");
+
+		// Atèle jambe : toutes combinaisons branche/ligature (pour tests visuels).
+		foreach (byte essence in essencesBois)
+		foreach (byte tagLig in tagsLigatures)
+		{
+			var profil = ProfilLigature(tagLig);
+			Ajouter(new SlotInventaire
+				{
+					ID = Joueur.IdObjetAtelleJambe,
+					IndexBotanique = essence,
+					IndexChimique = profil.chimie,
+					IndexMorphologique = profil.morphologie,
+					GenomeAssemblage = $"ATELLE133;BOIS={essence};LIGV={tagLig};LIGC={profil.chimie};LIGM={profil.morphologie}",
+					Quantite = 1
+				},
+				CategorieCreatifAdmin.Consommables, $"Atèle {NomEssence(essence)} + {NomLigature(tagLig)}");
+		}
 
 		// Objets admin orientés test/debug.
 		Ajouter(new SlotInventaire { ID = Joueur.IdObjetAllumeFeu, IndexChimique = 10, Quantite = 1 }, CategorieCreatifAdmin.Admin, "Marcassite");
