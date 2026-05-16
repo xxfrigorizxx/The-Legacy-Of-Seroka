@@ -285,7 +285,7 @@ public partial class Joueur
     public static bool EstObjetInterditDansCoffre(SlotInventaire s)
     {
         if (s.EstVide) return false;
-        return s.ID == 200 || s.ID == IdObjetRackBatons || s.ID == IdObjetRackBuches || s.ID == IdObjetCoffreBoisTier0;
+        return s.ID == 200 || s.ID == IdObjetTableAnalyseTier1 || s.ID == IdObjetRackBatons || s.ID == IdObjetRackBuches || s.ID == IdObjetCoffreBoisTier0;
     }
 
     public static bool EstSlotStockableRackBatons(SlotInventaire s) =>

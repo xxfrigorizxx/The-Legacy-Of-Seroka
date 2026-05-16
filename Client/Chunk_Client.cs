@@ -69,6 +69,7 @@ public partial class Chunk_Client : Node3D
 	public static int RayonVisibiliteBuissonsChunks = 24;
 
 	[Export] public Material MaterielTerre;
+	private Material _materielTerrainRuntime;
 
 	private float[] _densitiesFlat;
 	private byte[] _materialsFlat;
@@ -103,6 +104,7 @@ public partial class Chunk_Client : Node3D
 	{
 		SetProcess(true);
 		SetPhysicsProcess(false);
+		_materielTerrainRuntime = ConstruireMaterielTerrainRuntime();
 		for (int i = 0; i < _tamponBuissonsParCouleur.Length; i++)
 			_tamponBuissonsParCouleur[i] = new List<Transform3D>(32);
 
@@ -425,7 +427,7 @@ public partial class Chunk_Client : Node3D
 		{
 			if (!IsInsideTree()) return;
 			_sectionsTerrain[idx].Mesh = meshTerrain;
-			_sectionsTerrain[idx].MaterialOverride = MaterielTerre ?? GD.Load<Material>("res://Manteau_Planetaire.tres");
+			_sectionsTerrain[idx].MaterialOverride = _materielTerrainRuntime ?? MaterielTerre ?? GD.Load<Material>("res://Manteau_Planetaire.tres");
 
 			var collisionShape = _sectionsPhysiques[idx];
 			if (collisionShape != null && meshTerrain != null)
@@ -495,6 +497,15 @@ public partial class Chunk_Client : Node3D
 	}
 
 	private static bool IsChunkDisposeException() => true; // Placeholder pour filtre when
+
+	/// <summary>
+	/// Durcissement runtime launcher : si la ressource triplanaire n'a pas sa texture array, on la recolle
+	/// explicitement pour éviter le rendu magenta (shader sans sampler valide).
+	/// </summary>
+	private Material ConstruireMaterielTerrainRuntime()
+	{
+		return TerrainMaterialFactory.ObtenirMaterielTerrainRobuste(MaterielTerre);
+	}
 
 	/// <summary>Version différée sans paramètre — lit _inventaireFloreEnAttente pour éviter Variant/CallDeferred.</summary>
 	private void AppliquerInventaireFloreEnAttente()

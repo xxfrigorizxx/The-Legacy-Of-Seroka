@@ -1,0 +1,10 @@
+{
+  "channel": "alpha",
+  "platform": "windows-x64",
+  "manifestUrl": "https://f006.backblazeb2.com/file/Serok-alpha-game/manifest.alpha.json",
+  "entryExecutable": "SEROKAFrozenLegacy.exe",
+  "gameDirectoryName": "game",
+  "allowPrerelease": true,
+  "networkTimeoutSeconds": 15,
+  "networkRetryCount": 2
+}

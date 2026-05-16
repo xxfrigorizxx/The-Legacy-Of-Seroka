@@ -34,7 +34,10 @@ public partial class Joueur
 		MiniBucheHuitieme = 1 << 21,
 		DaguePrimitive = 1 << 22,
 		MailletBois = 1 << 23,
-		BolBois = 1 << 24
+		BolBois = 1 << 24,
+		OsBoeuf = 1 << 25,
+		CuirBoeuf = 1 << 26,
+		MortierPilonBois = 1 << 27
 	}
 
 	private sealed class RecetteAnalysable
@@ -48,11 +51,16 @@ public partial class Joueur
 	}
 
 	public const int CapaciteAnalyseurManuel = 4;
+	public const int CapaciteAnalyseurTableTier1 = 8;
 	public SlotInventaire[] GrilleAnalyseurManuel = new SlotInventaire[CapaciteAnalyseurManuel];
+	public SlotInventaire[] GrilleAnalyseurTableTier1 = new SlotInventaire[CapaciteAnalyseurTableTier1];
 	public string MessageAnalyseurManuel = "Depose des objets puis clique sur Analyser.";
+	public string MessageAnalyseurTableTier1 = "Depose des objets puis clique sur Analyser (table T1).";
+	public bool AnalyseurTier1Actif;
+	public ItemPhysique TableAnalyseTier1Ouverte;
 	private readonly HashSet<string> _craftsDecouverts = new HashSet<string>(StringComparer.Ordinal);
 
-	private static readonly RecetteAnalysable[] RecettesAnalyseur = new RecetteAnalysable[]
+	private static readonly RecetteAnalysable[] RecettesAnalyseurTier0 = new RecetteAnalysable[]
 	{
 		new RecetteAnalysable
 		{
@@ -225,6 +233,24 @@ public partial class Joueur
 		},
 		new RecetteAnalysable
 		{
+			CleCraft = "id_131",
+			IdResultat = IdObjetTableAnalyseTier1,
+			Masque = CategorieAnalyse.MortierPilonBois | CategorieAnalyse.CuirBoeuf | CategorieAnalyse.OsBoeuf | CategorieAnalyse.Ligature,
+			Titre = "Table d'analyse tier 1",
+			LegendeSymboles = new[] { "MP = Mortier + pilon", "C = Cuir de boeuf", "O = Os de boeuf", "L = Liage (corde/liane/intestin)", "Craft établi: (C)(C)(MP) / (L)(B)(L) / (O)( )(O)" },
+			PatronCraft = new[] { "(C)(C)(MP)", "(L)(B)(L)", "(O)( )(O)" }
+		},
+		new RecetteAnalysable
+		{
+			CleCraft = "id_133",
+			IdResultat = IdObjetAtelleJambe,
+			Masque = CategorieAnalyse.BrancheBrute | CategorieAnalyse.Ligature,
+			Titre = "Atelle de jambe",
+			LegendeSymboles = new[] { "Br = Branche brute (x6, meme essence)", "L = Ligature (x3, meme variante)" },
+			PatronCraft = new[] { "(Br)(L)(Br)", "(Br)(L)(Br)", "(Br)(L)(Br)" }
+		},
+		new RecetteAnalysable
+		{
 			CleCraft = "id_102",
 			IdResultat = IdObjetCeinturePoches,
 			Masque = CategorieAnalyse.Ligature,
@@ -360,6 +386,68 @@ public partial class Joueur
 		}
 	};
 
+	// Règle de gameplay: la table T1 peut débloquer RecettesAnalyseurTier0 + ces recettes T1.
+	private static readonly RecetteAnalysable[] RecettesAnalyseurTier1 = new RecetteAnalysable[]
+	{
+		new RecetteAnalysable
+		{
+			CleCraft = "id_132",
+			IdResultat = IdObjetHachePierreTier1,
+			Masque = CategorieAnalyse.Baton | CategorieAnalyse.RochePlate,
+			Titre = "Hache en pierre",
+			LegendeSymboles = new[] { "R = Petite roche plate (x2, meme matiere)", "B = Baton (x3, meme essence)" },
+			PatronCraft = new[] { "(R)(R)(B)", "( )( )(B)", "( )( )(B)" }
+		}
+	};
+
+	public int ObtenirCapaciteAnalyseurActif() => AnalyseurTier1Actif ? CapaciteAnalyseurTableTier1 : CapaciteAnalyseurManuel;
+
+	public SlotInventaire[] ObtenirGrilleAnalyseurActif()
+	{
+		return AnalyseurTier1Actif ? GrilleAnalyseurTableTier1 : GrilleAnalyseurManuel;
+	}
+
+	public string ObtenirMessageAnalyseurActif()
+	{
+		return AnalyseurTier1Actif ? MessageAnalyseurTableTier1 : MessageAnalyseurManuel;
+	}
+
+	private void DefinirMessageAnalyseurActif(string message)
+	{
+		if (AnalyseurTier1Actif)
+			MessageAnalyseurTableTier1 = message;
+		else
+			MessageAnalyseurManuel = message;
+	}
+
+	public void OuvrirAnalyseurManuel()
+	{
+		AnalyseurTier1Actif = false;
+		TableAnalyseTier1Ouverte = null;
+	}
+
+	public void OuvrirAnalyseurTier1(ItemPhysique table)
+	{
+		AnalyseurTier1Actif = true;
+		TableAnalyseTier1Ouverte = table;
+	}
+
+	public void FermerAnalyseurActif()
+	{
+		AnalyseurTier1Actif = false;
+		TableAnalyseTier1Ouverte = null;
+	}
+
+	private static RecetteAnalysable[] ObtenirRecettesAnalyseurPourMode(bool tier1Actif)
+	{
+		if (!tier1Actif || RecettesAnalyseurTier1.Length == 0)
+			return RecettesAnalyseurTier0;
+		var fusion = new RecetteAnalysable[RecettesAnalyseurTier0.Length + RecettesAnalyseurTier1.Length];
+		Array.Copy(RecettesAnalyseurTier0, fusion, RecettesAnalyseurTier0.Length);
+		Array.Copy(RecettesAnalyseurTier1, 0, fusion, RecettesAnalyseurTier0.Length, RecettesAnalyseurTier1.Length);
+		return fusion;
+	}
+
 	/// <summary>Légende des symboles + lignes du patron (grille craft), pour l’analyseur et le fil squelette.</summary>
 	private static string FormaterTexteSchemaRecette(RecetteAnalysable recette)
 	{
@@ -478,6 +566,9 @@ public partial class Joueur
 		if (s.ID == 105) c |= CategorieAnalyse.DaguePrimitive;
 		if (s.ID == IdObjetMailletBois) c |= CategorieAnalyse.MailletBois;
 		if (s.ID == IdObjetBolBois) c |= CategorieAnalyse.BolBois;
+		if (s.ID == IdObjetMortierPilonBois) c |= CategorieAnalyse.MortierPilonBois;
+		if (s.ID == IdObjetOsBoeuf) c |= CategorieAnalyse.OsBoeuf;
+		if (s.ID == IdObjetCuirBoeuf) c |= CategorieAnalyse.CuirBoeuf;
 		if (s.ID == IdObjetPochetteTier0) c |= CategorieAnalyse.Pochette;
 		if (s.ID == IdObjetCeinturePoches) c |= CategorieAnalyse.CeinturePoches;
 		if (s.ID == 2) c |= CategorieAnalyse.RocheVoxelBrute;
@@ -520,11 +611,13 @@ public partial class Joueur
 
 	public bool EssayerAnalyserCrafts(out string message)
 	{
+		SlotInventaire[] grilleAnalyse = ObtenirGrilleAnalyseurActif();
+		RecetteAnalysable[] recettesActives = ObtenirRecettesAnalyseurPourMode(AnalyseurTier1Actif);
 		CategorieAnalyse masque = CategorieAnalyse.Aucune;
 		bool aDesItems = false;
-		for (int i = 0; i < GrilleAnalyseurManuel.Length; i++)
+		for (int i = 0; i < grilleAnalyse.Length; i++)
 		{
-			SlotInventaire s = GrilleAnalyseurManuel[i];
+			SlotInventaire s = grilleAnalyse[i];
 			if (s.EstVide) continue;
 			aDesItems = true;
 			masque |= DeterminerCategoriesAnalyse(s);
@@ -533,21 +626,21 @@ public partial class Joueur
 		if (!aDesItems)
 		{
 			message = "Depose des objets dans l'analyseur.";
-			MessageAnalyseurManuel = message;
+			DefinirMessageAnalyseurActif(message);
 			AlerteSqueletteBoiteNoire("Analyseur : " + message);
 			return false;
 		}
 
 		void ConsommerAnalyseur()
 		{
-			for (int i = 0; i < GrilleAnalyseurManuel.Length; i++)
-				GrilleAnalyseurManuel[i] = new SlotInventaire();
+			for (int i = 0; i < grilleAnalyse.Length; i++)
+				grilleAnalyse[i] = new SlotInventaire();
 		}
 
 		var candidates = new List<RecetteAnalysable>();
-		for (int i = 0; i < RecettesAnalyseur.Length; i++)
+		for (int i = 0; i < recettesActives.Length; i++)
 		{
-			RecetteAnalysable r = RecettesAnalyseur[i];
+			RecetteAnalysable r = recettesActives[i];
 			if (AnalyseurUnionSatisfaitRecette(masque, r))
 				candidates.Add(r);
 		}
@@ -555,7 +648,7 @@ public partial class Joueur
 		{
 			ConsommerAnalyseur();
 			message = "Aucun craft ne se compose uniquement de ces materiaux.";
-			MessageAnalyseurManuel = message;
+			DefinirMessageAnalyseurActif(message);
 			AlerteSqueletteBoiteNoire("Analyseur : " + message);
 			return false;
 		}
@@ -570,7 +663,7 @@ public partial class Joueur
 		{
 			ConsommerAnalyseur();
 			message = "Rien a decouvrir avec ce que tu as analyse.";
-			MessageAnalyseurManuel = message;
+			DefinirMessageAnalyseurActif(message);
 			AlerteSqueletteBoiteNoire("Analyseur : " + message);
 			return false;
 		}
@@ -581,7 +674,7 @@ public partial class Joueur
 			ConsommerAnalyseur();
 			ulong xpIntelligenceRecue = AjouterXpFutureStateEtRetourEffectif("Intelligence", 2UL);
 			message = $"Echec de l'analyse : tes echantillons sont consumes. Tu en retires une lecon (+{xpIntelligenceRecue} XP Intelligence).";
-			MessageAnalyseurManuel = message;
+			DefinirMessageAnalyseurActif(message);
 			AlerteSqueletteBoiteNoire("Analyseur : " + message);
 			return false;
 		}
@@ -593,7 +686,7 @@ public partial class Joueur
 		ulong xpIntelligenceRecueSucces = AjouterXpFutureStateEtRetourEffectif("Intelligence", 1UL);
 
 		message = FormaterMessageDecouverte(choisie) + $" (+{xpIntelligenceRecueSucces} XP Intelligence).";
-		MessageAnalyseurManuel = message;
+		DefinirMessageAnalyseurActif(message);
 		string titreCourt = string.IsNullOrWhiteSpace(choisie.Titre) ? "nouvelle formule" : choisie.Titre;
 		string schemaChat = FormaterTexteSchemaRecette(choisie);
 		if (string.IsNullOrEmpty(schemaChat))

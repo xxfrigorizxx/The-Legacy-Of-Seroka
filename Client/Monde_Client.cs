@@ -937,7 +937,7 @@ public partial class Monde_Client : Node3D
 		Material matTerrain = MaterielTerrain;
 		if (matTerrain == null)
 		{
-			_materielTerrainCache ??= GD.Load<Material>("res://Manteau_Planetaire.tres");
+			_materielTerrainCache ??= TerrainMaterialFactory.ObtenirMaterielTerrainRobuste();
 			matTerrain = _materielTerrainCache;
 		}
 		if (matTerrain != null)

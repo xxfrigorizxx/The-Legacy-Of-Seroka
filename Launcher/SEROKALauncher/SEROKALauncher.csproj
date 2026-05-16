@@ -16,4 +16,11 @@
     <PublishSingleFile>false</PublishSingleFile>
   </PropertyGroup>
 
+  <ItemGroup>
+    <None Update="launcher-config.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+    </None>
+  </ItemGroup>
+
 </Project>

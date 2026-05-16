@@ -11,6 +11,10 @@ uniform float lod_start_jitter = 32.0;
 uniform float lumiere_ambiante = 0.08;
 uniform float douceur_ombre = 0.50;
 uniform float neutralisation_sable = 0.48;
+uniform float herbe_saturation_boost = 1.0;
+uniform float herbe_value_boost = 1.0;
+uniform float eau_saturation_boost = 1.0;
+uniform float eau_value_boost = 1.0;
 
 varying vec3 uv1_power_normal;
 varying vec3 uv1_triplanar_pos;
@@ -108,15 +112,16 @@ void fragment() {
 	float max_axis = uv1_power_normal.y;
 	if (uv1_power_normal.x > max_axis) { max_axis = uv1_power_normal.x; uv_dom = uv_x; }
 	if (uv1_power_normal.z > max_axis) { uv_dom = uv_z; }
-	vec4 tex_lod = textureLod(texture_array, vec3(uv_dom, tex_layer), lod_far_mip);
-	float tex_lod_mix = lod_t * 0.38;
-	vec4 albedo_tex = mix(tex_triplanar, tex_lod, tex_lod_mix);
+	// Compat launcher/export: textureLod en fragment peut casser selon backend GPU/driver.
+	// On garde un échantillonnage triplanaire robuste pour éviter le fallback magenta.
+	vec4 albedo_tex = tex_triplanar;
 
 	if (is_bois) albedo_tex.rgb = vec3(0.4, 0.28, 0.18);
 	if (is_feuilles) albedo_tex.rgb = vec3(0.25, 0.55, 0.22);
 	vec3 final_color = albedo_tex.rgb;
 
 	bool est_herbe = (material_id == 1.0);
+	bool est_eau = (material_id == 4.0);
 	bool est_boue = (material_id == 7.0);
 	bool est_aride = (material_id == 6.0);
 	bool est_sable = (material_id == 3.0);
@@ -174,6 +179,17 @@ void fragment() {
 			float detailLum = clamp((lum - 0.5) * 1.22 + 0.5, 0.0, 1.0);
 			vec3 coloreRelief = couleurBiome * (0.72 + detailLum * 0.54);
 			final_color = mix(base, coloreRelief, forcePalette);
+			// Ajustement ciblé ID 1: un peu plus vivant en launcher, sans toucher les autres matériaux.
+			vec3 hsvHerbeFinal = rgb2hsv(final_color);
+			hsvHerbeFinal.y = clamp(hsvHerbeFinal.y * herbe_saturation_boost, 0.0, 1.0);
+			hsvHerbeFinal.z = clamp(hsvHerbeFinal.z * herbe_value_boost, 0.0, 1.0);
+			final_color = hsv2rgb(hsvHerbeFinal);
+		}
+		if (est_eau) {
+			vec3 hsvEauFinal = rgb2hsv(final_color);
+			hsvEauFinal.y = clamp(hsvEauFinal.y * eau_saturation_boost, 0.0, 1.0);
+			hsvEauFinal.z = clamp(hsvEauFinal.z * eau_value_boost, 0.0, 1.0);
+			final_color = hsv2rgb(hsvEauFinal);
 		}
 		// Boue (ID 7) : sec = grisâtre, humide = de plus en plus brun
 		if (est_boue) {

@@ -735,7 +735,8 @@ public partial class Joueur
     {
         _cooldownMessageRecuperationFondation = Mathf.Max(0f, _cooldownMessageRecuperationFondation - dt);
         bool mainVide = mainActive.EstVide;
-        bool hachette = mainActive.ID == 106;
+        bool hachette = mainActive.ID == 106 || mainActive.ID == IdObjetHachePierreTier1;
+        bool hachePierreTier1 = mainActive.ID == IdObjetHachePierreTier1;
         bool dague = mainActive.ID == 105 || mainActive.ID == IdObjetFauxPierreTier0;
         bool pelle = mainActive.ID == IdObjetPellePierreTier0;
         bool pioche = mainActive.ID == IdObjetPiochePierreTier0;
@@ -774,6 +775,8 @@ public partial class Joueur
             float duree = estRack
                 ? (mainVide ? DureeRecuperationRackMainNue : DureeRecuperationRackHachette)
                 : (mainVide ? DureeRecuperationAtelierMainNue : DureeRecuperationAtelierHachette);
+            if (hachePierreTier1 && !mainVide)
+                duree *= 0.5f;
             if (_progressionRecuperationAtelier < duree)
                 return;
 
@@ -828,6 +831,8 @@ public partial class Joueur
             }
 
             float duree = ObtenirDureeRecuperationFondation(fondation.ID_Objet);
+            if (hachePierreTier1 && fondation.ID_Objet != IdObjetFondationRoche)
+                duree *= 0.5f;
             if (_progressionRecuperationAtelier < duree)
                 return;
 
@@ -980,6 +985,9 @@ public partial class Joueur
             return (0.79f, 0.21f, 1.28f);
         if (mainActive.ID == 106)
             return (0.88f, 0.12f, 2.05f);
+        if (mainActive.ID == IdObjetHachePierreTier1)
+            // Hache pierre tier 1 : nettement plus puissante que la hachette primitive.
+            return (0.96f, 0.10f, 4.10f);
         if (mainActive.ID == IdObjetPiochePierreTier0)
             return (0.92f, 0.08f, 2.25f);
         if (mainActive.ID == IdObjetPellePierreTier0)
@@ -1028,6 +1036,8 @@ public partial class Joueur
             epaisseurLame = 0.042f;
         else if (mainActive.ID == 106)
             epaisseurLame = 0.065f;
+        else if (mainActive.ID == IdObjetHachePierreTier1)
+            epaisseurLame = 0.05f;
         else if (mainActive.ID == IdObjetPiochePierreTier0)
             epaisseurLame = 0.06f;
         else if (mainActive.ID == IdObjetPellePierreTier0)
@@ -1078,12 +1088,16 @@ public partial class Joueur
     private bool EstFrappeHachette106AvecLaLame(Vector3 pointImpact, Vector3 directionFrappe)
     {
         if (_objetEnMain == null || _camera == null) return false;
+        SlotInventaire mainActive = MainGaucheEstActive ? MainGauche : MainDroite;
         var modele = _objetEnMain.FindChild("ModeleArme", true, false) as Node3D;
         if (modele == null) return false;
         MeshInstance3D lameMi = modele.GetNodeOrNull<MeshInstance3D>("tripo_part_4")
-            ?? TrouverMeshInstanceDontLeNomContient(modele, "tripo_part_4");
+            ?? TrouverMeshInstanceDontLeNomContient(modele, "tripo_part_4")
+            // Hache pierre: noms GLB variables (pas toujours tripo_part_*).
+            ?? TrouverMeshParMots(modele, "roche", "rock", "stone", "pierre", "head", "blade", "lame");
         MeshInstance3D mancheMi = modele.GetNodeOrNull<MeshInstance3D>("tripo_part_5")
-            ?? TrouverMeshInstanceDontLeNomContient(modele, "tripo_part_5");
+            ?? TrouverMeshInstanceDontLeNomContient(modele, "tripo_part_5")
+            ?? TrouverMeshParMots(modele, "manche", "bois", "wood", "baton", "stick", "handle", "shaft");
         if (lameMi?.Mesh == null || mancheMi?.Mesh == null) return false;
         Vector3 cL = lameMi.GlobalTransform * lameMi.Mesh.GetAabb().GetCenter();
         Vector3 cM = mancheMi.GlobalTransform * mancheMi.Mesh.GetAabb().GetCenter();
@@ -1104,6 +1118,14 @@ public partial class Joueur
 
             if (Mathf.Abs(dirNorm.Y) > 0.5f)
                 alignMouvement += 0.4f;
+        }
+
+        // Hache pierre : selon certains GLB, la vectorisation lame/manche est inversée.
+        // On accepte l'orientation opposée pour éviter les faux "coup de manche".
+        if (mainActive.ID == IdObjetHachePierreTier1)
+        {
+            alignVisée = Mathf.Max(alignVisée, -alignVisée);
+            alignMouvement = Mathf.Max(alignMouvement, -alignMouvement);
         }
 
         const float seuil = 0.15f;
@@ -1192,6 +1214,8 @@ public partial class Joueur
             return 1.12f;
         if (mainActive.ID == 106)
             return 1.22f;
+        if (mainActive.ID == IdObjetHachePierreTier1)
+            return 1.44f;
         if (mainActive.ID == IdObjetPiochePierreTier0)
             return 1.05f;
         if (mainActive.ID == IdObjetPellePierreTier0)
@@ -1558,6 +1582,8 @@ public partial class Joueur
             multiplicateurLame = Mathf.Max(multiplicateurLame, 2.32f);
         else if (mainActive.ID == 106 && EstFrappeHachette106AvecLaLame(pointImpact, directionFrappe))
             multiplicateurLame = Mathf.Max(multiplicateurLame, 2.85f);
+        else if (mainActive.ID == IdObjetHachePierreTier1 && EstFrappeHachette106AvecLaLame(pointImpact, directionFrappe))
+            multiplicateurLame = Mathf.Max(multiplicateurLame, 5.70f);
         else if (mainActive.ID == IdObjetLancePierreTier0 && EstFrappeLance111AvecLaPointe(pointImpact, directionFrappe))
             multiplicateurLame = Mathf.Max(multiplicateurLame, 2.95f);
         else if (mainActive.EstUnEclat && mainActive.MeshEclat != null && mainActive.ID != 100)
@@ -1596,6 +1622,7 @@ public partial class Joueur
             }
 
             bool outilTranchantPourArbre = mainActive.ID == 106
+                || mainActive.ID == IdObjetHachePierreTier1
                 || mainActive.EstUnEclat
                 || rochePlate
                 || rochePointe;
@@ -1623,9 +1650,12 @@ public partial class Joueur
             }
             if (mainActive.ID == 106)
                 forceCoupe *= 1.08f;
+            else if (mainActive.ID == IdObjetHachePierreTier1)
+                forceCoupe *= 2.16f;
             forceCoupe += ObtenirBonusDegatsArbreBucheron();
 
-            bool hachetteBonneOrientation = mainActive.ID == 106 && EstFrappeHachette106AvecLaLame(pointImpact, directionFrappe);
+            bool hachetteBonneOrientation = mainActive.ID == IdObjetHachePierreTier1
+                || (mainActive.ID == 106 && EstFrappeHachette106AvecLaLame(pointImpact, directionFrappe));
             int resultatCoupe = arbre.SubirDegats(pointImpact, directionFrappe, forceCoupe, epaisseurLame, hachetteBonneOrientation);
             if (resultatCoupe == 0) GD.Print("ZERO-K : Rebond. La force d'impact est insuffisante pour entamer ce bois.");
             else if (resultatCoupe == 1) JouerSonEtEffetCoupeArbre(pointImpact);
@@ -1657,9 +1687,10 @@ public partial class Joueur
                     : "ZERO-K : Branche amputée — branche au sol (essence conservée).");
             }
 
-            if (mainActive.ID == 106 && resultatCoupe > 0)
+            if ((mainActive.ID == 106 || mainActive.ID == IdObjetHachePierreTier1) && resultatCoupe > 0)
             {
-                int idCasse = AppliquerUsureOutilMainActive(2.0f);
+                float coutUsure = mainActive.ID == IdObjetHachePierreTier1 ? 0.8f : 2.0f;
+                int idCasse = AppliquerUsureOutilMainActive(coutUsure);
                 bool hachetteCassee = idCasse == 106;
                 AjouterXpFutureState("Force", hachetteCassee ? 2UL : 1UL);
             }
@@ -1684,7 +1715,7 @@ public partial class Joueur
                 tranchant = EstFrappeDagueAvecLaLame(pointImpact, directionFrappe);
             else if (mainActive.ID == IdObjetFauxPierreTier0)
                 tranchant = EstFrappeFaux112AvecLaLame(pointImpact, directionFrappe);
-            else if (mainActive.ID == 106 || mainActive.ID == IdObjetPiochePierreTier0 || mainActive.ID == IdObjetPellePierreTier0)
+            else if (mainActive.ID == 106 || mainActive.ID == IdObjetHachePierreTier1 || mainActive.ID == IdObjetPiochePierreTier0 || mainActive.ID == IdObjetPellePierreTier0)
                 tranchant = EstFrappeHachette106AvecLaLame(pointImpact, directionFrappe);
             else if (mainActive.ID == IdObjetLancePierreTier0)
                 tranchant = EstFrappeLance111AvecLaPointe(pointImpact, directionFrappe);
@@ -1695,7 +1726,7 @@ public partial class Joueur
 
             Vector3 dirAvantCamera = _camera != null ? -_camera.GlobalTransform.Basis.Z.Normalized() : directionFrappe.Normalized();
             float alignPointee = Mathf.Clamp(directionFrappe.Normalized().Dot(dirAvantCamera), -1f, 1f);
-            bool perforant = tranchant && alignPointee > 0.68f && (mainActive.ID == 105 || mainActive.ID == IdObjetFauxPierreTier0 || mainActive.ID == 106 || mainActive.ID == IdObjetLancePierreTier0 || mainActive.ID == 100 || mainActive.EstUnEclat);
+            bool perforant = tranchant && alignPointee > 0.68f && (mainActive.ID == 105 || mainActive.ID == IdObjetFauxPierreTier0 || mainActive.ID == 106 || mainActive.ID == IdObjetHachePierreTier1 || mainActive.ID == IdObjetLancePierreTier0 || mainActive.ID == 100 || mainActive.EstUnEclat);
             string nomZone = NomZoneDepuisColliderRaycast(_rayon.GetCollider());
 
             float materiau = MultiplicateurMateriauArmeContreFaune(mainActive);
@@ -1723,8 +1754,13 @@ public partial class Joueur
                 AjouterXpFutureState("Force", 2UL);
             if (applique && !etaitCadavreDepecable && boeufTouche.EstCadavreDepecable())
                 AjouterXpMetier("Chasseur", 1UL);
-            if (applique && (mainActive.ID == 105 || mainActive.ID == IdObjetFauxPierreTier0 || mainActive.ID == 106 || mainActive.ID == IdObjetPellePierreTier0 || mainActive.ID == IdObjetPiochePierreTier0 || mainActive.ID == IdObjetLancePierreTier0 || mainActive.ID == 100))
-                AppliquerUsureOutilMainActive(0.85f + (baseDegats * 0.024f));
+            if (applique && (mainActive.ID == 105 || mainActive.ID == IdObjetFauxPierreTier0 || mainActive.ID == 106 || mainActive.ID == IdObjetHachePierreTier1 || mainActive.ID == IdObjetPellePierreTier0 || mainActive.ID == IdObjetPiochePierreTier0 || mainActive.ID == IdObjetLancePierreTier0 || mainActive.ID == 100))
+            {
+                float coutUsure = 0.85f + (baseDegats * 0.024f);
+                if (mainActive.ID == IdObjetHachePierreTier1)
+                    coutUsure *= 0.4f;
+                AppliquerUsureOutilMainActive(coutUsure);
+            }
             return;
         }
 
@@ -1737,6 +1773,7 @@ public partial class Joueur
             var main = MainGaucheEstActive ? MainGauche : MainDroite;
             bool fauxSurCadavre = main.ID == IdObjetFauxPierreTier0 && EstFrappeFaux112AvecLaLame(pointImpact, directionFrappe);
             bool outilTranchantPourArbre = main.ID == 106
+                || main.ID == IdObjetHachePierreTier1
                 || main.EstUnEclat
                 || EstRocheTranchantePourBois(main)
                 || fauxSurCadavre;
@@ -1800,6 +1837,7 @@ public partial class Joueur
 
             // ÉTAPE 3 : LIBÉRATION DU TRONC BRUT UNIQUE
             bool peutLibererTronc = main.ID == 106
+                || main.ID == IdObjetHachePierreTier1
                 || main.EstUnEclat
                 || EstRocheTranchantePourBois(main);
             if (!peutLibererTronc)
@@ -1841,6 +1879,7 @@ public partial class Joueur
             var mainB = MainGaucheEstActive ? MainGauche : MainDroite;
             bool fauxSurBrancheMorte = mainB.ID == IdObjetFauxPierreTier0 && EstFrappeFaux112AvecLaLame(pointImpact, directionFrappe);
             bool outilTranchantPourArbre = mainB.ID == 106
+                || mainB.ID == IdObjetHachePierreTier1
                 || mainB.EstUnEclat
                 || EstRocheTranchantePourBois(mainB)
                 || fauxSurBrancheMorte;
@@ -1879,7 +1918,7 @@ public partial class Joueur
         if (item.ID_Objet == 30 || item.ID_Objet == 32)
         {
             // Post-abattage : tronc/bûche/bâton au sol — uniquement hachette (la roche plate sert aux jeunes arbres vivants, pas au débitage).
-            if (mainActive.ID != 106)
+            if (mainActive.ID != 106 && mainActive.ID != IdObjetHachePierreTier1)
             {
                 AlerteSqueletteBoiteNoire("Il faut une hachette pour standardiser ou fendre le bois au sol.");
                 rbCible.ApplyCentralImpulse(dirFrappeObj * impulsionFrappe);
@@ -1895,7 +1934,7 @@ public partial class Joueur
 
             Vector3 axeBois = rbCible.GlobalTransform.Basis.Z.Normalized();
             float alignement = Mathf.Abs(directionFrappe.Normalized().Dot(axeBois));
-            AppliquerUsureOutilMainActive(2.5f);
+            AppliquerUsureOutilMainActive(mainActive.ID == IdObjetHachePierreTier1 ? 1.0f : 2.5f);
 
             if (alignement < 0.5f)
             {
@@ -2089,7 +2128,7 @@ public partial class Joueur
 
         rbCible.ApplyCentralImpulse(dirFrappeObj * impulsionFrappe);
 
-        if ((mainActive.ID == 105 || mainActive.ID == IdObjetFauxPierreTier0 || mainActive.ID == 106 || mainActive.ID == IdObjetPellePierreTier0 || mainActive.ID == IdObjetLancePierreTier0) && ItemPhysique.EstIdRocheMatiere(item.ID_Objet))
+        if ((mainActive.ID == 105 || mainActive.ID == IdObjetFauxPierreTier0 || mainActive.ID == 106 || mainActive.ID == IdObjetHachePierreTier1 || mainActive.ID == IdObjetPellePierreTier0 || mainActive.ID == IdObjetLancePierreTier0) && ItemPhysique.EstIdRocheMatiere(item.ID_Objet))
         {
             bool tranchantOk = mainActive.ID == 105
                 ? EstFrappeDagueAvecLaLame(pointImpact, directionFrappe)
@@ -2107,7 +2146,7 @@ public partial class Joueur
 
         if ((mainActive.ID == 105 && !EstFrappeDagueAvecLaLame(pointImpact, directionFrappe))
             || (mainActive.ID == IdObjetFauxPierreTier0 && !EstFrappeFaux112AvecLaLame(pointImpact, directionFrappe))
-            || ((mainActive.ID == 106 || mainActive.ID == IdObjetPellePierreTier0 || mainActive.ID == IdObjetPiochePierreTier0) && !EstFrappeHachette106AvecLaLame(pointImpact, directionFrappe))
+            || ((mainActive.ID == 106 || mainActive.ID == IdObjetHachePierreTier1 || mainActive.ID == IdObjetPellePierreTier0 || mainActive.ID == IdObjetPiochePierreTier0) && !EstFrappeHachette106AvecLaLame(pointImpact, directionFrappe))
             || (mainActive.ID == IdObjetLancePierreTier0 && !EstFrappeLance111AvecLaPointe(pointImpact, directionFrappe)))
         {
             AlerteSqueletteBoiteNoire("Oriente le tranchant vers la cible: ce coup porte le manche ou le plat.");
@@ -2118,8 +2157,13 @@ public partial class Joueur
         int resultatFracture = item.SubirDegats(forceImpact, dirVue, pointImpact);
         if (resultatFracture == 0)
             GD.Print("ZERO-K : L'impact n'est pas assez puissant. La roche résonne mais ne cède pas (Rebond).");
-        else if (mainActive.ID == 105 || mainActive.ID == IdObjetFauxPierreTier0 || mainActive.ID == 106 || mainActive.ID == IdObjetPellePierreTier0 || mainActive.ID == IdObjetPiochePierreTier0 || mainActive.ID == IdObjetLancePierreTier0)
-            AppliquerUsureOutilMainActive(2.15f + forceImpact * 0.017f);
+        else if (mainActive.ID == 105 || mainActive.ID == IdObjetFauxPierreTier0 || mainActive.ID == 106 || mainActive.ID == IdObjetHachePierreTier1 || mainActive.ID == IdObjetPellePierreTier0 || mainActive.ID == IdObjetPiochePierreTier0 || mainActive.ID == IdObjetLancePierreTier0)
+        {
+            float coutUsure = 2.15f + forceImpact * 0.017f;
+            if (mainActive.ID == IdObjetHachePierreTier1)
+                coutUsure *= 0.4f;
+            AppliquerUsureOutilMainActive(coutUsure);
+        }
     }
 
     /// <summary>Rayon vertical sur le masque collision 1 ; place un point au-dessus du sol (évite tronc/branches sous le terrain).</summary>

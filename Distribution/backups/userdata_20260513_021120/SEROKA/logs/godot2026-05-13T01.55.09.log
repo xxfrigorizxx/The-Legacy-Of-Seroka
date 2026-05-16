@@ -1,0 +1,667 @@
+Godot Engine v4.6.1.stable.mono.official.14d19694e - https://godotengine.org
+D3D12 12_0 - Forward+ - Using Device #0: NVIDIA - NVIDIA GeForce GTX 1060 6GB
+
+ZERO-K : Monde chargé : Monde_1029859694 (seed 1029859694, jour 0, perso « Voyageur », Orc, Masculin)
+ZERO-K : Session joueur restaurée dimension=0 pos=(1711.9994, 123.501114, -3690.1357)
+ZERO-K : Reconnexion joueur à (1711.9994, 123.501114, -3690.1357) (dimension 0)
+NetworkManager: serveur ENet démarré (Solo/Host) sur le port 25565.
+ZERO-K : Dossier chunks actif = user://saves/Monde_1029859694/chunks_ARAPA/ (lecture ET écriture) [ARAPA]
+ZERO-K ADMIN : fichier absent (user://admin_whitelist.json). Aucun admin persiste ; bootstrap via /ADAMINISATATORA <NomPersonnage>.
+ZERO-K : Pools roches par matière créés (12 x 50).
+ZERO-K : Dossier chunks actif = user://saves/Monde_1029859694/chunks_PETA/ (lecture ET écriture) [PETA]
+ZERO-K ADMIN : fichier absent (user://admin_whitelist.json). Aucun admin persiste ; bootstrap via /ADAMINISATATORA <NomPersonnage>.
+ZERO-K : Pools roches par matière créés (12 x 50).
+ZERO-K : Dossier chunks actif = user://saves/Monde_1029859694/chunks_OMEGA/ (lecture ET écriture) [OMEGA]
+ZERO-K ADMIN : fichier absent (user://admin_whitelist.json). Aucun admin persiste ; bootstrap via /ADAMINISATATORA <NomPersonnage>.
+ZERO-K : Pools roches par matière créés (12 x 50).
+ZERO-K : Dossier chunks actif = user://saves/Monde_1029859694/chunks_DERATA/ (lecture ET écriture) [DERATA]
+ZERO-K ADMIN : fichier absent (user://admin_whitelist.json). Aucun admin persiste ; bootstrap via /ADAMINISATATORA <NomPersonnage>.
+ZERO-K : Pools roches par matière créés (12 x 50).
+ZERO-K : Dossier chunks actif = user://saves/Monde_1029859694/chunks_APISARA/ (lecture ET écriture) [APISARA]
+ZERO-K ADMIN : fichier absent (user://admin_whitelist.json). Aucun admin persiste ; bootstrap via /ADAMINISATATORA <NomPersonnage>.
+ZERO-K : Pools roches par matière créés (12 x 50).
+ZERO-K : AnimationPlayer Â« AnimationPlayerLocomotion Â» â€” pistes ciblent le squelette via Â« ParentNode/Armature/Skeleton3D Â» (parent lecteur = HumainRigRoot).
+ZERO-K : clip Â« Idle Â» fusionnÃ© (res://Modeles/Animations/imobile.fbx) FBX:Skeleton3D â†’ joueur:ParentNode/Armature/Skeleton3D â†’ locomotion/Idle.
+ZERO-K : clip Â« Marche Â» fusionnÃ© (res://Modeles/Animations/Marcher.fbx) FBX:Skeleton3D â†’ joueur:ParentNode/Armature/Skeleton3D â†’ locomotion/Marche.
+ZERO-K : clip Â« Run Â» fusionnÃ© (res://Modeles/Animations/Courir.fbx) FBX:Skeleton3D â†’ joueur:ParentNode/Armature/Skeleton3D â†’ locomotion/Run.
+ZERO-K : clip Â« Saut Â» fusionnÃ© (res://Modeles/Animations/Jump.fbx) FBX:Skeleton3D â†’ joueur:ParentNode/Armature/Skeleton3D â†’ locomotion/Saut.
+Moteur Thermodynamique : EN LIGNE.
+ZERO-K : Sauvegarde joueur ignorée (restauration joueur non initialisée).
+ZERO-K : portails Nexus (Portaille.glb) — 4 mondes à (0,0) + 4 sur plaine extérieure APISARA (N,E,S,O).
+ZERO-K DIAG : Tentative chargement Chunk (0, 0)...
+ZERO-K SUCCÈS : Chunk (0, 0) chargé depuis le disque (1875321 bytes).
+ZERO-K DIAG : Tentative chargement Chunk (0, 0)...
+ZERO-K SUCCÈS : Chunk (0, 0) chargé depuis le disque (1875321 bytes).
+ZERO-K DIAG : Tentative chargement Chunk (0, 0)...
+ZERO-K SUCCÈS : Chunk (0, 0) chargé depuis le disque (1875321 bytes).
+ZERO-K DIAG : Tentative chargement Chunk (0, 0)...
+ZERO-K SUCCÈS : Chunk (0, 0) chargé depuis le disque (1875321 bytes).
+ZERO-K DIAG : Tentative chargement Chunk (103, -231)...
+ZERO-K SUCCÈS : Chunk (103, -231) chargé depuis le disque (1875321 bytes).
+ZERO-K DIAG : Tentative chargement Chunk (103, -230)...
+ZERO-K SUCCÈS : Chunk (103, -230) chargé depuis le disque (1875321 bytes).
+ZERO-K DIAG : Tentative chargement Chunk (103, -232)...
+ZERO-K SUCCÈS : Chunk (103, -232) chargé depuis le disque (1875321 bytes).
+ZERO-K DIAG : Tentative chargement Chunk (104, -233)...
+ZERO-K SUCCÈS : Chunk (104, -233) chargé depuis le disque (1875321 bytes).
+ZERO-K DIAG : Tentative chargement Chunk (104, -232)...
+ZERO-K SUCCÈS : Chunk (104, -232) chargé depuis le disque (1875321 bytes).
+ZERO-K DIAG : Tentative chargement Chunk (104, -231)...
+ZERO-K SUCCÈS : Chunk (104, -231) chargé depuis le disque (1875321 bytes).
+ZERO-K DIAG : Tentative chargement Chunk (104, -230)...
+ZERO-K SUCCÈS : Chunk (104, -230) chargé depuis le disque (1875321 bytes).
+ZERO-K DIAG : Tentative chargement Chunk (104, -229)...
+ZERO-K SUCCÈS : Chunk (104, -229) chargé depuis le disque (1875321 bytes).
+ZERO-K DIAG : Tentative chargement Chunk (104, -228)...
+ZERO-K SUCCÈS : Chunk (104, -228) chargé depuis le disque (1875321 bytes).
+ZERO-K DIAG : Tentative chargement Chunk (105, -234)...
+ZERO-K SUCCÈS : Chunk (105, -234) chargé depuis le disque (1875321 bytes).
+ZERO-K DIAG : Tentative chargement Chunk (105, -233)...
+ZERO-K SUCCÈS : Chunk (105, -233) chargé depuis le disque (1875321 bytes).
+ZERO-K DIAG : Tentative chargement Chunk (105, -232)...
+ZERO-K SUCCÈS : Chunk (105, -232) chargé depuis le disque (1875321 bytes).
+ZERO-K DIAG : Tentative chargement Chunk (105, -231)...
+ZERO-K SUCCÈS : Chunk (105, -231) chargé depuis le disque (1875321 bytes).
+ZERO-K DIAG : Tentative chargement Chunk (105, -230)...
+ZERO-K SUCCÈS : Chunk (105, -230) chargé depuis le disque (1875321 bytes).
+ZERO-K DIAG : Tentative chargement Chunk (105, -229)...
+ZERO-K SUCCÈS : Chunk (105, -229) chargé depuis le disque (1875321 bytes).
+ZERO-K DIAG : Tentative chargement Chunk (105, -228)...
+ZERO-K SUCCÈS : Chunk (105, -228) chargé depuis le disque (1875321 bytes).
+ZERO-K DIAG : Tentative chargement Chunk (106, -234)...
+ZERO-K SUCCÈS : Chunk (106, -234) chargé depuis le disque (1875321 bytes).
+ZERO-K DIAG : Tentative chargement Chunk (106, -233)...
+ZERO-K SUCCÈS : Chunk (106, -233) chargé depuis le disque (1875321 bytes).
+ZERO-K DIAG : Tentative chargement Chunk (106, -232)...
+ZERO-K SUCCÈS : Chunk (106, -232) chargé depuis le disque (1875321 bytes).
+ZERO-K DIAG : Tentative chargement Chunk (106, -231)...
+ZERO-K SUCCÈS : Chunk (106, -231) chargé depuis le disque (1875321 bytes).
+ZERO-K DIAG : Tentative chargement Chunk (106, -230)...
+ZERO-K SUCCÈS : Chunk (106, -230) chargé depuis le disque (1875321 bytes).
+ZERO-K DIAG : Tentative chargement Chunk (106, -229)...
+ZERO-K SUCCÈS : Chunk (106, -229) chargé depuis le disque (1875321 bytes).
+ZERO-K DIAG : Tentative chargement Chunk (106, -228)...
+ZERO-K SUCCÈS : Chunk (106, -228) chargé depuis le disque (1875321 bytes).
+ZERO-K DIAG : Tentative chargement Chunk (107, -234)...
+ZERO-K SUCCÈS : Chunk (107, -234) chargé depuis le disque (1875321 bytes).
+ZERO-K DIAG : Tentative chargement Chunk (107, -233)...
+ZERO-K SUCCÈS : Chunk (107, -233) chargé depuis le disque (1875321 bytes).
+ZERO-K DIAG : Tentative chargement Chunk (107, -232)...
+ZERO-K SUCCÈS : Chunk (107, -232) chargé depuis le disque (1875321 bytes).
+ZERO-K DIAG : Tentative chargement Chunk (107, -231)...
+ZERO-K SUCCÈS : Chunk (107, -231) chargé depuis le disque (1875321 bytes).
+ZERO-K DIAG : Tentative chargement Chunk (107, -230)...
+ZERO-K SUCCÈS : Chunk (107, -230) chargé depuis le disque (1875321 bytes).
+ZERO-K DIAG : Tentative chargement Chunk (107, -229)...
+ZERO-K SUCCÈS : Chunk (107, -229) chargé depuis le disque (1875321 bytes).
+ZERO-K : Cicatrice mémorisée. Chunk 0_0 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 0_0 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 0_0 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 0_0 gravé sur le disque.
+ZERO-K DIAG : Tentative chargement Chunk (107, -228)...
+ZERO-K SUCCÈS : Chunk (107, -228) chargé depuis le disque (1875321 bytes).
+ZERO-K DIAG : Tentative chargement Chunk (108, -234)...
+ZERO-K SUCCÈS : Chunk (108, -234) chargé depuis le disque (1875321 bytes).
+ZERO-K DIAG : Tentative chargement Chunk (108, -233)...
+ZERO-K SUCCÈS : Chunk (108, -233) chargé depuis le disque (1875321 bytes).
+ZERO-K DIAG : Tentative chargement Chunk (108, -232)...
+ZERO-K SUCCÈS : Chunk (108, -232) chargé depuis le disque (1875321 bytes).
+ZERO-K DIAG : Tentative chargement Chunk (108, -231)...
+ZERO-K SUCCÈS : Chunk (108, -231) chargé depuis le disque (1875321 bytes).
+ZERO-K DIAG : Tentative chargement Chunk (108, -230)...
+ZERO-K SUCCÈS : Chunk (108, -230) chargé depuis le disque (1875321 bytes).
+ZERO-K DIAG : Tentative chargement Chunk (108, -229)...
+ZERO-K SUCCÈS : Chunk (108, -229) chargé depuis le disque (1875321 bytes).
+ZERO-K DIAG : Tentative chargement Chunk (108, -228)...
+ZERO-K SUCCÈS : Chunk (108, -228) chargé depuis le disque (1875321 bytes).
+ZERO-K DIAG : Tentative chargement Chunk (109, -234)...
+ZERO-K SUCCÈS : Chunk (109, -234) chargé depuis le disque (1875321 bytes).
+ZERO-K DIAG : Tentative chargement Chunk (109, -233)...
+ZERO-K SUCCÈS : Chunk (109, -233) chargé depuis le disque (1875321 bytes).
+ZERO-K DIAG : Tentative chargement Chunk (109, -232)...
+ZERO-K SUCCÈS : Chunk (109, -232) chargé depuis le disque (1875321 bytes).
+ZERO-K DIAG : Tentative chargement Chunk (109, -231)...
+ZERO-K SUCCÈS : Chunk (109, -231) chargé depuis le disque (1875321 bytes).
+ZERO-K DIAG : Tentative chargement Chunk (109, -230)...
+ZERO-K SUCCÈS : Chunk (109, -230) chargé depuis le disque (1875321 bytes).
+ZERO-K DIAG : Tentative chargement Chunk (109, -229)...
+ZERO-K SUCCÈS : Chunk (109, -229) chargé depuis le disque (1875321 bytes).
+ZERO-K DIAG : Tentative chargement Chunk (109, -228)...
+ZERO-K SUCCÈS : Chunk (109, -228) chargé depuis le disque (1875321 bytes).
+ZERO-K DIAG : Tentative chargement Chunk (103, -229)...
+ZERO-K SUCCÈS : Chunk (103, -229) chargé depuis le disque (1875321 bytes).
+ZERO-K DIAG : Tentative chargement Chunk (104, -234)...
+ZERO-K SUCCÈS : Chunk (104, -234) chargé depuis le disque (1875321 bytes).
+ZERO-K DIAG : Tentative chargement Chunk (103, -233)...
+ZERO-K SUCCÈS : Chunk (103, -233) chargé depuis le disque (1875321 bytes).
+ZERO-K DIAG : Tentative chargement Chunk (103, -228)...
+ZERO-K SUCCÈS : Chunk (103, -228) chargé depuis le disque (1875321 bytes).
+ZERO-K DIAG : Tentative chargement Chunk (103, -234)...
+ZERO-K SUCCÈS : Chunk (103, -234) chargé depuis le disque (1875321 bytes).
+ZERO-K : Spawn finalisé au sol (raycast) -> (1711.9994, 123.63135, -3690.1357)
+ZERO-K : Chargement objets posés depuis placed_objects.ARAPA.dat : 0 entrée(s) (atelier 200=0, racks=0, coffres=0, autres=0) — monde Monde_1029859694
+ZERO-K Faune : animations externes fusionnees depuis res://Modeles/Entites/Boeufs/BoeufSauvage_animations.gltf (1 bibliotheque(s)) [cache pour prochains individus].
+ZERO-K Faune : animations externes fusionnees depuis res://Modeles/Entites/AnimationsAnimales/Quaternius/Alpaca.gltf (1 bibliotheque(s)) [cache pour prochains individus].
+ZERO-K Faune : animations externes fusionnees depuis res://Modeles/Entites/AnimationsAnimales/Quaternius/Bull.gltf (1 bibliotheque(s)) [cache pour prochains individus].
+ZERO-K Faune : animations externes fusionnees depuis res://Modeles/Entites/AnimationsAnimales/Quaternius/Cow.gltf (1 bibliotheque(s)) [cache pour prochains individus].
+ZERO-K Faune : animations externes fusionnees depuis res://Modeles/Entites/AnimationsAnimales/Quaternius/Deer.gltf (1 bibliotheque(s)) [cache pour prochains individus].
+ZERO-K Faune : animations externes fusionnees depuis res://Modeles/Entites/AnimationsAnimales/Quaternius/Donkey.gltf (1 bibliotheque(s)) [cache pour prochains individus].
+ZERO-K Faune : animations externes fusionnees depuis res://Modeles/Entites/AnimationsAnimales/Quaternius/Fox.gltf (1 bibliotheque(s)) [cache pour prochains individus].
+ZERO-K Faune : animations externes fusionnees depuis res://Modeles/Entites/AnimationsAnimales/Quaternius/Horse.gltf (1 bibliotheque(s)) [cache pour prochains individus].
+ZERO-K Faune : animations externes fusionnees depuis res://Modeles/Entites/AnimationsAnimales/Quaternius/Horse_White.gltf (1 bibliotheque(s)) [cache pour prochains individus].
+ZERO-K Faune : animations externes fusionnees depuis res://Modeles/Entites/AnimationsAnimales/Quaternius/Husky.gltf (1 bibliotheque(s)) [cache pour prochains individus].
+ZERO-K Faune : animations externes fusionnees depuis res://Modeles/Entites/AnimationsAnimales/Quaternius/ShibaInu.gltf (1 bibliotheque(s)) [cache pour prochains individus].
+ZERO-K Faune : animations externes fusionnees depuis res://Modeles/Entites/AnimationsAnimales/Quaternius/Stag.gltf (1 bibliotheque(s)) [cache pour prochains individus].
+ZERO-K Faune : animations externes fusionnees depuis res://Modeles/Entites/AnimationsAnimales/Quaternius/Wolf.gltf (1 bibliotheque(s)) [cache pour prochains individus].
+ZERO-K Faune : scan dossier animations compatibles -> 13 fichier(s) (cache partage entre individus).
+ZERO-K Faune : lecteur Modele/AnimationPlayer — 191 clip(s) : Attack_Headbutt, Attack_Kick, Death, Eating, Gallop, Gallop_Jump, Idle, Idle_2, Idle_Headlow, Idle_HitReact1, Idle_HitReact2, Jump_toIdle, Walk, externe_rig_alpaca_/Attack_Headbutt, externe_rig_alpaca_/Attack_Kick, externe_rig_alpaca_/Death, externe_rig_alpaca_/Eating, externe_rig_alpaca_/Gallop, externe_rig_alpaca_/Gallop_Jump, externe_rig_alpaca_/Idle, externe_rig_alpaca_/Idle_2, externe_rig_alpaca_/Idle_Headlow, externe_rig_alpaca_/Idle_HitReact1, externe_rig_alpaca_/Idle_HitReact2, externe_rig_alpaca_/Jump_toIdle, externe_rig_alpaca_/Walk, externe_rig_bull_/Attack_Headbutt, externe_rig_bull_/Attack_Kick, externe_rig_bull_/Death, externe_rig_bull_/Eating, externe_rig_bull_/Gallop, externe_rig_bull_/Gallop_Jump, externe_rig_bull_/Idle, externe_rig_bull_/Idle_2, externe_rig_bull_/Idle_Headlow, externe_rig_bull_/Idle_HitReact1, externe_rig_bull_/Idle_HitReact2, externe_rig_bull_/Jump_toIdle, externe_rig_bull_/Walk, externe_rig_cow_/Attack_Headbutt, externe_rig_cow_/Attack_Kick, externe_rig_cow_/Death, externe_rig_cow_/Eating, externe_rig_cow_/Gallop, externe_rig_cow_/Gallop_Jump, externe_rig_cow_/Idle, externe_rig_cow_/Idle_2, externe_rig_cow_/Idle_Headlow, externe_rig_cow_/Idle_HitReact1, externe_rig_cow_/Idle_HitReact2, externe_rig_cow_/Jump_toIdle, externe_rig_cow_/Walk, externe_rig_deer_/Attack_Headbutt, externe_rig_deer_/Attack_Kick, externe_rig_deer_/Death, externe_rig_deer_/Eating, externe_rig_deer_/Gallop, externe_rig_deer_/Gallop_Jump, externe_rig_deer_/Idle, externe_rig_deer_/Idle_2, externe_rig_deer_/Idle_Headlow, externe_rig_deer_/Idle_HitReact1, externe_rig_deer_/Idle_HitReact2, externe_rig_deer_/Jump_toIdle, externe_rig_deer_/Walk, externe_rig_donkey_/Attack_Headbutt, externe_rig_donkey_/Attack_Kick, externe_rig_donkey_/Death, externe_rig_donkey_/Eating, externe_rig_donkey_/Gallop, externe_rig_donkey_/Gallop_Jump, externe_rig_donkey_/Idle, externe_rig_donkey_/Idle_2, externe_rig_donkey_/Idle_Headlow, externe_rig_donkey_/Idle_HitReact1, externe_rig_donkey_/Idle_HitReact2, externe_rig_donkey_/Jump_toIdle, externe_rig_donkey_/Walk, externe_rig_externe_unique_/Attack_Headbutt, externe_rig_externe_unique_/Attack_Kick, externe_rig_externe_unique_/Death, externe_rig_externe_unique_/Eating, externe_rig_externe_unique_/Gallop, externe_rig_externe_unique_/Gallop_Jump, externe_rig_externe_unique_/Idle, externe_rig_externe_unique_/Idle_2, externe_rig_externe_unique_/Idle_Headlow, externe_rig_externe_unique_/Idle_HitReact1, externe_rig_externe_unique_/Idle_HitReact2, externe_rig_externe_unique_/Jump_toIdle, externe_rig_externe_unique_/Walk, externe_rig_fox_/Attack, externe_rig_fox_/Death, externe_rig_fox_/Eating, externe_rig_fox_/Gallop, externe_rig_fox_/Gallop_Jump, externe_rig_fox_/Idle, externe_rig_fox_/Idle_2, externe_rig_fox_/Idle_2_HeadLow, externe_rig_fox_/Idle_HitReact1, externe_rig_fox_/Idle_HitReact2, externe_rig_fox_/Jump_ToIdle, externe_rig_fox_/Walk, externe_rig_horse_/Attack_Headbutt, externe_rig_horse_/Attack_Kick, externe_rig_horse_/Death, externe_rig_horse_/Eating, externe_rig_horse_/Gallop, externe_rig_horse_/Gallop_Jump, externe_rig_horse_/Idle, externe_rig_horse_/Idle_2, externe_rig_horse_/Idle_Headlow, externe_rig_horse_/Idle_HitReact1, externe_rig_horse_/Idle_HitReact2, externe_rig_horse_/Jump_toIdle, externe_rig_horse_/Walk, externe_rig_horse_white_/Attack_Headbutt, externe_rig_horse_white_/Attack_Kick, externe_rig_horse_white_/Death, externe_rig_horse_white_/Eating, externe_rig_horse_white_/Gallop, externe_rig_horse_white_/Gallop_Jump, externe_rig_horse_white_/Idle, externe_rig_horse_white_/Idle_2, externe_rig_horse_white_/Idle_Headlow, externe_rig_horse_white_/Idle_HitReact1, externe_rig_horse_white_/Idle_HitReact2, externe_rig_horse_white_/Jump_toIdle, externe_rig_horse_white_/Walk, externe_rig_husky_/Attack, externe_rig_husky_/Death, externe_rig_husky_/Eating, externe_rig_husky_/Gallop, externe_rig_husky_/Gallop_Jump, externe_rig_husky_/Idle, externe_rig_husky_/Idle_2, externe_rig_husky_/Idle_2_HeadLow, externe_rig_husky_/Idle_HitReact1, externe_rig_husky_/Idle_HitReact2, externe_rig_husky_/Jump_ToIdle, externe_rig_husky_/Walk, externe_rig_shibainu_/Attack, externe_rig_shibainu_/Death, externe_rig_shibainu_/Eating, externe_rig_shibainu_/Gallop, externe_rig_shibainu_/Gallop_Jump, externe_rig_shibainu_/Idle, externe_rig_shibainu_/Idle_2, externe_rig_shibainu_/Idle_2_HeadLow, externe_rig_shibainu_/Idle_HitReact1, externe_rig_shibainu_/Idle_HitReact2, externe_rig_shibainu_/Jump_ToIdle, externe_rig_shibainu_/Walk, externe_rig_stag_/Attack_Headbutt, externe_rig_stag_/Attack_Kick, externe_rig_stag_/Death, externe_rig_stag_/Eating, externe_rig_stag_/Gallop, externe_rig_stag_/Gallop_Jump, externe_rig_stag_/Idle, externe_rig_stag_/Idle_2, externe_rig_stag_/Idle_Headlow, externe_rig_stag_/Idle_HitReact1, externe_rig_stag_/Idle_HitReact2, externe_rig_stag_/Jump_toIdle, externe_rig_stag_/Walk, externe_rig_wolf_/Attack, externe_rig_wolf_/Death, externe_rig_wolf_/Eating, externe_rig_wolf_/Gallop, externe_rig_wolf_/Gallop_Jump, externe_rig_wolf_/Idle, externe_rig_wolf_/Idle_2, externe_rig_wolf_/Idle_2_HeadLow, externe_rig_wolf_/Idle_HitReact1, externe_rig_wolf_/Idle_HitReact2, externe_rig_wolf_/Jump_ToIdle, externe_rig_wolf_/Walk, /Attack_Headbutt, /Attack_Kick, /Death, /Eating, /Gallop, /Gallop_Jump, /Idle, /Idle_2, /Idle_Headlow, /Idle_HitReact1, /Idle_HitReact2, /Jump_toIdle, /Walk
+ZERO-K DIAG : Tentative chargement Chunk (110, -231)...
+ZERO-K SUCCÈS : Chunk (110, -231) chargé depuis le disque (1875321 bytes).
+ZERO-K DIAG : Tentative chargement Chunk (110, -230)...
+ZERO-K SUCCÈS : Chunk (110, -230) chargé depuis le disque (1875321 bytes).
+ZERO-K DIAG : Tentative chargement Chunk (110, -232)...
+ZERO-K SUCCÈS : Chunk (110, -232) chargé depuis le disque (1875321 bytes).
+ZERO-K DIAG : Tentative chargement Chunk (110, -229)...
+ZERO-K SUCCÈS : Chunk (110, -229) chargé depuis le disque (1875321 bytes).
+ZERO-K DIAG : Tentative chargement Chunk (110, -233)...
+ZERO-K SUCCÈS : Chunk (110, -233) chargé depuis le disque (1875321 bytes).
+ZERO-K DIAG : Tentative chargement Chunk (110, -228)...
+ZERO-K SUCCÈS : Chunk (110, -228) chargé depuis le disque (1875321 bytes).
+ZERO-K DIAG : Tentative chargement Chunk (110, -234)...
+ZERO-K SUCCÈS : Chunk (110, -234) chargé depuis le disque (1875321 bytes).
+ZERO-K : Sauvegarde objets posés → placed_objects.ARAPA.dat : 0 objet(s) (atelier craft 200=0, racks=0, coffres=0, autres=0) — monde Monde_1029859694
+ZERO-K : Flush critique 'Gestionnaire_Monde.SauvegarderManuelDepuisMenu:menu' -> chunks dirty sauvés=0.
+ZERO-K : Lancement du Râle d'Agonie (Gestionnaire_Monde.SauvegarderManuelDepuisMenu:menu, ignorerDedoublonage=True). Sauvegarde des Chunks modifiés...
+ZERO-K : Cicatrice mémorisée. Chunk 107_-228 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 103_-231 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 103_-230 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 103_-232 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 104_-233 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 104_-232 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 104_-231 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 104_-230 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 104_-229 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 104_-228 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 105_-234 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 105_-233 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 105_-232 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 105_-231 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 105_-230 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 105_-229 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 105_-228 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 106_-234 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 106_-233 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 106_-232 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 106_-231 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 106_-230 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 106_-229 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 106_-228 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 107_-234 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 107_-233 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 107_-232 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 107_-231 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 107_-230 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 107_-229 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 108_-234 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 108_-233 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 108_-232 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 108_-231 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 108_-230 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 108_-229 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 108_-228 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 109_-234 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 109_-233 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 109_-232 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 109_-231 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 109_-230 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 109_-229 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 109_-228 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 103_-229 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 104_-234 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 103_-233 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 103_-228 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 103_-234 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 110_-231 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 110_-230 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 110_-232 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 110_-229 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 110_-233 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 110_-228 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 110_-234 gravé sur le disque.
+ZERO-K : Râle d'Agonie terminé. 56 Chunks gravés sur le disque.
+ZERO-K : Flush critique 'Gestionnaire_Monde.SauvegarderManuelDepuisMenu:menu' -> chunks dirty sauvés=0.
+ZERO-K : Lancement du Râle d'Agonie (Gestionnaire_Monde.SauvegarderManuelDepuisMenu:menu, ignorerDedoublonage=True). Sauvegarde des Chunks modifiés...
+ZERO-K : Râle d'Agonie terminé. 0 Chunks gravés sur le disque.
+ZERO-K : Flush critique 'Gestionnaire_Monde.SauvegarderManuelDepuisMenu:menu' -> chunks dirty sauvés=0.
+ZERO-K : Lancement du Râle d'Agonie (Gestionnaire_Monde.SauvegarderManuelDepuisMenu:menu, ignorerDedoublonage=True). Sauvegarde des Chunks modifiés...
+ZERO-K : Râle d'Agonie terminé. 0 Chunks gravés sur le disque.
+ZERO-K : Flush critique 'Gestionnaire_Monde.SauvegarderManuelDepuisMenu:menu' -> chunks dirty sauvés=0.
+ZERO-K : Lancement du Râle d'Agonie (Gestionnaire_Monde.SauvegarderManuelDepuisMenu:menu, ignorerDedoublonage=True). Sauvegarde des Chunks modifiés...
+ZERO-K : Râle d'Agonie terminé. 0 Chunks gravés sur le disque.
+ZERO-K : Flush critique 'Gestionnaire_Monde.SauvegarderManuelDepuisMenu:menu' -> chunks dirty sauvés=0.
+ZERO-K : Lancement du Râle d'Agonie (Gestionnaire_Monde.SauvegarderManuelDepuisMenu:menu, ignorerDedoublonage=True). Sauvegarde des Chunks modifiés...
+ZERO-K : Râle d'Agonie terminé. 0 Chunks gravés sur le disque.
+ZERO-K : Sauvegarde manuelle effectuée.
+ZERO-K : Synchronisation disque post-restauration (aucune perte au prochain chargement si le jeu s’arrête ici).
+ZERO-K : Sauvegarde objets posés → placed_objects.ARAPA.dat : 0 objet(s) (atelier craft 200=0, racks=0, coffres=0, autres=0) — monde Monde_1029859694
+ZERO-K : Flush critique 'Gestionnaire_Monde.SauvegarderManuelDepuisMenu:menu' -> chunks dirty sauvés=0.
+ZERO-K : Lancement du Râle d'Agonie (Gestionnaire_Monde.SauvegarderManuelDepuisMenu:menu, ignorerDedoublonage=True). Sauvegarde des Chunks modifiés...
+ZERO-K : Cicatrice mémorisée. Chunk 107_-228 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 103_-231 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 103_-230 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 103_-232 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 104_-233 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 104_-232 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 104_-231 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 104_-230 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 104_-229 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 104_-228 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 105_-234 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 105_-233 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 105_-232 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 105_-231 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 105_-230 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 105_-229 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 105_-228 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 106_-234 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 106_-233 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 106_-232 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 106_-231 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 106_-230 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 106_-229 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 106_-228 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 107_-234 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 107_-233 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 107_-232 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 107_-231 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 107_-230 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 107_-229 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 108_-234 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 108_-233 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 108_-232 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 108_-231 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 108_-230 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 108_-229 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 108_-228 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 109_-234 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 109_-233 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 109_-232 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 109_-231 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 109_-230 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 109_-229 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 109_-228 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 103_-229 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 104_-234 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 103_-233 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 103_-228 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 103_-234 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 110_-231 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 110_-230 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 110_-232 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 110_-229 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 110_-233 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 110_-228 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 110_-234 gravé sur le disque.
+ZERO-K : Râle d'Agonie terminé. 56 Chunks gravés sur le disque.
+ZERO-K : Flush critique 'Gestionnaire_Monde.SauvegarderManuelDepuisMenu:menu' -> chunks dirty sauvés=0.
+ZERO-K : Lancement du Râle d'Agonie (Gestionnaire_Monde.SauvegarderManuelDepuisMenu:menu, ignorerDedoublonage=True). Sauvegarde des Chunks modifiés...
+ZERO-K : Râle d'Agonie terminé. 0 Chunks gravés sur le disque.
+ZERO-K : Flush critique 'Gestionnaire_Monde.SauvegarderManuelDepuisMenu:menu' -> chunks dirty sauvés=0.
+ZERO-K : Lancement du Râle d'Agonie (Gestionnaire_Monde.SauvegarderManuelDepuisMenu:menu, ignorerDedoublonage=True). Sauvegarde des Chunks modifiés...
+ZERO-K : Râle d'Agonie terminé. 0 Chunks gravés sur le disque.
+ZERO-K : Flush critique 'Gestionnaire_Monde.SauvegarderManuelDepuisMenu:menu' -> chunks dirty sauvés=0.
+ZERO-K : Lancement du Râle d'Agonie (Gestionnaire_Monde.SauvegarderManuelDepuisMenu:menu, ignorerDedoublonage=True). Sauvegarde des Chunks modifiés...
+ZERO-K : Râle d'Agonie terminé. 0 Chunks gravés sur le disque.
+ZERO-K : Flush critique 'Gestionnaire_Monde.SauvegarderManuelDepuisMenu:menu' -> chunks dirty sauvés=0.
+ZERO-K : Lancement du Râle d'Agonie (Gestionnaire_Monde.SauvegarderManuelDepuisMenu:menu, ignorerDedoublonage=True). Sauvegarde des Chunks modifiés...
+ZERO-K : Râle d'Agonie terminé. 0 Chunks gravés sur le disque.
+ZERO-K : Sauvegarde manuelle effectuée.
+ZERO-K : Sauvegarde objets posés → placed_objects.ARAPA.dat : 0 objet(s) (atelier craft 200=0, racks=0, coffres=0, autres=0) — monde Monde_1029859694
+ZERO-K : Flush critique 'Gestionnaire_Monde.SauvegarderManuelDepuisMenu:WMCloseRequest' -> chunks dirty sauvés=0.
+ZERO-K : Lancement du Râle d'Agonie (Gestionnaire_Monde.SauvegarderManuelDepuisMenu:WMCloseRequest, ignorerDedoublonage=True). Sauvegarde des Chunks modifiés...
+ZERO-K : Cicatrice mémorisée. Chunk 107_-228 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 103_-231 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 103_-230 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 103_-232 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 104_-233 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 104_-232 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 104_-231 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 104_-230 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 104_-229 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 104_-228 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 105_-234 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 105_-233 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 105_-232 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 105_-231 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 105_-230 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 105_-229 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 105_-228 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 106_-234 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 106_-233 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 106_-232 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 106_-231 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 106_-230 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 106_-229 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 106_-228 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 107_-234 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 107_-233 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 107_-232 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 107_-231 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 107_-230 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 107_-229 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 108_-234 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 108_-233 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 108_-232 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 108_-231 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 108_-230 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 108_-229 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 108_-228 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 109_-234 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 109_-233 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 109_-232 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 109_-231 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 109_-230 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 109_-229 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 109_-228 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 103_-229 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 104_-234 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 103_-233 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 103_-228 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 103_-234 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 110_-231 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 110_-230 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 110_-232 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 110_-229 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 110_-233 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 110_-228 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 110_-234 gravé sur le disque.
+ZERO-K : Râle d'Agonie terminé. 56 Chunks gravés sur le disque.
+ZERO-K : Flush critique 'Gestionnaire_Monde.SauvegarderManuelDepuisMenu:WMCloseRequest' -> chunks dirty sauvés=0.
+ZERO-K : Lancement du Râle d'Agonie (Gestionnaire_Monde.SauvegarderManuelDepuisMenu:WMCloseRequest, ignorerDedoublonage=True). Sauvegarde des Chunks modifiés...
+ZERO-K : Râle d'Agonie terminé. 0 Chunks gravés sur le disque.
+ZERO-K : Flush critique 'Gestionnaire_Monde.SauvegarderManuelDepuisMenu:WMCloseRequest' -> chunks dirty sauvés=0.
+ZERO-K : Lancement du Râle d'Agonie (Gestionnaire_Monde.SauvegarderManuelDepuisMenu:WMCloseRequest, ignorerDedoublonage=True). Sauvegarde des Chunks modifiés...
+ZERO-K : Râle d'Agonie terminé. 0 Chunks gravés sur le disque.
+ZERO-K : Flush critique 'Gestionnaire_Monde.SauvegarderManuelDepuisMenu:WMCloseRequest' -> chunks dirty sauvés=0.
+ZERO-K : Lancement du Râle d'Agonie (Gestionnaire_Monde.SauvegarderManuelDepuisMenu:WMCloseRequest, ignorerDedoublonage=True). Sauvegarde des Chunks modifiés...
+ZERO-K : Râle d'Agonie terminé. 0 Chunks gravés sur le disque.
+ZERO-K : Flush critique 'Gestionnaire_Monde.SauvegarderManuelDepuisMenu:WMCloseRequest' -> chunks dirty sauvés=0.
+ZERO-K : Lancement du Râle d'Agonie (Gestionnaire_Monde.SauvegarderManuelDepuisMenu:WMCloseRequest, ignorerDedoublonage=True). Sauvegarde des Chunks modifiés...
+ZERO-K : Râle d'Agonie terminé. 0 Chunks gravés sur le disque.
+ZERO-K : Sauvegarde manuelle effectuée.
+ZERO-K : Lancement du Râle d'Agonie (Monde_Serveur.NotificationWMCloseRequest, ignorerDedoublonage=True). Sauvegarde des Chunks modifiés...
+ZERO-K : Cicatrice mémorisée. Chunk 107_-228 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 103_-231 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 103_-230 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 103_-232 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 104_-233 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 104_-232 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 104_-231 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 104_-230 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 104_-229 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 104_-228 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 105_-234 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 105_-233 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 105_-232 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 105_-231 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 105_-230 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 105_-229 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 105_-228 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 106_-234 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 106_-233 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 106_-232 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 106_-231 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 106_-230 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 106_-229 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 106_-228 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 107_-234 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 107_-233 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 107_-232 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 107_-231 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 107_-230 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 107_-229 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 108_-234 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 108_-233 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 108_-232 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 108_-231 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 108_-230 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 108_-229 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 108_-228 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 109_-234 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 109_-233 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 109_-232 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 109_-231 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 109_-230 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 109_-229 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 109_-228 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 103_-229 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 104_-234 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 103_-233 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 103_-228 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 103_-234 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 110_-231 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 110_-230 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 110_-232 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 110_-229 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 110_-233 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 110_-228 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 110_-234 gravé sur le disque.
+ZERO-K : Râle d'Agonie terminé. 56 Chunks gravés sur le disque.
+ZERO-K : Lancement du Râle d'Agonie (Monde_Serveur.NotificationWMCloseRequest, ignorerDedoublonage=True). Sauvegarde des Chunks modifiés...
+ZERO-K : Râle d'Agonie terminé. 0 Chunks gravés sur le disque.
+ZERO-K : Lancement du Râle d'Agonie (Monde_Serveur.NotificationWMCloseRequest, ignorerDedoublonage=True). Sauvegarde des Chunks modifiés...
+ZERO-K : Râle d'Agonie terminé. 0 Chunks gravés sur le disque.
+ZERO-K : Lancement du Râle d'Agonie (Monde_Serveur.NotificationWMCloseRequest, ignorerDedoublonage=True). Sauvegarde des Chunks modifiés...
+ZERO-K : Râle d'Agonie terminé. 0 Chunks gravés sur le disque.
+ZERO-K : Lancement du Râle d'Agonie (Monde_Serveur.NotificationWMCloseRequest, ignorerDedoublonage=True). Sauvegarde des Chunks modifiés...
+ZERO-K : Râle d'Agonie terminé. 0 Chunks gravés sur le disque.
+ZERO-K : Sauvegarde objets posés → placed_objects.ARAPA.dat : 0 objet(s) (atelier craft 200=0, racks=0, coffres=0, autres=0) — monde Monde_1029859694
+ZERO-K : Flush critique 'Gestionnaire_Monde.SauvegarderManuelDepuisMenu:menu' -> chunks dirty sauvés=0.
+ZERO-K : Lancement du Râle d'Agonie (Gestionnaire_Monde.SauvegarderManuelDepuisMenu:menu, ignorerDedoublonage=True). Sauvegarde des Chunks modifiés...
+ZERO-K : Cicatrice mémorisée. Chunk 107_-228 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 103_-231 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 103_-230 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 103_-232 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 104_-233 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 104_-232 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 104_-231 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 104_-230 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 104_-229 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 104_-228 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 105_-234 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 105_-233 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 105_-232 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 105_-231 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 105_-230 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 105_-229 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 105_-228 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 106_-234 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 106_-233 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 106_-232 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 106_-231 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 106_-230 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 106_-229 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 106_-228 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 107_-234 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 107_-233 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 107_-232 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 107_-231 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 107_-230 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 107_-229 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 108_-234 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 108_-233 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 108_-232 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 108_-231 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 108_-230 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 108_-229 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 108_-228 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 109_-234 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 109_-233 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 109_-232 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 109_-231 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 109_-230 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 109_-229 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 109_-228 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 103_-229 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 104_-234 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 103_-233 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 103_-228 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 103_-234 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 110_-231 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 110_-230 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 110_-232 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 110_-229 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 110_-233 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 110_-228 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 110_-234 gravé sur le disque.
+ZERO-K : Râle d'Agonie terminé. 56 Chunks gravés sur le disque.
+ZERO-K : Flush critique 'Gestionnaire_Monde.SauvegarderManuelDepuisMenu:menu' -> chunks dirty sauvés=0.
+ZERO-K : Lancement du Râle d'Agonie (Gestionnaire_Monde.SauvegarderManuelDepuisMenu:menu, ignorerDedoublonage=True). Sauvegarde des Chunks modifiés...
+ZERO-K : Râle d'Agonie terminé. 0 Chunks gravés sur le disque.
+ZERO-K : Flush critique 'Gestionnaire_Monde.SauvegarderManuelDepuisMenu:menu' -> chunks dirty sauvés=0.
+ZERO-K : Lancement du Râle d'Agonie (Gestionnaire_Monde.SauvegarderManuelDepuisMenu:menu, ignorerDedoublonage=True). Sauvegarde des Chunks modifiés...
+ZERO-K : Râle d'Agonie terminé. 0 Chunks gravés sur le disque.
+ZERO-K : Flush critique 'Gestionnaire_Monde.SauvegarderManuelDepuisMenu:menu' -> chunks dirty sauvés=0.
+ZERO-K : Lancement du Râle d'Agonie (Gestionnaire_Monde.SauvegarderManuelDepuisMenu:menu, ignorerDedoublonage=True). Sauvegarde des Chunks modifiés...
+ZERO-K : Râle d'Agonie terminé. 0 Chunks gravés sur le disque.
+ZERO-K : Flush critique 'Gestionnaire_Monde.SauvegarderManuelDepuisMenu:menu' -> chunks dirty sauvés=0.
+ZERO-K : Lancement du Râle d'Agonie (Gestionnaire_Monde.SauvegarderManuelDepuisMenu:menu, ignorerDedoublonage=True). Sauvegarde des Chunks modifiés...
+ZERO-K : Râle d'Agonie terminé. 0 Chunks gravés sur le disque.
+ZERO-K : Sauvegarde manuelle effectuée.
+ZERO-K : Lancement du Râle d'Agonie (Monde_Serveur._ExitTree, ignorerDedoublonage=True). Sauvegarde des Chunks modifiés...
+ZERO-K : Râle d'Agonie terminé. 0 Chunks gravés sur le disque.
+ZERO-K : Lancement du Râle d'Agonie (Monde_Serveur._ExitTree, ignorerDedoublonage=True). Sauvegarde des Chunks modifiés...
+ZERO-K : Râle d'Agonie terminé. 0 Chunks gravés sur le disque.
+ZERO-K : Lancement du Râle d'Agonie (Monde_Serveur._ExitTree, ignorerDedoublonage=True). Sauvegarde des Chunks modifiés...
+ZERO-K : Râle d'Agonie terminé. 0 Chunks gravés sur le disque.
+ZERO-K : Lancement du Râle d'Agonie (Monde_Serveur._ExitTree, ignorerDedoublonage=True). Sauvegarde des Chunks modifiés...
+ZERO-K : Râle d'Agonie terminé. 0 Chunks gravés sur le disque.
+ZERO-K : Lancement du Râle d'Agonie (Monde_Serveur._ExitTree, ignorerDedoublonage=True). Sauvegarde des Chunks modifiés...
+ZERO-K : Cicatrice mémorisée. Chunk 107_-228 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 103_-231 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 103_-230 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 103_-232 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 104_-233 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 104_-232 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 104_-231 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 104_-230 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 104_-229 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 104_-228 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 105_-234 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 105_-233 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 105_-232 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 105_-231 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 105_-230 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 105_-229 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 105_-228 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 106_-234 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 106_-233 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 106_-232 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 106_-231 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 106_-230 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 106_-229 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 106_-228 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 107_-234 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 107_-233 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 107_-232 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 107_-231 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 107_-230 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 107_-229 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 108_-234 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 108_-233 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 108_-232 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 108_-231 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 108_-230 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 108_-229 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 108_-228 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 109_-234 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 109_-233 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 109_-232 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 109_-231 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 109_-230 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 109_-229 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 109_-228 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 103_-229 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 104_-234 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 103_-233 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 103_-228 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 103_-234 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 110_-231 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 110_-230 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 110_-232 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 110_-229 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 110_-233 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 110_-228 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 110_-234 gravé sur le disque.
+ZERO-K : Râle d'Agonie terminé. 56 Chunks gravés sur le disque.
+ZERO-K : Flush critique 'Gestionnaire_Monde._ExitTree' -> chunks dirty sauvés=0.
+ZERO-K : Lancement du Râle d'Agonie (Gestionnaire_Monde._ExitTree, ignorerDedoublonage=True). Sauvegarde des Chunks modifiés...
+ZERO-K : Cicatrice mémorisée. Chunk 107_-228 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 103_-231 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 103_-230 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 103_-232 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 104_-233 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 104_-232 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 104_-231 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 104_-230 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 104_-229 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 104_-228 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 105_-234 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 105_-233 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 105_-232 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 105_-231 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 105_-230 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 105_-229 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 105_-228 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 106_-234 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 106_-233 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 106_-232 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 106_-231 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 106_-230 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 106_-229 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 106_-228 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 107_-234 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 107_-233 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 107_-232 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 107_-231 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 107_-230 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 107_-229 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 108_-234 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 108_-233 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 108_-232 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 108_-231 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 108_-230 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 108_-229 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 108_-228 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 109_-234 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 109_-233 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 109_-232 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 109_-231 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 109_-230 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 109_-229 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 109_-228 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 103_-229 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 104_-234 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 103_-233 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 103_-228 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 103_-234 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 110_-231 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 110_-230 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 110_-232 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 110_-229 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 110_-233 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 110_-228 gravé sur le disque.
+ZERO-K : Cicatrice mémorisée. Chunk 110_-234 gravé sur le disque.
+ZERO-K : Râle d'Agonie terminé. 56 Chunks gravés sur le disque.
+ZERO-K : Flush critique 'Gestionnaire_Monde._ExitTree' -> chunks dirty sauvés=0.
+ZERO-K : Lancement du Râle d'Agonie (Gestionnaire_Monde._ExitTree, ignorerDedoublonage=True). Sauvegarde des Chunks modifiés...
+ZERO-K : Râle d'Agonie terminé. 0 Chunks gravés sur le disque.
+ZERO-K : Flush critique 'Gestionnaire_Monde._ExitTree' -> chunks dirty sauvés=0.
+ZERO-K : Lancement du Râle d'Agonie (Gestionnaire_Monde._ExitTree, ignorerDedoublonage=True). Sauvegarde des Chunks modifiés...
+ZERO-K : Râle d'Agonie terminé. 0 Chunks gravés sur le disque.
+ZERO-K : Flush critique 'Gestionnaire_Monde._ExitTree' -> chunks dirty sauvés=0.
+ZERO-K : Lancement du Râle d'Agonie (Gestionnaire_Monde._ExitTree, ignorerDedoublonage=True). Sauvegarde des Chunks modifiés...
+ZERO-K : Râle d'Agonie terminé. 0 Chunks gravés sur le disque.
+ZERO-K : Flush critique 'Gestionnaire_Monde._ExitTree' -> chunks dirty sauvés=0.
+ZERO-K : Lancement du Râle d'Agonie (Gestionnaire_Monde._ExitTree, ignorerDedoublonage=True). Sauvegarde des Chunks modifiés...
+ZERO-K : Râle d'Agonie terminé. 0 Chunks gravés sur le disque.

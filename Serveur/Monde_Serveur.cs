@@ -1742,7 +1742,7 @@ public partial class Monde_Serveur : Node
 			else if (rb.HasMeta("ID_Matiere"))
 				id = rb.GetMeta("ID_Matiere").AsInt32();
 			if (!TryGetPositionMonde(rb, out Vector3 posRb)) continue;
-			bool structureFixe = id == 200 || id == Joueur.IdObjetRackBatons || id == Joueur.IdObjetRackBuches || id == Joueur.IdObjetCoffreBoisTier0;
+			bool structureFixe = id == 200 || id == Joueur.IdObjetTableAnalyseTier1 || id == Joueur.IdObjetRackBatons || id == Joueur.IdObjetRackBuches || id == Joueur.IdObjetCoffreBoisTier0;
 			// Le joueur « dimensionnel » n’est pas dans ce monde : on regèle pour éviter des corps actifs fantômes.
 			if (dimensionActive != _dimensionServeurId)
 			{

@@ -1,9 +1,20 @@
 # Checklist release alpha (launcher)
 
+## 0) Pipeline unique recommande (source de verite)
+
+- Utiliser **une seule commande** pour build + export + synchronisation payload + manifest + upload Backblaze:
+  - `powershell -ExecutionPolicy Bypass -File "Distribution/Publish-AlphaRelease.ps1" -Version "0.1.0-alpha.X"`
+- Ne plus publier via etapes manuelles partielles (sinon risque de desynchronisation exe/pck/dll).
+- Le script publie:
+  - `SEROKAFrozenLegacy.exe`
+  - `SEROKAFrozenLegacy.pck`
+  - `data_Zero-K - Frozen Legacy_windows_x86_64/*`
+  - `manifest.alpha.json`
+
 ## 1) Build launcher (self-contained)
 
 - `dotnet publish "Launcher/SEROKALauncher/SEROKALauncher.csproj" -c Release`
-- Verifier presence de `SEROKALauncher.exe` et des DLL runtime dans `Launcher/SEROKALauncher/bin/Release/net8.0/publish/`
+- Verifier presence de `SEROKALauncher.exe` et des DLL runtime dans `Launcher/SEROKALauncher/bin/Release/net8.0/win-x64/publish/`
 
 ## 2) Build jeu
 
@@ -43,3 +54,10 @@
 - Corrompre un fichier du jeu -> launcher repare
 - Simuler nouvelle version -> telechargement + lancement OK
 - Manifest invalide -> erreur claire, aucun remplacement partiel
+
+## 7) Reinitialisation test (si ecarts editeur vs launcher)
+
+- Reinitialiser caches editeur + rebuild C#:
+  - `powershell -ExecutionPolicy Bypass -File "Distribution/Reset-EditorState.ps1" -ForceKillGodot`
+- Reinitialiser les donnees `user://` de test (backup auto):
+  - `powershell -ExecutionPolicy Bypass -File "Distribution/Sync-TestUserData.ps1"`

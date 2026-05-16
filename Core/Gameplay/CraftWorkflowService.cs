@@ -17,11 +17,13 @@ public partial class Joueur
     private static bool EstCraftArtisana(int idObjet)
     {
         return idObjet == 200 // Table de craft / atelier
+            || idObjet == IdObjetTableAnalyseTier1
             || idObjet == IdObjetRackBatons
             || idObjet == IdObjetRackBuches
             || idObjet == IdObjetBolBois
             || idObjet == IdObjetMailletBois
             || idObjet == IdObjetMortierPilonBois
+            || idObjet == IdObjetAtelleJambe
             || idObjet == IdObjetCoffreBoisTier0;
     }
 
@@ -31,6 +33,7 @@ public partial class Joueur
             || idObjet == IdObjetPiochePierreTier0
             || idObjet == IdObjetLancePierreTier0
             || idObjet == IdObjetFauxPierreTier0
+            || idObjet == IdObjetHachePierreTier1
             || idObjet == 105
             || idObjet == IdObjetMailletBois;
     }

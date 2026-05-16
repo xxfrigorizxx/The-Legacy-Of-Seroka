@@ -13,6 +13,8 @@ public partial class Cycle_Solaire : Node
 	[Export] private int _renderDistanceBrouillardChunks = 23;
 	[Export] private int _tailleChunkBrouillard = 16;
 	[Export] private int _avanceBrouillardChunks = 2;
+	[Export(PropertyHint.Range, "0.0,1.0,0.001")] private float _energieLuneMinNuit = 0.012f;
+	[Export(PropertyHint.Range, "-1.0,2.0,0.001")] private float _energieLuneMaxNuit = -1f; // -1 = reprendre l'énergie configurée sur le nœud Lune.
 
 	/// <summary>Décalage en heures de la dimension actuelle. Monde 1 = 0, Monde 2 = +6, etc.</summary>
 	private double _decalageMondeHeures = 0.0;
@@ -28,6 +30,8 @@ public partial class Cycle_Solaire : Node
 	private bool _textureEtoilesAppliquee;
 	/// <summary>Évite de spammer la console si le matériau de ciel n’est pas procédural (scène modifiée / upgrade moteur).</summary>
 	private bool _alerteTypeSkyMaterialEmise;
+	/// <summary>Énergie de référence lue sur le nœud Lune (éditeur), utilisée si <see cref="_energieLuneMaxNuit"/> = -1.</summary>
+	private float _energieLuneEditeur = 0.055f;
 
 	/// <summary>RPC appelé par le Serveur une seule fois quand le joueur spawn ou traverse un portail.</summary>
 	[Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = true)]
@@ -89,6 +93,7 @@ public partial class Cycle_Solaire : Node
 		// Pas de disque lunaire dans le ciel (évite l'effet "deuxième soleil").
 		if (_lune != null)
 		{
+			_energieLuneEditeur = Mathf.Max(0f, _lune.LightEnergy);
 			_lune.Set("sky_mode", 1);
 			// Empêche tout halo/spot blanc lié au brouillard volumétrique pour la lune.
 			_lune.Set("light_volumetric_fog_energy", 0.0f);
@@ -169,6 +174,18 @@ public partial class Cycle_Solaire : Node
 		env.FogDepthCurve = 1.15f;
 	}
 
+	private float CalculerEnergieLuneNuit(float hauteurSoleil)
+	{
+		float intensiteNuit = Mathf.Clamp(-hauteurSoleil, 0f, 1f);
+		float energieMax = _energieLuneMaxNuit >= 0f
+			? _energieLuneMaxNuit
+			: Mathf.Max(0.02f, _energieLuneEditeur);
+		float energieMin = Mathf.Clamp(_energieLuneMinNuit, 0f, energieMax);
+		// Courbe douce: la lune commence faiblement après le coucher et monte progressivement.
+		float t = Mathf.Pow(intensiteNuit, 0.72f);
+		return Mathf.Lerp(energieMin, energieMax, t);
+	}
+
 	public override void _Process(double delta)
 	{
 		if (!IsInsideTree()) return; // GARROT SPATIAL : le Soleil ne tourne pas si l'univers s'effondre.
@@ -230,7 +247,7 @@ public partial class Cycle_Solaire : Node
 			if (_lune != null)
 			{
 				_lune.Visible = true;
-				_lune.LightEnergy = Mathf.Clamp(-hauteurSoleil * 0.055f, 0f, 0.055f);
+				_lune.LightEnergy = CalculerEnergieLuneNuit(hauteurSoleil);
 				_lune.Set("sky_mode", 1); // LightOnly : pas de disque blanc parasite.
 				_lune.Set("light_volumetric_fog_energy", 0.0f);
 			}

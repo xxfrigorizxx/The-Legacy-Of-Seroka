@@ -3,6 +3,8 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Reflection;
+using System.Security.Cryptography;
 using System.Text;
 
 /// <summary>Race du personnage joueur (persistée par monde).</summary>
@@ -24,6 +26,7 @@ public partial class GameState : Node
 {
 	/// <summary>Instance statique pour accès fiable (Engine.HasSingleton peu fiable avec autoloads C#).</summary>
 	public static GameState Instance { get; private set; }
+	private static bool _empreinteRuntimeJournalisee;
 
 	/// <summary>Nom du monde actuel (dossier dans user://saves/). TOUJOURS utilisé pour chunks.</summary>
 	public string NomMondeActuel { get; private set; } = "MonMonde";
@@ -34,10 +37,94 @@ public partial class GameState : Node
 	public override void _Ready()
 	{
 		Instance = this;
+		JournaliserEmpreinteRuntime();
 		// Godot 4 : SceneTree n’expose pas le signal « tree_exiting » (Godot 3). Fermeture via fenêtre racine + notification WM.
 		Window fenetre = GetWindow();
 		if (fenetre != null)
 			fenetre.CloseRequested += ExecuterSauvegardeFiletAvantFermetureApplication;
+	}
+
+	/// <summary>
+	/// Trace une empreinte runtime (mode moteur, chemins, hash DLL/PCK, version manifest install) pour diagnostiquer
+	/// immédiatement les désynchronisations entre Play éditeur et lancement via launcher.
+	/// </summary>
+	private void JournaliserEmpreinteRuntime()
+	{
+		if (_empreinteRuntimeJournalisee)
+			return;
+		_empreinteRuntimeJournalisee = true;
+
+		string userDir = ProjectSettings.GlobalizePath("user://");
+		string exePath = OS.GetExecutablePath();
+		string baseDir = AppContext.BaseDirectory;
+		string exeDir = string.IsNullOrWhiteSpace(exePath) ? baseDir : Path.GetDirectoryName(exePath) ?? baseDir;
+		string assemblyPath = Assembly.GetExecutingAssembly().Location;
+		if (string.IsNullOrWhiteSpace(assemblyPath))
+		{
+			string dllCandidate = Path.Combine(baseDir, "Zero-K - Frozen Legacy.dll");
+			if (File.Exists(dllCandidate))
+				assemblyPath = dllCandidate;
+		}
+		string pckPath = Path.Combine(exeDir, "SEROKAFrozenLegacy.pck");
+		string manifestLocalPath = Path.GetFullPath(Path.Combine(baseDir, "..", "manifests", "local-manifest.json"));
+		string manifestVersion = LireVersionManifestLocal(manifestLocalPath);
+
+		string hashDll = CalculerSha256CourtSiFichierExistant(assemblyPath);
+		string hashPck = CalculerSha256CourtSiFichierExistant(pckPath);
+
+		GD.Print(
+			$"SEROKA_RUNTIME_FINGERPRINT | " +
+			$"editor={Engine.IsEditorHint()} debug={OS.IsDebugBuild()} " +
+			$"userDir=\"{userDir}\" baseDir=\"{baseDir}\" exe=\"{exePath}\" " +
+			$"dll=\"{assemblyPath}\" dllSha256={hashDll} pckSha256={hashPck} " +
+			$"manifestVersion={manifestVersion}");
+	}
+
+	private static string CalculerSha256CourtSiFichierExistant(string path)
+	{
+		if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+			return "absent";
+		try
+		{
+			using FileStream flux = File.OpenRead(path);
+			using SHA256 sha = SHA256.Create();
+			byte[] hash = sha.ComputeHash(flux);
+			string hex = Convert.ToHexString(hash).ToLowerInvariant();
+			return hex.Length > 12 ? hex[..12] : hex;
+		}
+		catch (Exception ex)
+		{
+			return $"erreur:{ex.GetType().Name}";
+		}
+	}
+
+	private static string LireVersionManifestLocal(string manifestPath)
+	{
+		if (string.IsNullOrWhiteSpace(manifestPath) || !File.Exists(manifestPath))
+			return "absent";
+		try
+		{
+			string json = File.ReadAllText(manifestPath);
+			const string cle = "\"version\"";
+			int idxCle = json.IndexOf(cle, StringComparison.OrdinalIgnoreCase);
+			if (idxCle < 0)
+				return "invalide";
+			int idxDeuxPoints = json.IndexOf(':', idxCle + cle.Length);
+			if (idxDeuxPoints < 0)
+				return "invalide";
+			int idxGuillemetDebut = json.IndexOf('"', idxDeuxPoints + 1);
+			if (idxGuillemetDebut < 0)
+				return "invalide";
+			int idxGuillemetFin = json.IndexOf('"', idxGuillemetDebut + 1);
+			if (idxGuillemetFin < 0)
+				return "invalide";
+			string version = json.Substring(idxGuillemetDebut + 1, idxGuillemetFin - idxGuillemetDebut - 1).Trim();
+			return string.IsNullOrWhiteSpace(version) ? "invalide" : version;
+		}
+		catch
+		{
+			return "invalide";
+		}
 	}
 
 	public override void _Notification(int what)

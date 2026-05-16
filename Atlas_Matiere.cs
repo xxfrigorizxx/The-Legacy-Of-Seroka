@@ -295,6 +295,32 @@ public static class Atlas_Matiere
         return Mathf.Clamp(maxDur, 20f, 155f);
     }
 
+    public static float CalculerDurabiliteMaxNouvelleHachePierre(SlotInventaire rocheA, SlotInventaire rocheB, SlotInventaire baton)
+    {
+        int idxA = Mathf.Clamp(rocheA.ID - ItemPhysique.IdRocheMatiereMin, 0, ItemPhysique.TableGeologique.Length - 1);
+        int idxB = Mathf.Clamp(rocheB.ID - ItemPhysique.IdRocheMatiereMin, 0, ItemPhysique.TableGeologique.Length - 1);
+        float mineral = (ItemPhysique.TableGeologique[idxA].ResistanceFuture + ItemPhysique.TableGeologique[idxB].ResistanceFuture) * 0.5f;
+        float durBois = ObtenirDurabiliteBois(baton.IndexBotanique);
+        float capPierre = mineral * 0.74f;
+        float capBois = durBois * 4.6f;
+        float maxDurBase = Mathf.Min(capPierre, capBois);
+        // Hache pierre tier 1 : 2x à 3x la résistance de la hachette primitive.
+        float maxDur = maxDurBase * 2.4f;
+        return Mathf.Clamp(maxDur, 55f, 430f);
+    }
+
+    public static float CalculerDurabiliteMaxHachePierreDepuisSlot(SlotInventaire hachePierre)
+    {
+        int idxLame = Mathf.Clamp(hachePierre.IndexChimique, 0, ItemPhysique.TableGeologique.Length - 1);
+        float mineral = ItemPhysique.TableGeologique[idxLame].ResistanceFuture;
+        float durBois = ObtenirDurabiliteBois(hachePierre.IndexBotanique);
+        float capPierre = mineral * 0.74f;
+        float capBois = durBois * 4.6f;
+        float maxDurBase = Mathf.Min(capPierre, capBois);
+        float maxDur = maxDurBase * 2.4f;
+        return Mathf.Clamp(maxDur, 55f, 430f);
+    }
+
     public static float CalculerDurabiliteMaxNouvelAllumeFeu(SlotInventaire rocheSulfureuse)
     {
         int idx = Mathf.Clamp(rocheSulfureuse.ID - ItemPhysique.IdRocheMatiereMin, 0, ItemPhysique.TableGeologique.Length - 1);
@@ -313,7 +339,7 @@ public static class Atlas_Matiere
 
     public static void InitialiserDurabiliteOutilSiBesoin(ref SlotInventaire s)
     {
-        if (s.ID != 105 && s.ID != 106 && s.ID != Joueur.IdObjetPellePierreTier0 && s.ID != Joueur.IdObjetPiochePierreTier0 && s.ID != Joueur.IdObjetLancePierreTier0 && s.ID != Joueur.IdObjetFauxPierreTier0 && s.ID != Joueur.IdObjetAllumeFeu) return;
+        if (s.ID != 105 && s.ID != 106 && s.ID != Joueur.IdObjetHachePierreTier1 && s.ID != Joueur.IdObjetPellePierreTier0 && s.ID != Joueur.IdObjetPiochePierreTier0 && s.ID != Joueur.IdObjetLancePierreTier0 && s.ID != Joueur.IdObjetFauxPierreTier0 && s.ID != Joueur.IdObjetAllumeFeu) return;
         if (s.DurabiliteOutilMax > 0.5f)
         {
             if (s.DurabiliteOutilActuelle <= 0f)
@@ -329,6 +355,12 @@ public static class Atlas_Matiere
         else if (s.ID == 106)
         {
             float max = CalculerDurabiliteMaxHachetteDepuisSlot(s);
+            s.DurabiliteOutilMax = max;
+            s.DurabiliteOutilActuelle = max;
+        }
+        else if (s.ID == Joueur.IdObjetHachePierreTier1)
+        {
+            float max = CalculerDurabiliteMaxHachePierreDepuisSlot(s);
             s.DurabiliteOutilMax = max;
             s.DurabiliteOutilActuelle = max;
         }
@@ -396,6 +428,11 @@ public static class Atlas_Matiere
             string essence = slot.IndexBotanique switch { 0 => "Chêne", 1 => "Bouleau", 2 => "Pin", 3 => "Sapin", 4 => "Fromager", _ => "Bois" };
             return $"Atelier Primitif en {essence}";
         }
+        if (id == Joueur.IdObjetTableAnalyseTier1)
+        {
+            string essence = slot.IndexBotanique switch { 0 => "Chêne", 1 => "Bouleau", 2 => "Pin", 3 => "Sapin", 4 => "Fromager", _ => "Bois" };
+            return $"Table d'Analyse Tier 1 en {essence}";
+        }
         if (id == 106)
         {
             int i = Mathf.Clamp(slot.IndexChimique, 0, ItemPhysique.TableGeologique.Length - 1);
@@ -407,6 +444,23 @@ public static class Atlas_Matiere
                 return $"{nom} ({a}/{m})";
             }
             return nom;
+        }
+        if (id == Joueur.IdObjetHachePierreTier1)
+        {
+            int i = Mathf.Clamp(slot.IndexChimique, 0, ItemPhysique.TableGeologique.Length - 1);
+            string nom = $"Hache en {ItemPhysique.TableGeologique[i].Nom}";
+            if (slot.DurabiliteOutilMax > 0.5f)
+            {
+                int a = Mathf.Max(0, Mathf.RoundToInt(slot.DurabiliteOutilActuelle));
+                int m = Mathf.Max(1, Mathf.RoundToInt(slot.DurabiliteOutilMax));
+                return $"{nom} ({a}/{m})";
+            }
+            return nom;
+        }
+        if (id == Joueur.IdObjetAtelleJambe)
+        {
+            string essence = slot.IndexBotanique switch { 0 => "Chêne", 1 => "Bouleau", 2 => "Pin", 3 => "Sapin", 4 => "Fromager", _ => "Bois" };
+            return $"Atelle de jambe ({essence})";
         }
         if (id == Joueur.IdObjetPellePierreTier0)
         {
@@ -1800,6 +1854,94 @@ public static class Atlas_Matiere
             }
         }
 
+        // Hache en pierre tier 1 (132) 3×3:
+        // (R)(R)(B)
+        // ( )( )(B)
+        // ( )( )(B)
+        // R = petite roche plate (même matière), B = bâton (même essence).
+        if (grilleCraft3x3Table && grille.Length >= 9
+            && EstSlotRochePlateCraft(grille[0]) && EstSlotRochePlateCraft(grille[1]) && EstSlotBatonCraft(grille[2])
+            && grille[3].EstVide && grille[4].EstVide && EstSlotBatonCraft(grille[5])
+            && grille[6].EstVide && grille[7].EstVide && EstSlotBatonCraft(grille[8]))
+        {
+            bool memeMatiereRoches = grille[0].ID == grille[1].ID;
+            bool memeEssenceBatons = grille[2].IndexBotanique == grille[5].IndexBotanique
+                && grille[2].IndexBotanique == grille[8].IndexBotanique;
+            if (memeMatiereRoches && memeEssenceBatons)
+            {
+                int idxRoche = grille[0].ID - ItemPhysique.IdRocheMatiereMin;
+                float dMax = CalculerDurabiliteMaxNouvelleHachePierre(grille[0], grille[1], grille[2]);
+                return new SlotInventaire
+                {
+                    ID = Joueur.IdObjetHachePierreTier1,
+                    IndexChimique = idxRoche,
+                    IndexMorphologique = 0,
+                    IndexTaille = 0,
+                    IndexBotanique = grille[2].IndexBotanique,
+                    EstUnEclat = false,
+                    NiveauFracture = Mathf.Max(grille[0].NiveauFracture, Mathf.Max(grille[1].NiveauFracture, Mathf.Max(grille[2].NiveauFracture, Mathf.Max(grille[5].NiveauFracture, grille[8].NiveauFracture)))),
+                    DurabiliteOutilMax = dMax,
+                    DurabiliteOutilActuelle = dMax
+                };
+            }
+        }
+
+        // Atelle de jambe (133) 3×3:
+        // (Br)(L)(Br)
+        // (Br)(L)(Br)
+        // (Br)(L)(Br)
+        // Br = branche brute (31) même essence, L = ligature craft (20/16) même variante.
+        if (grilleCraft3x3Table && grille.Length >= 9
+            && !grille[0].EstVide && grille[0].ID == BlocChutant.ID_BRANCHE
+            && EstSlotLigatureOutilCraft(grille[1])
+            && !grille[2].EstVide && grille[2].ID == BlocChutant.ID_BRANCHE
+            && !grille[3].EstVide && grille[3].ID == BlocChutant.ID_BRANCHE
+            && EstSlotLigatureOutilCraft(grille[4])
+            && !grille[5].EstVide && grille[5].ID == BlocChutant.ID_BRANCHE
+            && !grille[6].EstVide && grille[6].ID == BlocChutant.ID_BRANCHE
+            && EstSlotLigatureOutilCraft(grille[7])
+            && !grille[8].EstVide && grille[8].ID == BlocChutant.ID_BRANCHE)
+        {
+            byte essence = grille[0].IndexBotanique;
+            bool branchesMemeEssence = grille[2].IndexBotanique == essence
+                && grille[3].IndexBotanique == essence
+                && grille[5].IndexBotanique == essence
+                && grille[6].IndexBotanique == essence
+                && grille[8].IndexBotanique == essence;
+            SlotInventaire ligA = NormaliserLigatureOutil(grille[1]);
+            SlotInventaire ligB = NormaliserLigatureOutil(grille[4]);
+            SlotInventaire ligC = NormaliserLigatureOutil(grille[7]);
+            bool ligaturesIdentiques = MemeVarianteLigature(ligA, ligB)
+                && MemeVarianteLigature(ligA, ligC)
+                && Joueur.SontEmpilables(ligA, ligB)
+                && Joueur.SontEmpilables(ligA, ligC);
+            if (branchesMemeEssence && ligaturesIdentiques)
+            {
+                byte varianteLig = VarianteLigatureCraft(ligA);
+                string genomeAtelle = string.Join(";", new[]
+                {
+                    "ATELLE133",
+                    $"BOIS={essence}",
+                    $"LIGV={varianteLig}",
+                    $"LIGC={ligA.IndexChimique}",
+                    $"LIGM={ligA.IndexMorphologique}"
+                });
+                return new SlotInventaire
+                {
+                    ID = Joueur.IdObjetAtelleJambe,
+                    IndexBotanique = essence,
+                    IndexChimique = ligA.IndexChimique,
+                    IndexMorphologique = ligA.IndexMorphologique,
+                    GenomeAssemblage = genomeAtelle,
+                    NiveauFracture = Mathf.Max(
+                        Mathf.Max(Mathf.Max(grille[0].NiveauFracture, grille[2].NiveauFracture), Mathf.Max(grille[3].NiveauFracture, grille[5].NiveauFracture)),
+                        Mathf.Max(Mathf.Max(grille[6].NiveauFracture, grille[8].NiveauFracture), Mathf.Max(ligA.NiveauFracture, Mathf.Max(ligB.NiveauFracture, ligC.NiveauFracture)))
+                    ),
+                    EstUnEclat = false
+                };
+            }
+        }
+
         // Lance pierre tier0 (111) 3x3 (patron + miroir horizontal):
         // Patron: [1]=ligature [2]=petite roche en pointe [4]=bâton façonné [5]=ligature [6]=bâton façonné.
         // Miroir: [0]=petite roche en pointe [1]=ligature [3]=ligature [4]=bâton façonné [8]=bâton façonné.
@@ -1913,6 +2055,103 @@ public static class Atlas_Matiere
                     IndexTaille = grille[1].IndexTaille,
                     EstUnEclat = false,
                     NiveauFracture = grille[1].NiveauFracture
+                };
+            }
+
+            // Table d'analyse tier 1 (131) :
+            // (C)(C)(MP)
+            // (L)(B)(L)
+            // (O)( )(O)
+            // C = cuir (117), MP = mortier/pilon (130), B = demi-cylindre standard (30 morph 1 taille 1),
+            // L = ligature craft, O = os (116), case [7] vide.
+            static bool EstDemiCylindreStandardAnalyseT1(SlotInventaire s) =>
+                !s.EstVide && s.ID == 30 && s.IndexMorphologique == 1 && s.IndexTaille == 1;
+            bool patronTableAnalyseT1 =
+                !grille[0].EstVide && grille[0].ID == Joueur.IdObjetCuirBoeuf
+                && !grille[1].EstVide && grille[1].ID == Joueur.IdObjetCuirBoeuf
+                && !grille[2].EstVide && grille[2].ID == Joueur.IdObjetMortierPilonBois
+                && EstSlotLigatureOutilCraft(grille[3])
+                && EstDemiCylindreStandardAnalyseT1(grille[4])
+                && EstSlotLigatureOutilCraft(grille[5])
+                && !grille[6].EstVide && grille[6].ID == Joueur.IdObjetOsBoeuf
+                && grille[7].EstVide
+                && !grille[8].EstVide && grille[8].ID == Joueur.IdObjetOsBoeuf;
+            if (patronTableAnalyseT1)
+            {
+                // Contraintes demandées:
+                // - les 2 cuirs doivent être identiques (même peau / même genome)
+                // - les 2 liages doivent être identiques (même variante/type)
+                if (!Joueur.SontEmpilables(grille[0], grille[1]) || (grille[0].GenomeAssemblage ?? "") != (grille[1].GenomeAssemblage ?? ""))
+                    return new SlotInventaire();
+                SlotInventaire liageA = NormaliserLigatureOutil(grille[3]);
+                SlotInventaire liageB = NormaliserLigatureOutil(grille[5]);
+                if (!MemeVarianteLigature(liageA, liageB) || !Joueur.SontEmpilables(liageA, liageB))
+                    return new SlotInventaire();
+
+                byte essencePlanche = grille[4].IndexBotanique;
+                // Mortier/pilon (slot ID 130): prioriser GenomeAssemblage MORTIERPILON:x,y, sinon fallback sur les indices du slot.
+                byte essenceMortier = grille[2].IndexBotanique;
+                byte essencePilon = (byte)Mathf.Clamp(grille[2].IndexChimique, 0, 255);
+                string genomeMp = grille[2].GenomeAssemblage ?? "";
+                if (genomeMp.StartsWith("MORTIERPILON:", StringComparison.Ordinal))
+                {
+                    string[] mpParts = genomeMp.Substring("MORTIERPILON:".Length).Split(',');
+                    if (mpParts.Length >= 2)
+                    {
+                        if (byte.TryParse(mpParts[0], out byte bMort))
+                            essenceMortier = bMort;
+                        if (byte.TryParse(mpParts[1], out byte bPil))
+                            essencePilon = bPil;
+                    }
+                }
+
+                // Bois1/Bois2 aléatoires mais distincts, déterministes par combinaison d'ingrédients.
+                var rng = new RandomNumberGenerator();
+                rng.Seed = unchecked((ulong)(uint)HashCode.Combine(
+                    grille[0].GenomeAssemblage ?? "",
+                    grille[1].GenomeAssemblage ?? "",
+                    grille[2].GenomeAssemblage ?? "",
+                    grille[3].IndexBotanique,
+                    grille[4].IndexBotanique,
+                    grille[5].IndexBotanique,
+                    grille[6].ID,
+                    grille[8].ID));
+                byte bois1 = (byte)rng.RandiRange(0, 4);
+                byte bois2 = (byte)rng.RandiRange(0, 4);
+                if (bois2 == bois1)
+                    bois2 = (byte)((bois1 + 1 + rng.RandiRange(0, 3)) % 5);
+
+                // Roches 1/2/3 aléatoires (textures caillou), persistées dans le genome pour rendu stable.
+                int idxRoche1 = rng.RandiRange(0, ItemPhysique.TableGeologique.Length - 1);
+                int idxRoche2 = rng.RandiRange(0, ItemPhysique.TableGeologique.Length - 1);
+                int idxRoche3 = rng.RandiRange(0, ItemPhysique.TableGeologique.Length - 1);
+
+                string genomeTableAnalyse = string.Join(";", new[]
+                {
+                    "TABLEANALYSE131",
+                    $"PLAN={essencePlanche}",
+                    $"BOIS1={bois1}",
+                    $"BOIS2={bois2}",
+                    $"LIGV={liageA.IndexBotanique}",
+                    $"LIGC={liageA.IndexChimique}",
+                    $"LIGM={liageA.IndexMorphologique}",
+                    $"MPM={essenceMortier}",
+                    $"MPP={essencePilon}",
+                    $"CUIR={grille[0].GenomeAssemblage ?? ""}",
+                    $"R1={idxRoche1}",
+                    $"R2={idxRoche2}",
+                    $"R3={idxRoche3}"
+                });
+
+                return new SlotInventaire
+                {
+                    ID = Joueur.IdObjetTableAnalyseTier1,
+                    IndexBotanique = essencePlanche,
+                    IndexChimique = liageA.IndexChimique,
+                    IndexMorphologique = liageA.IndexMorphologique,
+                    GenomeAssemblage = genomeTableAnalyse,
+                    NiveauFracture = Mathf.Max(grille[0].NiveauFracture, Mathf.Max(grille[1].NiveauFracture, Mathf.Max(grille[2].NiveauFracture, Mathf.Max(grille[3].NiveauFracture, Mathf.Max(grille[4].NiveauFracture, Mathf.Max(grille[5].NiveauFracture, Mathf.Max(grille[6].NiveauFracture, grille[8].NiveauFracture))))))),
+                    EstUnEclat = false
                 };
             }
         }

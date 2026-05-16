@@ -2245,7 +2245,7 @@ void fragment()
 		}
 
 		int seedAlpha = GetNode<GameState>("/root/GameState").SeedTerrainActuel;
-		Material materielTerrainResolu = MaterielTerrain ?? GD.Load<Material>("res://Manteau_Planetaire.tres");
+		Material materielTerrainResolu = TerrainMaterialFactory.ObtenirMaterielTerrainRobuste(MaterielTerrain);
 
 		// Alpha + clones (Beta/Omega/Delta) : même seed, même algorithme, fuseaux décalés de 0/+6/+12/+18 h.
 		foreach (var info in ConstantesDimensions.ToutesAlphaLike())
@@ -2306,7 +2306,7 @@ void fragment()
 		_mondeClient.AngleCullingCameraDeg = AngleCullingCameraDeg;
 		_mondeClient.MargeChunksToujoursVisibles = MargeChunksToujoursVisibles;
 		_mondeClient.MaxChunksParFrame = MaxChunksParFrame;
-		_mondeClient.MaterielTerrain = MaterielTerrain ?? GD.Load<Material>("res://Manteau_Planetaire.tres");
+		_mondeClient.MaterielTerrain = TerrainMaterialFactory.ObtenirMaterielTerrainRobuste(MaterielTerrain);
 		ConfigurerProfilMondeClientSelonMateriel();
 		_mondeClient.Initialiser(
 			_joueur,

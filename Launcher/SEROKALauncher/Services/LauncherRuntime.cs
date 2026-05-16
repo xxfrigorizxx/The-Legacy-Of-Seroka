@@ -112,14 +112,37 @@ public sealed class LauncherRuntime
         if (!File.Exists(gameExe))
             throw new FileNotFoundException($"Executable jeu introuvable: {gameExe}");
 
+        PurgerAncienCacheDotnetGlobal(logger);
+        string bundleExtractDir = Path.Combine(gameDirectory, ".dotnet_bundle");
+        Directory.CreateDirectory(bundleExtractDir);
+
         var psi = new ProcessStartInfo
         {
             FileName = gameExe,
             WorkingDirectory = gameDirectory,
-            UseShellExecute = true
+            UseShellExecute = false
         };
+        psi.Environment["DOTNET_BUNDLE_EXTRACT_BASE_DIR"] = bundleExtractDir;
         Process.Start(psi);
         logger.Info($"Jeu lance: {gameExe}");
+        logger.Info($"DOTNET_BUNDLE_EXTRACT_BASE_DIR={bundleExtractDir}");
+    }
+
+    private static void PurgerAncienCacheDotnetGlobal(LauncherLogger logger)
+    {
+        try
+        {
+            string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            string legacyPath = Path.Combine(localAppData, "data_Zero-K - Frozen Legacy_windows_x86_64");
+            if (!Directory.Exists(legacyPath))
+                return;
+            Directory.Delete(legacyPath, recursive: true);
+            logger.Info($"Cache .NET global purge: {legacyPath}");
+        }
+        catch (Exception ex)
+        {
+            logger.Warn($"Impossible de purger le cache .NET global: {ex.Message}");
+        }
     }
 
     private static RuntimePaths ResolveRuntimePaths(string[] args)

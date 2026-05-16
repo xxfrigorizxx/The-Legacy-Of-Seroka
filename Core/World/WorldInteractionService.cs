@@ -16,7 +16,7 @@ public partial class Joueur
     private const float MargeEmpilementStructureMetres = 0.01f;
     private const float PasRotationStructuresFixesDegres = 15f;
 
-    /// <summary>Ouvre le conteneur sous visée (atelier 200, racks 109/110, coffre 113, pit roche 122).</summary>
+    /// <summary>Ouvre le conteneur/station sous visée (atelier 200, table analyse 131, racks 109/110, coffre 113, pit roche 122).</summary>
     private bool EssayerOuvrirAtelierSousVisee()
     {
         _rayon.ForceRaycastUpdate();
@@ -28,9 +28,24 @@ public partial class Joueur
         if (itemTouche == null || _menuAnatomie == null)
             return false;
         int idT = itemTouche.ID_Objet;
-        if (idT != 200 && idT != IdObjetRackBatons && idT != IdObjetRackBuches && idT != IdObjetCoffreBoisTier0 && idT != IdObjetPitFeuRoche)
+        if (idT != 200 && idT != IdObjetTableAnalyseTier1 && idT != IdObjetRackBatons && idT != IdObjetRackBuches && idT != IdObjetCoffreBoisTier0 && idT != IdObjetPitFeuRoche)
             return false;
 
+        if (idT == IdObjetTableAnalyseTier1)
+        {
+            CraftGrille3x3AuTable = false;
+            AtelierPlanTravailOuvert = null;
+            StockageRackBatonsOuvert = false;
+            RackBatonsOuvert = null;
+            StockageCoffreOuvert = false;
+            CoffreOuvert = null;
+
+            _menuAnatomie.OuvrirAnalyseurDepuisMonde(tier1: true, itemTouche);
+            GetViewport().SetInputAsHandled();
+            GD.Print("ZERO-K : Table d'analyse tier 1 ouverte.");
+            return true;
+        }
+        OuvrirAnalyseurManuel();
         if (idT == 200)
         {
             AtelierPlanTravailOuvert = itemTouche;
@@ -294,7 +309,7 @@ public partial class Joueur
     {
         if (s.EstVide || s.ID == 0) return false;
         if (EstIdTerrainVoxelPosable(s.ID)) return true;
-        return s.ID == 999 || s.ID == 10 || s.ID == 11 || s.ID == BlocChutant.ID_BRANCHE || s.ID == IdObjetBaie || ItemPhysique.EstIdRocheMatiere(s.ID) || s.ID == 30 || s.ID == 32 || s.ID == 34 || s.ID == 21 || s.ID == IdObjetCeinturePoches || s.ID == IdObjetCeintureSacoches || s.ID == IdObjetPochetteTier0 || s.ID == IdObjetSacTier0 || s.ID == IdObjetPellePierreTier0 || s.ID == IdObjetPiochePierreTier0 || s.ID == IdObjetLancePierreTier0 || s.ID == IdObjetFauxPierreTier0 || s.ID == IdObjetAllumeFeu || s.ID == 200 || s.ID == IdObjetRackBatons || s.ID == IdObjetRackBuches || s.ID == IdObjetCoffreBoisTier0 || s.ID == IdObjetPitFeuRoche || s.ID == IdObjetMortierPilonBois || EstIdFondation(s.ID);
+        return s.ID == 999 || s.ID == 10 || s.ID == 11 || s.ID == BlocChutant.ID_BRANCHE || s.ID == IdObjetBaie || ItemPhysique.EstIdRocheMatiere(s.ID) || s.ID == 30 || s.ID == 32 || s.ID == 34 || s.ID == 21 || s.ID == IdObjetCeinturePoches || s.ID == IdObjetCeintureSacoches || s.ID == IdObjetPochetteTier0 || s.ID == IdObjetSacTier0 || s.ID == IdObjetHachePierreTier1 || s.ID == IdObjetAtelleJambe || s.ID == IdObjetPellePierreTier0 || s.ID == IdObjetPiochePierreTier0 || s.ID == IdObjetLancePierreTier0 || s.ID == IdObjetFauxPierreTier0 || s.ID == IdObjetAllumeFeu || s.ID == 200 || s.ID == IdObjetTableAnalyseTier1 || s.ID == IdObjetRackBatons || s.ID == IdObjetRackBuches || s.ID == IdObjetCoffreBoisTier0 || s.ID == IdObjetPitFeuRoche || s.ID == IdObjetMortierPilonBois || EstIdFondation(s.ID);
     }
 
     /// <summary>Corde (20) : accrocher au point de visée si surface valide (sol, roche, arbre, bloc posé).</summary>
@@ -368,14 +383,14 @@ public partial class Joueur
         if (objetTouche.IsInGroup("BlocsPoses"))
         {
             int id = objetTouche.HasMeta("ID_Matiere") ? (int)objetTouche.GetMeta("ID_Matiere").AsInt32() : 1;
-            if (id == 200 || id == IdObjetRackBatons || id == IdObjetRackBuches || EstIdPitFeu(id) || EstIdFondation(id))
+            if (id == 200 || id == IdObjetTableAnalyseTier1 || id == IdObjetRackBatons || id == IdObjetRackBuches || EstIdPitFeu(id) || EstIdFondation(id))
             {
                 GD.Print("ZERO-K : Structure fixée au monde. Récupération uniquement par minage.");
                 return;
             }
             var item = objetTouche as ItemPhysique ?? (objetTouche as Node)?.GetParent() as ItemPhysique ?? (objetTouche as Node)?.GetNodeOrNull<ItemPhysique>("ItemPhysique");
             byte indexBotaniqueRamasse = LSystem_Botanique.IndexChene;
-            if (item != null && (item.ID_Objet == 30 || item.ID_Objet == 32 || item.ID_Objet == BlocChutant.ID_BRANCHE || item.ID_Objet == 106 || item.ID_Objet == IdObjetPellePierreTier0 || item.ID_Objet == IdObjetPiochePierreTier0 || item.ID_Objet == IdObjetLancePierreTier0 || item.ID_Objet == IdObjetFauxPierreTier0 || item.ID_Objet == IdObjetPochetteTier0 || item.ID_Objet == IdObjetSacTier0 || item.ID_Objet == IdObjetCeinturePoches || item.ID_Objet == IdObjetCeintureSacoches || item.ID_Objet == IdObjetRackBatons || item.ID_Objet == IdObjetRackBuches || item.ID_Objet == IdObjetCoffreBoisTier0 || EstIdPitFeu(item.ID_Objet) || EstIdFondation(item.ID_Objet)))
+            if (item != null && (item.ID_Objet == 30 || item.ID_Objet == 32 || item.ID_Objet == BlocChutant.ID_BRANCHE || item.ID_Objet == 106 || item.ID_Objet == IdObjetHachePierreTier1 || item.ID_Objet == IdObjetAtelleJambe || item.ID_Objet == IdObjetPellePierreTier0 || item.ID_Objet == IdObjetPiochePierreTier0 || item.ID_Objet == IdObjetLancePierreTier0 || item.ID_Objet == IdObjetFauxPierreTier0 || item.ID_Objet == IdObjetPochetteTier0 || item.ID_Objet == IdObjetSacTier0 || item.ID_Objet == IdObjetCeinturePoches || item.ID_Objet == IdObjetCeintureSacoches || item.ID_Objet == IdObjetRackBatons || item.ID_Objet == IdObjetRackBuches || item.ID_Objet == IdObjetCoffreBoisTier0 || EstIdPitFeu(item.ID_Objet) || EstIdFondation(item.ID_Objet)))
                 indexBotaniqueRamasse = item.IndexBotanique;
             else if ((id == BlocChutant.ID_BRANCHE || id == BlocChutant.ID_BOIS) && objetTouche.HasMeta("IndexBotanique"))
                 indexBotaniqueRamasse = (byte)Mathf.Clamp(objetTouche.GetMeta("IndexBotanique").AsInt32(), 0, 255);
@@ -391,7 +406,7 @@ public partial class Joueur
                 IndexChimique = item?.IndexChimique ?? 0,
                 IndexTaille = item != null && (item.ID_Objet == 30 || item.ID_Objet == 32 || item.ID_Objet == BlocChutant.ID_BRANCHE)
                     ? Mathf.Clamp(item.IndexTailleRoche, 0, 4)
-                    : (item != null && (item.ID_Objet == 105 || item.ID_Objet == 106 || item.ID_Objet == IdObjetPellePierreTier0 || item.ID_Objet == IdObjetPiochePierreTier0 || item.ID_Objet == IdObjetLancePierreTier0 || item.ID_Objet == IdObjetFauxPierreTier0 || ItemPhysique.EstIdRocheMatiere(item.ID_Objet)) ? item.IndexTailleRoche : (id == BlocChutant.ID_BRANCHE ? 2 : 0)),
+                    : (item != null && (item.ID_Objet == 105 || item.ID_Objet == 106 || item.ID_Objet == IdObjetHachePierreTier1 || item.ID_Objet == IdObjetAtelleJambe || item.ID_Objet == IdObjetPellePierreTier0 || item.ID_Objet == IdObjetPiochePierreTier0 || item.ID_Objet == IdObjetLancePierreTier0 || item.ID_Objet == IdObjetFauxPierreTier0 || ItemPhysique.EstIdRocheMatiere(item.ID_Objet)) ? item.IndexTailleRoche : (id == BlocChutant.ID_BRANCHE ? 2 : 0)),
                 IndexTailleLameRoche = item != null && (item.ID_Objet == 105 || item.ID_Objet == IdObjetFauxPierreTier0) && item.HasMeta(MetaTailleLameRoche)
                     ? (int)item.GetMeta(MetaTailleLameRoche).AsInt32()
                     : (item != null && (item.ID_Objet == 105 || item.ID_Objet == IdObjetFauxPierreTier0) ? 2 : 0),
@@ -406,7 +421,7 @@ public partial class Joueur
                 GenomeAssemblage = LireGenomeSurItemPhysique(item),
                 CleConteneur = (item != null && item.HasMeta("CleConteneur")) ? item.GetMeta("CleConteneur").AsString() : ""
             };
-            if ((nouveauSlot.ID == 105 || nouveauSlot.ID == 106 || nouveauSlot.ID == IdObjetPellePierreTier0 || nouveauSlot.ID == IdObjetPiochePierreTier0 || nouveauSlot.ID == IdObjetLancePierreTier0 || nouveauSlot.ID == IdObjetFauxPierreTier0 || nouveauSlot.ID == IdObjetAllumeFeu) && item != null)
+            if ((nouveauSlot.ID == 105 || nouveauSlot.ID == 106 || nouveauSlot.ID == IdObjetHachePierreTier1 || nouveauSlot.ID == IdObjetAtelleJambe || nouveauSlot.ID == IdObjetPellePierreTier0 || nouveauSlot.ID == IdObjetPiochePierreTier0 || nouveauSlot.ID == IdObjetLancePierreTier0 || nouveauSlot.ID == IdObjetFauxPierreTier0 || nouveauSlot.ID == IdObjetAllumeFeu) && item != null)
                 RemplirDurabiliteOutilDepuisItemPhysique(ref nouveauSlot, item);
         }
         else if (objetTouche is RigidBody3D rb)
@@ -437,7 +452,7 @@ public partial class Joueur
             {
             var item = rb as ItemPhysique ?? (rb as Node)?.GetParent() as ItemPhysique ?? rb.GetNodeOrNull<ItemPhysique>("ItemPhysique");
             if (item == null) return;
-            if (item.ID_Objet == 200 || item.ID_Objet == IdObjetRackBatons || item.ID_Objet == IdObjetRackBuches || EstIdPitFeu(item.ID_Objet) || EstIdFondation(item.ID_Objet))
+            if (item.ID_Objet == 200 || item.ID_Objet == IdObjetTableAnalyseTier1 || item.ID_Objet == IdObjetRackBatons || item.ID_Objet == IdObjetRackBuches || EstIdPitFeu(item.ID_Objet) || EstIdFondation(item.ID_Objet))
             {
                 GD.Print("ZERO-K : Structure fixée au monde. Récupération uniquement par minage.");
                 return;
@@ -454,7 +469,7 @@ public partial class Joueur
                 IndexChimique = item.IndexChimique,
                 IndexTaille = item.ID_Objet == 30 || item.ID_Objet == 32 || item.ID_Objet == BlocChutant.ID_BRANCHE
                     ? Mathf.Clamp(item.IndexTailleRoche, 0, 4)
-                    : (item.ID_Objet == 105 || item.ID_Objet == 106 || item.ID_Objet == IdObjetPellePierreTier0 || item.ID_Objet == IdObjetPiochePierreTier0 || item.ID_Objet == IdObjetLancePierreTier0 || item.ID_Objet == IdObjetFauxPierreTier0 || ItemPhysique.EstIdRocheMatiere(item.ID_Objet) ? item.IndexTailleRoche : 0),
+                    : (item.ID_Objet == 105 || item.ID_Objet == 106 || item.ID_Objet == IdObjetHachePierreTier1 || item.ID_Objet == IdObjetAtelleJambe || item.ID_Objet == IdObjetPellePierreTier0 || item.ID_Objet == IdObjetPiochePierreTier0 || item.ID_Objet == IdObjetLancePierreTier0 || item.ID_Objet == IdObjetFauxPierreTier0 || ItemPhysique.EstIdRocheMatiere(item.ID_Objet) ? item.IndexTailleRoche : 0),
                 IndexTailleLameRoche = (item.ID_Objet == 105 || item.ID_Objet == IdObjetFauxPierreTier0) && item.HasMeta(MetaTailleLameRoche)
                     ? (int)item.GetMeta(MetaTailleLameRoche).AsInt32()
                     : ((item.ID_Objet == 105 || item.ID_Objet == IdObjetFauxPierreTier0) ? 2 : 0),
@@ -462,13 +477,13 @@ public partial class Joueur
                 MeshEclat = item.EstUnEclat ? item.ObtenirMeshVisuel() : null,
                 NiveauFracture = item.NiveauFracture,
                 ScaleEclat = (item.ID_Objet == 30 || item.ID_Objet == 32 || item.ID_Objet == BlocChutant.ID_BRANCHE) ? ScaleEclatBoisAuRamassage(item) : item.Scale,
-                IndexBotanique = (item.ID_Objet == 30 || item.ID_Objet == 32 || item.ID_Objet == BlocChutant.ID_BRANCHE || item.ID_Objet == 106 || item.ID_Objet == IdObjetPellePierreTier0 || item.ID_Objet == IdObjetPiochePierreTier0 || item.ID_Objet == IdObjetLancePierreTier0 || item.ID_Objet == IdObjetFauxPierreTier0 || item.ID_Objet == 200 || item.ID_Objet == IdObjetPochetteTier0 || item.ID_Objet == IdObjetSacTier0 || item.ID_Objet == IdObjetCeinturePoches || item.ID_Objet == IdObjetCeintureSacoches || item.ID_Objet == IdObjetRackBatons || item.ID_Objet == IdObjetRackBuches || item.ID_Objet == IdObjetCoffreBoisTier0 || EstIdPitFeu(item.ID_Objet) || EstIdFondation(item.ID_Objet))
+                IndexBotanique = (item.ID_Objet == 30 || item.ID_Objet == 32 || item.ID_Objet == BlocChutant.ID_BRANCHE || item.ID_Objet == 106 || item.ID_Objet == IdObjetHachePierreTier1 || item.ID_Objet == IdObjetAtelleJambe || item.ID_Objet == IdObjetPellePierreTier0 || item.ID_Objet == IdObjetPiochePierreTier0 || item.ID_Objet == IdObjetLancePierreTier0 || item.ID_Objet == IdObjetFauxPierreTier0 || item.ID_Objet == 200 || item.ID_Objet == IdObjetTableAnalyseTier1 || item.ID_Objet == IdObjetPochetteTier0 || item.ID_Objet == IdObjetSacTier0 || item.ID_Objet == IdObjetCeinturePoches || item.ID_Objet == IdObjetCeintureSacoches || item.ID_Objet == IdObjetRackBatons || item.ID_Objet == IdObjetRackBuches || item.ID_Objet == IdObjetCoffreBoisTier0 || EstIdPitFeu(item.ID_Objet) || EstIdFondation(item.ID_Objet))
                     ? item.IndexBotanique
                     : LSystem_Botanique.IndexChene,
                 GenomeAssemblage = LireGenomeSurItemPhysique(item),
                 CleConteneur = item.HasMeta("CleConteneur") ? item.GetMeta("CleConteneur").AsString() : ""
             };
-            if (nouveauSlot.ID == 105 || nouveauSlot.ID == 106 || nouveauSlot.ID == IdObjetPellePierreTier0 || nouveauSlot.ID == IdObjetPiochePierreTier0 || nouveauSlot.ID == IdObjetLancePierreTier0 || nouveauSlot.ID == IdObjetFauxPierreTier0 || nouveauSlot.ID == IdObjetAllumeFeu)
+            if (nouveauSlot.ID == 105 || nouveauSlot.ID == 106 || nouveauSlot.ID == IdObjetHachePierreTier1 || nouveauSlot.ID == IdObjetAtelleJambe || nouveauSlot.ID == IdObjetPellePierreTier0 || nouveauSlot.ID == IdObjetPiochePierreTier0 || nouveauSlot.ID == IdObjetLancePierreTier0 || nouveauSlot.ID == IdObjetFauxPierreTier0 || nouveauSlot.ID == IdObjetAllumeFeu)
                 RemplirDurabiliteOutilDepuisItemPhysique(ref nouveauSlot, item);
             }
         }
@@ -476,7 +491,7 @@ public partial class Joueur
         {
             var item = sb.GetNodeOrNull<ItemPhysique>("ItemPhysique");
             if (item == null) return;
-            if (item.ID_Objet == 200 || item.ID_Objet == IdObjetRackBatons || item.ID_Objet == IdObjetRackBuches || EstIdPitFeu(item.ID_Objet) || EstIdFondation(item.ID_Objet))
+            if (item.ID_Objet == 200 || item.ID_Objet == IdObjetTableAnalyseTier1 || item.ID_Objet == IdObjetRackBatons || item.ID_Objet == IdObjetRackBuches || EstIdPitFeu(item.ID_Objet) || EstIdFondation(item.ID_Objet))
             {
                 GD.Print("ZERO-K : Structure fixée au monde. Récupération uniquement par minage.");
                 return;
@@ -493,7 +508,7 @@ public partial class Joueur
                 IndexChimique = item.IndexChimique,
                 IndexTaille = item.ID_Objet == 30 || item.ID_Objet == 32 || item.ID_Objet == BlocChutant.ID_BRANCHE
                     ? Mathf.Clamp(item.IndexTailleRoche, 0, 4)
-                    : (item.ID_Objet == 105 || item.ID_Objet == 106 || item.ID_Objet == IdObjetPellePierreTier0 || item.ID_Objet == IdObjetPiochePierreTier0 || item.ID_Objet == IdObjetLancePierreTier0 || item.ID_Objet == IdObjetFauxPierreTier0 || ItemPhysique.EstIdRocheMatiere(item.ID_Objet) ? item.IndexTailleRoche : 0),
+                    : (item.ID_Objet == 105 || item.ID_Objet == 106 || item.ID_Objet == IdObjetHachePierreTier1 || item.ID_Objet == IdObjetAtelleJambe || item.ID_Objet == IdObjetPellePierreTier0 || item.ID_Objet == IdObjetPiochePierreTier0 || item.ID_Objet == IdObjetLancePierreTier0 || item.ID_Objet == IdObjetFauxPierreTier0 || ItemPhysique.EstIdRocheMatiere(item.ID_Objet) ? item.IndexTailleRoche : 0),
                 IndexTailleLameRoche = (item.ID_Objet == 105 || item.ID_Objet == IdObjetFauxPierreTier0) && item.HasMeta(MetaTailleLameRoche)
                     ? (int)item.GetMeta(MetaTailleLameRoche).AsInt32()
                     : ((item.ID_Objet == 105 || item.ID_Objet == IdObjetFauxPierreTier0) ? 2 : 0),
@@ -501,13 +516,13 @@ public partial class Joueur
                 MeshEclat = item.EstUnEclat ? item.ObtenirMeshVisuel() : null,
                 NiveauFracture = item.NiveauFracture,
                 ScaleEclat = (item.ID_Objet == 30 || item.ID_Objet == 32 || item.ID_Objet == BlocChutant.ID_BRANCHE) ? ScaleEclatBoisAuRamassage(item) : item.Scale,
-                IndexBotanique = (item.ID_Objet == 30 || item.ID_Objet == 32 || item.ID_Objet == BlocChutant.ID_BRANCHE || item.ID_Objet == 106 || item.ID_Objet == IdObjetPellePierreTier0 || item.ID_Objet == IdObjetPiochePierreTier0 || item.ID_Objet == IdObjetLancePierreTier0 || item.ID_Objet == IdObjetFauxPierreTier0 || item.ID_Objet == IdObjetPochetteTier0 || item.ID_Objet == IdObjetSacTier0 || item.ID_Objet == IdObjetCeinturePoches || item.ID_Objet == IdObjetCeintureSacoches || item.ID_Objet == IdObjetRackBatons || item.ID_Objet == IdObjetRackBuches || item.ID_Objet == IdObjetCoffreBoisTier0 || EstIdPitFeu(item.ID_Objet) || EstIdFondation(item.ID_Objet))
+                IndexBotanique = (item.ID_Objet == 30 || item.ID_Objet == 32 || item.ID_Objet == BlocChutant.ID_BRANCHE || item.ID_Objet == 106 || item.ID_Objet == IdObjetHachePierreTier1 || item.ID_Objet == IdObjetAtelleJambe || item.ID_Objet == IdObjetPellePierreTier0 || item.ID_Objet == IdObjetPiochePierreTier0 || item.ID_Objet == IdObjetLancePierreTier0 || item.ID_Objet == IdObjetFauxPierreTier0 || item.ID_Objet == IdObjetPochetteTier0 || item.ID_Objet == IdObjetSacTier0 || item.ID_Objet == IdObjetCeinturePoches || item.ID_Objet == IdObjetCeintureSacoches || item.ID_Objet == IdObjetRackBatons || item.ID_Objet == IdObjetRackBuches || item.ID_Objet == IdObjetCoffreBoisTier0 || EstIdPitFeu(item.ID_Objet) || EstIdFondation(item.ID_Objet))
                     ? item.IndexBotanique
                     : LSystem_Botanique.IndexChene,
                 GenomeAssemblage = LireGenomeSurItemPhysique(item),
                 CleConteneur = item.HasMeta("CleConteneur") ? item.GetMeta("CleConteneur").AsString() : ""
             };
-            if (nouveauSlot.ID == 105 || nouveauSlot.ID == 106 || nouveauSlot.ID == IdObjetPellePierreTier0 || nouveauSlot.ID == IdObjetPiochePierreTier0 || nouveauSlot.ID == IdObjetLancePierreTier0 || nouveauSlot.ID == IdObjetFauxPierreTier0 || nouveauSlot.ID == IdObjetAllumeFeu)
+            if (nouveauSlot.ID == 105 || nouveauSlot.ID == 106 || nouveauSlot.ID == IdObjetHachePierreTier1 || nouveauSlot.ID == IdObjetAtelleJambe || nouveauSlot.ID == IdObjetPellePierreTier0 || nouveauSlot.ID == IdObjetPiochePierreTier0 || nouveauSlot.ID == IdObjetLancePierreTier0 || nouveauSlot.ID == IdObjetFauxPierreTier0 || nouveauSlot.ID == IdObjetAllumeFeu)
                 RemplirDurabiliteOutilDepuisItemPhysique(ref nouveauSlot, item);
         }
         else
@@ -646,7 +661,7 @@ public partial class Joueur
 			}
 			GD.Print("ZERO-K : Buisson replanté.");
 		}
-        else if (id == 999 || id == BlocChutant.ID_BRANCHE || id == IdObjetBaie || ItemPhysique.EstIdRocheMatiere(id) || id == 15 || id == 16 || id == 17 || id == 20 || id == 21 || id == IdObjetCeinturePoches || id == IdObjetCeintureSacoches || id == IdObjetPochetteTier0 || id == IdObjetSacTier0 || id == IdObjetCarnetSavoir || id == 30 || id == 32 || id == 34 || id == 105 || id == 106 || id == IdObjetPellePierreTier0 || id == IdObjetPiochePierreTier0 || id == IdObjetLancePierreTier0 || id == IdObjetFauxPierreTier0 || id == IdObjetAllumeFeu || id == 200 || id == IdObjetRackBatons || id == IdObjetRackBuches || id == IdObjetCoffreBoisTier0 || EstIdPitFeu(id) || EstIdFondation(id))
+        else if (id == 999 || id == BlocChutant.ID_BRANCHE || id == IdObjetBaie || ItemPhysique.EstIdRocheMatiere(id) || id == 15 || id == 16 || id == 17 || id == 20 || id == 21 || id == IdObjetCeinturePoches || id == IdObjetCeintureSacoches || id == IdObjetPochetteTier0 || id == IdObjetSacTier0 || id == IdObjetCarnetSavoir || id == 30 || id == 32 || id == 34 || id == 105 || id == 106 || id == IdObjetHachePierreTier1 || id == IdObjetAtelleJambe || id == IdObjetPellePierreTier0 || id == IdObjetPiochePierreTier0 || id == IdObjetLancePierreTier0 || id == IdObjetFauxPierreTier0 || id == IdObjetAllumeFeu || id == 200 || id == IdObjetTableAnalyseTier1 || id == IdObjetRackBatons || id == IdObjetRackBuches || id == IdObjetCoffreBoisTier0 || EstIdPitFeu(id) || EstIdFondation(id))
         {
             Vector3 pointSpawn = (structureFixe && EstIdFondation(mainActive.ID))
                 ? pointAligneStructure
@@ -743,6 +758,7 @@ public partial class Joueur
     private bool EstStructureFixePose(int idObjet)
     {
         return idObjet == 200
+            || idObjet == IdObjetTableAnalyseTier1
             || idObjet == IdObjetRackBatons
             || idObjet == IdObjetRackBuches
             || idObjet == IdObjetCoffreBoisTier0
@@ -915,6 +931,8 @@ public partial class Joueur
             return new Vector3(FondationDistanceCentreAdjacente, 1f, FondationDistanceCentreAdjacente);
         if (idObjet == 200)
             return new Vector3(1.2f, 1.0f, 0.9f);
+        if (idObjet == IdObjetTableAnalyseTier1)
+            return new Vector3(1.53f, 1.20f, 1.20f);
         if (idObjet == IdObjetRackBatons || idObjet == IdObjetRackBuches)
             return new Vector3(0.95f, 0.72f, 0.62f);
         if (idObjet == IdObjetCoffreBoisTier0)
@@ -1008,11 +1026,12 @@ public partial class Joueur
         if (slot.EstVide) return false;
         bool estTerrainVoxel = slot.ID >= 1 && slot.ID <= 9;
         bool estAtelier = slot.ID == 200;
+        bool estTableAnalyse = slot.ID == IdObjetTableAnalyseTier1;
         bool estRackBatons = slot.ID == IdObjetRackBatons || slot.ID == IdObjetRackBuches;
         bool estBuisson = slot.ID == 10 || slot.ID == 11;
         bool estCoffre = slot.ID == IdObjetCoffreBoisTier0;
         bool estPitFeu = EstIdPitFeu(slot.ID) || EstIdFondation(slot.ID);
-        return !estTerrainVoxel && !estAtelier && !estRackBatons && !estBuisson && !estCoffre && !estPitFeu;
+        return !estTerrainVoxel && !estAtelier && !estTableAnalyse && !estRackBatons && !estBuisson && !estCoffre && !estPitFeu;
     }
 
     /// <summary>Clic droit court : si la visée est le sol et l’outil peut faucher, exécute le même fauchage que le clic gauche (gazon 3D → fibres).</summary>

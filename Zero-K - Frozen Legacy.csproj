@@ -5,7 +5,7 @@
     <EnableDynamicLoading>true</EnableDynamicLoading>
     <RootNamespace>ZeroKFrozenLegacy</RootNamespace>
   </PropertyGroup>
-  <PropertyGroup Condition=" '$(GodotTargetPlatform)' == 'windows' ">
+  <PropertyGroup Condition=" '$(GodotTargetPlatform)' == 'windows' and '$(Configuration)' == 'Release' ">
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>
     <PublishSelfContained>true</PublishSelfContained>

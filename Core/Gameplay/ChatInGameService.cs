@@ -477,9 +477,23 @@ public partial class Joueur
         bool modifieur = ek.CtrlPressed || ek.MetaPressed || ek.AltPressed;
         if (_chatEditionOuverte)
         {
-            // Uniquement T en mode édition: recentre le focus sans bloquer Entrée (soumission).
+            // T en mode édition: recentre le focus.
             if (estT && !modifieur && _ligneSaisieChat != null && GodotObject.IsInstanceValid(_ligneSaisieChat))
             {
+                _ligneSaisieChat.CallDeferred(LineEdit.MethodName.GrabFocus);
+                return true;
+            }
+            // Entrée en mode édition: si le champ n'a pas le focus, on le reprend.
+            // Si le champ a déjà le focus, on laisse LineEdit gérer TextSubmitted.
+            if (estEntree && !modifieur && _ligneSaisieChat != null && GodotObject.IsInstanceValid(_ligneSaisieChat))
+            {
+                Control focus = GetViewport()?.GuiGetFocusOwner();
+                if (focus == _ligneSaisieChat)
+                {
+                    // Soumission explicite ici pour éviter les variations de propagation input selon runtime.
+                    OnTexteChatSoumis(_ligneSaisieChat.Text);
+                    return true;
+                }
                 _ligneSaisieChat.CallDeferred(LineEdit.MethodName.GrabFocus);
                 return true;
             }
@@ -489,7 +503,8 @@ public partial class Joueur
             return false;
         if (SaisieTexteUiEnCours())
             return false;
-        if (!estT && !estEntree)
+        // Chat fermé: seule la touche T doit l'ouvrir (pas Entrée).
+        if (!estT)
             return false;
         if (modifieur)
             return false;

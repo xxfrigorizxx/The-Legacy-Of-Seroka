@@ -38,6 +38,7 @@ public partial class ItemPhysique : RigidBody3D
 	/// <summary>Atelier (200), racks, coffre : corps figé en mode statique au sol — ne pas les traiter comme des objets à « dégeler » après streaming du terrain.</summary>
 	public static bool EstMeublePoseStatique(int idObjet) =>
 		idObjet == 200
+		|| idObjet == Joueur.IdObjetTableAnalyseTier1
 		|| idObjet == Joueur.IdObjetRackBatons
 		|| idObjet == Joueur.IdObjetRackBuches
 		|| idObjet == Joueur.IdObjetCoffreBoisTier0
@@ -192,7 +193,7 @@ public partial class ItemPhysique : RigidBody3D
 	/// <summary>Hachette primitive (106) : même esprit que la dague, masse plus élevée, CCD.</summary>
 	public static void AppliquerPhysiqueHachette106(ItemPhysique rb)
 	{
-		if (rb == null || rb.ID_Objet != 106) return;
+		if (rb == null || (rb.ID_Objet != 106 && rb.ID_Objet != Joueur.IdObjetHachePierreTier1)) return;
 		rb.ContinuousCd = true;
 		rb.LinearDampMode = RigidBody3D.DampMode.Replace;
 		rb.LinearDamp = 0.2f;
@@ -1039,6 +1040,19 @@ public partial class ItemPhysique : RigidBody3D
 			FreezeMode = FreezeModeEnum.Static;
 			return;
 		}
+		if (ID_Objet == Joueur.IdObjetTableAnalyseTier1)
+		{
+			Mass = 2400f;
+			GravityScale = 0f;
+			ResistanceActuelle = 86f;
+			Scale = Vector3.One;
+			LinearVelocity = Vector3.Zero;
+			AngularVelocity = Vector3.Zero;
+			Sleeping = true;
+			Freeze = true;
+			FreezeMode = FreezeModeEnum.Static;
+			return;
+		}
 		if (ID_Objet == Joueur.IdObjetRackBatons || ID_Objet == Joueur.IdObjetRackBuches)
 		{
 			Mass = 1200f;
@@ -1160,6 +1174,13 @@ public partial class ItemPhysique : RigidBody3D
 			ResistanceActuelle = 1f;
 			return;
 		}
+		if (ID_Objet == Joueur.IdObjetAtelleJambe)
+		{
+			Mass = 0.34f;
+			ResistanceActuelle = 8f;
+			Scale = Vector3.One;
+			return;
+		}
 		// Dague primitive (105) : GLB multi-surfaces injecté par Joueur.InstancierModeleArme — pas de cache caillou.
 		if (ID_Objet == 105)
 		{
@@ -1170,11 +1191,11 @@ public partial class ItemPhysique : RigidBody3D
 			AppliquerPhysiqueDague105(this);
 			return;
 		}
-		if (ID_Objet == 106)
+		if (ID_Objet == 106 || ID_Objet == Joueur.IdObjetHachePierreTier1)
 		{
 			IndexChimique = Mathf.Clamp(IndexChimique, 0, TableGeologique.Length - 1);
-			Mass = 0.58f;
-			ResistanceActuelle = 28f;
+			Mass = ID_Objet == Joueur.IdObjetHachePierreTier1 ? 0.64f : 0.58f;
+			ResistanceActuelle = ID_Objet == Joueur.IdObjetHachePierreTier1 ? 30f : 28f;
 			Scale = Vector3.One;
 			AppliquerPhysiqueHachette106(this);
 			return;
@@ -1731,7 +1752,7 @@ public partial class ItemPhysique : RigidBody3D
 
 	private bool EstObjetTranchantPourImpactFaune()
 	{
-		if (ID_Objet == 105 || ID_Objet == 106 || ID_Objet == Joueur.IdObjetPiochePierreTier0 || ID_Objet == Joueur.IdObjetPellePierreTier0 || ID_Objet == Joueur.IdObjetLancePierreTier0 || ID_Objet == Joueur.IdObjetFauxPierreTier0 || ID_Objet == 100)
+		if (ID_Objet == 105 || ID_Objet == 106 || ID_Objet == Joueur.IdObjetHachePierreTier1 || ID_Objet == Joueur.IdObjetPiochePierreTier0 || ID_Objet == Joueur.IdObjetPellePierreTier0 || ID_Objet == Joueur.IdObjetLancePierreTier0 || ID_Objet == Joueur.IdObjetFauxPierreTier0 || ID_Objet == 100)
 			return true;
 		if (EstUnEclat)
 			return true;
@@ -1758,7 +1779,7 @@ public partial class ItemPhysique : RigidBody3D
 			return 1.16f;
 		if (ID_Objet == Joueur.IdObjetLancePierreTier0)
 			return 1.22f;
-		if (ID_Objet == 106 || ID_Objet == Joueur.IdObjetPiochePierreTier0)
+		if (ID_Objet == 106 || ID_Objet == Joueur.IdObjetHachePierreTier1 || ID_Objet == Joueur.IdObjetPiochePierreTier0)
 			return 1.08f;
 		if (ID_Objet == 105 || ID_Objet == Joueur.IdObjetPellePierreTier0 || ID_Objet == Joueur.IdObjetFauxPierreTier0)
 			return 0.96f;
@@ -2844,7 +2865,7 @@ public partial class ItemPhysique : RigidBody3D
 			AppliquerPhysiqueDague105(this);
 			return;
 		}
-		if (ID_Objet == 106)
+		if (ID_Objet == 106 || ID_Objet == Joueur.IdObjetHachePierreTier1)
 		{
 			AppliquerPhysiqueHachette106(this);
 			return;
