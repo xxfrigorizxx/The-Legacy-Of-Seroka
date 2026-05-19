@@ -157,6 +157,16 @@ public static class ConstantesDimensions
 				yield return info;
 	}
 
+	/// <summary>
+	/// Toutes les dimensions où minage, constructions et objets au sol sont persistés
+	/// (<c>placed_objects.*</c>, <c>chunks_*</c>). La génération procédurale peut différer (ex. APISARA).
+	/// </summary>
+	public static IEnumerable<InfoDimension> ToutesAvecPersistanceModifications()
+	{
+		foreach (var info in _table.Values)
+			yield return info;
+	}
+
 	public static string ObtenirNomCanonique(int dimensionId)
 	{
 		return _table.TryGetValue(dimensionId, out var info) ? info.NomCanonique : NomAlpha;

@@ -82,6 +82,47 @@ public partial class Joueur
 		},
 		new RecetteAnalysable
 		{
+			CleCraft = "corde_mixte",
+			IdResultat = 20,
+			Masque = CategorieAnalyse.Fibre,
+			Titre = "Corde mixte (deux fibres)",
+			LegendeSymboles = new[]
+			{
+				"Fg = Fibre gauche (herbe 15, liane 16 ou boyau 17)",
+				"Fd = Fibre droite (autre type que Fg)",
+				"Disposition : (Fg)(Fd) sur une meme ligne — gauche vers droite"
+			},
+			PatronCraft = new[] { "(Fg)(Fd)" }
+		},
+		new RecetteAnalysable
+		{
+			CleCraft = "corde_mixte_intestin",
+			IdResultat = 20,
+			Masque = CategorieAnalyse.Fibre,
+			Titre = "Corde mixte intestin + fibre",
+			LegendeSymboles = new[]
+			{
+				"I = Intestin (118 brut ou 119 nettoye dans l'eau)",
+				"F = Fibre (herbe, liane ou boyau)",
+				"Disposition : (I)(F) ou (F)(I) sur une meme ligne — gauche vers droite"
+			},
+			PatronCraft = new[] { "(I)(F)", "(F)(I)" }
+		},
+		new RecetteAnalysable
+		{
+			CleCraft = "corde_intestin",
+			IdResultat = 20,
+			Masque = CategorieAnalyse.Fibre,
+			Titre = "Corde d'intestin",
+			LegendeSymboles = new[]
+			{
+				"I = Intestin (118 ou 119 nettoye) x2",
+				"Disposition : deux intestins cote a cote dans la grille craft (poche ou atelier)"
+			},
+			PatronCraft = new[] { "(I)(I)" }
+		},
+		new RecetteAnalysable
+		{
 			CleCraft = "id_21",
 			IdResultat = 21,
 			Masque = CategorieAnalyse.Ligature,
@@ -248,6 +289,24 @@ public partial class Joueur
 			Titre = "Atelle de jambe",
 			LegendeSymboles = new[] { "Br = Branche brute (x6, meme essence)", "L = Ligature (x3, meme variante)" },
 			PatronCraft = new[] { "(Br)(L)(Br)", "(Br)(L)(Br)", "(Br)(L)(Br)" }
+		},
+		new RecetteAnalysable
+		{
+			CleCraft = "id_134",
+			IdResultat = IdObjetAtelleBras,
+			Masque = CategorieAnalyse.BrancheBrute | CategorieAnalyse.Ligature,
+			Titre = "Atelle de bras",
+			LegendeSymboles = new[] { "Br = Branche brute (x6, meme essence)", "L = Ligature (x3, meme variante)" },
+			PatronCraft = new[] { "(Br)(L)(Br)", "(L)(L)(Br)", "(Br)(Br)(Br)" }
+		},
+		new RecetteAnalysable
+		{
+			CleCraft = "id_135",
+			IdResultat = IdObjetBandageTier1,
+			Masque = CategorieAnalyse.Ligature,
+			Titre = "Bandage tier 1",
+			LegendeSymboles = new[] { "L = Ligature (corde ou liane, meme variante x3)" },
+			PatronCraft = new[] { "(L)(L)", "(L)()" }
 		},
 		new RecetteAnalysable
 		{
@@ -472,12 +531,34 @@ public partial class Joueur
 		return $"Vous avez decouvert: {titre}\n{schema}";
 	}
 
+	/// <summary>Corde 20 issue de deux fibres distinctes (15/16/17), sans intestin.</summary>
+	private static bool EstCordeMixteFibresCraft(in SlotInventaire s) =>
+		!s.EstVide && s.ID == 20
+		&& !EstVarianteCordeIntestinMixe(s)
+		&& s.IndexChimique is 15 or 16 or 17
+		&& s.IndexMorphologique is 15 or 16 or 17
+		&& s.IndexChimique != s.IndexMorphologique;
+
 	/// <summary>Clé de déblocage : pour le bâton façonné, une seule entrée <c>baton_faconne</c> couvre toutes les essences (IndexBotanique porté par le résultat craft).</summary>
 	private static string CleCraftDepuisResultat(in SlotInventaire resultat)
 	{
 		if (resultat.ID <= 0) return "";
 		if (resultat.ID == 20)
-			return resultat.IndexBotanique >= 2 ? "corde_tier2" : "corde_tier0";
+		{
+			if (EstVarianteCordeIntestinMixe(resultat))
+				return "corde_mixte_intestin";
+			if (EstVarianteIntestinSolide(resultat))
+				return "corde_intestin_solide";
+			if (EstVarianteIntestin(resultat))
+				return "corde_intestin";
+			if (EstCordeMixteFibresCraft(resultat))
+				return "corde_mixte";
+			if (EstVarianteHerbeSolide(resultat) || EstVarianteLiane(resultat))
+				return "corde_tier2";
+			if (resultat.IndexChimique == 15 && resultat.IndexMorphologique == 15)
+				return resultat.IndexBotanique >= 2 ? "corde_tier2" : "corde_tier0";
+			return "corde_tier0";
+		}
 		if (resultat.ID == 32 && resultat.IndexChimique == 1)
 			return "baton_faconne";
 		if (resultat.ID == 47)
@@ -494,13 +575,24 @@ public partial class Joueur
 		return $"id_{resultat.ID}";
 	}
 
+	private bool EstFiliereCordeIntestinDebloquee()
+	{
+		return _craftsDecouverts.Contains("corde_intestin")
+			|| _craftsDecouverts.Contains("corde_intestin_solide")
+			|| _craftsDecouverts.Contains("corde_mixte_intestin");
+	}
+
 	public bool EstCraftDebloque(SlotInventaire resultat)
 	{
 		if (resultat.EstVide) return true;
 		string cle = CleCraftDepuisResultat(resultat);
 		if (string.IsNullOrEmpty(cle)) return true;
 		if (_craftsDecouverts.Contains(cle)) return true;
-		return _craftsDecouverts.Contains($"id_{resultat.ID}");
+		if (_craftsDecouverts.Contains($"id_{resultat.ID}")) return true;
+		if (resultat.ID == 20 && EstFiliereCordeIntestinDebloquee()
+			&& (EstVarianteIntestin(resultat) || EstVarianteIntestinSolide(resultat) || EstVarianteCordeIntestinMixe(resultat)))
+			return true;
+		return false;
 	}
 
 	public bool EstCraftDebloque(int idResultat)
@@ -538,13 +630,18 @@ public partial class Joueur
 			if (!string.IsNullOrWhiteSpace(key))
 				_craftsDecouverts.Add(key);
 		}
+		// Sauvegardes : « corde_mixte_intestin » débloqué avant l'ajout de corde_intestin.
+		if (_craftsDecouverts.Contains("corde_mixte_intestin"))
+			_craftsDecouverts.Add("corde_intestin");
 	}
 
 	private static CategorieAnalyse DeterminerCategoriesAnalyse(in SlotInventaire s)
 	{
 		if (s.EstVide) return CategorieAnalyse.Aucune;
 		CategorieAnalyse c = CategorieAnalyse.Aucune;
-		if (s.ID == 15) c |= CategorieAnalyse.Fibre;
+		if (s.ID is 15 or 16 or 17) c |= CategorieAnalyse.Fibre;
+		if (s.ID == Joueur.IdObjetIntestinBoeufNettoye || s.ID == Joueur.IdObjetIntestinBoeuf)
+			c |= CategorieAnalyse.Fibre;
 		if (s.ID == 16 || s.ID == 20) c |= CategorieAnalyse.Ligature;
 		if (s.ID == 20) c |= CategorieAnalyse.Corde;
 		if (s.ID == 21) c |= CategorieAnalyse.Tissu;
@@ -594,7 +691,7 @@ public partial class Joueur
 	}
 
 	/// <summary>Hachette primitive : bâton (32) <b>ou</b> branche (31) + roche plate + ligature. Les autres recettes suivent le masque bit à bit.</summary>
-	private static bool AnalyseurUnionSatisfaitRecette(CategorieAnalyse union, RecetteAnalysable r)
+	private static bool AnalyseurUnionSatisfaitRecette(CategorieAnalyse union, RecetteAnalysable r, SlotInventaire[] grilleAnalyse)
 	{
 		if (r.CleCraft == "id_106")
 		{
@@ -606,6 +703,42 @@ public partial class Joueur
 		// Bâton façonné : une seule clé « baton_faconne » pour toutes les essences (chêne, bouleau, …) — bâton brut (32) ou branche (31).
 		if (r.CleCraft == "baton_faconne")
 			return (union & CategorieAnalyse.Baton) != 0 || (union & CategorieAnalyse.BrancheBrute) != 0;
+		if (r.CleCraft == "corde_mixte" && grilleAnalyse != null)
+		{
+			bool herbe = false, liane = false, boyau = false;
+			for (int i = 0; i < grilleAnalyse.Length; i++)
+			{
+				SlotInventaire s = grilleAnalyse[i];
+				if (s.EstVide) continue;
+				if (s.ID == 15) herbe = true;
+				else if (s.ID == 16) liane = true;
+				else if (s.ID == 17) boyau = true;
+			}
+			int nbFibres = (herbe ? 1 : 0) + (liane ? 1 : 0) + (boyau ? 1 : 0);
+			return nbFibres >= 2;
+		}
+		if (r.CleCraft == "corde_mixte_intestin" && grilleAnalyse != null)
+		{
+			bool intestin = false, fibre = false;
+			for (int i = 0; i < grilleAnalyse.Length; i++)
+			{
+				SlotInventaire s = grilleAnalyse[i];
+				if (s.EstVide) continue;
+				if (EstIntestinUtilisablePourCraft(s)) intestin = true;
+				else if (s.ID is 15 or 16 or 17) fibre = true;
+			}
+			return intestin && fibre;
+		}
+		if (r.CleCraft == "corde_intestin" && grilleAnalyse != null)
+		{
+			int nbIntestins = 0;
+			for (int i = 0; i < grilleAnalyse.Length; i++)
+			{
+				if (EstIntestinUtilisablePourCraft(grilleAnalyse[i]))
+					nbIntestins++;
+			}
+			return nbIntestins >= 2;
+		}
 		return (union & r.Masque) == r.Masque;
 	}
 
@@ -641,7 +774,7 @@ public partial class Joueur
 		for (int i = 0; i < recettesActives.Length; i++)
 		{
 			RecetteAnalysable r = recettesActives[i];
-			if (AnalyseurUnionSatisfaitRecette(masque, r))
+			if (AnalyseurUnionSatisfaitRecette(masque, r, grilleAnalyse))
 				candidates.Add(r);
 		}
 		if (candidates.Count == 0)
@@ -682,6 +815,8 @@ public partial class Joueur
 		int pick = nonDecouvertes.Count == 1 ? 0 : GD.RandRange(0, nonDecouvertes.Count - 1);
 		RecetteAnalysable choisie = nonDecouvertes[pick];
 		DebloquerCraft(choisie.CleCraft);
+		if (choisie.CleCraft == "corde_mixte_intestin")
+			DebloquerCraft("corde_intestin");
 		ConsommerAnalyseur();
 		ulong xpIntelligenceRecueSucces = AjouterXpFutureStateEtRetourEffectif("Intelligence", 1UL);
 

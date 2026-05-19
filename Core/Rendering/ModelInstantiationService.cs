@@ -8,7 +8,7 @@ public partial class Joueur
     private static bool EstObjetAvecVisuel(int id)
     {
         if (id >= 1 && id <= 9) return true;
-        return ItemPhysique.EstIdRocheMatiere(id) || id == 10 || id == 11 || id == BlocChutant.ID_BRANCHE || id == 15 || id == 16 || id == 17 || id == 20 || id == 21 || id == Joueur.IdObjetCeinturePoches || id == Joueur.IdObjetCeintureSacoches || id == Joueur.IdObjetPochetteTier0 || id == Joueur.IdObjetSacTier0 || id == Joueur.IdObjetCarnetSavoir || id == Joueur.IdObjetSteakCru || id == Joueur.IdObjetSteakCuit || id == Joueur.IdObjetOsBoeuf || id == Joueur.IdObjetCuirBoeuf || id == Joueur.IdObjetIntestinBoeuf || id == Joueur.IdObjetIntestinBoeufNettoye || id == 30 || id == 32 || id == 34 || id == Joueur.IdObjetBaie || id == 100 || id == 105 || id == 106 || id == Joueur.IdObjetHachePierreTier1 || id == Joueur.IdObjetPellePierreTier0 || id == Joueur.IdObjetPiochePierreTier0 || id == Joueur.IdObjetLancePierreTier0 || id == Joueur.IdObjetFauxPierreTier0 || id == 200 || id == Joueur.IdObjetTableAnalyseTier1 || id == Joueur.IdObjetRackBatons || id == Joueur.IdObjetRackBuches || id == Joueur.IdObjetCoffreBoisTier0 || id == Joueur.IdObjetPitFeu || id == Joueur.IdObjetPitFeuRoche || id == Joueur.IdObjetAllumeFeu || id == Joueur.IdObjetMailletBois || id == Joueur.IdObjetBolBois || id == Joueur.IdObjetMortierPilonBois || id == Joueur.IdObjetAtelleJambe || EstIdFondation(id);
+        return ItemPhysique.EstIdRocheMatiere(id) || id == 10 || id == 11 || id == BlocChutant.ID_BRANCHE || id == 15 || id == 16 || id == 17 || id == 20 || id == 21 || id == Joueur.IdObjetCeinturePoches || id == Joueur.IdObjetCeintureSacoches || id == Joueur.IdObjetPochetteTier0 || id == Joueur.IdObjetSacTier0 || id == Joueur.IdObjetCarnetSavoir || id == Joueur.IdObjetSteakCru || id == Joueur.IdObjetSteakCuit || id == Joueur.IdObjetOsBoeuf || id == Joueur.IdObjetCuirBoeuf || id == Joueur.IdObjetIntestinBoeuf || id == Joueur.IdObjetIntestinBoeufNettoye || id == 30 || id == 32 || id == 34 || id == Joueur.IdObjetBaie || id == 100 || id == 105 || id == 106 || id == Joueur.IdObjetHachePierreTier1 || id == Joueur.IdObjetPellePierreTier0 || id == Joueur.IdObjetPiochePierreTier0 || id == Joueur.IdObjetLancePierreTier0 || id == Joueur.IdObjetFauxPierreTier0 || id == 200 || id == Joueur.IdObjetTableAnalyseTier1 || id == Joueur.IdObjetRackBatons || id == Joueur.IdObjetRackBuches || id == Joueur.IdObjetCoffreBoisTier0 || id == Joueur.IdObjetPitFeu || id == Joueur.IdObjetPitFeuRoche || id == Joueur.IdObjetAllumeFeu || id == Joueur.IdObjetMailletBois || id == Joueur.IdObjetBolBois || id == Joueur.IdObjetMortierPilonBois || id == Joueur.IdObjetAtelleJambe || id == Joueur.IdObjetAtelleBras || id == Joueur.IdObjetBandageTier1 || EstIdFondation(id);
     }
 
     public static void NettoyerModelesEnfants(Node3D parent)
@@ -57,6 +57,10 @@ public partial class Joueur
             parent.RemoveMeta(MetaSignatureMortierPilon130);
         if (parent.HasMeta(MetaSignatureAtelleJambe133))
             parent.RemoveMeta(MetaSignatureAtelleJambe133);
+        if (parent.HasMeta(MetaSignatureAtelleBras134))
+            parent.RemoveMeta(MetaSignatureAtelleBras134);
+        if (parent.HasMeta(MetaSignatureBandageTier1135))
+            parent.RemoveMeta(MetaSignatureBandageTier1135);
         if (parent.HasMeta(MetaSignatureTableAnalyse131))
             parent.RemoveMeta(MetaSignatureTableAnalyse131);
         if (parent.HasMeta(MetaSignatureFondation))
@@ -1545,6 +1549,140 @@ public partial class Joueur
             else
                 mi.MaterialOverride = (ordinal++ % 2 == 0) ? matBranche : matLigature;
         }
+
+        if (ancrerBaseAuSol)
+            NormaliserEchelleTableAtelierAuSol(modele, tailleMaxMetres);
+        else
+            NormaliserEchelleEtCentrerModeleArme(modele, tailleMaxMetres);
+        parent.AddChild(modele);
+    }
+
+    /// <summary>Atelle de bras: GLB soin, textures branchage/liage héritées du craft.</summary>
+    public static void InstancierModeleAtelleBras(Node3D parent, SlotInventaire slot, float tailleMaxMetres = 0.34f, bool ancrerBaseAuSol = false)
+    {
+        const string cheminGlb = "res://Modeles/soin/Atelle_Bras.glb";
+        PackedScene scene = GD.Load<PackedScene>(cheminGlb);
+        byte essenceBranche = slot.IndexBotanique;
+        int ligC = slot.IndexChimique;
+        int ligM = slot.IndexMorphologique;
+        byte ligV = LSystem_Botanique.IndexChene;
+        string g = slot.GenomeAssemblage ?? "";
+        if (g.StartsWith("ATELLE134", StringComparison.Ordinal))
+        {
+            string[] morceaux = g.Split(';');
+            for (int i = 0; i < morceaux.Length; i++)
+            {
+                string m = morceaux[i];
+                if (m.StartsWith("BOIS=", StringComparison.Ordinal) && byte.TryParse(m.Substring("BOIS=".Length), out byte b))
+                    essenceBranche = b;
+                else if (m.StartsWith("LIGV=", StringComparison.Ordinal) && byte.TryParse(m.Substring("LIGV=".Length), out byte v))
+                    ligV = v;
+                else if (m.StartsWith("LIGC=", StringComparison.Ordinal) && int.TryParse(m.Substring("LIGC=".Length), out int c))
+                    ligC = c;
+                else if (m.StartsWith("LIGM=", StringComparison.Ordinal) && int.TryParse(m.Substring("LIGM=".Length), out int m2))
+                    ligM = m2;
+            }
+        }
+
+        if (scene == null)
+        {
+            var fallback = new MeshInstance3D
+            {
+                Name = "ModeleArme",
+                Mesh = new BoxMesh { Size = new Vector3(0.28f, 0.10f, 0.12f) },
+                MaterialOverride = ArbreVivant.ObtenirMaterielBoisTriplanar(essenceBranche)
+            };
+            parent.AddChild(fallback);
+            return;
+        }
+
+        Node3D modele = scene.Instantiate<Node3D>();
+        modele.Name = "ModeleArme";
+        Material matBranche = ArbreVivant.ObtenirMaterielBoisTriplanar(essenceBranche);
+        var slotLigature = new SlotInventaire
+        {
+            ID = 20,
+            IndexChimique = ligC,
+            IndexMorphologique = ligM,
+            IndexBotanique = ligV,
+            EstUnEclat = false
+        };
+        var dummyLigature = new MeshInstance3D();
+        AppliquerMaterielObjet(dummyLigature, 20, slotLigature.IndexChimique, slotLigature.IndexMorphologique, 0, slotLigature.IndexBotanique);
+        Material matLigature = dummyLigature.MaterialOverride ?? Atlas_Matiere.ObtenirMaterielCorde(slotLigature.IndexChimique, slotLigature.IndexMorphologique, 0);
+        int ordinal = 0;
+        foreach (MeshInstance3D mi in ListerMeshes(modele))
+        {
+            string nom = mi.Name.ToString().ToLowerInvariant();
+            bool estBranche = nom.Contains("branche") || nom.Contains("branch") || nom.Contains("bois") || nom.Contains("wood") || nom.Contains("baton") || nom.Contains("stick");
+            bool estLigature = nom.Contains("liage") || nom.Contains("ligature") || nom.Contains("corde") || nom.Contains("rope") || nom.Contains("lien");
+            if (estBranche)
+                mi.MaterialOverride = matBranche;
+            else if (estLigature)
+                mi.MaterialOverride = matLigature;
+            else
+                mi.MaterialOverride = (ordinal++ % 2 == 0) ? matBranche : matLigature;
+        }
+
+        if (ancrerBaseAuSol)
+            NormaliserEchelleTableAtelierAuSol(modele, tailleMaxMetres);
+        else
+            NormaliserEchelleEtCentrerModeleArme(modele, tailleMaxMetres);
+        parent.AddChild(modele);
+    }
+
+    /// <summary>Bandage tier 1 : GLB soin, texture liage héritée du craft.</summary>
+    public static void InstancierModeleBandageTier1(Node3D parent, SlotInventaire slot, float tailleMaxMetres = 0.28f, bool ancrerBaseAuSol = false)
+    {
+        const string cheminGlb = "res://Modeles/soin/Bandage_tier1.glb";
+        PackedScene scene = GD.Load<PackedScene>(cheminGlb);
+        int ligC = slot.IndexChimique;
+        int ligM = slot.IndexMorphologique;
+        byte ligV = slot.IndexBotanique;
+        string g = slot.GenomeAssemblage ?? "";
+        if (g.StartsWith("BANDAGE135", StringComparison.Ordinal))
+        {
+            string[] morceaux = g.Split(';');
+            for (int i = 0; i < morceaux.Length; i++)
+            {
+                string m = morceaux[i];
+                if (m.StartsWith("LIGV=", StringComparison.Ordinal) && byte.TryParse(m.Substring("LIGV=".Length), out byte v))
+                    ligV = v;
+                else if (m.StartsWith("LIGC=", StringComparison.Ordinal) && int.TryParse(m.Substring("LIGC=".Length), out int c))
+                    ligC = c;
+                else if (m.StartsWith("LIGM=", StringComparison.Ordinal) && int.TryParse(m.Substring("LIGM=".Length), out int m2))
+                    ligM = m2;
+            }
+        }
+
+        if (scene == null)
+        {
+            var fallback = new MeshInstance3D
+            {
+                Name = "ModeleArme",
+                Mesh = new BoxMesh { Size = new Vector3(0.14f, 0.06f, 0.10f) },
+                MaterialOverride = Atlas_Matiere.ObtenirMaterielCorde(ligC, ligM, 0)
+            };
+            parent.AddChild(fallback);
+            return;
+        }
+
+        Node3D modele = scene.Instantiate<Node3D>();
+        modele.Name = "ModeleArme";
+        bool estLiane = ligV == Joueur.TagVarianteLiane;
+        var slotLigature = new SlotInventaire
+        {
+            ID = estLiane ? (byte)16 : (byte)20,
+            IndexChimique = ligC,
+            IndexMorphologique = ligM,
+            IndexBotanique = ligV,
+            EstUnEclat = false
+        };
+        var dummyLigature = new MeshInstance3D();
+        AppliquerMaterielObjet(dummyLigature, slotLigature.ID, slotLigature.IndexChimique, slotLigature.IndexMorphologique, 0, slotLigature.IndexBotanique);
+        Material matLigature = dummyLigature.MaterialOverride ?? Atlas_Matiere.ObtenirMaterielCorde(slotLigature.IndexChimique, slotLigature.IndexMorphologique, 0);
+        foreach (MeshInstance3D mi in ListerMeshes(modele))
+            mi.MaterialOverride = matLigature;
 
         if (ancrerBaseAuSol)
             NormaliserEchelleTableAtelierAuSol(modele, tailleMaxMetres);

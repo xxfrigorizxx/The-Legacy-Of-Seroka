@@ -46,6 +46,11 @@ public partial class Monde_Serveur : Node
 	private Func<Vector3> _obtenirPositionJoueur;
 	private Func<int> _obtenirDimensionActive;
 	private int _dimensionServeurId = (int)DimensionJeu.Alpha;
+	/// <summary>Dimension non visitée : pas de génération, eau, arbres ni décharge (chunks déjà sur disque).</summary>
+	private bool _simulationSuspendue;
+	private int _jourAbsoluMemorisePourArbresSuspension = -1;
+	private long _unixMemorisePourArbresSuspension;
+	private const int BudgetChunksDirtyAvantSuspension = 128;
 	private readonly HashSet<long> _adminPeerIds = new HashSet<long>();
 	private readonly Dictionary<long, bool> _modeCreatifParPeer = new Dictionary<long, bool>();
 	private readonly Dictionary<long, bool> _noclipParPeer = new Dictionary<long, bool>();
@@ -191,6 +196,116 @@ public partial class Monde_Serveur : Node
 		ChargerAdminWhitelist();
 		AssurerPoolSeedsArbresPregen();
 		CreerPoolsRochesParTaille();
+	}
+
+	private Vector3 InvokerPositionJoueurStreaming()
+	{
+		if (_obtenirPositionJoueur == null)
+			return Vector3.Zero;
+		try
+		{
+			return _obtenirPositionJoueur();
+		}
+		catch (ObjectDisposedException)
+		{
+			return Vector3.Zero;
+		}
+	}
+
+	public bool EstSimulationSuspendue => _simulationSuspendue;
+
+	/// <summary>Suspend ou reprend la simulation serveur de cette dimension (génération, eau, pierres, décharge).</summary>
+	public void DefinirSimulationSuspendue(bool suspendue)
+	{
+		if (_simulationSuspendue == suspendue)
+			return;
+
+		if (suspendue)
+		{
+			int sauves = ForcerSauvegardeChunksDirty(BudgetChunksDirtyAvantSuspension);
+			MemoriserHorlogePourRattrapageArbres();
+			ViderFilesStreamingPourSuspension();
+			GelCorpsDynamiquesDimension();
+			_simulationSuspendue = true;
+			SetPhysicsProcess(false);
+			if (sauves > 0)
+				GD.Print($"ZERO-K [{NomDimension}] : simulation suspendue ({sauves} chunk(s) modifié(s) gravé(s)).");
+			else
+				GD.Print($"ZERO-K [{NomDimension}] : simulation suspendue.");
+		}
+		else
+		{
+			_simulationSuspendue = false;
+			RattraperArbresApresRepriseSimulation();
+			SetPhysicsProcess(true);
+			GD.Print($"ZERO-K [{NomDimension}] : simulation reprise.");
+		}
+	}
+
+	private void MemoriserHorlogePourRattrapageArbres()
+	{
+		_jourAbsoluMemorisePourArbresSuspension = GameState.Instance != null ? GameState.Instance.JourAbsolu : 0;
+		_unixMemorisePourArbresSuspension = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+	}
+
+	/// <summary>Arbres encore en scène (chunk non déchargé) : même logique que <see cref="ChargerArbresChunk"/> au reload disque.</summary>
+	private void RattraperArbresApresRepriseSimulation()
+	{
+		if (_parentPourArbres == null || _jourAbsoluMemorisePourArbresSuspension < 0)
+			return;
+		int jours = CalculerJoursRattrapageArbres(_jourAbsoluMemorisePourArbresSuspension, _unixMemorisePourArbresSuspension);
+		_jourAbsoluMemorisePourArbresSuspension = -1;
+		_unixMemorisePourArbresSuspension = 0L;
+		if (jours <= 0)
+			return;
+
+		int count = 0;
+		foreach (Node n in _parentPourArbres.GetChildren())
+		{
+			if (n is not ArbreVivant arbre || n is not Node3D n3)
+				continue;
+			arbre.RattraperCroissance(jours, n3.GlobalPosition);
+			count++;
+		}
+		if (count > 0)
+			GD.Print($"ZERO-K [{NomDimension}] : rattrapage croissance arbres ({jours} j) sur {count} arbre(s) en scène.");
+	}
+
+	private void ViderFilesStreamingPourSuspension()
+	{
+		_chunksEnAttenteEnvoi.Clear();
+		_demandesEnAttenteSet.Clear();
+		_demandesForceesSansPurge.Clear();
+		_fileEnvoiReseau.Clear();
+	}
+
+	private void GelCorpsDynamiquesDimension()
+	{
+		if (_parentPourBlocsChutants == null)
+			return;
+		foreach (Node child in _parentPourBlocsChutants.GetChildren())
+		{
+			if (child is not RigidBody3D rb)
+				continue;
+			if (rb.HasMeta("DimensionId") && rb.GetMeta("DimensionId").AsInt32() != _dimensionServeurId)
+				continue;
+			else if (_dimensionServeurId != (int)DimensionJeu.Alpha && !ActiverGenerationAbysse)
+				continue;
+
+			int id = 0;
+			if (rb is ItemPhysique item)
+				id = item.ID_Objet;
+			else if (rb.HasMeta("ID_Matiere"))
+				id = rb.GetMeta("ID_Matiere").AsInt32();
+			bool structureFixe = id == 200 || id == Joueur.IdObjetTableAnalyseTier1 || id == Joueur.IdObjetRackBatons
+				|| id == Joueur.IdObjetRackBuches || id == Joueur.IdObjetCoffreBoisTier0;
+			if (structureFixe)
+				continue;
+			rb.LinearVelocity = Vector3.Zero;
+			rb.AngularVelocity = Vector3.Zero;
+			rb.Sleeping = true;
+			rb.Freeze = true;
+		}
 	}
 
 	private void ChargerAdminWhitelist()
@@ -802,9 +917,11 @@ public partial class Monde_Serveur : Node
 	/// <summary>Enregistre une demande de chunk. En Abysse, la coordonnée Y est réellement exploitée.</summary>
 	public void EnregistrerDemandeChunk(Vector2I coord, int coordY = 0, Vector3? observation = null)
 	{
+		if (_simulationSuspendue)
+			return;
 		bool estAbysse = ActiverGenerationAbysse;
 		int cibleY = estAbysse ? NormaliserCoordYAbysse(coordY) : 0;
-		Vector3 obs = observation ?? (_obtenirPositionJoueur?.Invoke() ?? Vector3.Zero);
+		Vector3 obs = observation ?? InvokerPositionJoueurStreaming();
 		if (estAbysse && !EstCoordYDansFenetrePaliersAbysse(cibleY, obs))
 			return;
 		Vector3I cle = new Vector3I(coord.X, cibleY, coord.Y);
@@ -867,7 +984,15 @@ public partial class Monde_Serveur : Node
 		// Manufacture parallèle : purge des obsolètes puis extraction radiale
 		if (!hadModifications)
 		{
-			Vector3 posObs = _obtenirPositionJoueur?.Invoke() ?? Vector3.Zero;
+			Vector3 posObs = Vector3.Zero;
+			try
+			{
+				posObs = InvokerPositionJoueurStreaming();
+			}
+			catch (ObjectDisposedException)
+			{
+				posObs = Vector3.Zero;
+			}
 			if (ActiverGenerationAbysse)
 				PurgerRuntimeAbysseHorsFenetre(posObs);
 			float rayonMaxCarrePurge = (RenderDistance + 1) * (RenderDistance + 1);
@@ -1719,7 +1844,7 @@ public partial class Monde_Serveur : Node
 	{
 		if (_parentPourBlocsChutants == null || _obtenirPositionJoueur == null) return;
 		int dimensionActive = _obtenirDimensionActive?.Invoke() ?? _dimensionServeurId;
-		Vector3 posJoueur = _obtenirPositionJoueur();
+		Vector3 posJoueur = InvokerPositionJoueurStreaming();
 		float rayonCarre = RayonActivationPierres * RayonActivationPierres;
 		foreach (Node child in _parentPourBlocsChutants.GetChildren())
 		{
@@ -2256,7 +2381,8 @@ public partial class Monde_Serveur : Node
 	/// <summary>Croissance des arbres 3D : VieillirUnJour sur chaque ArbreVivant. Appelé au changement de jour (minuit).</summary>
 	public void FairePousserArbresDuJour()
 	{
-		if (_parentPourArbres == null) return;
+		if (_simulationSuspendue || _parentPourArbres == null)
+			return;
 		foreach (Node n in _parentPourArbres.GetChildren())
 		{
 			if (n is ArbreVivant arbre)
@@ -2963,7 +3089,7 @@ public partial class Monde_Serveur : Node
 	private void EvaluerDechargementChunks()
 	{
 		if (_obtenirPositionJoueur == null || _onOrdonnerDestructionChunk == null) return;
-		Vector3 posJoueur = _obtenirPositionJoueur();
+		Vector3 posJoueur = InvokerPositionJoueurStreaming();
 		Vector2I cj = Gestionnaire_Monde.WorldToChunkCoord(posJoueur, TailleChunk);
 		int cjX = cj.X;
 		int cjZ = cj.Y;
@@ -2982,7 +3108,7 @@ public partial class Monde_Serveur : Node
 	private void ProcesserDechargeProgressive()
 	{
 		if (_chunksEnAttenteDecharge.Count == 0 || _onOrdonnerDestructionChunk == null) return;
-		Vector3 posJoueur = _obtenirPositionJoueur?.Invoke() ?? Vector3.Zero;
+		Vector3 posJoueur = InvokerPositionJoueurStreaming();
 		Vector2I cj = Gestionnaire_Monde.WorldToChunkCoord(posJoueur, TailleChunk);
 		float facteurPression = CalculerFacteurPressionSpawn();
 		int budgetChunks = Mathf.Max(1, Mathf.RoundToInt(CalculerBudgetSpawnAdaptatif(Mathf.Max(1, MaxChunksDechargeParTick)) * Mathf.Clamp(facteurPression * 0.9f, 0.2f, 1f)));

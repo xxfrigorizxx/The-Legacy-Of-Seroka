@@ -41,6 +41,7 @@ public sealed class LauncherRuntime
             if (toUpdate.Count > 0)
             {
                 logger.Info($"{toUpdate.Count} fichier(s) a mettre a jour.");
+                GodotUserDataBackupService.SauvegarderAvantMiseAJourSiPresent(logger);
                 await updater.ApplyUpdatesAsync(toUpdate, gameDirectory, remoteOrigin, CancellationToken.None);
                 Directory.CreateDirectory(Path.GetDirectoryName(paths.LocalManifestPath)!);
                 await File.WriteAllTextAsync(paths.LocalManifestPath, remoteManifest.ToJson());

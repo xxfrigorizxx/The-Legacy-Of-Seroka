@@ -4,3 +4,8 @@
 
 # Rapports smoke test headless (régénérés localement / CI)
 artifacts/*.log
+
+# Binaires release trop volumineux pour GitHub (>100 Mo) — distribution via Backblaze
+artifacts/release_payload_alpha/SEROKAFrozenLegacy.pck
+SEROKAFrozenLegacy.pck
+SEROKAFrozenLegacy.exe

@@ -190,6 +190,7 @@ public partial class BoeufSauvage : CharacterBody3D
 	[Export(PropertyHint.Range, "0.05,2,0.01")] public float CooldownDegatsParSourceSecondes = 0.22f;
 	[Export(PropertyHint.Range, "0.05,0.8,0.01")] public float CapDegatsParImpactRatioVieMax = 0.24f;
 	[Export(PropertyHint.Range, "0.1,12,0.1")] public float ImpulsionChargeSurJoueur = 5.8f;
+	[Export(PropertyHint.Range, "0,100,0.5")] public float ChanceFractureOsChargeJoueurPct = 5f;
 	[Export(PropertyHint.Range, "0.05,2,0.01")] public float CooldownImpactChargeJoueur = 0.38f;
 	[Export(PropertyHint.Range, "0.05,2,0.01")] public float DureeFlashRougeDegats = 0.22f;
 	[ExportGroup("Audio combat bovin")]
@@ -206,7 +207,7 @@ public partial class BoeufSauvage : CharacterBody3D
 	/// Pipeline : squelette sous Modele → fusion <c>locomotion_faune</c> → <see cref="AnimationTree"/> (machine d'états).
 	/// Correspondance noms (clips GLB / chemins) ↔ champs code : marche→<see cref="_clipMarche"/> (walk…), course/galop→<see cref="_clipCourse"/>,
 	/// saut→<see cref="_clipSaut"/> (jump…), saut en course→<see cref="_clipSautGalop"/> (gallop_jump…), manger→<see cref="_clipManger"/> (eating, eat…),
-	/// mort→<see cref="_clipMort"/>, ruade arrière→<see cref="_clipAttaqueKick"/>, coup de tête avant→<see cref="_clipAttaqueTete"/>.
+	/// mort→<see cref="_clipMort"/>, ruade arrière→<see cref="_clipAttaqueKick"/> (<see cref="ClipAttaqueKickCanonique"/>), coup de tête avant→<see cref="_clipAttaqueTete"/> (<see cref="ClipAttaqueTeteCanonique"/>).
 	/// Nœuds machine (fixes) : <c>Deplacement</c>, <c>Broutage</c>, <c>Mort</c>, <c>Nage</c>, <c>Saut</c>, <c>SautGalop</c>, <c>AttaqueKick</c>, <c>AttaqueTete</c>.
 	/// Registre JSON <see cref="CheminRegistryAnimationsFaune"/> : clés idle, walk, run, trot, graze, swim, death, jump, gallop_jump, attack_kick, attack_head (motifs → clips).
 	/// </summary>
@@ -246,6 +247,16 @@ public partial class BoeufSauvage : CharacterBody3D
 	[Export(PropertyHint.Range, "0,1,0.01")] public float IntensiteSelectionAnimationEvolutive = 0.72f;
 	[Export(PropertyHint.Range, "2,24,0.5")] public float IntervalleMinCycleIdleSecondes = 4.5f;
 	[Export(PropertyHint.Range, "3,36,0.5")] public float IntervalleMaxCycleIdleSecondes = 11f;
+	[ExportSubgroup("Ancrage au sol (visuel)")]
+	/// <summary>Relève le mesh uniquement en course (delta par rapport à la marche), pas au repos.</summary>
+	[Export] public bool AutoCompenserEnfoncementClipsLocomotion = true;
+	/// <summary>Modifie les pistes Y des GLB à l'import — peut cumuler avec la compensation runtime ; laisser désactivé sauf besoin.</summary>
+	[Export] public bool ReequilibrerClipsYAlImport = false;
+	/// <summary>Ajustement fin en sprint uniquement (0 = auto depuis les clips).</summary>
+	[Export(PropertyHint.Range, "0,0.08,0.005")] public float CompensationSolCourseManuelle = 0f;
+	[Export(PropertyHint.Range, "0,0.06,0.005")] public float CompensationSolMarcheManuelle = 0f;
+	[Export(PropertyHint.Range, "0.02,0.08,0.005")] public float CompensationSolMaxCourse = 0.045f;
+	[Export(PropertyHint.Range, "1,24,0.5")] public float VitesseLissageCompensationSol = 10f;
 
 	private Gestionnaire_Monde _gestionnaire;
 	private GestionnaireFauneBoeufs _gestionnaireFaune;
@@ -325,6 +336,9 @@ public partial class BoeufSauvage : CharacterBody3D
 	private const string NomNoeudSautGalop = "SautGalop";
 	private const string NomNoeudAttaqueKick = "AttaqueKick";
 	private const string NomNoeudAttaqueTete = "AttaqueTete";
+	/// <summary>Noms exacts des clips d'attaque (pack Quaternius / bull).</summary>
+	private const string ClipAttaqueKickCanonique = "Attack_Kick";
+	private const string ClipAttaqueTeteCanonique = "Attack_Headbutt";
 	private static readonly StringName NomNoeudDeplacementString = new StringName(NomNoeudDeplacement);
 	private static readonly StringName NomNoeudBroutageString = new StringName(NomNoeudBroutage);
 	private static readonly StringName NomNoeudMortString = new StringName(NomNoeudMort);
@@ -430,8 +444,31 @@ public partial class BoeufSauvage : CharacterBody3D
 	private readonly Dictionary<string, List<string>> _poolsAnimationsEvolutives = new(StringComparer.OrdinalIgnoreCase);
 	private readonly List<ShaderMaterial> _materiauxPelageInstances = new();
 	private float _cooldownImpactChargeJoueur;
+	private float _cooldownReengagementChargeJoueur;
+	private bool _impactChargeJoueurPlanifie;
+	private bool _impactChargeCoupDeTetePlanifie;
+	private float _delaiImpactChargePlanifie;
+	private Vector3 _pointImpactChargePlanifie;
+	private Vector3 _dirImpactChargePlanifie;
+	private int _indiceFormeImpactChargePlanifie = -1;
+	private const float DelaiDegatsApresDebutAnimationCharge = 0.24f;
+	private const float DistanceMaxDeclenchementAttaqueCharge = 2.05f;
+	private const float DistanceMaxImpactChargeApresDelai = 2.35f;
+	/// <summary>À cette distance, le taureau engage la charge (plus de simple regard).</summary>
+	private const float DistanceDeclenchementEngagementCharge = 2.35f;
+	/// <summary>Seuil « face à face » : animation d’attaque puis dégâts (pas de RNG).</summary>
+	private const float DistanceAttaqueChargeFaceAFace = 2.05f;
+	/// <summary>Pas de dégâts de charge si le bovin est trop au-dessus du joueur (saut / écrasement tête).</summary>
+	private const float DeltaYMaxDegatsChargeSurJoueur = 0.72f;
+	/// <summary>Pause après une charge (réussie ou ratée) pour éviter charge → fuite → charge en boucle.</summary>
+	private const float CooldownReengagementChargeJoueurSec = 14f;
 	private float _flashRougeDegatsRestant;
 	private float _cooldownVariationAnimation;
+	private int _signatureContexteAnimation = int.MinValue;
+	private float _tempsStableCalmePourClip;
+	private EtatBoeuf _etatPourClipsLocomotion = (EtatBoeuf)(-1);
+	/// <summary>Stabilité minimale avant de changer de clip (évite les swaps « au hasard »).</summary>
+	private const float TempsStabiliteAvantChangementClipSec = 4f;
 	private Shader _shaderPelageBoeuf;
 	private Texture2D _textureDiffuseModele;
 	// Cache global + anti-spam : on n'essaie de charger la texture qu'une seule fois par chemin, quel que soit le nombre de bovins.
@@ -460,6 +497,12 @@ public partial class BoeufSauvage : CharacterBody3D
 	private bool _deblocageAffichageTroupeau;
 	private string _identifiantIndividu = "";
 	private Transform3D _transformModeleBase;
+	private float _compensationYIdle;
+	private float _compensationYMarche;
+	private float _compensationYCourse;
+	private float _compensationYTrot;
+	private float _compensationYBroutage;
+	private float _offsetVisuelSolActuel;
 	private Vector3 _positionReferenceCoincage;
 	private Vector3 _positionDernierSaut;
 	private int _streakCoincage;
@@ -719,6 +762,8 @@ public partial class BoeufSauvage : CharacterBody3D
 		bool etatMortSauvegarde = etatSauvegarde == (int)EtatBoeuf.Mort;
 		if (etatMortSauvegarde || _vieCourante <= 0.0001f)
 			RestaurerEtatMortPersistant(attendDepecage, lootDistribue, coupsDepecage);
+		else
+			_reconfigurationArbreAnimationEnAttente = false;
 		AppliquerGeneTailleVisuelleEtPhysique();
 		MettreAJourAffichageFaim3D();
 	}
@@ -732,11 +777,21 @@ public partial class BoeufSauvage : CharacterBody3D
 		_cadavreLootDistribue = lootDistribue;
 		_cadavreAttendDepecage = !lootDistribue && attendDepecage;
 		_coupsDepecageDagueValides = Mathf.Max(0, coupsDepecage);
+		_reconfigurationArbreAnimationEnAttente = false;
 		if (ActiverDiagnosticSpawnBovin && !_diagnosticMortPersistanteDejaLogge)
 		{
 			_diagnosticMortPersistanteDejaLogge = true;
 			GD.Print($"ZERO-K Faune [DiagSpawn] {Name}: profil persistant charge en cadavre (attendDepecage={_cadavreAttendDepecage}, lootDistribue={_cadavreLootDistribue}, coups={_coupsDepecageDagueValides}).");
 		}
+		if (!_cadavreLootDistribue)
+			Callable.From(AppliquerAnimationMortApresChargementPersistance).CallDeferred();
+	}
+
+	private void AppliquerAnimationMortApresChargementPersistance()
+	{
+		if (_etat != EtatBoeuf.Mort || _cadavreLootDistribue || _animationPlayer == null)
+			return;
+		AppliquerAnimationMort();
 	}
 
 	private void InitialiserGenesNavigationSiNecessaire()
@@ -856,6 +911,7 @@ public partial class BoeufSauvage : CharacterBody3D
 		{
 			Transform3D baseT = _transformModeleBase;
 			baseT.Basis = baseT.Basis.Scaled(Vector3.One * TailleEffective);
+			baseT.Origin += Vector3.Up * (_offsetVisuelSolActuel * TailleEffective);
 			_modeleVisuel.Transform = baseT;
 		}
 
@@ -1258,6 +1314,9 @@ public partial class BoeufSauvage : CharacterBody3D
 		_cooldownCohesionAnimation = _rng.RandfRange(0.05f, 0.22f);
 		_cohesionAnimationCache = 0f;
 		_cooldownImpactChargeJoueur = 0f;
+		_impactChargeJoueurPlanifie = false;
+		_indiceFormeImpactChargePlanifie = -1;
+		_delaiImpactChargePlanifie = 0f;
 		_flashRougeDegatsRestant = 0f;
 		_directionNageEau = Vector3.Zero;
 		FloorSnapLength = Mathf.Max(0.05f, LongueurStepAssist);
@@ -1330,6 +1389,8 @@ public partial class BoeufSauvage : CharacterBody3D
 			}
 			return;
 		}
+		if (GetTree().Paused)
+			return;
 		ulong debutFrameUs = ActiverProfilagePerfBovin ? PerfBudgetMonitor.Begin() : 0UL;
 		_cooldownDrainProfilage += (float)delta;
 		float dt = (float)delta;
@@ -1364,6 +1425,8 @@ public partial class BoeufSauvage : CharacterBody3D
 		_cooldownVariationAnimation -= dt;
 		_cooldownCohesionAnimation -= dt;
 		_cooldownImpactChargeJoueur -= dt;
+		_cooldownReengagementChargeJoueur = Mathf.Max(0f, _cooldownReengagementChargeJoueur - dt);
+		MettreAJourImpactChargeJoueurPlanifie(dt);
 		_cooldownReconfigurationArbreAnimation = Mathf.Max(0f, _cooldownReconfigurationArbreAnimation - dt);
 		_verrouMouvementMorsure = Mathf.Max(0f, _verrouMouvementMorsure - dt);
 		_tempsIdleErrance = Mathf.Max(0f, _tempsIdleErrance - dt);
@@ -1393,12 +1456,7 @@ public partial class BoeufSauvage : CharacterBody3D
 			EvaluerAdaptationComportementaleSelonEnvironnement();
 		}
 		float vitesseHorizActuelle = Mathf.Sqrt(Velocity.X * Velocity.X + Velocity.Z * Velocity.Z);
-		bool contexteCalmePourVariation = _etat != EtatBoeuf.Fuite && _etat != EtatBoeuf.Charge && vitesseHorizActuelle <= 0.18f;
-		if (ActiverSelectionEvolutionnaireAnimations && _cooldownVariationAnimation <= 0f && contexteCalmePourVariation)
-		{
-			AppliquerSelectionAnimationEvolutive(forceReconfigurerArbre: UtiliserAnimationTreeLocomotion);
-			_cooldownVariationAnimation = Mathf.Max(2f, IntervalleVariationAnimationSecondes) * _rng.RandfRange(0.72f, 1.28f);
-		}
+		MettreAJourVariationClipsContextuelle(dt, vitesseHorizActuelle);
 
 		if (_etat == EtatBoeuf.Fuite)
 			AjouterExperience(ExperienceFuiteParSeconde * dt, "fuite");
@@ -1418,9 +1476,14 @@ public partial class BoeufSauvage : CharacterBody3D
 			_dtAccumuleTickCerveau = 0f;
 			float intervalle = CalculerIntervalleTickCerveau();
 			_cooldownTickCerveau = intervalle * _rng.RandfRange(0.92f, 1.08f);
-			GererPresenceJoueur();
-			GererReproductionEtGestation();
-			GererEtatEtCible(dtCerveau);
+			bool transfertDimension = _gestionnaire != null && GodotObject.IsInstanceValid(_gestionnaire)
+				&& _gestionnaire.EstVerrouSecuriteAbysseActif();
+			if (!transfertDimension)
+			{
+				GererPresenceJoueur();
+				GererReproductionEtGestation();
+				GererEtatEtCible(dtCerveau);
+			}
 			if (ActiverProfilagePerfBovin)
 				PerfBudgetMonitor.End("Faune/BovinCerveau", debutCerveauUs);
 		}
@@ -1432,13 +1495,14 @@ public partial class BoeufSauvage : CharacterBody3D
 		if (_dansEau)
 			direction = CalculerDirectionNage(direction, dt);
 		bool demandeSautStrategique = false;
-		if (!_dansEau)
+		bool combatChargeActif = _etat == EtatBoeuf.Charge || _impactChargeJoueurPlanifie || _tempsVerrouAnimationCombat > 0.01f;
+		if (!_dansEau && !combatChargeActif)
 		{
 			direction = AjusterDirectionAntiObstacle(direction);
 			direction = AdapterStrategieTerrain(direction, dt, ref demandeSautStrategique);
 			EvaluerCoincageEtDeblocage(dt, direction, ref demandeSautStrategique);
 		}
-		if (!demandeSautStrategique && DoitTenterSautEscalade(direction))
+		if (!combatChargeActif && !demandeSautStrategique && DoitTenterSautEscalade(direction))
 			demandeSautStrategique = true;
 		_directionDeplacementHorizontale = direction;
 
@@ -1452,6 +1516,23 @@ public partial class BoeufSauvage : CharacterBody3D
 		float seuilBroutageMobile2 = seuilBroutageMobile * seuilBroutageMobile;
 		bool broutageMobile = _etat == EtatBoeuf.Broutage && GlobalPosition.DistanceSquaredTo(_cibleCourante) > seuilBroutageMobile2;
 		float vitesseCible = peutCourir ? vitesseFuiteActuelle : ((_etat == EtatBoeuf.Broutage && !broutageMobile) ? 0f : vitesseMarcheActuelle);
+		if (_etat == EtatBoeuf.Charge && _joueur != null && GodotObject.IsInstanceValid(_joueur))
+		{
+			Vector3 versJoueurCharge = _joueur.GlobalPosition - GlobalPosition;
+			versJoueurCharge.Y = 0f;
+			float distCharge = versJoueurCharge.Length();
+			if (distCharge <= DistanceDeclenchementEngagementCharge)
+			{
+				OrienteCorpsVersJoueur(dt);
+				if (!_impactChargeJoueurPlanifie && _tempsVerrouAnimationCombat <= 0.01f)
+				{
+					if (distCharge <= 1.2f)
+						vitesseCible = 0f;
+					else if (distCharge <= DistanceAttaqueChargeFaceAFace)
+						vitesseCible = Mathf.Min(vitesseCible, 0.55f);
+				}
+			}
+		}
 		if (_verrouMouvementMorsure > 0f)
 			vitesseCible = 0f;
 		Vector3 vHoriz = new Vector3(Velocity.X, 0f, Velocity.Z);
@@ -1521,10 +1602,12 @@ public partial class BoeufSauvage : CharacterBody3D
 		MettreAJourApprentissageNavigation(dt, direction, vitesseHoriz);
 		MettreAJourCycleIdleMultiples(dt, vitesseHorizActuelle);
 		MettreAJourAnimation(dt, vitesseHoriz);
+		MettreAJourCompensationEnfoncementSol(dt);
 		if (EstFallbackLocomotionBobSeulement())
 			AppliquerLocomotionSquelettiqueProcedural(dt, vitesseHoriz);
 		OrienteCorpsVersDirectionDeplacement(dt, vitesseHoriz);
-		if (_reconfigurationArbreAnimationEnAttente
+		if (_etat != EtatBoeuf.Mort
+			&& _reconfigurationArbreAnimationEnAttente
 			&& _cooldownReconfigurationArbreAnimation <= 0f
 			&& UtiliserAnimationTreeLocomotion)
 		{
@@ -1548,10 +1631,12 @@ public partial class BoeufSauvage : CharacterBody3D
 		if (_etat == EtatBoeuf.Fuite || _etat == EtatBoeuf.Charge || _memoireDetectionJoueur > 0f)
 			return 0.05f; // Réactivité maximale sous stress/combat.
 
-		if (_joueur == null || !GodotObject.IsInstanceValid(_joueur))
+		if (_gestionnaire != null && GodotObject.IsInstanceValid(_gestionnaire) && _gestionnaire.EstVerrouSecuriteAbysseActif())
+			return 0.18f;
+		if (!EssayerObtenirPositionJoueur(out Vector3 posJoueur))
 			return 0.18f;
 
-		Vector3 d = _joueur.GlobalPosition - GlobalPosition;
+		Vector3 d = posJoueur - GlobalPosition;
 		d.Y = 0f;
 		float dist2 = d.LengthSquared();
 		if (dist2 <= 20f * 20f) return 0.07f;
@@ -1568,7 +1653,25 @@ public partial class BoeufSauvage : CharacterBody3D
 			dir = new Vector3(Velocity.X, 0f, Velocity.Z).Normalized();
 		if (dir.LengthSquared() < 0.0001f)
 			return;
-		// Axe -Z du corps vers la direction (convention Godot 3D : avant = -Z local).
+		AppliquerYawVersDirectionHorizontale(dir, dt);
+	}
+
+	private void OrienteCorpsVersJoueur(float dt)
+	{
+		if (_joueur == null || !GodotObject.IsInstanceValid(_joueur))
+			return;
+		Vector3 vers = _joueur.GlobalPosition - GlobalPosition;
+		vers.Y = 0f;
+		if (vers.LengthSquared() < 0.0001f)
+			return;
+		AppliquerYawVersDirectionHorizontale(vers.Normalized(), dt);
+	}
+
+	private void AppliquerYawVersDirectionHorizontale(Vector3 dir, float dt)
+	{
+		if (dir.LengthSquared() < 0.0001f)
+			return;
+		dir = dir.Normalized();
 		float yawCible = Mathf.Atan2(-dir.X, -dir.Z) + Mathf.DegToRad(CorrectionYawRegardDegres);
 		float k = 1f - Mathf.Exp(-Mathf.Max(0.5f, VitesseOrientationCorps) * dt);
 		float yaw = Mathf.LerpAngle(Rotation.Y, yawCible, Mathf.Clamp(k, 0f, 1f));
@@ -1613,10 +1716,30 @@ public partial class BoeufSauvage : CharacterBody3D
 		_vieCourante = Mathf.Clamp(_vieCourante, 0f, _vieMaxActuelle);
 	}
 
+	/// <summary>Seuls les taureaux chargent le joueur ; les vaches fuient (comportement bovin).</summary>
+	private bool PeutEngagerChargeContreJoueur() => EstTaureau;
+
+	private void MarquerFinEngagementChargeJoueur(bool apresImpactReussi)
+	{
+		_etat = EtatBoeuf.Fuite;
+		_tempsCharge = 0f;
+		_tempsFuite = apresImpactReussi ? 2.2f : 3.5f;
+		_cooldownReengagementChargeJoueur = CooldownReengagementChargeJoueurSec;
+		_impactChargeJoueurPlanifie = false;
+		_indiceFormeImpactChargePlanifie = -1;
+		if (_joueur != null && GodotObject.IsInstanceValid(_joueur))
+		{
+			Vector3 fuite = GlobalPosition - _joueur.GlobalPosition;
+			fuite.Y = 0f;
+			if (fuite.LengthSquared() > 0.001f)
+				_cibleCourante = GlobalPosition + fuite.Normalized() * _rng.RandfRange(12f, 20f);
+		}
+	}
+
 	private void EvaluerDeblocages()
 	{
 		VerifierDeblocage(ref _peutEsquiver, _niveau >= 3, "deblocage_esquive");
-		VerifierDeblocage(ref _peutAttaquer, _niveau >= 4, "deblocage_charge");
+		VerifierDeblocage(ref _peutAttaquer, _niveau >= 4 && EstTaureau, "deblocage_charge");
 		VerifierDeblocage(ref _peutSuivre, _niveau >= 5, "deblocage_suivi");
 		VerifierDeblocage(ref _peutAider, _niveau >= 7, "deblocage_aide");
 	}
@@ -1975,6 +2098,15 @@ public partial class BoeufSauvage : CharacterBody3D
 		return Mathf.Clamp(a, Mathf.Min(AngleVisionBaseDegres, AngleVisionMaxDegres), Mathf.Max(AngleVisionBaseDegres, AngleVisionMaxDegres));
 	}
 
+	private bool ColliderEstJoueur(GodotObject collider)
+	{
+		if (_joueur == null || collider == null)
+			return false;
+		if (collider == _joueur)
+			return true;
+		return collider is Node n && _joueur.IsAncestorOf(n);
+	}
+
 	private bool PossedeLigneDeVueSurJoueur()
 	{
 		if (_joueur == null) return false;
@@ -1993,8 +2125,7 @@ public partial class BoeufSauvage : CharacterBody3D
 			return false;
 		if (!hit.ContainsKey("collider"))
 			return false;
-		var collider = hit["collider"].AsGodotObject();
-		return collider == _joueur;
+		return ColliderEstJoueur(hit["collider"].AsGodotObject());
 	}
 
 	private bool PeutPercevoirJoueur(float dist, Vector3 versJoueurHoriz)
@@ -2389,12 +2520,45 @@ public partial class BoeufSauvage : CharacterBody3D
 		return approx;
 	}
 
+	private void ResynchroniserReferenceJoueur()
+	{
+		if (_joueur != null && GodotObject.IsInstanceValid(_joueur) && _joueur.IsInsideTree())
+			return;
+		_joueur = null;
+		if (_gestionnaire != null && GodotObject.IsInstanceValid(_gestionnaire))
+			_joueur = _gestionnaire.ObtenirJoueurSiValide();
+	}
+
+	private bool EssayerObtenirPositionJoueur(out Vector3 positionJoueur)
+	{
+		positionJoueur = Vector3.Zero;
+		ResynchroniserReferenceJoueur();
+		if (_joueur == null)
+			return false;
+		try
+		{
+			if (!GodotObject.IsInstanceValid(_joueur) || !_joueur.IsInsideTree())
+			{
+				_joueur = null;
+				return false;
+			}
+			positionJoueur = _joueur.GlobalPosition;
+			return true;
+		}
+		catch (ObjectDisposedException)
+		{
+			_joueur = null;
+			return false;
+		}
+	}
+
 	private void GererPresenceJoueur()
 	{
-		if (_joueur == null) return;
+		if (!EssayerObtenirPositionJoueur(out Vector3 posJoueur))
+			return;
 		if (FaimCritiquePrioritaire())
 			return; // Sous 25% de faim: l'animal ignore le joueur et cherche a manger en priorite.
-		Vector3 d = _joueur.GlobalPosition - GlobalPosition;
+		Vector3 d = posJoueur - GlobalPosition;
 		d.Y = 0f;
 		float dist = d.Length();
 		if (dist <= 0.001f) return;
@@ -2421,24 +2585,31 @@ public partial class BoeufSauvage : CharacterBody3D
 				return;
 			_etat = EtatBoeuf.Charge;
 			_tempsCharge = Mathf.Max(_tempsCharge, DureeChargeProtection);
-			_cibleCourante = _joueur.GlobalPosition;
+			_cibleCourante = posJoueur;
 			EmitSignal(SignalName.EvolutionEvenement, "charge_protection_troupeau", 1f, _niveau, _ageSecondes / 3600f);
 			return;
 		}
 
-		if (_peutAttaquer && dist < 2.4f && _faimCourante > SeuilRechercheHerbe + 10f && _rng.Randf() < chanceAgressivite)
+		if (PeutEngagerChargeContreJoueur() && _cooldownReengagementChargeJoueur <= 0f
+			&& dist <= DistanceDeclenchementEngagementCharge
+			&& _faimCourante > SeuilRechercheHerbe + 10f)
 		{
-			if (!EssayerDepenserStamina(CoutStaminaAttaque))
+			bool faceAFace = JoueurDevantPourAttaqueCharge() || dist <= 1.35f;
+			bool declencher = faceAFace
+				|| (dist <= DistanceAttaqueChargeFaceAFace && _rng.Randf() < Mathf.Max(0.55f, chanceAgressivite));
+			if (declencher && EssayerDepenserStamina(CoutStaminaAttaque))
+			{
+				_etat = EtatBoeuf.Charge;
+				_tempsCharge = Mathf.Max(_tempsCharge, faceAFace ? 2.4f : 1.6f);
+				_cibleCourante = posJoueur;
+				EmitSignal(SignalName.EvolutionEvenement, "charge_joueur", 1f, _niveau, _ageSecondes / 3600f);
 				return;
-			_etat = EtatBoeuf.Charge;
-			_tempsCharge = 1.2f;
-			EmitSignal(SignalName.EvolutionEvenement, "charge_joueur", 1f, _niveau, _ageSecondes / 3600f);
-			return;
+			}
 		}
 
 		if (dist < distancePeurEffective)
 		{
-			if (_rng.Randf() < chanceResterCalme)
+			if (dist > DistanceDeclenchementEngagementCharge && _rng.Randf() < chanceResterCalme)
 				return;
 			_tempsFuite = 3.0f;
 			if (_peutEsquiver && _rng.Randf() < 0.22f)
@@ -2457,13 +2628,34 @@ public partial class BoeufSauvage : CharacterBody3D
 		else if (DoitEntrerBroutageSelonSeuils())
 			ForcerEtatBroutageSiBesoin(prioriteAbsolue: false);
 
-		if (_etat == EtatBoeuf.Charge && _tempsCharge > 0f && _joueur != null)
+		if (_etat == EtatBoeuf.Charge && !PeutEngagerChargeContreJoueur())
 		{
-			_cibleCourante = _joueur.GlobalPosition;
-			if (GlobalPosition.DistanceSquaredTo(_joueur.GlobalPosition) < 1.8f * 1.8f)
+			_etat = EtatBoeuf.Fuite;
+			_tempsCharge = 0f;
+			_impactChargeJoueurPlanifie = false;
+			if (_tempsFuite <= 0.05f)
+				_tempsFuite = 3f;
+		}
+
+		bool combatChargeEnCours = _impactChargeJoueurPlanifie || _tempsVerrouAnimationCombat > 0.01f;
+		if (_etat == EtatBoeuf.Charge && (_tempsCharge > 0f || combatChargeEnCours)
+			&& EssayerObtenirPositionJoueur(out Vector3 posJoueurCharge))
+		{
+			_cibleCourante = posJoueurCharge;
+			Vector3 versJoueur = posJoueurCharge - GlobalPosition;
+			versJoueur.Y = 0f;
+			float dist = versJoueur.Length();
+			if (combatChargeEnCours)
+				return;
+			if (dist <= DistanceMaxDeclenchementAttaqueCharge && EssayerAppliquerImpactChargeJoueur())
 			{
-				EssayerAppliquerImpactChargeJoueur();
-				_tempsFuite = 1.6f; // Impact: le boeuf repart ensuite en fuite.
+				_tempsCharge = Mathf.Max(_tempsCharge, 1.8f);
+				return;
+			}
+			if (_tempsCharge <= 0.05f)
+			{
+				MarquerFinEngagementChargeJoueur(apresImpactReussi: false);
+				return;
 			}
 			return;
 		}
@@ -2471,7 +2663,9 @@ public partial class BoeufSauvage : CharacterBody3D
 		if (_tempsFuite > 0f)
 		{
 			_etat = EtatBoeuf.Fuite;
-			Vector3 fuite = _joueur != null ? (GlobalPosition - _joueur.GlobalPosition) : Vector3.Forward;
+			Vector3 fuite = EssayerObtenirPositionJoueur(out Vector3 posFuite)
+				? (GlobalPosition - posFuite)
+				: Vector3.Forward;
 			fuite.Y = 0f;
 			if (fuite.LengthSquared() < 0.001f) fuite = Vector3.Forward;
 			_cibleCourante = GlobalPosition + fuite.Normalized() * _rng.RandfRange(10f, 18f);
@@ -2584,28 +2778,235 @@ public partial class BoeufSauvage : CharacterBody3D
 			ChoisirNouvelleCible(false);
 	}
 
-	private void EssayerAppliquerImpactChargeJoueur()
+	private bool EssayerAppliquerImpactChargeJoueur()
 	{
-		if (_joueur == null || !GodotObject.IsInstanceValid(_joueur)) return;
-		if (_cooldownImpactChargeJoueur > 0f) return;
+		if (_joueur == null || !GodotObject.IsInstanceValid(_joueur)) return false;
+		if (_cooldownImpactChargeJoueur > 0f || _impactChargeJoueurPlanifie) return false;
+		if (!PeutEngagerChargeContreJoueur())
+			return false;
+		if (Velocity.Y > 1.15f || GlobalPosition.Y > _joueur.GlobalPosition.Y + DeltaYMaxDegatsChargeSurJoueur)
+			return false;
 		Vector3 dir = _joueur.GlobalPosition - GlobalPosition;
 		dir.Y = 0f;
-		if (dir.LengthSquared() < 0.0001f)
+		float distJoueur = dir.Length();
+		if (distJoueur < 0.0001f)
 			dir = -GlobalTransform.Basis.Z;
+		else
+			dir /= distJoueur;
+		if (distJoueur > DistanceMaxDeclenchementAttaqueCharge)
+			return false;
+		if (distJoueur > 1.85f && !PossedeLigneDeVueSurJoueur())
+			return false;
+		if (!ContactChargeCrediblePourAnimation(dir * distJoueur))
+			return false;
+
+		bool joueurDevant = JoueurDevantPourAttaqueCharge();
+		bool impactResolu = EssayerResoudreImpactChargeSurJoueur(joueurDevant, out Vector3 pointImpact, out int shapeIdx);
+		if (!impactResolu)
+		{
+			if (distJoueur > DistanceMaxDeclenchementAttaqueCharge)
+				return false;
+			pointImpact = _joueur.GlobalPosition + Vector3.Up * (joueurDevant ? 1.0f : 0.55f);
+			shapeIdx = -1;
+		}
+		if (!DeclencherAnimationAttaqueChargeVersJoueur())
+			return false;
+
+		_impactChargeJoueurPlanifie = true;
+		_impactChargeCoupDeTetePlanifie = joueurDevant;
+		_pointImpactChargePlanifie = pointImpact;
+		_dirImpactChargePlanifie = dir;
+		_indiceFormeImpactChargePlanifie = shapeIdx;
+		_delaiImpactChargePlanifie = DelaiDegatsApresDebutAnimationCharge;
+		_cooldownImpactChargeJoueur = Mathf.Max(0.05f, CooldownImpactChargeJoueur);
+		return true;
+	}
+
+	private void MettreAJourImpactChargeJoueurPlanifie(float dt)
+	{
+		if (!_impactChargeJoueurPlanifie)
+			return;
+		_delaiImpactChargePlanifie -= dt;
+		if (_delaiImpactChargePlanifie > 0f)
+		{
+			if (_joueur != null && GodotObject.IsInstanceValid(_joueur))
+			{
+				Vector3 d = _joueur.GlobalPosition - GlobalPosition;
+				d.Y = 0f;
+				if (d.Length() > DistanceMaxImpactChargeApresDelai + 0.35f)
+				{
+					_impactChargeJoueurPlanifie = false;
+					_indiceFormeImpactChargePlanifie = -1;
+				}
+			}
+			return;
+		}
+
+		_impactChargeJoueurPlanifie = false;
+		int shapeIdx = _indiceFormeImpactChargePlanifie;
+		_indiceFormeImpactChargePlanifie = -1;
+		if (_joueur == null || !GodotObject.IsInstanceValid(_joueur))
+			return;
+
+		Vector3 versJoueur = _joueur.GlobalPosition - GlobalPosition;
+		versJoueur.Y = 0f;
+		if (versJoueur.Length() > DistanceMaxImpactChargeApresDelai + 0.35f)
+			return;
+
 		float impulsion = Mathf.Max(0.1f, ImpulsionChargeSurJoueur);
+		Vector3 pointImpact = _pointImpactChargePlanifie;
+		int shapeImpact = shapeIdx;
+		if (EssayerResoudreImpactChargeSurJoueur(_impactChargeCoupDeTetePlanifie, out Vector3 pointFrais, out int shapeFrais))
+		{
+			pointImpact = pointFrais;
+			shapeImpact = shapeFrais;
+		}
 		if (_joueur is Joueur joueurHumain)
-			joueurHumain.AppliquerPousseeBovin(dir, impulsion);
+		{
+			joueurHumain.RecevoirImpactChargeBovin(
+				pointImpact,
+				_dirImpactChargePlanifie,
+				impulsion,
+				_impactChargeCoupDeTetePlanifie,
+				ChanceFractureOsChargeJoueurPct,
+				shapeImpact);
+		}
 		else
 		{
-			Vector3 d = dir.Normalized();
+			Vector3 d = _dirImpactChargePlanifie;
+			d.Y = 0f;
+			if (d.LengthSquared() > 1e-6f)
+				d = d.Normalized();
 			Vector3 v = _joueur.Velocity;
 			v.X += d.X * impulsion;
 			v.Z += d.Z * impulsion;
 			_joueur.Velocity = v;
 		}
-		_cooldownImpactChargeJoueur = Mathf.Max(0.05f, CooldownImpactChargeJoueur);
-		if (ContactChargeCrediblePourAnimation(dir))
-			DeclencherAnimationAttaqueChargeVersJoueur();
+		MarquerFinEngagementChargeJoueur(apresImpactReussi: true);
+	}
+
+	private bool JoueurDevantPourAttaqueCharge()
+	{
+		if (_joueur == null)
+			return true;
+		Vector3 forward = -GlobalTransform.Basis.Z;
+		forward.Y = 0f;
+		if (forward.LengthSquared() < 1e-6f)
+			return true;
+		forward = forward.Normalized();
+		Vector3 versJoueur = _joueur.GlobalPosition - GlobalPosition;
+		versJoueur.Y = 0f;
+		if (versJoueur.LengthSquared() < 1e-6f)
+			return true;
+		return forward.Dot(versJoueur.Normalized()) >= 0.25f;
+	}
+
+	/// <summary>Raycast principal selon le type d'attaque (tête/torse face à face, jambes/tronc en ruade).</summary>
+	private bool EssayerResoudreImpactChargeSurJoueur(bool coupDeTete, out Vector3 pointImpact, out int indiceFormeJoueur)
+	{
+		pointImpact = _joueur != null ? _joueur.GlobalPosition : GlobalPosition;
+		indiceFormeJoueur = -1;
+		if (_joueur == null)
+			return false;
+
+		PhysicsDirectSpaceState3D espace = GetWorld3D()?.DirectSpaceState;
+		if (espace == null)
+			return false;
+
+		var exclude = new Godot.Collections.Array<Rid> { GetRid() };
+
+		static bool EstJoueurOuEnfant(CharacterBody3D joueur, GodotObject collider)
+		{
+			if (collider == joueur)
+				return true;
+			return collider is Node n && joueur.IsAncestorOf(n);
+		}
+
+		bool EssayerRayVersCible(Vector3 origine, Vector3 cibleMonde, out Vector3 pos, out int shapeIdx, out float dist2Origine)
+		{
+			pos = cibleMonde;
+			shapeIdx = -1;
+			dist2Origine = float.MaxValue;
+			Vector3 delta = cibleMonde - origine;
+			float longueur = delta.Length();
+			if (longueur < 0.04f)
+				return false;
+			delta = delta / longueur * Mathf.Min(longueur + 0.65f, 3.6f);
+
+			var requete = PhysicsRayQueryParameters3D.Create(origine, origine + delta);
+			requete.CollisionMask = 1u;
+			requete.CollideWithBodies = true;
+			requete.CollideWithAreas = false;
+			requete.Exclude = exclude;
+
+			Godot.Collections.Dictionary impact = espace.IntersectRay(requete);
+			if (impact.Count == 0 || !impact.TryGetValue("collider", out Variant colliderV))
+				return false;
+			if (!EstJoueurOuEnfant(_joueur, colliderV.AsGodotObject()))
+				return false;
+			if (!impact.TryGetValue("position", out Variant posV))
+				return false;
+
+			pos = (Vector3)posV;
+			shapeIdx = impact.TryGetValue("shape", out Variant shapeV) ? shapeV.AsInt32() : -1;
+			dist2Origine = origine.DistanceSquaredTo(pos);
+			return true;
+		}
+
+		Vector3 origine;
+		Vector3 cible;
+		if (coupDeTete)
+		{
+			origine = GlobalPosition + Vector3.Up * 1.1f;
+			if (_joueur is Joueur j)
+			{
+				Vector3 tete = j.ObtenirCentreHitboxMonde("tete");
+				Vector3 torse = j.ObtenirCentreHitboxMonde("torse");
+				cible = tete.Lerp(torse, 0.28f);
+			}
+			else
+				cible = _joueur.GlobalPosition + Vector3.Up * 1.02f;
+		}
+		else
+		{
+			origine = GlobalPosition + Vector3.Up * 0.78f;
+			if (_joueur is Joueur j)
+			{
+				Vector3 torse = j.ObtenirCentreHitboxMonde("torse");
+				Vector3 versBovin = GlobalPosition - _joueur.GlobalPosition;
+				versBovin.Y = 0f;
+				if (versBovin.LengthSquared() > 1e-6f)
+					cible = torse + versBovin.Normalized() * 0.28f + Vector3.Up * 0.08f;
+				else
+					cible = torse + Vector3.Up * 0.2f;
+			}
+			else
+				cible = _joueur.GlobalPosition + Vector3.Up * 0.52f;
+		}
+
+		if (EssayerRayVersCible(origine, cible, out pointImpact, out indiceFormeJoueur, out _))
+			return true;
+
+		float meilleurDist2 = float.MaxValue;
+		bool trouve = false;
+		float[] hauteurs = coupDeTete
+			? new[] { 1.08f, 0.92f, 0.78f }
+			: new[] { 0.48f, 0.62f, 0.78f };
+		foreach (float h in hauteurs)
+		{
+			Vector3 o = GlobalPosition + Vector3.Up * Mathf.Max(0.5f, h - 0.14f);
+			Vector3 c = _joueur.GlobalPosition + Vector3.Up * h;
+			if (!EssayerRayVersCible(o, c, out Vector3 pos, out int shapeIdx, out float dist2))
+				continue;
+			if (dist2 >= meilleurDist2)
+				continue;
+			meilleurDist2 = dist2;
+			pointImpact = pos;
+			indiceFormeJoueur = shapeIdx;
+			trouve = true;
+		}
+
+		return trouve;
 	}
 
 	/// <summary>Évite ruade / coup de tête animés sans vraie approche (contact crédible).</summary>
@@ -2615,21 +3016,25 @@ public partial class BoeufSauvage : CharacterBody3D
 		float dist = dirVersJoueurHoriz.Length();
 		if (dist < 0.0001f)
 			return true;
+		if (_etat == EtatBoeuf.Charge && dist <= DistanceMaxDeclenchementAttaqueCharge)
+			return true;
+		if (dist <= DistanceAttaqueChargeFaceAFace && JoueurDevantPourAttaqueCharge())
+			return true;
 		Vector3 versJ = dirVersJoueurHoriz / dist;
 		Vector3 vH = new Vector3(Velocity.X, 0f, Velocity.Z);
 		float approche = vH.Dot(versJ);
-		if (dist <= 1.15f)
+		if (dist <= 1.25f)
 			return true;
-		return dist <= 1.82f && approche >= 0.55f;
+		return dist <= 1.7f && approche >= 0.85f;
 	}
 
-	/// <summary>Joue <see cref="_clipAttaqueKick"/> (cible derriere / sur le flanc arriere) ou <see cref="_clipAttaqueTete"/> (cible devant).</summary>
-	private void DeclencherAnimationAttaqueChargeVersJoueur()
+	/// <summary>Joue <see cref="_clipAttaqueKick"/> ou <see cref="_clipAttaqueTete"/> — prioritaire sur la locomotion de charge.</summary>
+	private bool DeclencherAnimationAttaqueChargeVersJoueur()
 	{
 		if (_animationPlayer == null || !GodotObject.IsInstanceValid(_animationPlayer))
-			return;
+			return false;
 		if (_joueur == null || !GodotObject.IsInstanceValid(_joueur))
-			return;
+			return false;
 		Vector3 forward = -GlobalTransform.Basis.Z;
 		forward.Y = 0f;
 		if (forward.LengthSquared() < 1e-6f)
@@ -2642,28 +3047,39 @@ public partial class BoeufSauvage : CharacterBody3D
 		string clip = joueurDevant ? _clipAttaqueTete : _clipAttaqueKick;
 		string noeud = joueurDevant ? NomNoeudAttaqueTete : NomNoeudAttaqueKick;
 		if (string.IsNullOrEmpty(clip) || !_animationPlayer.HasAnimation(clip))
-			return;
+			return false;
 
 		float duree = 0.72f;
 		Animation animRef = _animationPlayer.GetAnimation(ObtenirStringNameAnimation(clip));
 		if (animRef != null)
 			duree = Mathf.Clamp(animRef.Length, 0.38f, 2.4f);
-		_tempsVerrouAnimationCombat = duree;
+		_tempsVerrouAnimationCombat = Mathf.Max(_tempsVerrouAnimationCombat, duree);
+		_noeudAnimationCombatVerrou = noeud;
 
 		if (_blendLocomotionActif && _playbackEtatFaune != null && _animationTreeFaune != null && _animationTreeFaune.Active)
 		{
-			bool noeudPresent = (noeud == NomNoeudAttaqueTete && _machineAPorteAttaqueTete) || (noeud == NomNoeudAttaqueKick && _machineAPorteAttaqueKick);
+			bool noeudPresent = (noeud == NomNoeudAttaqueTete && _machineAPorteAttaqueTete)
+				|| (noeud == NomNoeudAttaqueKick && _machineAPorteAttaqueKick);
 			if (noeudPresent)
 			{
-				_noeudAnimationCombatVerrou = noeud;
+				if (_etatCourantMachineAnimation != noeud
+					&& _etatCourantMachineAnimation != NomNoeudAttaqueKick
+					&& _etatCourantMachineAnimation != NomNoeudAttaqueTete
+					&& _etatCourantMachineAnimation != NomNoeudDeplacement)
+				{
+					_playbackEtatFaune.Travel(NomNoeudDeplacementString);
+					_etatCourantMachineAnimation = NomNoeudDeplacement;
+				}
 				_playbackEtatFaune.Travel(ObtenirNomEtatAnimation(noeud));
 				_etatCourantMachineAnimation = noeud;
-				return;
+				return true;
 			}
 		}
 
-		_noeudAnimationCombatVerrou = "";
-		_animationPlayer.Play(ObtenirStringNameAnimation(clip), 0.08f);
+		if (_animationTreeFaune != null && _animationTreeFaune.Active)
+			_animationTreeFaune.Active = false;
+		_animationPlayer.Play(ObtenirStringNameAnimation(clip), 0.05f);
+		return true;
 	}
 
 	private void ChoisirNouvelleCible(bool initial)
@@ -3114,23 +3530,37 @@ public partial class BoeufSauvage : CharacterBody3D
 		_coupsDepecageDagueValides = 0;
 		_tempsMort = float.MaxValue;
 		Velocity = Vector3.Zero;
-		_animationMortDoitEtreFigee = true;
-		_animationMortFigee = false;
 		EmitSignal(SignalName.EvolutionEvenement, "mort_faim", 1f, _niveau, _ageSecondes / 3600f);
-		if (!string.IsNullOrEmpty(_clipMort) && _animationPlayer != null && _animationPlayer.HasAnimation(_clipMort))
-		{
-			ConfigurerClipMortEnOneShot();
-			if (_animationTreeFaune != null)
-				_animationTreeFaune.Active = false;
-			_animationPlayer.Play(ObtenirStringNameAnimation(_clipMort), 0.12f);
-		}
-		else if (_playbackEtatFaune != null && _machineAPorteMort)
-			_playbackEtatFaune.Travel(NomNoeudMortString);
-		else if (!string.IsNullOrEmpty(_clipMort) && _animationPlayer != null)
-		{
-			ConfigurerClipMortEnOneShot();
-			_animationPlayer.Play(ObtenirStringNameAnimation(_clipMort), 0.12f);
-		}
+		AppliquerAnimationMort();
+	}
+
+	/// <summary>Pose mort (clip direct uniquement) sans réactiver l'AnimationTree — évite cadavre debout / replay Mort / dépeçage infini.</summary>
+	private void AppliquerAnimationMort()
+	{
+		if (_cadavreLootDistribue || !IsInsideTree() || IsQueuedForDeletion())
+			return;
+		if (_animationMortFigee)
+			return;
+
+		_animationMortDoitEtreFigee = true;
+		_reconfigurationArbreAnimationEnAttente = false;
+		DesactiverAnimationTreePourCadavre();
+
+		if (string.IsNullOrEmpty(_clipMort) || _animationPlayer == null || !_animationPlayer.HasAnimation(_clipMort))
+			return;
+
+		ConfigurerClipMortEnOneShot();
+		_animationMortFigee = false;
+		_animationPlayer.Play(ObtenirStringNameAnimation(_clipMort), 0.12f);
+	}
+
+	private void DesactiverAnimationTreePourCadavre()
+	{
+		_blendLocomotionActif = false;
+		_playbackEtatFaune = null;
+		_etatCourantMachineAnimation = NomNoeudMort;
+		if (_animationTreeFaune != null && GodotObject.IsInstanceValid(_animationTreeFaune))
+			_animationTreeFaune.Active = false;
 	}
 
 	private void ConfigurerClipMortEnOneShot()
@@ -3184,7 +3614,12 @@ public partial class BoeufSauvage : CharacterBody3D
 	}
 
 	/// <summary>Cadavre encore présent (pas looté).</summary>
-	public bool EstCadavreDepecable() => _etat == EtatBoeuf.Mort && !_cadavreLootDistribue;
+	public bool EstCadavreDepecable()
+		=> _etat == EtatBoeuf.Mort
+			&& !_cadavreLootDistribue
+			&& Visible
+			&& IsInsideTree()
+			&& !IsQueuedForDeletion();
 
 	/// <summary>Enregistre un coup de dague valide sur le cadavre. Retourne true uniquement au dernier coup requis (déclencher le loot).</summary>
 	public bool EnregistrerCoupDepecageDagueValide()
@@ -3201,9 +3636,29 @@ public partial class BoeufSauvage : CharacterBody3D
 	/// <summary>Marque le cadavre comme traité et le retire de la scène (après spawn du loot).</summary>
 	public void FinaliserCadavreApresDepecage()
 	{
+		if (_cadavreLootDistribue)
+			return;
 		_vieCourante = 0f;
 		_cadavreLootDistribue = true;
 		_cadavreAttendDepecage = false;
+		_reconfigurationArbreAnimationEnAttente = false;
+		_animationMortDoitEtreFigee = true;
+		_animationMortFigee = true;
+		DesactiverAnimationTreePourCadavre();
+		if (_animationPlayer != null && GodotObject.IsInstanceValid(_animationPlayer))
+			_animationPlayer.Stop();
+		RetirerCadavreDeLaScene();
+	}
+
+	private void RetirerCadavreDeLaScene()
+	{
+		Visible = false;
+		ProcessMode = ProcessModeEnum.Disabled;
+		SetPhysicsProcess(false);
+		SetProcess(false);
+		CollisionLayer = 0;
+		CollisionMask = 0;
+		DesactiverAnimationTreePourCadavre();
 		if (IsInsideTree())
 			QueueFree();
 	}
@@ -3342,7 +3797,7 @@ public partial class BoeufSauvage : CharacterBody3D
 		DiagnosticListeClipsSiDemande(tous);
 		ResoudreNomsClipsLocomotionDepuisBibliothequeEtListe(tous);
 		InitialiserSelectionEvolutionnaireAnimations(tous);
-		_timerCycleIdleSecondes = _rng.RandfRange(IntervalleMinCycleIdleSecondes * 0.35f, IntervalleMaxCycleIdleSecondes);
+		_timerCycleIdleSecondes = (IntervalleMinCycleIdleSecondes + IntervalleMaxCycleIdleSecondes) * 0.5f;
 
 		if (string.IsNullOrEmpty(_clipIdle))
 		{
@@ -3354,6 +3809,7 @@ public partial class BoeufSauvage : CharacterBody3D
 		AppliquerBouclesSurClipsLocomotion();
 		DemarrerArbreAnimationOuLectureDirecte();
 		_squelletteModele = TrouverPremierNoeudDeType<Skeleton3D>(_modeleVisuel != null ? _modeleVisuel : this);
+		AnalyserCompensationsEnfoncementClipsLocomotion();
 	}
 
 	private bool ResoudreLecteurAnimationPrincipalSurSquelette()
@@ -3398,7 +3854,7 @@ public partial class BoeufSauvage : CharacterBody3D
 		var lib = new AnimationLibrary();
 		lib.AddAnimation("Idle", CreerAnimationBobPositionModele(p0, 0.028f * m, 2.6f));
 		lib.AddAnimation("Marche", CreerAnimationBobPositionModele(p0, 0.065f * m, 0.52f, 1.15f, 1.00f));
-		lib.AddAnimation("Course", CreerAnimationBobPositionModele(p0, 0.11f * m, 0.30f, 1.25f, 1.08f));
+		lib.AddAnimation("Course", CreerAnimationBobPositionModele(p0, 0.07f * m, 0.30f, 0.75f, 0.45f));
 		lib.AddAnimation("Broutage", CreerAnimationBobPositionModele(p0, 0.018f * m, 3.1f, 0.45f, 0.35f));
 		lib.AddAnimation("Mort", CreerAnimationBobPositionModele(p0, 0.006f * m, 1.35f, 0.12f, 0.08f, false));
 
@@ -3599,6 +4055,8 @@ public partial class BoeufSauvage : CharacterBody3D
 		if (!string.IsNullOrEmpty(_clipMort) && NomClipSembleMort(_clipManger) && _clipManger == _clipMort)
 			_clipManger = !string.IsNullOrEmpty(_clipMarche) ? _clipMarche : _clipIdle;
 
+		AppliquerClipsAttaqueBovinExacts(tous);
+
 		// Secours : pack avec un seul clip "kick" / "headbutt" sans mots-cles directionnels.
 		if (string.IsNullOrEmpty(_clipAttaqueKick))
 		{
@@ -3634,6 +4092,63 @@ public partial class BoeufSauvage : CharacterBody3D
 	{
 		if (string.IsNullOrEmpty(n)) return false;
 		return n.Contains("gallop_jump") || n.Contains("gallopjump") || n.Contains("run_jump");
+	}
+
+	private static string ExtraireNomCourtClip(string nomComplet)
+	{
+		if (string.IsNullOrEmpty(nomComplet))
+			return "";
+		string n = nomComplet.Replace('\\', '/');
+		int slash = n.LastIndexOf('/');
+		return slash >= 0 ? n.Substring(slash + 1) : n;
+	}
+
+	private static bool NomClipEstAttaqueKickExact(string nomComplet)
+		=> string.Equals(ExtraireNomCourtClip(nomComplet), ClipAttaqueKickCanonique, StringComparison.OrdinalIgnoreCase);
+
+	private static bool NomClipEstAttaqueTeteExact(string nomComplet)
+		=> string.Equals(ExtraireNomCourtClip(nomComplet), ClipAttaqueTeteCanonique, StringComparison.OrdinalIgnoreCase);
+
+	private void EssayerAssignerClipAttaqueExact(ref string clipCible, string nomComplet)
+	{
+		if (EstClipSystemeOuVide(nomComplet) || _animationPlayer == null || !_animationPlayer.HasAnimation(nomComplet))
+			return;
+		if (!string.IsNullOrEmpty(clipCible))
+		{
+			bool actuelBull = clipCible.ToLowerInvariant().Contains("bull");
+			bool nouveauBull = nomComplet.ToLowerInvariant().Contains("bull");
+			if (actuelBull && !nouveauBull)
+				return;
+		}
+		clipCible = nomComplet;
+	}
+
+	/// <summary>Force <see cref="ClipAttaqueKickCanonique"/> / <see cref="ClipAttaqueTeteCanonique"/> si presents dans le lecteur.</summary>
+	private void AppliquerClipsAttaqueBovinExacts(List<string> tous)
+	{
+		if (_animationPlayer == null)
+			return;
+
+		if (_animationPlayer.HasAnimationLibrary(NomBibliothequeLocomotionFaune))
+		{
+			AnimationLibrary lib = _animationPlayer.GetAnimationLibrary(NomBibliothequeLocomotionFaune);
+			string pref = $"{NomBibliothequeLocomotionFaune}/";
+			if (lib != null)
+			{
+				if (lib.HasAnimation(ClipAttaqueKickCanonique))
+					_clipAttaqueKick = pref + ClipAttaqueKickCanonique;
+				if (lib.HasAnimation(ClipAttaqueTeteCanonique))
+					_clipAttaqueTete = pref + ClipAttaqueTeteCanonique;
+			}
+		}
+
+		foreach (string nomComplet in tous)
+		{
+			if (NomClipEstAttaqueKickExact(nomComplet))
+				EssayerAssignerClipAttaqueExact(ref _clipAttaqueKick, nomComplet);
+			if (NomClipEstAttaqueTeteExact(nomComplet))
+				EssayerAssignerClipAttaqueExact(ref _clipAttaqueTete, nomComplet);
+		}
 	}
 
 	private static bool ResoudreClipSembleAttaqueDerriere(string n)
@@ -3716,8 +4231,10 @@ public partial class BoeufSauvage : CharacterBody3D
 
 		ChargerRegistryAnimationsEvolutivesDepuisJson(tous ?? new List<string>());
 		RemplirClipsSpeciauxDepuisPoolsSiEncoreVides();
+		_signatureContexteAnimation = int.MinValue;
 		AppliquerSelectionAnimationEvolutive(forceReconfigurerArbre: false);
-		_cooldownVariationAnimation = Mathf.Max(2f, IntervalleVariationAnimationSecondes) * _rng.RandfRange(0.72f, 1.28f);
+		_signatureContexteAnimation = CalculerSignatureContexteAnimation(0f);
+		_cooldownVariationAnimation = IntervalleVariationAnimationSecondes;
 	}
 
 	private void InitialiserPoolCategorie(string categorie)
@@ -3833,20 +4350,123 @@ public partial class BoeufSauvage : CharacterBody3D
 		return "";
 	}
 
+	private void CalculerScoresContexteAnimation(
+		out float scoreCalme, out float scoreDynamique, out float scoreBroutage, out float scoreNage, out float stress)
+	{
+		stress = (_tempsFuite > 0f || _memoireDetectionJoueur > 0f || _etat == EtatBoeuf.Charge) ? 1f : 0f;
+		float faim = RatioFaimCourant();
+		float cohesion = CalculerRatioCohesionTroupeau();
+		scoreCalme = Mathf.Clamp(_geneConfiance * 0.55f + faim * 0.30f + cohesion * 0.15f - stress * 0.35f, 0f, 1f);
+		scoreDynamique = Mathf.Clamp(_geneReflexeAttaque * 0.45f + _geneReflexeFuite * 0.35f + stress * 0.30f, 0f, 1f);
+		if (_etat == EtatBoeuf.Fuite || _etat == EtatBoeuf.Charge)
+			scoreDynamique = Mathf.Max(scoreDynamique, 0.82f);
+		scoreBroutage = Mathf.Clamp(faim * 0.55f + _geneConfiance * 0.30f - stress * 0.45f, 0f, 1f);
+		if (_etat == EtatBoeuf.Broutage)
+			scoreBroutage = Mathf.Max(scoreBroutage, 0.88f);
+		scoreNage = Mathf.Clamp(stress * 0.30f + (1f - faim) * 0.25f + _geneReflexeFuite * 0.25f + cohesion * 0.20f, 0f, 1f);
+		if (_dansEau)
+			scoreNage = Mathf.Max(scoreNage, 0.85f);
+	}
+
+	private int CalculerSignatureContexteAnimation(float vitesseHoriz)
+	{
+		int etat = (int)_etat;
+		int eau = _dansEau ? 1 : 0;
+		int stress = (_tempsFuite > 0f || _memoireDetectionJoueur > 0f || _etat == EtatBoeuf.Charge) ? 1 : 0;
+		int faimBucket = Mathf.Clamp(Mathf.FloorToInt(RatioFaimCourant() * 4f), 0, 3);
+		int vitBucket = vitesseHoriz <= 0.15f ? 0 : (vitesseHoriz <= 0.55f ? 1 : (vitesseHoriz <= 2.2f ? 2 : 3));
+		return etat | (eau << 4) | (stress << 5) | (faimBucket << 6) | (vitBucket << 8);
+	}
+
+	private bool ContexteCalmeStablePourVariationClip(float vitesseHoriz)
+	{
+		if (_etat == EtatBoeuf.Mort || _etat == EtatBoeuf.Fuite || _etat == EtatBoeuf.Charge)
+			return false;
+		if (_tempsVerrouAnimationCombat > 0.01f || _impactChargeJoueurPlanifie)
+			return false;
+		if (_memoireDetectionJoueur > 0f || _tempsFuite > 0f)
+			return false;
+		if (vitesseHoriz > 0.18f)
+			return false;
+		return true;
+	}
+
+	private void MettreAJourVariationClipsContextuelle(float dt, float vitesseHoriz)
+	{
+		if (!ActiverSelectionEvolutionnaireAnimations || _animationPlayer == null)
+			return;
+
+		if (_etat != _etatPourClipsLocomotion)
+		{
+			EtatBoeuf ancien = _etatPourClipsLocomotion;
+			_etatPourClipsLocomotion = _etat;
+			if (ancien != (EtatBoeuf)(-1))
+				AppliquerClipsLocomotionSelonEtat(ancien, _etat, forceReconfigurerArbre: UtiliserAnimationTreeLocomotion);
+			_signatureContexteAnimation = CalculerSignatureContexteAnimation(vitesseHoriz);
+			_tempsStableCalmePourClip = 0f;
+			return;
+		}
+
+		bool calme = ContexteCalmeStablePourVariationClip(vitesseHoriz);
+		if (calme)
+			_tempsStableCalmePourClip += dt;
+		else
+			_tempsStableCalmePourClip = 0f;
+
+		int signature = CalculerSignatureContexteAnimation(vitesseHoriz);
+		bool contexteChange = signature != _signatureContexteAnimation;
+		if (!contexteChange || _tempsStableCalmePourClip < TempsStabiliteAvantChangementClipSec)
+			return;
+		if (_cooldownVariationAnimation > 0f)
+			return;
+
+		_signatureContexteAnimation = signature;
+		AppliquerSelectionAnimationEvolutive(forceReconfigurerArbre: UtiliserAnimationTreeLocomotion);
+		_cooldownVariationAnimation = Mathf.Max(8f, IntervalleVariationAnimationSecondes);
+	}
+
+	private void AppliquerClipsLocomotionSelonEtat(EtatBoeuf ancien, EtatBoeuf nouveau, bool forceReconfigurerArbre)
+	{
+		if (_animationPlayer == null)
+			return;
+		CalculerScoresContexteAnimation(out float scoreCalme, out float scoreDynamique, out float scoreBroutage, out float scoreNage, out _);
+		float intensite = Mathf.Clamp(IntensiteSelectionAnimationEvolutive, 0f, 1f);
+		float MixScore(float s, float defaut) => s * intensite + (1f - intensite) * defaut;
+
+		switch (nouveau)
+		{
+			case EtatBoeuf.Fuite:
+			case EtatBoeuf.Charge:
+				_clipCourse = ChoisirClipDepuisPoolEvolutif("run", _clipCourse, MixScore(scoreDynamique, 0.85f));
+				_clipTrot = ChoisirClipDepuisPoolEvolutif("trot", _clipTrot, MixScore(scoreDynamique, 0.75f));
+				break;
+			case EtatBoeuf.Broutage:
+				_clipManger = ChoisirClipDepuisPoolEvolutif("graze", _clipManger, MixScore(scoreBroutage, 0.9f));
+				break;
+			default:
+				if (ancien == EtatBoeuf.Fuite || ancien == EtatBoeuf.Charge)
+				{
+					_clipMarche = ChoisirClipDepuisPoolEvolutif("walk", _clipMarche, MixScore(scoreCalme, 0.45f));
+					_clipIdle = ChoisirClipDepuisPoolEvolutif("idle", _clipIdle, MixScore(scoreCalme, 0.5f));
+				}
+				break;
+		}
+
+		if (_dansEau)
+			_clipNage = ChoisirClipDepuisPoolEvolutif("swim", _clipNage, MixScore(scoreNage, 0.85f));
+
+		AppliquerBouclesSurClipsLocomotion();
+		if (forceReconfigurerArbre)
+			DemanderReconfigurationAnimationTree();
+	}
+
 	private void AppliquerSelectionAnimationEvolutive(bool forceReconfigurerArbre)
 	{
 		if (!ActiverSelectionEvolutionnaireAnimations || _animationPlayer == null)
 			return;
 
-		float stress = (_tempsFuite > 0f || _memoireDetectionJoueur > 0f) ? 1f : 0f;
-		float faim = RatioFaimCourant();
-		float cohesion = CalculerRatioCohesionTroupeau();
+		CalculerScoresContexteAnimation(out float scoreCalme, out float scoreDynamique, out float scoreBroutage, out float scoreNage, out _);
 		float intensite = Mathf.Clamp(IntensiteSelectionAnimationEvolutive, 0f, 1f);
-
-		float scoreCalme = Mathf.Clamp(_geneConfiance * 0.55f + faim * 0.30f + cohesion * 0.15f - stress * 0.35f, 0f, 1f);
-		float scoreDynamique = Mathf.Clamp(_geneReflexeAttaque * 0.45f + _geneReflexeFuite * 0.35f + stress * 0.30f, 0f, 1f);
-		float scoreBroutage = Mathf.Clamp(faim * 0.55f + _geneConfiance * 0.30f - stress * 0.45f, 0f, 1f);
-		float scoreNage = Mathf.Clamp(stress * 0.30f + (1f - faim) * 0.25f + _geneReflexeFuite * 0.25f + cohesion * 0.20f, 0f, 1f);
 
 		string ancienIdle = _clipIdle;
 		string ancienMarche = _clipMarche;
@@ -3881,6 +4501,7 @@ public partial class BoeufSauvage : CharacterBody3D
 			DemanderReconfigurationAnimationTree();
 	}
 
+	/// <summary>Choix déterministe : le score (0–1) mappe à un index du pool, sans bruit aléatoire.</summary>
 	private string ChoisirClipDepuisPoolEvolutif(string categorie, string fallback, float score)
 	{
 		if (!_poolsAnimationsEvolutives.TryGetValue(categorie, out List<string> pool) || pool.Count == 0)
@@ -3889,10 +4510,9 @@ public partial class BoeufSauvage : CharacterBody3D
 			return pool[0];
 
 		float s = Mathf.Clamp(score, 0f, 1f);
-		float bruit = _rng.RandfRange(-0.18f, 0.18f);
-		s = Mathf.Clamp(s + bruit, 0f, 1f);
 		int idx = Mathf.Clamp(Mathf.RoundToInt(s * (pool.Count - 1)), 0, pool.Count - 1);
-		return pool[idx];
+		string choisi = pool[idx];
+		return string.IsNullOrEmpty(choisi) ? fallback : choisi;
 	}
 
 	/// <summary>Nœud AnimationTree placé dans la scène (éditeur) : nom attendu, typo fréquente, ou premier enfant direct.</summary>
@@ -3927,6 +4547,8 @@ public partial class BoeufSauvage : CharacterBody3D
 
 	private void DemanderReconfigurationAnimationTree()
 	{
+		if (_etat == EtatBoeuf.Mort)
+			return;
 		if (!UtiliserAnimationTreeLocomotion)
 			return;
 		if (_cooldownReconfigurationArbreAnimation <= 0f)
@@ -3941,6 +4563,12 @@ public partial class BoeufSauvage : CharacterBody3D
 
 	private void ConfigurerAnimationTreeFaune()
 	{
+		if (_etat == EtatBoeuf.Mort || _cadavreLootDistribue)
+		{
+			if (!_cadavreLootDistribue)
+				AppliquerAnimationMort();
+			return;
+		}
 		DetruireAnimationTreeFaune();
 		if (_animationPlayer == null)
 			return;
@@ -4044,11 +4672,19 @@ public partial class BoeufSauvage : CharacterBody3D
 		{
 			machine.AddTransition(NomNoeudDeplacement, NomNoeudAttaqueKick, xfdAttaque);
 			machine.AddTransition(NomNoeudAttaqueKick, NomNoeudDeplacement, xfdAttaqueRetour);
+			if (_machineAPorteSaut)
+				machine.AddTransition(NomNoeudSaut, NomNoeudAttaqueKick, xfdAttaque);
+			if (_machineAPorteSautGalop)
+				machine.AddTransition(NomNoeudSautGalop, NomNoeudAttaqueKick, xfdAttaque);
 		}
 		if (_machineAPorteAttaqueTete)
 		{
 			machine.AddTransition(NomNoeudDeplacement, NomNoeudAttaqueTete, xfdAttaque);
 			machine.AddTransition(NomNoeudAttaqueTete, NomNoeudDeplacement, xfdAttaqueRetour);
+			if (_machineAPorteSaut)
+				machine.AddTransition(NomNoeudSaut, NomNoeudAttaqueTete, xfdAttaque);
+			if (_machineAPorteSautGalop)
+				machine.AddTransition(NomNoeudSautGalop, NomNoeudAttaqueTete, xfdAttaque);
 		}
 
 		var versMort = new AnimationNodeStateMachineTransition { XfadeTime = 0.1f, SwitchMode = AnimationNodeStateMachineTransition.SwitchModeEnum.Immediate };
@@ -4083,6 +4719,15 @@ public partial class BoeufSauvage : CharacterBody3D
 	{
 		if (_animationTreeFaune == null || !GodotObject.IsInstanceValid(_animationTreeFaune) || _animationPlayer == null)
 			return;
+
+		if (_etat == EtatBoeuf.Mort || _cadavreLootDistribue || IsQueuedForDeletion())
+		{
+			_tentativesLiaisonPlaybackArbre = 0;
+			DesactiverAnimationTreePourCadavre();
+			if (_etat == EtatBoeuf.Mort && !_cadavreLootDistribue && !_animationMortFigee)
+				AppliquerAnimationMort();
+			return;
+		}
 
 		_animationTreeFaune.Active = true;
 		_playbackEtatFaune = ExtrairePlaybackMachineEtatFaune();
@@ -4161,28 +4806,32 @@ public partial class BoeufSauvage : CharacterBody3D
 		};
 	}
 
-	/// <summary>En errance calme, enchaine les clips <c>idle</c> du pool (ex. 5 variantes) sans toucher marche/course.</summary>
+	/// <summary>En errance calme, change d'idle selon le score de calme (pas de cycle aléatoire).</summary>
 	private void MettreAJourCycleIdleMultiples(float dt, float vitesseHoriz)
 	{
 		if (_animationPlayer == null || !GodotObject.IsInstanceValid(_animationPlayer))
 			return;
 		if (!_poolsAnimationsEvolutives.TryGetValue("idle", out List<string> pool) || pool == null || pool.Count < 2)
 			return;
-		bool calme = _etat != EtatBoeuf.Fuite && _etat != EtatBoeuf.Charge && _etat != EtatBoeuf.Broutage
-			&& vitesseHoriz <= 0.2f && !_dansEau && _tempsVerrouAnimationCombat <= 0f;
-		if (!calme)
+		if (!ContexteCalmeStablePourVariationClip(vitesseHoriz))
+		{
+			_timerCycleIdleSecondes = 0f;
 			return;
+		}
 		_timerCycleIdleSecondes -= dt;
 		if (_timerCycleIdleSecondes > 0f)
 			return;
-		float imin = Mathf.Max(1.5f, IntervalleMinCycleIdleSecondes);
-		float imax = Mathf.Max(imin + 0.5f, IntervalleMaxCycleIdleSecondes);
-		_timerCycleIdleSecondes = _rng.RandfRange(imin, imax);
-		_indexCycleIdle = (_indexCycleIdle + 1) % pool.Count;
-		string suivant = pool[_indexCycleIdle];
+		float imin = Mathf.Max(3f, IntervalleMinCycleIdleSecondes);
+		float imax = Mathf.Max(imin + 1f, IntervalleMaxCycleIdleSecondes);
+		_timerCycleIdleSecondes = (imin + imax) * 0.5f;
+
+		CalculerScoresContexteAnimation(out float scoreCalme, out _, out _, out _, out _);
+		int idx = Mathf.Clamp(Mathf.RoundToInt(scoreCalme * (pool.Count - 1)), 0, pool.Count - 1);
+		string suivant = pool[idx];
 		if (string.IsNullOrEmpty(suivant) || suivant == _clipIdle)
 			return;
 		_clipIdle = suivant;
+		_indexCycleIdle = idx;
 		AppliquerBouclesSurClipsLocomotion();
 		if (UtiliserAnimationTreeLocomotion)
 			DemanderReconfigurationAnimationTree();
@@ -4193,8 +4842,10 @@ public partial class BoeufSauvage : CharacterBody3D
 		if (_animationPlayer == null) return;
 		_tempsVerrouAnimationCombat = Mathf.Max(0f, _tempsVerrouAnimationCombat - dt);
 		if (_tempsVerrouAnimationCombat <= 0f && !string.IsNullOrEmpty(_noeudAnimationCombatVerrou)
-			&& _blendLocomotionActif && _playbackEtatFaune != null && _animationTreeFaune != null && _animationTreeFaune.Active)
+			&& _blendLocomotionActif && _playbackEtatFaune != null && _animationTreeFaune != null)
 		{
+			if (!_animationTreeFaune.Active)
+				_animationTreeFaune.Active = true;
 			_playbackEtatFaune.Travel(NomNoeudDeplacementString);
 			_etatCourantMachineAnimation = NomNoeudDeplacement;
 			_noeudAnimationCombatVerrou = "";
@@ -4218,14 +4869,18 @@ public partial class BoeufSauvage : CharacterBody3D
 				etatVoulu = NomNoeudBroutage;
 			else if (_tempsVerrouAnimationCombat > 0f && !string.IsNullOrEmpty(_noeudAnimationCombatVerrou))
 			{
-				if (_noeudAnimationCombatVerrou == NomNoeudAttaqueKick && _machineAPorteAttaqueKick)
+				if (_noeudAnimationCombatVerrou == NomNoeudAttaqueKick
+					&& (_machineAPorteAttaqueKick || !string.IsNullOrEmpty(_clipAttaqueKick)))
 					etatVoulu = NomNoeudAttaqueKick;
-				else if (_noeudAnimationCombatVerrou == NomNoeudAttaqueTete && _machineAPorteAttaqueTete)
+				else if (_noeudAnimationCombatVerrou == NomNoeudAttaqueTete
+					&& (_machineAPorteAttaqueTete || !string.IsNullOrEmpty(_clipAttaqueTete)))
 					etatVoulu = NomNoeudAttaqueTete;
 			}
-			else if (!_dansEau && sautAscendant && sprintAnime && _machineAPorteSautGalop)
+			else if (!_dansEau && sautAscendant && sprintAnime && _machineAPorteSautGalop
+				&& _tempsVerrouAnimationCombat <= 0f)
 				etatVoulu = NomNoeudSautGalop;
-			else if (!_dansEau && sautAscendant && _machineAPorteSaut && (!_machineAPorteSautGalop || !sprintAnime))
+			else if (!_dansEau && sautAscendant && _machineAPorteSaut && (!_machineAPorteSautGalop || !sprintAnime)
+				&& _tempsVerrouAnimationCombat <= 0f)
 				etatVoulu = NomNoeudSaut;
 			else if (!_dansEau && IsOnFloor() && (_etatCourantMachineAnimation == NomNoeudSaut || _etatCourantMachineAnimation == NomNoeudSautGalop))
 				etatVoulu = NomNoeudDeplacement;
@@ -4247,10 +4902,12 @@ public partial class BoeufSauvage : CharacterBody3D
 				{
 					blend = vitesseHoriz > seuilMarche ? Mathf.Max(blend, 0.80f) : 0f;
 				}
-				if (IntensiteMicroVivaciteAnimation > 0.0001f && _etat != EtatBoeuf.Fuite && _etat != EtatBoeuf.Charge && vitesseHoriz > seuilIdle && vitesseHoriz < 0.38f)
+				bool locomotionErranceCalme = _etat == EtatBoeuf.Errance && _memoireDetectionJoueur <= 0f && _tempsFuite <= 0f;
+				if (locomotionErranceCalme && IntensiteMicroVivaciteAnimation > 0.0001f
+					&& vitesseHoriz > seuilIdle && vitesseHoriz < 0.32f)
 				{
 					float phase = (float)_ageSecondes * 0.85f + (GetInstanceId() & 2047) * 0.0015f;
-					blend = Mathf.Clamp(blend + IntensiteMicroVivaciteAnimation * 0.12f * Mathf.Sin(phase), 0f, 0.98f);
+					blend = Mathf.Clamp(blend + IntensiteMicroVivaciteAnimation * 0.08f * Mathf.Sin(phase), 0f, 0.98f);
 				}
 				if (float.IsNaN(_dernierBlendAnimation) || Mathf.Abs(_dernierBlendAnimation - blend) > 0.0001f)
 				{
@@ -4274,10 +4931,12 @@ public partial class BoeufSauvage : CharacterBody3D
 				speed = Mathf.Clamp(vitesseHoriz / Mathf.Max(0.1f, vitesseMarcheActuelle), 0.8f, 1.45f);
 			if (sautAscendant && !clipsSautDedies && etatVoulu == NomNoeudDeplacement)
 				speed = vitesseHoriz > seuilMarche ? Mathf.Max(speed, 1.05f) : 0.92f;
-			if (IntensiteMicroVivaciteAnimation > 0.0001f && etatVoulu == NomNoeudDeplacement && vitesseHoriz > seuilIdle)
+			bool locomotionErranceCalmeVitesse = _etat == EtatBoeuf.Errance && _memoireDetectionJoueur <= 0f && _tempsFuite <= 0f;
+			if (locomotionErranceCalmeVitesse && IntensiteMicroVivaciteAnimation > 0.0001f
+				&& etatVoulu == NomNoeudDeplacement && vitesseHoriz > seuilIdle && vitesseHoriz < 0.32f)
 			{
 				float phase2 = (float)_ageSecondes * 1.9f + (GetInstanceId() & 1023) * 0.002f;
-				speed *= 1f + IntensiteMicroVivaciteAnimation * (0.55f * Mathf.Sin(phase2) + 0.35f * Mathf.Sin(phase2 * 1.7f));
+				speed *= 1f + IntensiteMicroVivaciteAnimation * 0.35f * Mathf.Sin(phase2);
 			}
 			float vitesseAppliquee = speed * Mathf.Clamp(MultiplicateurVitesseAnimation, 0.2f, 2.0f) * FacteurAnimationContextuelle();
 			if (float.IsNaN(_derniereVitesseAnimation) || Mathf.Abs(_derniereVitesseAnimation - vitesseAppliquee) > 0.0001f)
@@ -4466,8 +5125,14 @@ public partial class BoeufSauvage : CharacterBody3D
 		if (lib.HasAnimation("Jump") && string.IsNullOrEmpty(_clipSaut)) _clipSaut = Pref("Jump");
 		if (lib.HasAnimation("GallopJump") && string.IsNullOrEmpty(_clipSautGalop)) _clipSautGalop = Pref("GallopJump");
 		if (lib.HasAnimation("Eating") && string.IsNullOrEmpty(_clipManger)) _clipManger = Pref("Eating");
-		if (lib.HasAnimation("AttaqueKick") && string.IsNullOrEmpty(_clipAttaqueKick)) _clipAttaqueKick = Pref("AttaqueKick");
-		if (lib.HasAnimation("AttaqueTete") && string.IsNullOrEmpty(_clipAttaqueTete)) _clipAttaqueTete = Pref("AttaqueTete");
+		if (lib.HasAnimation(ClipAttaqueKickCanonique))
+			_clipAttaqueKick = Pref(ClipAttaqueKickCanonique);
+		else if (lib.HasAnimation("AttaqueKick") && string.IsNullOrEmpty(_clipAttaqueKick))
+			_clipAttaqueKick = Pref("AttaqueKick");
+		if (lib.HasAnimation(ClipAttaqueTeteCanonique))
+			_clipAttaqueTete = Pref(ClipAttaqueTeteCanonique);
+		else if (lib.HasAnimation("AttaqueTete") && string.IsNullOrEmpty(_clipAttaqueTete))
+			_clipAttaqueTete = Pref("AttaqueTete");
 	}
 
 	private static T TrouverPremierNoeudDeType<T>(Node racine) where T : Node
@@ -4817,6 +5482,8 @@ public partial class BoeufSauvage : CharacterBody3D
 					}
 					if (!AnimationCompatibleAvecSkeleton(c, osLive))
 						continue;
+					if (ReequilibrerClipsYAlImport)
+						ReequilibrerEnfoncementVerticalClip(c, n.ToString());
 					copie.AddAnimation(n.ToString(), c);
 				}
 				if (copie.GetAnimationList().Count == 0) continue;
@@ -4845,6 +5512,8 @@ public partial class BoeufSauvage : CharacterBody3D
 						}
 						if (!AnimationCompatibleAvecSkeleton(c, osLive))
 							continue;
+						if (ReequilibrerClipsYAlImport)
+							ReequilibrerEnfoncementVerticalClip(c, n.ToString());
 						libLegacy.AddAnimation(n.ToString(), c);
 					}
 				}
@@ -5113,6 +5782,183 @@ public partial class BoeufSauvage : CharacterBody3D
 		if (bm.AlbedoTexture == null && textureDiffuse != null)
 			bm.AlbedoTexture = textureDiffuse;
 		bm.TextureFilter = BaseMaterial3D.TextureFilterEnum.LinearWithMipmaps;
+	}
+
+	private static bool PisteInfluenceHauteurCorps(string path)
+	{
+		if (string.IsNullOrEmpty(path))
+			return false;
+		string p = path.ToLowerInvariant();
+		if (p.Contains("foot") || p.Contains("toe") || p.Contains("hoof") || p.Contains("ankle")
+			|| p.Contains("knee") || p.Contains("genou") || p.Contains("pied") || p.Contains("sabot")
+			|| p.Contains("calf") || p.Contains("shin"))
+			return false;
+		if (p.Contains("modele"))
+			return true;
+		return p.Contains("root") || p.Contains("hips") || p.Contains("pelvis")
+			|| p.Contains("spine") || p.Contains("armature") || p.Contains("skeleton");
+	}
+
+	private static bool NomClipLocomotionRapide(string nomClip)
+	{
+		if (string.IsNullOrEmpty(nomClip))
+			return false;
+		string n = nomClip.ToLowerInvariant();
+		return n.Contains("run") || n.Contains("gallop") || n.Contains("course")
+			|| n.Contains("trot") || n.Contains("lope") || n.Contains("charge");
+	}
+
+	private float EstimerEnfoncementDepuisPistesPosition(Animation anim)
+	{
+		if (anim == null)
+			return 0f;
+		float minDelta = 0f;
+		bool refPose = false;
+		float refY = 0f;
+		for (int t = 0; t < anim.GetTrackCount(); t++)
+		{
+			if (anim.TrackGetType(t) != Animation.TrackType.Position3D)
+				continue;
+			if (!PisteInfluenceHauteurCorps(anim.TrackGetPath(t).ToString()))
+				continue;
+			int keyCount = anim.TrackGetKeyCount(t);
+			if (keyCount <= 0)
+				continue;
+			float y0 = ((Vector3)anim.TrackGetKeyValue(t, 0)).Y;
+			if (!refPose)
+			{
+				refY = y0;
+				refPose = true;
+			}
+			for (int k = 0; k < keyCount; k++)
+			{
+				float y = ((Vector3)anim.TrackGetKeyValue(t, k)).Y;
+				minDelta = Mathf.Min(minDelta, y - refY);
+			}
+		}
+		return refPose ? Mathf.Max(0f, -minDelta) : 0f;
+	}
+
+	private float EstimerEnfoncementClip(string nomClip)
+	{
+		if (_animationPlayer == null || string.IsNullOrEmpty(nomClip) || !_animationPlayer.HasAnimation(nomClip))
+			return 0f;
+		Animation anim = _animationPlayer.GetAnimation(nomClip);
+		return EstimerEnfoncementDepuisPistesPosition(anim);
+	}
+
+	private static void ReequilibrerEnfoncementVerticalClip(Animation anim, string nomClip)
+	{
+		if (anim == null)
+			return;
+		float enfoncement = 0f;
+		for (int t = 0; t < anim.GetTrackCount(); t++)
+		{
+			if (anim.TrackGetType(t) != Animation.TrackType.Position3D)
+				continue;
+			if (!PisteInfluenceHauteurCorps(anim.TrackGetPath(t).ToString()))
+				continue;
+			int keyCount = anim.TrackGetKeyCount(t);
+			if (keyCount <= 0)
+				continue;
+			float y0 = ((Vector3)anim.TrackGetKeyValue(t, 0)).Y;
+			for (int k = 0; k < keyCount; k++)
+			{
+				float y = ((Vector3)anim.TrackGetKeyValue(t, k)).Y;
+				enfoncement = Mathf.Max(enfoncement, y0 - y);
+			}
+		}
+		if (enfoncement < 0.012f)
+			return;
+		float correction = enfoncement * 0.75f;
+		for (int t = 0; t < anim.GetTrackCount(); t++)
+		{
+			if (anim.TrackGetType(t) != Animation.TrackType.Position3D)
+				continue;
+			if (!PisteInfluenceHauteurCorps(anim.TrackGetPath(t).ToString()))
+				continue;
+			int keyCount = anim.TrackGetKeyCount(t);
+			for (int k = 0; k < keyCount; k++)
+			{
+				Vector3 v = (Vector3)anim.TrackGetKeyValue(t, k);
+				v.Y += correction;
+				anim.TrackSetKeyValue(t, k, v);
+			}
+		}
+	}
+
+	private void AnalyserCompensationsEnfoncementClipsLocomotion()
+	{
+		_compensationYIdle = 0f;
+		_compensationYMarche = CompensationSolMarcheManuelle;
+		_compensationYCourse = 0f;
+		_compensationYTrot = 0f;
+		_compensationYBroutage = 0f;
+		if (_animationPlayer == null)
+			return;
+
+		float MesurerEnfoncementClip(string clip, float manuel)
+		{
+			if (!AutoCompenserEnfoncementClipsLocomotion)
+				return manuel;
+			float est = EstimerEnfoncementClip(clip);
+			if (est < 0.01f)
+				return manuel;
+			return manuel > 0f ? Mathf.Max(manuel, est * 0.55f) : est * 0.55f;
+		}
+
+		if (!string.IsNullOrEmpty(_clipIdle))
+			_compensationYIdle = MesurerEnfoncementClip(_clipIdle, 0f);
+		if (!string.IsNullOrEmpty(_clipMarche))
+			_compensationYMarche = MesurerEnfoncementClip(_clipMarche, CompensationSolMarcheManuelle);
+		if (!string.IsNullOrEmpty(_clipCourse))
+			_compensationYCourse = MesurerEnfoncementClip(_clipCourse, 0f);
+		if (!string.IsNullOrEmpty(_clipTrot))
+			_compensationYTrot = MesurerEnfoncementClip(_clipTrot, 0f);
+		if (!string.IsNullOrEmpty(_clipManger))
+			_compensationYBroutage = MesurerEnfoncementClip(_clipManger, 0f);
+	}
+
+	private float CalculerCompensationSolCible()
+	{
+		if (!AutoCompenserEnfoncementClipsLocomotion || _modeleVisuel == null || _etat == EtatBoeuf.Mort)
+			return 0f;
+		if (_dansEau || _tempsVerrouAnimationCombat > 0.01f || _impactChargeJoueurPlanifie)
+			return 0f;
+		if (_etat == EtatBoeuf.Broutage)
+			return Mathf.Min(_compensationYBroutage, CompensationSolMaxCourse * 0.35f);
+
+		float blend = float.IsNaN(_dernierBlendAnimation) ? 0f : Mathf.Clamp(_dernierBlendAnimation, 0f, 1f);
+		if (_etat == EtatBoeuf.Fuite || _etat == EtatBoeuf.Charge)
+			blend = Mathf.Max(blend, 0.65f);
+
+		// Marche / idle = référence au sol ; on ne relève qu'en course (delta).
+		if (blend < 0.42f)
+			return 0f;
+
+		float refSol = Mathf.Min(_compensationYMarche, _compensationYIdle);
+		float extraCourse = Mathf.Max(0f, _compensationYCourse - refSol);
+		float extraTrot = Mathf.Max(0f, _compensationYTrot - refSol);
+		float extra = extraCourse;
+		if (blend > 0.55f && extraTrot > 0f)
+			extra = Mathf.Lerp(extraCourse, extraTrot, Mathf.Clamp((blend - 0.55f) / 0.45f, 0f, 1f));
+
+		float t = Mathf.Clamp((blend - 0.42f) / 0.58f, 0f, 1f);
+		float manuel = CompensationSolCourseManuelle * t;
+		return Mathf.Min(extra * t + manuel, CompensationSolMaxCourse);
+	}
+
+	private void MettreAJourCompensationEnfoncementSol(float dt)
+	{
+		if (_modeleVisuel == null || !_geneTailleInitialise)
+			return;
+		float cible = CalculerCompensationSolCible();
+		float lissage = Mathf.Clamp(VitesseLissageCompensationSol * dt, 0f, 1f);
+		_offsetVisuelSolActuel = Mathf.Lerp(_offsetVisuelSolActuel, cible, lissage);
+		Transform3D baseT = _transformModeleBase;
+		baseT.Basis = baseT.Basis.Scaled(Vector3.One * TailleEffective);
+		baseT.Origin += Vector3.Up * (_offsetVisuelSolActuel * TailleEffective);
+		_modeleVisuel.Transform = baseT;
 	}
 
 	private void SecuriserPositionSol()

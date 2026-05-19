@@ -70,8 +70,11 @@ public partial class GestionnaireFauneBoeufs : Node3D
 
 	public override void _Process(double delta)
 	{
+		if (GetTree().Paused) return;
 		if (ResoudreSceneFemelle() == null && SceneTaureau == null) return;
-		if (_gestionnaireMonde == null || _joueur == null) return;
+		if (_gestionnaireMonde == null || !GodotObject.IsInstanceValid(_gestionnaireMonde)) return;
+		_joueur = _gestionnaireMonde.ObtenirJoueurSiValide();
+		if (_joueur == null) return;
 		BasculerContexteDimensionSiNecessaire();
 		// APISARA : aucune faune bovine — purge si passage Alpha → Abysse, pas de spawn ni streaming.
 		if (_gestionnaireMonde.EstDimensionLocaleAbysse())
@@ -297,6 +300,7 @@ public partial class GestionnaireFauneBoeufs : Node3D
 	/// </summary>
 	private void EvaluerChunksEtSpawnerTroupeaux()
 	{
+		if (_joueur == null || !GodotObject.IsInstanceValid(_joueur)) return;
 		_boeufs.RemoveAll(b => !IsInstanceValid(b));
 		MettreAJourBanqueDepuisActifs();
 		Vector2I chunkJoueur = Gestionnaire_Monde.WorldToChunkCoord(_joueur.GlobalPosition, _gestionnaireMonde.TailleChunk);
@@ -516,7 +520,7 @@ public partial class GestionnaireFauneBoeufs : Node3D
 		if (!_gestionnaireMonde.ChunkEstCharge(chunk))
 			return false;
 		int tc = Mathf.Max(1, _gestionnaireMonde.TailleChunk);
-		float yRef = _joueur != null ? _joueur.GlobalPosition.Y : 0f;
+		float yRef = _gestionnaireMonde.ObtenirPositionJoueurOuSpawn().Y;
 		Vector3 centre = new Vector3(chunk.X * tc + tc * 0.5f, yRef, chunk.Y * tc + tc * 0.5f);
 		if (!_gestionnaireMonde.EstCollisionTerrainChunkPretPourPoint(centre))
 			return false;
@@ -588,10 +592,11 @@ public partial class GestionnaireFauneBoeufs : Node3D
 
 	private void SynchroniserStreamingFaune()
 	{
-		if (_gestionnaireMonde == null || _joueur == null) return;
+		if (_gestionnaireMonde == null || _joueur == null || !GodotObject.IsInstanceValid(_joueur)) return;
 		MettreAJourBanqueDepuisActifs();
 
-		Vector2I chunkJoueur = Gestionnaire_Monde.WorldToChunkCoord(_joueur.GlobalPosition, _gestionnaireMonde.TailleChunk);
+		Vector3 posJoueur = _joueur.GlobalPosition;
+		Vector2I chunkJoueur = Gestionnaire_Monde.WorldToChunkCoord(posJoueur, _gestionnaireMonde.TailleChunk);
 		int rayonActif = CalculerRayonActivationFauneChunks();
 
 		_scratchBoeufsADecharger.Clear();

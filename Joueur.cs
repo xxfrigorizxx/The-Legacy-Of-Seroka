@@ -104,6 +104,8 @@ public partial class Joueur : CharacterBody3D
     public const byte TagVarianteIntestin = 18;
     /// <summary>Tag réservé à la filière intestin solide (slots identiques, pile x2).</summary>
     public const byte TagVarianteIntestinSolide = 19;
+    /// <summary>Tag corde / bandage mixte : intestin nettoyé + fibre (herbe, liane ou boyau).</summary>
+    public const byte TagVarianteCordeIntestinMixe = 20;
     /// <summary>Alias historique (= <see cref="IdObjetSacTier0"/>).</summary>
     public const int IdObjetSacDos = 101;
     /// <summary>Ceinture tissÃ©e (102) : slot corps uniquement, sans stockage.</summary>
@@ -162,6 +164,10 @@ public partial class Joueur : CharacterBody3D
     public const int IdObjetHachePierreTier1 = 132;
     /// <summary>Atelle de jambe (artisanat de base).</summary>
     public const int IdObjetAtelleJambe = 133;
+    /// <summary>Atelle de bras (artisanat de base).</summary>
+    public const int IdObjetAtelleBras = 134;
+    /// <summary>Bandage tier 1 (ligatures, texture héritée du liage crafté).</summary>
+    public const int IdObjetBandageTier1 = 135;
     /// <summary>Objet posé au sol : quantité dans l’inventaire au ramassage (>1).</summary>
     public const string MetaQuantiteObjetPose = "QuantiteObjetPose";
     /// <summary>Rack Ã  bÃ¢tons (stockage dÃ©diÃ©).</summary>
@@ -524,6 +530,15 @@ public partial class Joueur : CharacterBody3D
     private Label _labelEndurance;
     private PanelContainer _panneauSelectionAtelleJambe;
     private Label _labelSelectionAtelleJambe;
+    private PanelContainer _panneauSelectionAtelleBras;
+    private Label _labelSelectionAtelleBras;
+    private ColorRect _overlayDegatsRouge;
+    private ShaderMaterial _materiauOverlayDegatsRouge;
+    private Tween _tweenOverlayDegatsRouge;
+    private ColorRect _overlayVisionTete;
+    private ShaderMaterial _materiauOverlayVisionTete;
+    private const float IntensiteMaxFlouVisionTete = 2.8f;
+    private const float IntensiteMaxObscurcissementVisionTete = 0.62f;
     [ExportGroup("Diagnostic performance")]
     [Export] public bool ActiverProfilagePerfJoueur = false;
     [Export(PropertyHint.Range, "0.2,10,0.1")] public float IntervalleLogProfilageJoueurSec = 2.0f;
@@ -539,6 +554,8 @@ public partial class Joueur : CharacterBody3D
     private float _derniereValeurBarreEnduranceHud = float.NaN;
     private readonly Dictionary<int, StyleBoxFlat> _cacheStyleSlotsHud = new Dictionary<int, StyleBoxFlat>();
     private MeshInstance3D _objetEnMain;
+    /// <summary>Dernière identité (main active + slot) affichée sur _objetEnMain — invalide le cache visuel si changement.</summary>
+    private int _derniereSignatureGlobaleObjetTenu = int.MinValue;
     private readonly HashSet<ulong> _instanceIdsVisuelsMasquesFps = new();
     private const string MetaSignatureDague105 = "SigDague105";
     private const string MetaSignatureHachette106 = "SigHachette106";
@@ -564,6 +581,8 @@ public partial class Joueur : CharacterBody3D
     private const string MetaSignatureMortierPilon130 = "SigMortierPilon130";
     private const string MetaSignatureTableAnalyse131 = "SigTableAnalyse131";
     private const string MetaSignatureAtelleJambe133 = "SigAtelleJambe133";
+    private const string MetaSignatureAtelleBras134 = "SigAtelleBras134";
+    private const string MetaSignatureBandageTier1135 = "SigBandageTier1135";
     private const string MetaSignatureCarnet114 = "SigCarnet114";
     private const string MetaSignatureBaie35 = "SigBaie35";
     private SubViewportContainer _viewportSlotGauche;
@@ -613,6 +632,9 @@ public partial class Joueur : CharacterBody3D
     private float _timerAtelleJambeGaucheRestant;
     private float _timerAtelleJambeDroiteRestant;
     private bool _selectionAtelleJambeEnCours;
+    private float _timerAtelleBrasGaucheRestant;
+    private float _timerAtelleBrasDroitRestant;
+    private bool _selectionAtelleBrasEnCours;
     private bool _etatAuSolPrecedent;
     private float _sommetYChuteCourante;
     private readonly SectionSanteCorps[] _cacheSanteCorps = new SectionSanteCorps[6];
@@ -708,6 +730,18 @@ public partial class Joueur : CharacterBody3D
     private float _cooldownGainFaimClicDroit;
     private float _cooldownEnjambementObstacle;
     private bool _mortJoueurEnCours;
+    private CanvasLayer _layerMortRecreation;
+    private Control _panneauMortCitation;
+    private Control _panneauMortChoix;
+    private Control _panneauMortCreation;
+    private LineEdit _lineNomMortRecreation;
+    private Label _labelErreurMortRecreation;
+    private Label _labelRaceMortRecreation;
+    private Label _labelSexeMortRecreation;
+    private RaceJoueur _raceMortRecreation = RaceJoueur.Humain;
+    private SexeJoueur _sexeMortRecreation = SexeJoueur.Masculin;
+    private const string CitationMortNature =
+        "La nature ne pleure pas les espèces stériles. Elle les remplace.";
 
     public override void _Ready()
     {
@@ -760,6 +794,7 @@ public partial class Joueur : CharacterBody3D
         _slotDroite = GetParent().GetNode<Panel>("Gestionnaire_Monde/HUD_Inventaire/Conteneur_Ancrage/Boite_Slots/Slot_Main_Droite");
         ResoudreSlotCarnetHud();
         InsererNomsAuDessusSlotsHud();
+        AssurerOverlayDegatsRouge();
 
         CreerPreviewsInventaire3D();
         InitialiserCarnetSavoirSysteme();
@@ -870,7 +905,14 @@ public partial class Joueur : CharacterBody3D
     private const float RatioEtatOsSeuilFelure = 0.70f;
     private const float RatioIntegriteOsFixerFelure = 0.55f;
     private const float RatioIntegriteOsFixerCasse = 0.05f;
+    /// <summary>En dessous ou égal : contribution jambe réduite (équivalent fêlure os).</summary>
+    private const float RatioPvSeuilFelureMembre = 0.50f;
+    private const int DegatsChargeBovinCoupDeTete = 5;
+    private const int DegatsChargeBovinCoupDeSabot = 6;
     private const float DureeAtelleJambeSec = 180f;
+    private const float DureeAtelleBrasSec = 180f;
+    private const float DureeFlashDegatsBovinSec = 0.26f;
+    private const float IntensiteMaxFlashDegatsBovin = 0.85f;
 
     private int ObtenirConstitutionEffective()
     {
@@ -945,6 +987,51 @@ public partial class Joueur : CharacterBody3D
         return EtatOsSimple.BonEtat;
     }
 
+    private float ObtenirPvActuelSectionCorps(string cleSection)
+    {
+        string section = NormaliserCleSectionCorps(cleSection);
+        return section switch
+        {
+            SectionCorpsTete => _pvTete,
+            SectionCorpsBrasGauche => _pvBrasGauche,
+            SectionCorpsBrasDroit => _pvBrasDroit,
+            SectionCorpsJambeGauche => _pvJambeGauche,
+            SectionCorpsJambeDroite => _pvJambeDroite,
+            _ => _pvTorse
+        };
+    }
+
+    private float ObtenirRatioPvSectionCorps(string cleSection)
+    {
+        float max = ObtenirPvMaxSectionCorps(cleSection);
+        if (max <= 0.001f)
+            return 1f;
+        return Mathf.Clamp(ObtenirPvActuelSectionCorps(cleSection) / max, 0f, 1f);
+    }
+
+    private int CalculerDegatsImpactZonePct(string cleSection, float ratioPct)
+    {
+        float max = ObtenirPvMaxSectionCorps(cleSection);
+        return Mathf.Max(1, Mathf.CeilToInt(max * Mathf.Clamp(ratioPct, 0.01f, 1f)));
+    }
+
+    private static EtatOsSimple EvaluerEtatMembreDepuisRatioPv(float ratioPv)
+    {
+        if (ratioPv <= 0f)
+            return EtatOsSimple.Casse;
+        if (ratioPv <= RatioPvSeuilFelureMembre)
+            return EtatOsSimple.Felure;
+        return EtatOsSimple.BonEtat;
+    }
+
+    /// <summary>Combine os + PV : le pire des deux états s'applique (les deux s'accumulent).</summary>
+    private EtatOsSimple EvaluerEtatEffectifMembre(string cleSection)
+    {
+        EtatOsSimple etatOs = EvaluerEtatOsSectionCorps(cleSection);
+        EtatOsSimple etatPv = EvaluerEtatMembreDepuisRatioPv(ObtenirRatioPvSectionCorps(cleSection));
+        return (EtatOsSimple)Mathf.Max((int)etatOs, (int)etatPv);
+    }
+
     private void DefinirEtatOsSectionCorps(string cleSection, EtatOsSimple etat)
     {
         float maxSection = Mathf.Max(1f, ObtenirIntegriteOsBaseSection(cleSection));
@@ -1014,6 +1101,227 @@ public partial class Joueur : CharacterBody3D
         AppliquerRisqueChuteSurJambe(SectionCorpsJambeDroite, chanceFissure, chanceCasse);
     }
 
+    private static bool SectionPeutRecevoirFractureOsAttaqueBovin(string section)
+    {
+        return section == SectionCorpsBrasGauche
+            || section == SectionCorpsBrasDroit
+            || section == SectionCorpsJambeGauche
+            || section == SectionCorpsJambeDroite;
+    }
+
+    public Vector3 ObtenirCentreHitboxMonde(string cleSection)
+    {
+        string section = NormaliserCleSectionCorps(cleSection);
+        foreach (Node enfant in GetChildren())
+        {
+            if (enfant is CollisionShape3D cs && cs.Shape != null
+                && NormaliserCleSectionCorps(cs.Name) == section)
+                return cs.GlobalPosition;
+        }
+        return GlobalPosition + Vector3.Up * 0.9f;
+    }
+
+    /// <summary>Impact bovin : forme touchée + contexte coup de tête (haut) vs ruade (bas / arrière).</summary>
+    public string ResoudreSectionCorpsDepuisImpactCharge(Vector3 pointMonde, int indiceFormePhysique = -1, bool coupDeTete = false)
+    {
+        if (indiceFormePhysique >= 0)
+        {
+            uint proprietaire = ShapeFindOwner(indiceFormePhysique);
+            if (proprietaire != uint.MaxValue)
+            {
+                GodotObject noeud = ShapeOwnerGetOwner(proprietaire);
+                if (noeud is CollisionShape3D cs)
+                {
+                    string section = NormaliserCleSectionCorps(cs.Name);
+                    return CorrigerSectionChargeBovin(pointMonde, section, coupDeTete);
+                }
+            }
+        }
+        return ResoudreSectionCorpsDepuisPointMonde(pointMonde, coupDeTete);
+    }
+
+    private string CorrigerSectionChargeBovin(Vector3 pointMonde, string section, bool coupDeTete)
+    {
+        section = NormaliserCleSectionCorps(section);
+        float hauteurRelative = pointMonde.Y - GlobalPosition.Y;
+        if (coupDeTete)
+        {
+            if ((section == SectionCorpsJambeGauche || section == SectionCorpsJambeDroite)
+                && hauteurRelative >= 0.58f)
+                return hauteurRelative >= 0.92f ? SectionCorpsTete : SectionCorpsTorse;
+            if ((section == SectionCorpsBrasGauche || section == SectionCorpsBrasDroit)
+                && hauteurRelative >= 1.05f)
+                return SectionCorpsTete;
+        }
+        else
+        {
+            if (section == SectionCorpsTete && hauteurRelative < 0.82f)
+                return SectionCorpsTorse;
+        }
+        return section;
+    }
+
+    private static float ObtenirBiasDistanceResolutionSection(string section)
+    {
+        if (section == SectionCorpsTorse)
+            return 1.18f;
+        if (section == SectionCorpsTete)
+            return 1.08f;
+        if (section == SectionCorpsBrasGauche || section == SectionCorpsBrasDroit
+            || section == SectionCorpsJambeGauche || section == SectionCorpsJambeDroite)
+            return 0.82f;
+        return 1f;
+    }
+
+    private static float ObtenirBiasDistanceResolutionSectionCharge(bool coupDeTete, string section)
+    {
+        if (coupDeTete)
+        {
+            if (section == SectionCorpsTete)
+                return 0.68f;
+            if (section == SectionCorpsTorse)
+                return 0.82f;
+            if (section == SectionCorpsBrasGauche || section == SectionCorpsBrasDroit)
+                return 1.05f;
+            return 1.42f;
+        }
+        if (section == SectionCorpsJambeGauche || section == SectionCorpsJambeDroite)
+            return 0.78f;
+        if (section == SectionCorpsTorse)
+            return 0.95f;
+        if (section == SectionCorpsTete)
+            return 1.25f;
+        return 1.05f;
+    }
+
+    private static Vector3 PlusProchePointLocalSurForme(Vector3 local, Shape3D forme)
+    {
+        switch (forme)
+        {
+            case SphereShape3D sphere:
+            {
+                float len2 = local.LengthSquared();
+                if (len2 < 1e-8f)
+                    return new Vector3(0f, sphere.Radius, 0f);
+                return local.Normalized() * sphere.Radius;
+            }
+            case CapsuleShape3D capsule:
+            {
+                float r = capsule.Radius;
+                float half = capsule.Height * 0.5f;
+                float cylHalf = Mathf.Max(0f, half - r);
+                Vector3 p0 = new Vector3(0f, -cylHalf, 0f);
+                Vector3 p1 = new Vector3(0f, cylHalf, 0f);
+                Vector3 ab = p1 - p0;
+                float t = ab.LengthSquared() > 1e-8f
+                    ? Mathf.Clamp((local - p0).Dot(ab) / ab.LengthSquared(), 0f, 1f)
+                    : 0f;
+                Vector3 onAxis = p0 + ab * t;
+                Vector3 perp = local - onAxis;
+                float perpLen = perp.Length();
+                if (perpLen <= r)
+                    return local;
+                return onAxis + perp / perpLen * r;
+            }
+            default:
+                return Vector3.Zero;
+        }
+    }
+
+    /// <summary>Détermine la section touchée : point le plus proche sur chaque hitbox (membres favorisés vs torse/tête).</summary>
+    public string ResoudreSectionCorpsDepuisPointMonde(Vector3 pointMonde, bool? biaisChargeBovinCoupDeTete = null)
+    {
+        string section = SectionCorpsTorse;
+        float meilleurScore = float.MaxValue;
+        foreach (Node enfant in GetChildren())
+        {
+            if (enfant is not CollisionShape3D hitbox || hitbox.Shape == null)
+                continue;
+            string cle = NormaliserCleSectionCorps(hitbox.Name);
+            Transform3D xf = hitbox.GlobalTransform;
+            Vector3 local = xf.AffineInverse() * pointMonde;
+            Vector3 procheLocal = PlusProchePointLocalSurForme(local, hitbox.Shape);
+            Vector3 procheMonde = xf * procheLocal;
+            float bias = biaisChargeBovinCoupDeTete.HasValue
+                ? ObtenirBiasDistanceResolutionSectionCharge(biaisChargeBovinCoupDeTete.Value, cle)
+                : ObtenirBiasDistanceResolutionSection(cle);
+            float score = procheMonde.DistanceSquaredTo(pointMonde) * bias;
+            if (score >= meilleurScore)
+                continue;
+            meilleurScore = score;
+            section = cle;
+        }
+        if (biaisChargeBovinCoupDeTete.HasValue)
+            section = CorrigerSectionChargeBovin(pointMonde, section, biaisChargeBovinCoupDeTete.Value);
+        return section;
+    }
+
+    /// <summary>
+    /// Attaque bovin sur une section précise : fracture os uniquement bras/jambes (5 % fêlure ou fêlure→cassé).
+    /// </summary>
+    public void AppliquerRisqueAttaqueBovinSurOsSection(string sectionCorps, float chancePct = 5f)
+    {
+        string section = NormaliserCleSectionCorps(sectionCorps);
+        if (!SectionPeutRecevoirFractureOsAttaqueBovin(section))
+            return;
+        if (!TirageChanceReussit(chancePct))
+            return;
+
+        EtatOsSimple etat = EvaluerEtatOsSectionCorps(section);
+        if (etat == EtatOsSimple.Casse)
+            return;
+
+        string nom = NomSectionCorpsPourLog(section);
+        if (etat == EtatOsSimple.Felure)
+        {
+            DefinirEtatOsSectionCorps(section, EtatOsSimple.Casse);
+            GD.Print($"ZERO-K : Attaque bovin -> {nom} : os casse.");
+        }
+        else
+        {
+            DefinirEtatOsSectionCorps(section, EtatOsSimple.Felure);
+            GD.Print($"ZERO-K : Attaque bovin -> {nom} : os felure.");
+        }
+    }
+
+    /// <summary>Impact charge bovin : coup de tête 5 PV, sabot 6 PV sur la zone touchée (hitbox du raycast).</summary>
+    public void RecevoirImpactChargeBovin(
+        Vector3 pointImpactMonde,
+        Vector3 directionPousseeHorizontale,
+        float impulsionMetresParSeconde,
+        bool estCoupDeTete,
+        float chanceFractureOsPct = 5f,
+        int indiceFormeImpactPhysique = -1)
+    {
+        string section = ResoudreSectionCorpsDepuisImpactCharge(pointImpactMonde, indiceFormeImpactPhysique, estCoupDeTete);
+        int degatsZone = estCoupDeTete ? DegatsChargeBovinCoupDeTete : DegatsChargeBovinCoupDeSabot;
+        bool peutFracturerOs = SectionPeutRecevoirFractureOsAttaqueBovin(section);
+        AppliquerDegatsSectionCorps(section, degatsZone, affecterOs: peutFracturerOs);
+        AppliquerRisqueAttaqueBovinSurOsSection(section, chanceFractureOsPct);
+        AppliquerPousseeBovin(directionPousseeHorizontale, impulsionMetresParSeconde);
+        GD.Print($"ZERO-K : Charge bovin -> impact sur {NomSectionCorpsPourLog(section)}.");
+    }
+
+    private static string NomSectionCorpsPourLog(string section)
+    {
+        return section switch
+        {
+            SectionCorpsTete => "tete",
+            SectionCorpsBrasGauche => "bras gauche",
+            SectionCorpsBrasDroit => "bras droit",
+            SectionCorpsJambeGauche => "jambe gauche",
+            SectionCorpsJambeDroite => "jambe droite",
+            _ => "torse"
+        };
+    }
+
+    /// <summary>Compatibilité : applique le risque sur les deux bras (ancien comportement).</summary>
+    public void AppliquerRisqueAttaqueBovinSurOsBras(float chancePctParBras = 5f)
+    {
+        AppliquerRisqueAttaqueBovinSurOsSection(SectionCorpsBrasGauche, chancePctParBras);
+        AppliquerRisqueAttaqueBovinSurOsSection(SectionCorpsBrasDroit, chancePctParBras);
+    }
+
     private void SuivreEtAppliquerRisquesChuteOsJambes(bool estDansEau)
     {
         bool estAuSol = IsOnFloor();
@@ -1053,6 +1361,24 @@ public partial class Joueur : CharacterBody3D
     {
         SlotInventaire main = MainGaucheEstActive ? MainGauche : MainDroite;
         return !main.EstVide && main.ID == IdObjetAtelleJambe;
+    }
+
+    private float ObtenirTimerAtelleBras(string sectionBras)
+        => sectionBras == SectionCorpsBrasGauche ? _timerAtelleBrasGaucheRestant : _timerAtelleBrasDroitRestant;
+
+    private void DefinirTimerAtelleBras(string sectionBras, float valeur)
+    {
+        float v = Mathf.Max(0f, valeur);
+        if (sectionBras == SectionCorpsBrasGauche)
+            _timerAtelleBrasGaucheRestant = v;
+        else
+            _timerAtelleBrasDroitRestant = v;
+    }
+
+    private bool MainActiveContientAtelleBras()
+    {
+        SlotInventaire main = MainGaucheEstActive ? MainGauche : MainDroite;
+        return !main.EstVide && main.ID == IdObjetAtelleBras;
     }
 
     private static string FormaterTempsAtelleMmSs(float tempsSec)
@@ -1256,12 +1582,377 @@ public partial class Joueur : CharacterBody3D
 
     private bool TraiterClicDroitAtelleJambe()
     {
-        if (_selectionAtelleJambeEnCours)
+        if (_selectionAtelleJambeEnCours || _selectionBandageEnCours)
             return true;
         if (!MainActiveContientAtelleJambe())
             return false;
 
         OuvrirSelectionAtelleJambe();
+        return true;
+    }
+
+    private void AssurerUiSelectionAtelleBras()
+    {
+        if (_panneauSelectionAtelleBras != null && GodotObject.IsInstanceValid(_panneauSelectionAtelleBras))
+            return;
+
+        Node parentUi = GetParent()?.GetNodeOrNull<CanvasLayer>("Gestionnaire_Monde/HUD_Inventaire");
+        if (parentUi == null && _racineMenuAnatomieViewport != null && GodotObject.IsInstanceValid(_racineMenuAnatomieViewport))
+            parentUi = _racineMenuAnatomieViewport;
+        if (parentUi == null)
+            return;
+
+        _panneauSelectionAtelleBras = new PanelContainer
+        {
+            Name = "PanneauSelectionAtelleBras",
+            Visible = false,
+            MouseFilter = Control.MouseFilterEnum.Ignore
+        };
+        _panneauSelectionAtelleBras.SetAnchorsPreset(Control.LayoutPreset.CenterTop);
+        _panneauSelectionAtelleBras.OffsetLeft = -260f;
+        _panneauSelectionAtelleBras.OffsetTop = 26f;
+        _panneauSelectionAtelleBras.OffsetRight = 260f;
+        _panneauSelectionAtelleBras.OffsetBottom = 164f;
+
+        var col = new VBoxContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
+        col.AddThemeConstantOverride("separation", 5);
+        _panneauSelectionAtelleBras.AddChild(col);
+
+        var titre = new Label
+        {
+            Text = "ATELLE BRAS - CHOISIR CIBLE",
+            HorizontalAlignment = HorizontalAlignment.Center,
+            MouseFilter = Control.MouseFilterEnum.Ignore
+        };
+        titre.AddThemeFontSizeOverride("font_size", 14);
+        col.AddChild(titre);
+
+        _labelSelectionAtelleBras = new Label
+        {
+            AutowrapMode = TextServer.AutowrapMode.WordSmart,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            MouseFilter = Control.MouseFilterEnum.Ignore
+        };
+        _labelSelectionAtelleBras.AddThemeFontSizeOverride("font_size", 12);
+        col.AddChild(_labelSelectionAtelleBras);
+
+        parentUi.AddChild(_panneauSelectionAtelleBras);
+    }
+
+    private void AssurerOverlayDegatsRouge()
+    {
+        if (_overlayDegatsRouge != null && GodotObject.IsInstanceValid(_overlayDegatsRouge))
+            return;
+
+        CanvasLayer hudInventaire = GetParent()?.GetNodeOrNull<CanvasLayer>("Gestionnaire_Monde/HUD_Inventaire");
+        if (hudInventaire == null)
+            return;
+
+        _overlayDegatsRouge = hudInventaire.GetNodeOrNull<ColorRect>("OverlayDegatsRouge");
+        if (_overlayDegatsRouge == null)
+        {
+            _overlayDegatsRouge = new ColorRect
+            {
+                Name = "OverlayDegatsRouge",
+                Color = Colors.White,
+                MouseFilter = Control.MouseFilterEnum.Ignore,
+                Visible = false,
+                ZIndex = 300
+            };
+            _overlayDegatsRouge.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+            _overlayDegatsRouge.OffsetLeft = 0f;
+            _overlayDegatsRouge.OffsetTop = 0f;
+            _overlayDegatsRouge.OffsetRight = 0f;
+            _overlayDegatsRouge.OffsetBottom = 0f;
+            hudInventaire.AddChild(_overlayDegatsRouge);
+        }
+
+        _materiauOverlayDegatsRouge = _overlayDegatsRouge.Material as ShaderMaterial;
+        if (_materiauOverlayDegatsRouge == null)
+        {
+            var shader = new Shader();
+            shader.Code = @"
+shader_type canvas_item;
+
+uniform vec4 edge_color : source_color = vec4(0.82, 0.06, 0.06, 1.0);
+uniform float edge_size = 0.13;
+uniform float softness = 0.08;
+uniform float intensity : hint_range(0.0, 1.0) = 0.0;
+
+void fragment()
+{
+    vec2 uv = UV;
+    float d = min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y));
+    float border = 1.0 - smoothstep(edge_size, edge_size + softness, d);
+    COLOR = vec4(edge_color.rgb, border * intensity);
+}
+";
+            _materiauOverlayDegatsRouge = new ShaderMaterial { Shader = shader };
+            _overlayDegatsRouge.Material = _materiauOverlayDegatsRouge;
+        }
+        _materiauOverlayDegatsRouge.SetShaderParameter("intensity", 0f);
+    }
+
+    private void AssurerOverlayVisionTete()
+    {
+        if (_overlayVisionTete != null && GodotObject.IsInstanceValid(_overlayVisionTete))
+            return;
+
+        CanvasLayer hudInventaire = GetParent()?.GetNodeOrNull<CanvasLayer>("Gestionnaire_Monde/HUD_Inventaire");
+        if (hudInventaire == null)
+            return;
+
+        _overlayVisionTete = hudInventaire.GetNodeOrNull<ColorRect>("OverlayVisionTete");
+        if (_overlayVisionTete == null)
+        {
+            _overlayVisionTete = new ColorRect
+            {
+                Name = "OverlayVisionTete",
+                Color = Colors.White,
+                MouseFilter = Control.MouseFilterEnum.Ignore,
+                Visible = false,
+                ZIndex = 280
+            };
+            _overlayVisionTete.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+            hudInventaire.AddChild(_overlayVisionTete);
+        }
+
+        _materiauOverlayVisionTete = _overlayVisionTete.Material as ShaderMaterial;
+        if (_materiauOverlayVisionTete == null)
+        {
+            var shader = new Shader();
+            shader.Code = @"
+shader_type canvas_item;
+
+uniform sampler2D screen_texture : hint_screen_texture, repeat_disable, filter_linear_mipmap;
+uniform float blur_strength : hint_range(0.0, 4.0) = 0.0;
+uniform float darken_strength : hint_range(0.0, 1.0) = 0.0;
+uniform float vignette_strength : hint_range(0.0, 1.0) = 0.0;
+
+void fragment()
+{
+    vec2 uv = SCREEN_UV;
+    vec2 px = SCREEN_PIXEL_SIZE * blur_strength * 4.0;
+    vec3 col = texture(screen_texture, uv).rgb * 0.2270270270;
+    col += texture(screen_texture, uv + vec2(px.x, 0.0)).rgb * 0.1945945946;
+    col += texture(screen_texture, uv - vec2(px.x, 0.0)).rgb * 0.1945945946;
+    col += texture(screen_texture, uv + vec2(0.0, px.y)).rgb * 0.1945945946;
+    col += texture(screen_texture, uv - vec2(0.0, px.y)).rgb * 0.1945945946;
+    col += texture(screen_texture, uv + px).rgb * 0.1216216216;
+    col += texture(screen_texture, uv - px).rgb * 0.1216216216;
+    col += texture(screen_texture, uv + vec2(px.x, -px.y)).rgb * 0.1216216216;
+    col += texture(screen_texture, uv + vec2(-px.x, px.y)).rgb * 0.1216216216;
+
+    col *= 1.0 - darken_strength * 0.72;
+    float d = distance(uv, vec2(0.5));
+    col *= 1.0 - vignette_strength * smoothstep(0.2, 0.92, d);
+
+    float alpha = max(blur_strength * 0.08, darken_strength * 0.35);
+    COLOR = vec4(col, alpha);
+}
+";
+            _materiauOverlayVisionTete = new ShaderMaterial { Shader = shader };
+            _overlayVisionTete.Material = _materiauOverlayVisionTete;
+        }
+
+        _materiauOverlayVisionTete.SetShaderParameter("blur_strength", 0f);
+        _materiauOverlayVisionTete.SetShaderParameter("darken_strength", 0f);
+        _materiauOverlayVisionTete.SetShaderParameter("vignette_strength", 0f);
+    }
+
+    private float ObtenirRatioPvTete() => ObtenirRatioPvSectionCorps(SectionCorpsTete);
+
+    /// <summary>Tête ≤ 50 % PV : vision floue et assombrie (intensité croît quand les PV baissent).</summary>
+    private void MettreAJourEffetVisionTete()
+    {
+        if (_mortJoueurEnCours)
+        {
+            if (_overlayVisionTete != null && GodotObject.IsInstanceValid(_overlayVisionTete))
+                _overlayVisionTete.Visible = false;
+            return;
+        }
+
+        float ratioTete = ObtenirRatioPvTete();
+        float severite = 0f;
+        if (ratioTete <= RatioPvSeuilFelureMembre)
+            severite = 1f - Mathf.Clamp(ratioTete / RatioPvSeuilFelureMembre, 0f, 1f);
+
+        if (severite <= 0.001f)
+        {
+            if (_overlayVisionTete != null && GodotObject.IsInstanceValid(_overlayVisionTete))
+                _overlayVisionTete.Visible = false;
+            return;
+        }
+
+        AssurerOverlayVisionTete();
+        if (_overlayVisionTete == null || !GodotObject.IsInstanceValid(_overlayVisionTete) || _materiauOverlayVisionTete == null)
+            return;
+
+        _overlayVisionTete.Visible = true;
+        _materiauOverlayVisionTete.SetShaderParameter("blur_strength", severite * IntensiteMaxFlouVisionTete);
+        _materiauOverlayVisionTete.SetShaderParameter("darken_strength", severite * IntensiteMaxObscurcissementVisionTete);
+        _materiauOverlayVisionTete.SetShaderParameter("vignette_strength", severite * 0.85f);
+    }
+
+    private void JouerFlashDegatsBovin()
+    {
+        AssurerOverlayDegatsRouge();
+        if (_overlayDegatsRouge == null || !GodotObject.IsInstanceValid(_overlayDegatsRouge) || _materiauOverlayDegatsRouge == null)
+            return;
+
+        _tweenOverlayDegatsRouge?.Kill();
+        _overlayDegatsRouge.Visible = true;
+        _materiauOverlayDegatsRouge.SetShaderParameter("intensity", IntensiteMaxFlashDegatsBovin);
+        _tweenOverlayDegatsRouge = CreateTween();
+        _tweenOverlayDegatsRouge.TweenProperty(_materiauOverlayDegatsRouge, "shader_parameter/intensity", 0f, DureeFlashDegatsBovinSec);
+        _tweenOverlayDegatsRouge.Finished += () =>
+        {
+            if (_overlayDegatsRouge != null && GodotObject.IsInstanceValid(_overlayDegatsRouge))
+                _overlayDegatsRouge.Visible = false;
+        };
+    }
+
+    private void RafraichirTexteSelectionAtelleBras()
+    {
+        if (_labelSelectionAtelleBras == null || !GodotObject.IsInstanceValid(_labelSelectionAtelleBras))
+            return;
+
+        EtatOsSimple etatG = EvaluerEtatOsSectionCorps(SectionCorpsBrasGauche);
+        EtatOsSimple etatD = EvaluerEtatOsSectionCorps(SectionCorpsBrasDroit);
+        string timerG = _timerAtelleBrasGaucheRestant > 0f
+            ? $"Atelle active: {FormaterTempsAtelleMmSs(_timerAtelleBrasGaucheRestant)}"
+            : "Atelle: disponible";
+        string timerD = _timerAtelleBrasDroitRestant > 0f
+            ? $"Atelle active: {FormaterTempsAtelleMmSs(_timerAtelleBrasDroitRestant)}"
+            : "Atelle: disponible";
+
+        _labelSelectionAtelleBras.Text =
+            $"1) Bras gauche - Etat os: {NomEtatOsSimple(etatG)} - {timerG}\n" +
+            $"2) Bras droit - Etat os: {NomEtatOsSimple(etatD)} - {timerD}\n" +
+            "Touches: [1] gauche, [2] droite, [Echap] annuler";
+    }
+
+    private void ReparerUnStadeBrasDepuisAtelle(string sectionBras)
+    {
+        EtatOsSimple etat = EvaluerEtatOsSectionCorps(sectionBras);
+        if (etat == EtatOsSimple.Casse)
+            DefinirEtatOsSectionCorps(sectionBras, EtatOsSimple.Felure);
+        else if (etat == EtatOsSimple.Felure)
+            DefinirEtatOsSectionCorps(sectionBras, EtatOsSimple.BonEtat);
+    }
+
+    private void MettreAJourTimersAtellesBras(float dt)
+    {
+        if (_timerAtelleBrasGaucheRestant > 0f)
+        {
+            _timerAtelleBrasGaucheRestant = Mathf.Max(0f, _timerAtelleBrasGaucheRestant - dt);
+            if (_timerAtelleBrasGaucheRestant <= 0f)
+            {
+                ReparerUnStadeBrasDepuisAtelle(SectionCorpsBrasGauche);
+                GD.Print("ZERO-K : Atelle terminee sur bras gauche (+1 stade de reparation).");
+                RafraichirHUD();
+            }
+        }
+        if (_timerAtelleBrasDroitRestant > 0f)
+        {
+            _timerAtelleBrasDroitRestant = Mathf.Max(0f, _timerAtelleBrasDroitRestant - dt);
+            if (_timerAtelleBrasDroitRestant <= 0f)
+            {
+                ReparerUnStadeBrasDepuisAtelle(SectionCorpsBrasDroit);
+                GD.Print("ZERO-K : Atelle terminee sur bras droit (+1 stade de reparation).");
+                RafraichirHUD();
+            }
+        }
+
+        if (_selectionAtelleBrasEnCours)
+            RafraichirTexteSelectionAtelleBras();
+    }
+
+    private bool EssayerAppliquerAtelleSurBrasChoisi(string sectionBras)
+    {
+        if (!MainActiveContientAtelleBras())
+        {
+            GD.Print("ZERO-K : Plus d'atelle en main active.");
+            return false;
+        }
+
+        if (ObtenirTimerAtelleBras(sectionBras) > 0f)
+        {
+            GD.Print("ZERO-K : Ce bras a deja une atelle active. Attends la fin du timer.");
+            return false;
+        }
+
+        EtatOsSimple etat = EvaluerEtatOsSectionCorps(sectionBras);
+        if (etat == EtatOsSimple.BonEtat)
+        {
+            GD.Print("ZERO-K : Ce bras est deja en bon etat.");
+            return false;
+        }
+
+        DefinirTimerAtelleBras(sectionBras, DureeAtelleBrasSec);
+        ConsommerUneUniteMainActive();
+        RafraichirHUD();
+        string nomBras = sectionBras == SectionCorpsBrasGauche ? "gauche" : "droit";
+        GD.Print($"ZERO-K : Atelle appliquee sur bras {nomBras} (reparation dans 3 min).");
+        return true;
+    }
+
+    private void OuvrirSelectionAtelleBras()
+    {
+        _selectionAtelleBrasEnCours = true;
+        AssurerUiSelectionAtelleBras();
+        RafraichirTexteSelectionAtelleBras();
+        if (_panneauSelectionAtelleBras != null && GodotObject.IsInstanceValid(_panneauSelectionAtelleBras))
+            _panneauSelectionAtelleBras.Visible = true;
+        GD.Print("ZERO-K : Choix atelle -> touche 1 = bras gauche, touche 2 = bras droit, Echap = annuler.");
+    }
+
+    private void FermerSelectionAtelleBras(bool consommerEvenement)
+    {
+        _selectionAtelleBrasEnCours = false;
+        if (_panneauSelectionAtelleBras != null && GodotObject.IsInstanceValid(_panneauSelectionAtelleBras))
+            _panneauSelectionAtelleBras.Visible = false;
+        if (consommerEvenement)
+            GetViewport()?.SetInputAsHandled();
+    }
+
+    private bool GererInputSelectionAtelleBras(InputEvent @event)
+    {
+        if (!_selectionAtelleBrasEnCours)
+            return false;
+
+        if (@event.IsActionPressed("ui_cancel")
+            || (@event is InputEventKey keyEsc && keyEsc.Pressed && !keyEsc.Echo && keyEsc.Keycode == Key.Escape))
+        {
+            GD.Print("ZERO-K : Selection atelle annulee.");
+            FermerSelectionAtelleBras(consommerEvenement: true);
+            return true;
+        }
+
+        if (@event is InputEventKey key && key.Pressed && !key.Echo)
+        {
+            bool choixGauche = key.Keycode == Key.Key1 || key.Keycode == Key.Kp1;
+            bool choixDroite = key.Keycode == Key.Key2 || key.Keycode == Key.Kp2;
+            if (choixGauche || choixDroite)
+            {
+                string section = choixGauche ? SectionCorpsBrasGauche : SectionCorpsBrasDroit;
+                _ = EssayerAppliquerAtelleSurBrasChoisi(section);
+                FermerSelectionAtelleBras(consommerEvenement: true);
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private bool TraiterClicDroitAtelleBras()
+    {
+        if (_selectionAtelleBrasEnCours || _selectionBandageEnCours)
+            return true;
+        if (!MainActiveContientAtelleBras())
+            return false;
+
+        OuvrirSelectionAtelleBras();
         return true;
     }
 
@@ -1326,8 +2017,12 @@ public partial class Joueur : CharacterBody3D
                 DefinirIntegriteOsSectionCorps(section, ObtenirIntegriteOsSectionCorps(section) - degatsOs);
         }
         AjouterXpConstitutionDepuisDegats(degatsEffectifs);
+        if (section == SectionCorpsTorse)
+            AppliquerPlafondEnduranceSelonTorse();
         RafraichirHUD();
-        VerifierMortTorseSiNecessaire();
+        _menuAnatomie?.RafraichirSanteCorpsImmediate();
+        MettreAJourEffetVisionTete();
+        VerifierMortJoueurSiNecessaire();
     }
 
     private void AjouterXpConstitutionDepuisDegats(int degatsEffectifs)
@@ -1403,6 +2098,8 @@ public partial class Joueur : CharacterBody3D
                 break;
         }
         RafraichirHUD();
+        _menuAnatomie?.RafraichirSanteCorpsImmediate();
+        MettreAJourEffetVisionTete();
     }
 
     public IReadOnlyList<SectionSanteCorps> ObtenirEtatSanteCorps()
@@ -3159,9 +3856,10 @@ public partial class Joueur : CharacterBody3D
     private void MettreAJourHudStatsSurvie(bool force = false)
     {
         float faimClampee = Mathf.Clamp(_faimJoueur, 0f, FaimMaxJoueur);
-        float enduranceClampee = Mathf.Clamp(_enduranceJoueur, 0f, EnduranceMaxJoueur);
+        float maxEnduranceEffective = ObtenirEnduranceMaxEffective();
+        float enduranceClampee = Mathf.Clamp(_enduranceJoueur, 0f, maxEnduranceEffective);
         int pctFaim = Mathf.RoundToInt(Mathf.Clamp((faimClampee / FaimMaxJoueur) * 100f, 0f, 100f));
-        int pctEndurance = Mathf.RoundToInt(Mathf.Clamp((enduranceClampee / EnduranceMaxJoueur) * 100f, 0f, 100f));
+        int pctEndurance = Mathf.RoundToInt(Mathf.Clamp((enduranceClampee / maxEnduranceEffective) * 100f, 0f, 100f));
 
         if (_barreFaim != null)
         {
@@ -3173,8 +3871,10 @@ public partial class Joueur : CharacterBody3D
         }
         if (_barreEndurance != null)
         {
-            if (force || float.IsNaN(_derniereValeurBarreEnduranceHud) || Mathf.Abs(_derniereValeurBarreEnduranceHud - enduranceClampee) > 0.02f)
+            if (force || float.IsNaN(_derniereValeurBarreEnduranceHud) || Mathf.Abs(_derniereValeurBarreEnduranceHud - enduranceClampee) > 0.02f
+                || Mathf.Abs(_barreEndurance.MaxValue - maxEnduranceEffective) > 0.02f)
             {
+                _barreEndurance.MaxValue = maxEnduranceEffective;
                 _barreEndurance.Value = enduranceClampee;
                 _derniereValeurBarreEnduranceHud = enduranceClampee;
             }
@@ -3195,6 +3895,8 @@ public partial class Joueur : CharacterBody3D
                 _dernierPourcentageEnduranceHud = pctEndurance;
             }
         }
+
+        MettreAJourEffetVisionTete();
     }
 
     private void AppliquerMetabolismeJoueur(float dt, bool effortIntense, bool sprintActif)
@@ -3215,15 +3917,15 @@ public partial class Joueur : CharacterBody3D
         {
             _enduranceJoueur = Mathf.Max(0f, _enduranceJoueur - drainEndurance * dt);
         }
-        else if (_enduranceJoueur < EnduranceMaxJoueur - 0.001f && _faimJoueur > 0.001f)
+        else if (_enduranceJoueur < ObtenirEnduranceMaxEffective() - 0.001f && _faimJoueur > 0.001f)
         {
-            float manque = EnduranceMaxJoueur - _enduranceJoueur;
+            float manque = ObtenirEnduranceMaxEffective() - _enduranceJoueur;
             float regenSouhaitee = Mathf.Min(RegenEnduranceParSeconde * dt, manque);
             float regenLimiteeParFaim = _faimJoueur / Mathf.Max(0.0001f, CoutFaimParPointEndurance);
             float regen = Mathf.Min(regenSouhaitee, regenLimiteeParFaim);
             if (regen > 0f)
             {
-                _enduranceJoueur = Mathf.Min(EnduranceMaxJoueur, _enduranceJoueur + regen);
+                _enduranceJoueur = Mathf.Min(ObtenirEnduranceMaxEffective(), _enduranceJoueur + regen);
                 _faimJoueur = Mathf.Max(0f, _faimJoueur - regen * CoutFaimParPointEndurance * FacteurRalentissementDrainFaim);
             }
         }
@@ -3235,12 +3937,15 @@ public partial class Joueur : CharacterBody3D
             AppliquerDegatsSectionCorps(SectionCorpsTorse, degatsFaim, affecterOs: false);
         }
 
+        AppliquerPlafondEnduranceSelonTorse();
         MettreAJourHudStatsSurvie();
     }
 
-    private void VerifierMortTorseSiNecessaire()
+    private void VerifierMortJoueurSiNecessaire()
     {
-        if (_mortJoueurEnCours || _pvTorse > 0)
+        if (_mortJoueurEnCours)
+            return;
+        if (_pvTorse > 0f && _pvTete > 0f)
             return;
         _mortJoueurEnCours = true;
         Callable.From(ExecuterMortJoueurRetourCreationPersonnage).CallDeferred();
@@ -3248,13 +3953,332 @@ public partial class Joueur : CharacterBody3D
 
     private void ExecuterMortJoueurRetourCreationPersonnage()
     {
-        GameState.Instance?.PreparerRetourCreationPersonnageApresMort();
+        if (!IsInstanceValid(this))
+            return;
+        Input.MouseMode = Input.MouseModeEnum.Visible;
+        GameState.Instance?.PreparerMortNouveauPersonnageMemeMonde();
+        AssurerUiMortRecreationPersonnage();
+        OuvrirUiMortApresDeces();
+        GetTree().Paused = true;
+    }
+
+    private static StyleBoxFlat CreerStylePanneauMort()
+    {
+        var style = new StyleBoxFlat
+        {
+            BgColor = new Color(0.08f, 0.09f, 0.14f, 0.96f),
+            BorderColor = new Color(0.55f, 0.2f, 0.2f),
+            BorderWidthBottom = 2,
+            BorderWidthTop = 2,
+            BorderWidthLeft = 2,
+            BorderWidthRight = 2
+        };
+        style.SetCornerRadiusAll(10);
+        style.SetContentMarginAll(28);
+        return style;
+    }
+
+    private void AssurerUiMortRecreationPersonnage()
+    {
+        if (_layerMortRecreation != null && GodotObject.IsInstanceValid(_layerMortRecreation))
+            return;
+
+        _layerMortRecreation = new CanvasLayer
+        {
+            Name = "LayerMortRecreation",
+            Layer = 120,
+            ProcessMode = ProcessModeEnum.Always
+        };
+        var racine = new Control { Name = "RacineMortRecreation" };
+        racine.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        racine.MouseFilter = Control.MouseFilterEnum.Stop;
+        _layerMortRecreation.AddChild(racine);
+
+        var fond = new ColorRect
+        {
+            Color = new Color(0.02f, 0.02f, 0.06f, 0.88f),
+            MouseFilter = Control.MouseFilterEnum.Stop
+        };
+        fond.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        racine.AddChild(fond);
+
+        var centre = new CenterContainer { Name = "CentreMort" };
+        centre.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        racine.AddChild(centre);
+
+        _panneauMortCitation = ConstruirePanneauMortCitation();
+        _panneauMortChoix = ConstruirePanneauMortChoix();
+        _panneauMortCreation = ConstruirePanneauMortCreation();
+        centre.AddChild(_panneauMortCitation);
+        centre.AddChild(_panneauMortChoix);
+        centre.AddChild(_panneauMortCreation);
+
+        GetTree().Root.AddChild(_layerMortRecreation);
+        _layerMortRecreation.Visible = false;
+    }
+
+    private Control ConstruirePanneauMortCitation()
+    {
+        var panneau = new PanelContainer { Name = "PanneauMortCitation" };
+        panneau.AddThemeStyleboxOverride("panel", CreerStylePanneauMort());
+        var vbox = new VBoxContainer();
+        vbox.AddThemeConstantOverride("separation", 20);
+
+        var titre = new Label
+        {
+            Text = "Vous êtes mort",
+            HorizontalAlignment = HorizontalAlignment.Center
+        };
+        titre.AddThemeFontSizeOverride("font_size", 26);
+
+        var citation = new Label
+        {
+            Text = CitationMortNature,
+            AutowrapMode = TextServer.AutowrapMode.WordSmart,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            CustomMinimumSize = new Vector2(420, 0)
+        };
+        citation.AddThemeFontSizeOverride("font_size", 18);
+        citation.AddThemeColorOverride("font_color", new Color(0.88f, 0.86f, 0.78f));
+
+        var btnContinuer = new Button { Text = "Continuer" };
+        btnContinuer.Pressed += AfficherEtapeMortChoix;
+
+        vbox.AddChild(titre);
+        vbox.AddChild(citation);
+        vbox.AddChild(btnContinuer);
+        panneau.AddChild(vbox);
+        return panneau;
+    }
+
+    private Control ConstruirePanneauMortChoix()
+    {
+        var panneau = new PanelContainer { Name = "PanneauMortChoix", Visible = false };
+        panneau.AddThemeStyleboxOverride("panel", CreerStylePanneauMort());
+        var vbox = new VBoxContainer();
+        vbox.AddThemeConstantOverride("separation", 14);
+
+        string nomMonde = GameState.Instance?.NomMondeActuel ?? "ce monde";
+        var intro = new Label
+        {
+            Text = $"Le monde « {nomMonde} » subsiste.\nVotre ancien personnage n’existe plus.",
+            AutowrapMode = TextServer.AutowrapMode.WordSmart,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            CustomMinimumSize = new Vector2(380, 0)
+        };
+        intro.AddThemeFontSizeOverride("font_size", 14);
+
+        var btnReincarner = new Button { Text = "Se réincarner" };
+        btnReincarner.Pressed += AfficherEtapeMortRecreation;
+
+        var btnAbandonner = new Button { Text = "Abandonner" };
+        btnAbandonner.Pressed += AbandonnerMondeApresMort;
+
+        vbox.AddChild(intro);
+        vbox.AddChild(btnReincarner);
+        vbox.AddChild(btnAbandonner);
+        panneau.AddChild(vbox);
+        return panneau;
+    }
+
+    private Control ConstruirePanneauMortCreation()
+    {
+        var panneau = new PanelContainer { Name = "PanneauMortCreation", Visible = false };
+        panneau.AddThemeStyleboxOverride("panel", CreerStylePanneauMort());
+
+        var vbox = new VBoxContainer();
+        vbox.AddThemeConstantOverride("separation", 12);
+
+        string nomMonde = GameState.Instance?.NomMondeActuel ?? "ce monde";
+        var titre = new Label
+        {
+            Text = "Nouveau personnage",
+            HorizontalAlignment = HorizontalAlignment.Center
+        };
+        titre.AddThemeFontSizeOverride("font_size", 22);
+        var sousTitre = new Label
+        {
+            Text = $"Nommez votre réincarnation pour « {nomMonde} ».\nProgression vierge ; la carte reste la même.",
+            AutowrapMode = TextServer.AutowrapMode.WordSmart,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            CustomMinimumSize = new Vector2(360, 0)
+        };
+        sousTitre.AddThemeFontSizeOverride("font_size", 13);
+
+        _lineNomMortRecreation = new LineEdit
+        {
+            PlaceholderText = "Nom du personnage",
+            CustomMinimumSize = new Vector2(320, 0)
+        };
+
+        var ligneRace = new HBoxContainer();
+        ligneRace.AddThemeConstantOverride("separation", 8);
+        var btnRacePrec = new Button { Text = "<" };
+        _labelRaceMortRecreation = new Label { Text = "Humain", SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, HorizontalAlignment = HorizontalAlignment.Center };
+        var btnRaceSuiv = new Button { Text = ">" };
+        btnRacePrec.Pressed += () => ChangerRaceMortRecreation(-1);
+        btnRaceSuiv.Pressed += () => ChangerRaceMortRecreation(1);
+        ligneRace.AddChild(btnRacePrec);
+        ligneRace.AddChild(_labelRaceMortRecreation);
+        ligneRace.AddChild(btnRaceSuiv);
+
+        var ligneSexe = new HBoxContainer();
+        ligneSexe.AddThemeConstantOverride("separation", 8);
+        var btnSexePrec = new Button { Text = "<" };
+        _labelSexeMortRecreation = new Label { Text = "Masculin", SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, HorizontalAlignment = HorizontalAlignment.Center };
+        var btnSexeSuiv = new Button { Text = ">" };
+        btnSexePrec.Pressed += () => ChangerSexeMortRecreation(-1);
+        btnSexeSuiv.Pressed += () => ChangerSexeMortRecreation(1);
+        ligneSexe.AddChild(btnSexePrec);
+        ligneSexe.AddChild(_labelSexeMortRecreation);
+        ligneSexe.AddChild(btnSexeSuiv);
+
+        _labelErreurMortRecreation = new Label { Modulate = new Color(1f, 0.45f, 0.45f), AutowrapMode = TextServer.AutowrapMode.WordSmart };
+
+        var btnConfirmer = new Button { Text = "Entrer dans ce monde" };
+        btnConfirmer.Pressed += ConfirmerRecreationPersonnageApresMort;
+
+        var btnRetour = new Button { Text = "Retour" };
+        btnRetour.Pressed += AfficherEtapeMortChoix;
+
+        vbox.AddChild(titre);
+        vbox.AddChild(sousTitre);
+        vbox.AddChild(new Label { Text = "Nom" });
+        vbox.AddChild(_lineNomMortRecreation);
+        vbox.AddChild(new Label { Text = "Race" });
+        vbox.AddChild(ligneRace);
+        vbox.AddChild(new Label { Text = "Sexe" });
+        vbox.AddChild(ligneSexe);
+        vbox.AddChild(_labelErreurMortRecreation);
+        vbox.AddChild(btnConfirmer);
+        vbox.AddChild(btnRetour);
+        panneau.AddChild(vbox);
+        return panneau;
+    }
+
+    private void OuvrirUiMortApresDeces()
+    {
+        AssurerUiMortRecreationPersonnage();
+        AfficherEtapeMortCitation();
+        _layerMortRecreation.Visible = true;
+    }
+
+    private void AfficherEtapeMortCitation()
+    {
+        if (_panneauMortCitation != null) _panneauMortCitation.Visible = true;
+        if (_panneauMortChoix != null) _panneauMortChoix.Visible = false;
+        if (_panneauMortCreation != null) _panneauMortCreation.Visible = false;
+    }
+
+    private void AfficherEtapeMortChoix()
+    {
+        if (_panneauMortCitation != null) _panneauMortCitation.Visible = false;
+        if (_panneauMortChoix != null) _panneauMortChoix.Visible = true;
+        if (_panneauMortCreation != null) _panneauMortCreation.Visible = false;
+    }
+
+    private void AfficherEtapeMortRecreation()
+    {
+        _raceMortRecreation = RaceJoueur.Humain;
+        _sexeMortRecreation = SexeJoueur.Masculin;
+        MettreAJourAffichageRaceSexeMortRecreation();
+        if (_lineNomMortRecreation != null)
+            _lineNomMortRecreation.Text = "";
+        if (_labelErreurMortRecreation != null)
+            _labelErreurMortRecreation.Text = "";
+        if (_panneauMortCitation != null) _panneauMortCitation.Visible = false;
+        if (_panneauMortChoix != null) _panneauMortChoix.Visible = false;
+        if (_panneauMortCreation != null) _panneauMortCreation.Visible = true;
+        _lineNomMortRecreation?.GrabFocus();
+    }
+
+    private void AbandonnerMondeApresMort()
+    {
+        FermerUiMortRecreationPersonnage();
+        _mortJoueurEnCours = false;
+        GetTree().Paused = false;
         GetTree().ChangeSceneToFile("res://menu_principal.tscn");
+    }
+
+    private void FermerUiMortRecreationPersonnage()
+    {
+        if (_layerMortRecreation != null && GodotObject.IsInstanceValid(_layerMortRecreation))
+            _layerMortRecreation.Visible = false;
+        Input.MouseMode = Input.MouseModeEnum.Captured;
+    }
+
+    private void ChangerRaceMortRecreation(int delta)
+    {
+        int v = (int)_raceMortRecreation + delta;
+        while (v < 0) v += 2;
+        while (v > 1) v -= 2;
+        _raceMortRecreation = (RaceJoueur)v;
+        MettreAJourAffichageRaceSexeMortRecreation();
+    }
+
+    private void ChangerSexeMortRecreation(int delta)
+    {
+        int v = (int)_sexeMortRecreation + delta;
+        while (v < 0) v += 2;
+        while (v > 1) v -= 2;
+        _sexeMortRecreation = (SexeJoueur)v;
+        MettreAJourAffichageRaceSexeMortRecreation();
+    }
+
+    private void MettreAJourAffichageRaceSexeMortRecreation()
+    {
+        if (_labelRaceMortRecreation != null)
+            _labelRaceMortRecreation.Text = _raceMortRecreation == RaceJoueur.Orc ? "Orc" : "Humain";
+        if (_labelSexeMortRecreation != null)
+            _labelSexeMortRecreation.Text = _sexeMortRecreation == SexeJoueur.Feminin ? "Féminin" : "Masculin";
+    }
+
+    private void ConfirmerRecreationPersonnageApresMort()
+    {
+        GameState etat = GameState.Instance;
+        if (etat == null)
+            return;
+        string nom = _lineNomMortRecreation?.Text ?? "";
+        if (!etat.EssayerFinaliserRecreationPersonnageSurMondeExistant(nom, _raceMortRecreation, _sexeMortRecreation, out string erreur))
+        {
+            if (_labelErreurMortRecreation != null)
+                _labelErreurMortRecreation.Text = erreur ?? "Création impossible.";
+            return;
+        }
+
+        ReinitialiserEtatJoueurNouveauPersonnageMemeMonde();
+        RedimensionnerHitboxesSiOrc();
+        InitialiserModeleHumainJoueur();
+        _gestionnaireMonde?.RepositionnerJoueurApresMortNouveauPersonnage();
+        FermerUiMortRecreationPersonnage();
+        GetTree().Paused = false;
+        _mortJoueurEnCours = false;
+        GD.Print($"ZERO-K : Nouveau personnage « {etat.NomPersonnageJoue} » dans le monde « {etat.NomMondeActuel} ».");
+    }
+
+    private float ObtenirRatioPvTorse() => ObtenirRatioPvSectionCorps(SectionCorpsTorse);
+
+    /// <summary>Torse ≤ 50 % PV : plafond d'énergie réduit de moitié.</summary>
+    private float ObtenirEnduranceMaxEffective()
+    {
+        if (ObtenirRatioPvTorse() <= RatioPvSeuilFelureMembre)
+            return EnduranceMaxJoueur * 0.5f;
+        return EnduranceMaxJoueur;
+    }
+
+    private void AppliquerPlafondEnduranceSelonTorse()
+    {
+        float plafond = ObtenirEnduranceMaxEffective();
+        if (_enduranceJoueur > plafond)
+            _enduranceJoueur = plafond;
     }
 
     private float RatioEnduranceJoueur()
     {
-        return Mathf.Clamp(_enduranceJoueur / EnduranceMaxJoueur, 0f, 1f);
+        float max = ObtenirEnduranceMaxEffective();
+        if (max <= 0.001f)
+            return 0f;
+        return Mathf.Clamp(_enduranceJoueur / max, 0f, 1f);
     }
 
     private static float ObtenirContributionVitesseJambeDepuisRatioOs(float ratioOs)
@@ -3266,15 +4290,33 @@ public partial class Joueur : CharacterBody3D
         return 0.50f; // BON ETAT
     }
 
+    private static float ObtenirContributionVitesseJambeDepuisRatioPv(float ratioPv)
+    {
+        if (ratioPv <= 0f)
+            return 0.05f;
+        if (ratioPv <= RatioPvSeuilFelureMembre)
+            return 0.25f;
+        return 0.50f;
+    }
+
+    private float ObtenirContributionVitesseJambeCombinee(string sectionJambe)
+    {
+        float maxOs = Mathf.Max(1f, ObtenirIntegriteOsBaseSection(sectionJambe));
+        float ratioOs = sectionJambe switch
+        {
+            SectionCorpsJambeGauche => Mathf.Clamp(_integriteOsJambeGauche / maxOs, 0f, 1f),
+            SectionCorpsJambeDroite => Mathf.Clamp(_integriteOsJambeDroite / maxOs, 0f, 1f),
+            _ => 1f
+        };
+        float contribOs = ObtenirContributionVitesseJambeDepuisRatioOs(ratioOs);
+        float contribPv = ObtenirContributionVitesseJambeDepuisRatioPv(ObtenirRatioPvSectionCorps(sectionJambe));
+        return Mathf.Min(contribOs, contribPv);
+    }
+
     private float ObtenirFacteurVitesseSelonEtatOsJambes()
     {
-        float maxOsJambeG = Mathf.Max(1f, ObtenirIntegriteOsBaseSection(SectionCorpsJambeGauche));
-        float maxOsJambeD = Mathf.Max(1f, ObtenirIntegriteOsBaseSection(SectionCorpsJambeDroite));
-        float ratioOsJambeG = Mathf.Clamp(_integriteOsJambeGauche / maxOsJambeG, 0f, 1f);
-        float ratioOsJambeD = Mathf.Clamp(_integriteOsJambeDroite / maxOsJambeD, 0f, 1f);
-
-        float contributionG = ObtenirContributionVitesseJambeDepuisRatioOs(ratioOsJambeG);
-        float contributionD = ObtenirContributionVitesseJambeDepuisRatioOs(ratioOsJambeD);
+        float contributionG = ObtenirContributionVitesseJambeCombinee(SectionCorpsJambeGauche);
+        float contributionD = ObtenirContributionVitesseJambeCombinee(SectionCorpsJambeDroite);
         return Mathf.Clamp(contributionG + contributionD, 0.10f, 1.00f);
     }
 
@@ -3290,17 +4332,21 @@ public partial class Joueur : CharacterBody3D
 
     private void MettreAJourLibellesNomsHud()
     {
+        bool preview3dG = !MainGauche.EstVide && InventaireSlotAunVisuel3D(MainGauche)
+            && _viewportSlotGauche != null && GodotObject.IsInstanceValid(_viewportSlotGauche) && _viewportSlotGauche.Visible;
+        bool preview3dD = !MainDroite.EstVide && InventaireSlotAunVisuel3D(MainDroite)
+            && _viewportSlotDroite != null && GodotObject.IsInstanceValid(_viewportSlotDroite) && _viewportSlotDroite.Visible;
         if (_lblHudNomMainG != null)
         {
             string n = Atlas_Matiere.ObtenirNomObjet(MainGauche);
             _lblHudNomMainG.Text = MainGauche.EstVide ? "" : n;
-            _lblHudNomMainG.Visible = !MainGauche.EstVide && !string.IsNullOrEmpty(n);
+            _lblHudNomMainG.Visible = !MainGauche.EstVide && !preview3dG && !string.IsNullOrEmpty(n);
         }
         if (_lblHudNomMainD != null)
         {
             string n = Atlas_Matiere.ObtenirNomObjet(MainDroite);
             _lblHudNomMainD.Text = MainDroite.EstVide ? "" : n;
-            _lblHudNomMainD.Visible = !MainDroite.EstVide && !string.IsNullOrEmpty(n);
+            _lblHudNomMainD.Visible = !MainDroite.EstVide && !preview3dD && !string.IsNullOrEmpty(n);
         }
     }
 
@@ -3320,6 +4366,7 @@ public partial class Joueur : CharacterBody3D
         container.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
         container.Stretch = true;
         slot.AddChild(container);
+        slot.MoveChild(container, slot.GetChildCount() - 1);
 
         var viewport = new SubViewport();
         viewport.Size = new Vector2I(64, 64);
@@ -3667,6 +4714,10 @@ public partial class Joueur : CharacterBody3D
 
         if (GererInputSelectionAtelleJambe(@event))
             return;
+        if (GererInputSelectionAtelleBras(@event))
+            return;
+        if (GererInputSelectionBandage(@event))
+            return;
 
         if (_menuAnatomie != null && @event.IsActionPressed("inventaire"))
         {
@@ -3894,6 +4945,24 @@ public partial class Joueur : CharacterBody3D
                         return;
                     }
                 }
+                if (mainActive.ID == IdObjetAtelleBras)
+                {
+                    _forceLancer = 0f;
+                    if (TraiterClicDroitAtelleBras())
+                    {
+                        GetViewport().SetInputAsHandled();
+                        return;
+                    }
+                }
+                if (mainActive.ID == IdObjetBandageTier1)
+                {
+                    _forceLancer = 0f;
+                    if (TraiterClicDroitBandageTier1())
+                    {
+                        GetViewport().SetInputAsHandled();
+                        return;
+                    }
+                }
 
                 // Priorité gameplay : clic droit sur pit à feu roche avec bâton/branche = ajout de combustible,
                 // même si le clic a été maintenu assez longtemps pour entrer en mode lancer.
@@ -3984,6 +5053,7 @@ public partial class Joueur : CharacterBody3D
                 AnnulerModePlacementStructure(reinitialiserRotation: false);
             MainGaucheEstActive = !MainGaucheEstActive;
             ReinitialiserRotationManuelle();
+            MettreAJourObjetTenueTps();
             RafraichirHUD();
             _menuAnatomie?.RafraichirMenu();
             GD.Print(MainGaucheEstActive ? "ZERO-K : Main Gauche sÃ©lectionnÃ©e (Tab)." : "ZERO-K : Main Droite sÃ©lectionnÃ©e (Tab).");
@@ -4812,6 +5882,8 @@ public partial class Joueur : CharacterBody3D
         IdObjetBolBois => 0.28f,
         IdObjetMortierPilonBois => 0.98f,
         IdObjetAtelleJambe => 0.34f,
+        IdObjetAtelleBras => 0.34f,
+        IdObjetBandageTier1 => 0.12f,
         _ => 0.5f
     };
 
@@ -4891,11 +5963,14 @@ public partial class Joueur : CharacterBody3D
         dir = dir.Normalized();
         float masse = ObtenirMassePhysiqueLogiqueKg();
         float attenuation = Mathf.Clamp(80f / Mathf.Max(45f, masse), 0.35f, 1.2f);
-        float deltaV = impulsionMetresParSeconde * attenuation;
+        float deltaV = Mathf.Max(1.3f, impulsionMetresParSeconde * attenuation);
         Vector3 v = Velocity;
         v.X += dir.X * deltaV;
         v.Z += dir.Z * deltaV;
+        if (IsOnFloor())
+            v.Y = Mathf.Max(v.Y, Mathf.Clamp(deltaV * 0.18f, 0.15f, 0.65f));
         Velocity = v;
+        JouerFlashDegatsBovin();
     }
 
     public float ObtenirCapacitePoidsMaxKg()
@@ -5207,6 +6282,8 @@ public partial class Joueur : CharacterBody3D
         else if (id == IdObjetBolBois) return null; // GLB bol via InstancierModeleBolBois
         else if (id == IdObjetMortierPilonBois) return null; // GLB mortier+pilon via InstancierModeleMortierPilonBois
         else if (id == IdObjetAtelleJambe) return null; // GLB res://Modeles/soin/Atelle_jambe.glb via InstancierModeleAtelleJambe
+        else if (id == IdObjetAtelleBras) return null; // GLB res://Modeles/soin/Atelle_Bras.glb via InstancierModeleAtelleBras
+        else if (id == IdObjetBandageTier1) return null; // GLB res://Modeles/soin/Bandage_tier1.glb via InstancierModeleBandageTier1
         else if (EstIdFondation(id)) return null; // GLB fondations via InstancierModeleFondation
         else if (id == 30 || id == 32)
         {
@@ -6096,6 +7173,62 @@ public partial class Joueur : CharacterBody3D
             }
             corps = item;
         }
+        else if (id == IdObjetAtelleBras)
+        {
+            var item = new ItemPhysique
+            {
+                ID_Objet = id,
+                IndexBotanique = mainActive.IndexBotanique,
+                IndexChimique = mainActive.IndexChimique,
+                IndexCacheMemoire = mainActive.IndexMorphologique,
+                GenomeAssemblage = mainActive.GenomeAssemblage ?? "",
+                Name = "ItemPhysique",
+                ContinuousCd = true
+            };
+            if (!string.IsNullOrEmpty(item.GenomeAssemblage))
+                item.SetMeta(MetaGenomeAssemblage, item.GenomeAssemblage);
+            var meshRoot = new Node3D { Name = "MeshInstance3D" };
+            InstancierModeleAtelleBras(meshRoot, mainActive, 0.66f, false);
+            item.AddChild(meshRoot);
+            if (AjouterCollisionsConvexesDepuisMeshesSousRacineItem(item, meshRoot) == 0)
+            {
+                item.AddChild(new CollisionShape3D
+                {
+                    Name = "CollisionShape3D",
+                    Shape = new BoxShape3D { Size = new Vector3(0.32f, 0.12f, 0.16f) },
+                    Position = new Vector3(0f, 0.06f, 0f)
+                });
+            }
+            corps = item;
+        }
+        else if (id == IdObjetBandageTier1)
+        {
+            var item = new ItemPhysique
+            {
+                ID_Objet = id,
+                IndexBotanique = mainActive.IndexBotanique,
+                IndexChimique = mainActive.IndexChimique,
+                IndexCacheMemoire = mainActive.IndexMorphologique,
+                GenomeAssemblage = mainActive.GenomeAssemblage ?? "",
+                Name = "ItemPhysique",
+                ContinuousCd = true
+            };
+            if (!string.IsNullOrEmpty(item.GenomeAssemblage))
+                item.SetMeta(MetaGenomeAssemblage, item.GenomeAssemblage);
+            var meshRoot = new Node3D { Name = "MeshInstance3D" };
+            InstancierModeleBandageTier1(meshRoot, mainActive, 0.28f, false);
+            item.AddChild(meshRoot);
+            if (AjouterCollisionsConvexesDepuisMeshesSousRacineItem(item, meshRoot) == 0)
+            {
+                item.AddChild(new CollisionShape3D
+                {
+                    Name = "CollisionShape3D",
+                    Shape = new BoxShape3D { Size = new Vector3(0.14f, 0.06f, 0.10f) },
+                    Position = new Vector3(0f, 0.03f, 0f)
+                });
+            }
+            corps = item;
+        }
         else if (EstIdFondation(id))
         {
             var item = new ItemPhysique
@@ -6627,7 +7760,19 @@ public partial class Joueur : CharacterBody3D
         if (!modeGhost)
         {
             corps.AddToGroup("BlocsPoses");
-            GetParent().AddChild(corps);
+            Node parentPose = GetParent();
+            if (_gestionnaireMonde != null && GodotObject.IsInstanceValid(_gestionnaireMonde))
+            {
+                Node3D racineDim = _gestionnaireMonde.ObtenirRacineDimension(_gestionnaireMonde.ObtenirDimensionLocaleActiveId());
+                if (racineDim != null)
+                    parentPose = racineDim;
+            }
+            if (parentPose == null || !GodotObject.IsInstanceValid(parentPose))
+            {
+                corps.QueueFree();
+                return null;
+            }
+            parentPose.AddChild(corps);
             // Placement pur : pas de translation Y supplÃ©mentaire (Ã©vite double offset / lÃ©vitation atelier).
             corps.GlobalPosition = pointDeChute;
         }
@@ -6977,6 +8122,8 @@ public partial class Joueur : CharacterBody3D
         _cooldownEnjambementObstacle = Mathf.Max(0f, _cooldownEnjambementObstacle - dt);
         _cooldownGainFaimClicDroit = Mathf.Max(0f, _cooldownGainFaimClicDroit - dt);
         MettreAJourTimersAtellesJambes(dt);
+        MettreAJourTimersAtellesBras(dt);
+        MettreAJourEffetBandageTier1(dt);
         if (!_positionReferenceMetabolisteInitialisee)
             ReinitialiserReferencePositionMetaboliste();
         SlotInventaire mainActive = MainGaucheEstActive ? MainGauche : MainDroite;
@@ -6993,7 +8140,7 @@ public partial class Joueur : CharacterBody3D
                 if (!shiftDeclenchePlacementLancer)
                     _forceLancer = Mathf.Min(5.0f, _forceLancer + (VitesseChargeBras * 2.5f) * dt);
             }
-            if (_gaucheMaintenu && (mainActive.EstVide || mainActive.ID == 105 || mainActive.ID == 106 || mainActive.ID == IdObjetPellePierreTier0 || mainActive.ID == IdObjetPiochePierreTier0 || mainActive.ID == IdObjetLancePierreTier0 || mainActive.ID == IdObjetFauxPierreTier0))
+            if (_gaucheMaintenu && (mainActive.EstVide || mainActive.ID == 105 || mainActive.ID == 106 || mainActive.ID == IdObjetHachePierreTier1 || mainActive.ID == IdObjetPellePierreTier0 || mainActive.ID == IdObjetPiochePierreTier0 || mainActive.ID == IdObjetLancePierreTier0 || mainActive.ID == IdObjetFauxPierreTier0))
                 MettreAJourMinageMainNueOuAtelier(dt, mainActive);
             else
                 ReinitialiserMinageMainNueProgression();

@@ -160,8 +160,9 @@ if ($manifestObj.entryExecutable -ne "SEROKAFrozenLegacy.exe") {
     throw "entryExecutable invalide dans manifest: $($manifestObj.entryExecutable)"
 }
 
-Run-CheckedCommand -Label "Upload payload vers Backblaze" -Action {
-    & $B2ExePath sync --replace-newer $payloadDir "b2://$BucketName/$Version"
+Run-CheckedCommand -Label "Upload payload vers Backblaze (sync complet)" -Action {
+    # compare-versions none : re-uploade tous les fichiers du payload, pas seulement les plus recents.
+    & $B2ExePath sync --compare-versions none $payloadDir "b2://$BucketName/$Version"
 }
 
 Run-CheckedCommand -Label "Upload manifest racine" -Action {

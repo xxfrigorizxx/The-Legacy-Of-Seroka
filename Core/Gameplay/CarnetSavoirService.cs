@@ -106,6 +106,16 @@ public partial class Joueur
             EquipementCarnet = CreerSlotCarnetSavoirParDefaut();
     }
 
+    /// <summary>Remet le carnet au guide initial (après mort, nouveau personnage sur le même monde).</summary>
+    public void ReinitialiserCarnetSavoirParDefaut()
+    {
+        _pagesCarnetSavoir.Clear();
+        _indexPageCarnetSavoir = 0;
+        EquipementCarnet = CreerSlotCarnetSavoirParDefaut();
+        InitialiserPagesCarnetParDefaut();
+        RafraichirContenuUiCarnet();
+    }
+
     public void DefinirEtatCarnetDepuisSauvegarde(string[] pages, int indexPage)
     {
         _pagesCarnetSavoir.Clear();

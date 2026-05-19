@@ -74,7 +74,6 @@ light_specular = 1.194
 
 [node name="Lune" type="DirectionalLight3D" parent="." unique_id=545490241]
 transform = Transform3D(0.79597723, -0.5956493, -0.10780642, 0.02965417, -0.13951197, 0.98977625, -0.6045998, -0.7910363, -0.09338486, 0, 13.034426, 0)
-light_color = Color(0, 0.043137256, 0.1254902, 1)
 light_energy = 1.388
 light_angular_distance = 2.53
 shadow_enabled = true

@@ -462,6 +462,22 @@ public static class Atlas_Matiere
             string essence = slot.IndexBotanique switch { 0 => "Chêne", 1 => "Bouleau", 2 => "Pin", 3 => "Sapin", 4 => "Fromager", _ => "Bois" };
             return $"Atelle de jambe ({essence})";
         }
+        if (id == Joueur.IdObjetAtelleBras)
+        {
+            string essence = slot.IndexBotanique switch { 0 => "Chêne", 1 => "Bouleau", 2 => "Pin", 3 => "Sapin", 4 => "Fromager", _ => "Bois" };
+            return $"Atelle de bras ({essence})";
+        }
+        if (id == Joueur.IdObjetBandageTier1)
+        {
+            var lig = new SlotInventaire
+            {
+                ID = Joueur.EstVarianteLiane(slot) ? (byte)16 : (byte)20,
+                IndexChimique = slot.IndexChimique,
+                IndexMorphologique = slot.IndexMorphologique,
+                IndexBotanique = slot.IndexBotanique
+            };
+            return $"Bandage tier 1 ({ObtenirNomObjet(lig)})";
+        }
         if (id == Joueur.IdObjetPellePierreTier0)
         {
             int i = Mathf.Clamp(slot.IndexChimique, 0, ItemPhysique.TableGeologique.Length - 1);
@@ -635,6 +651,14 @@ public static class Atlas_Matiere
         }
         if (id == 20)
         {
+            if (Joueur.EstVarianteCordeIntestinMixe(slot))
+            {
+                static string NomMatiereEncordeeMixte(int code) =>
+                    code == Joueur.IdObjetIntestinBoeufNettoye
+                        ? "Intestin"
+                        : (ObtenirProfilFlexible(code, out var px) ? px.Nom : "Matière");
+                return $"Corde {NomMatiereEncordeeMixte(slot.IndexChimique)}+{NomMatiereEncordeeMixte(slot.IndexMorphologique)}";
+            }
             bool a = ObtenirProfilFlexible(slot.IndexChimique, out var pa);
             bool b = ObtenirProfilFlexible(slot.IndexMorphologique, out var pb);
             bool varianteIntestin = Joueur.EstVarianteIntestin(slot);
@@ -1061,8 +1085,22 @@ public static class Atlas_Matiere
                     NiveauFracture = 0
                 };
             }
-            // 2 intestins propres -> 1 corde d'intestin.
-            if (ingredients[0].ID == Joueur.IdObjetIntestinBoeufNettoye && ingredients[1].ID == Joueur.IdObjetIntestinBoeufNettoye)
+            // 2 fibres boyau (17) -> 1 corde boyau (17/17).
+            if (ingredients[0].ID == 17 && ingredients[1].ID == 17)
+            {
+                return new SlotInventaire
+                {
+                    ID = 20,
+                    IndexChimique = 17,
+                    IndexMorphologique = 17,
+                    IndexBotanique = LSystem_Botanique.IndexChene,
+                    NiveauFracture = Mathf.Max(ingredients[0].NiveauFracture, ingredients[1].NiveauFracture),
+                    EstUnEclat = false
+                };
+            }
+            // 2 intestins (nettoyés ou bruts) -> 1 corde d'intestin.
+            if (Joueur.EstIntestinUtilisablePourCraft(ingredients[0])
+                && Joueur.EstIntestinUtilisablePourCraft(ingredients[1]))
             {
                 return new SlotInventaire
                 {
@@ -1086,6 +1124,59 @@ public static class Atlas_Matiere
                     EstUnEclat = false,
                     NiveauFracture = 0
                 };
+            }
+
+            // 2 fibres différentes côte à côte (gauche → droite) → corde mixte (outils / bandage ; pas tissu).
+            if (AdjacentDansGrille(indicesIngredients[0], indicesIngredients[1]))
+            {
+                int idxA = indicesIngredients[0];
+                int idxB = indicesIngredients[1];
+                int idxGauche = -1;
+                int idxDroite = -1;
+                if (idxB - idxA == 1 && idxA / strideColonne == idxB / strideColonne)
+                {
+                    idxGauche = idxA;
+                    idxDroite = idxB;
+                }
+                else if (idxA - idxB == 1 && idxB / strideColonne == idxA / strideColonne)
+                {
+                    idxGauche = idxB;
+                    idxDroite = idxA;
+                }
+
+                if (idxGauche >= 0 && idxDroite >= 0)
+                {
+                    SlotInventaire gauche = grille[idxGauche];
+                    SlotInventaire droite = grille[idxDroite];
+                    bool gFib = EstFibreTorsadeCraft(gauche.ID);
+                    bool dFib = EstFibreTorsadeCraft(droite.ID);
+                    bool gInt = EstIntestinNettoyeCraft(gauche);
+                    bool dInt = EstIntestinNettoyeCraft(droite);
+                    if (gFib && dFib && gauche.ID != droite.ID)
+                    {
+                        return new SlotInventaire
+                        {
+                            ID = 20,
+                            IndexChimique = gauche.ID,
+                            IndexMorphologique = droite.ID,
+                            IndexBotanique = LSystem_Botanique.IndexChene,
+                            NiveauFracture = Mathf.Max(gauche.NiveauFracture, droite.NiveauFracture),
+                            EstUnEclat = false
+                        };
+                    }
+                    if ((gInt && dFib) || (gFib && dInt))
+                    {
+                        return new SlotInventaire
+                        {
+                            ID = 20,
+                            IndexChimique = EncoderMatiereCordeMixte(gauche),
+                            IndexMorphologique = EncoderMatiereCordeMixte(droite),
+                            IndexBotanique = Joueur.TagVarianteCordeIntestinMixe,
+                            NiveauFracture = Mathf.Max(gauche.NiveauFracture, droite.NiveauFracture),
+                            EstUnEclat = false
+                        };
+                    }
+                }
             }
 
             for (int col = 0; col < 2; col++)
@@ -1130,6 +1221,7 @@ public static class Atlas_Matiere
         static byte VarianteLigatureCraft(SlotInventaire s)
         {
             if (s.EstVide) return 0;
+            if (Joueur.EstVarianteCordeIntestinMixe(s)) return Joueur.TagVarianteCordeIntestinMixe;
             if (s.ID == 16 || Joueur.EstVarianteLiane(s)) return Joueur.TagVarianteLiane;
             if (EstSlotCordeIntestinSolideCraft(s) || Joueur.EstVarianteIntestinSolide(s)) return Joueur.TagVarianteIntestinSolide;
             if (EstSlotCordeIntestinCraft(s) || Joueur.EstVarianteIntestin(s)) return Joueur.TagVarianteIntestin;
@@ -1161,6 +1253,18 @@ public static class Atlas_Matiere
             !s.EstVide && s.ID == 21 && s.IndexChimique == 17 && s.IndexMorphologique == 17 && Joueur.EstVarianteIntestinSolide(s);
         // Outils à durabilité: autorise corde (20) OU liane brute (16) comme ligature.
         static bool EstSlotLigatureOutilCraft(SlotInventaire s) => !s.EstVide && (s.ID == 20 || s.ID == 16);
+        /// <summary>Corde 20 avec deux matières flexibles distinctes (ex. 15/16) — bandage/outils oui, tissu non.</summary>
+        static bool EstCordeMixteCraft(SlotInventaire s) =>
+            !s.EstVide && s.ID == 20
+            && (Joueur.EstVarianteCordeIntestinMixe(s)
+                || (s.IndexChimique != s.IndexMorphologique
+                    && ObtenirProfilFlexible(s.IndexChimique, out _)
+                    && ObtenirProfilFlexible(s.IndexMorphologique, out _)));
+        static bool EstFibreTorsadeCraft(int id) => id is 15 or 16 or 17;
+        static bool EstIntestinNettoyeCraft(SlotInventaire s) =>
+            Joueur.EstIntestinUtilisablePourCraft(s);
+        static int EncoderMatiereCordeMixte(SlotInventaire s) =>
+            EstIntestinNettoyeCraft(s) ? Joueur.IdObjetIntestinBoeufNettoye : s.ID;
         static SlotInventaire NormaliserLigatureOutil(SlotInventaire s)
         {
             if (s.ID == 20) return s;
@@ -1179,6 +1283,45 @@ public static class Atlas_Matiere
             }
             return s;
         }
+
+        // Bandage tier 1 (135) — grille poche 2×2 uniquement :
+        // (L)(L) / (L)()
+        if (!grilleCraft3x3Table && grille.Length >= 4
+            && EstSlotLigatureOutilCraft(grille[0])
+            && EstSlotLigatureOutilCraft(grille[1])
+            && EstSlotLigatureOutilCraft(grille[2])
+            && grille[3].EstVide)
+        {
+            SlotInventaire ligA = NormaliserLigatureOutil(grille[0]);
+            SlotInventaire ligB = NormaliserLigatureOutil(grille[1]);
+            SlotInventaire ligC = NormaliserLigatureOutil(grille[2]);
+            bool ligaturesMemeVariante = MemeVarianteLigature(ligA, ligB)
+                && MemeVarianteLigature(ligA, ligC)
+                && Joueur.SontEmpilables(ligA, ligB)
+                && Joueur.SontEmpilables(ligA, ligC);
+            if (ligaturesMemeVariante)
+            {
+                byte varianteLig = VarianteLigatureCraft(ligA);
+                string genomeBandage = string.Join(";", new[]
+                {
+                    "BANDAGE135",
+                    $"LIGV={varianteLig}",
+                    $"LIGC={ligA.IndexChimique}",
+                    $"LIGM={ligA.IndexMorphologique}"
+                });
+                return new SlotInventaire
+                {
+                    ID = Joueur.IdObjetBandageTier1,
+                    IndexBotanique = varianteLig,
+                    IndexChimique = ligA.IndexChimique,
+                    IndexMorphologique = ligA.IndexMorphologique,
+                    GenomeAssemblage = genomeBandage,
+                    NiveauFracture = Mathf.Max(Mathf.Max(grille[0].NiveauFracture, grille[1].NiveauFracture), grille[2].NiveauFracture),
+                    EstUnEclat = false
+                };
+            }
+        }
+
         static bool EstSlotTissuCraft(SlotInventaire s) => !s.EstVide && s.ID == 21;
         static bool EstSlotBatonCraft(SlotInventaire s) => !s.EstVide && s.ID == 32;
         /// <summary>Manche de hachette primitive : bâton brut (32) ou branche (31), même essence <see cref="SlotInventaire.IndexBotanique"/>.</summary>
@@ -1718,6 +1861,8 @@ public static class Atlas_Matiere
             tissu2x2 = grille[2].EstVide && grille[5].EstVide && grille[6].EstVide && grille[7].EstVide && grille[8].EstVide;
         if (tissu2x2)
         {
+            if (EstCordeMixteCraft(c0) || EstCordeMixteCraft(c1) || EstCordeMixteCraft(c2) || EstCordeMixteCraft(c3))
+                return new SlotInventaire();
             byte varianteTissu = VarianteLigatureCraft(c0);
             bool varianteUniforme = VarianteLigatureCraft(c1) == varianteTissu
                 && VarianteLigatureCraft(c2) == varianteTissu
@@ -1936,6 +2081,62 @@ public static class Atlas_Matiere
                     NiveauFracture = Mathf.Max(
                         Mathf.Max(Mathf.Max(grille[0].NiveauFracture, grille[2].NiveauFracture), Mathf.Max(grille[3].NiveauFracture, grille[5].NiveauFracture)),
                         Mathf.Max(Mathf.Max(grille[6].NiveauFracture, grille[8].NiveauFracture), Mathf.Max(ligA.NiveauFracture, Mathf.Max(ligB.NiveauFracture, ligC.NiveauFracture)))
+                    ),
+                    EstUnEclat = false
+                };
+            }
+        }
+
+        // Atelle de bras (134) 3×3:
+        // (Br)(L)(Br)
+        // (L)(L)(Br)
+        // (Br)(Br)(Br)
+        // Br = branche brute (31) même essence, L = ligature craft (20/16) même variante.
+        if (grilleCraft3x3Table && grille.Length >= 9
+            && !grille[0].EstVide && grille[0].ID == BlocChutant.ID_BRANCHE
+            && EstSlotLigatureOutilCraft(grille[1])
+            && !grille[2].EstVide && grille[2].ID == BlocChutant.ID_BRANCHE
+            && EstSlotLigatureOutilCraft(grille[3])
+            && EstSlotLigatureOutilCraft(grille[4])
+            && !grille[5].EstVide && grille[5].ID == BlocChutant.ID_BRANCHE
+            && !grille[6].EstVide && grille[6].ID == BlocChutant.ID_BRANCHE
+            && !grille[7].EstVide && grille[7].ID == BlocChutant.ID_BRANCHE
+            && !grille[8].EstVide && grille[8].ID == BlocChutant.ID_BRANCHE)
+        {
+            byte essence = grille[0].IndexBotanique;
+            bool branchesMemeEssence = grille[2].IndexBotanique == essence
+                && grille[5].IndexBotanique == essence
+                && grille[6].IndexBotanique == essence
+                && grille[7].IndexBotanique == essence
+                && grille[8].IndexBotanique == essence;
+            SlotInventaire ligA = NormaliserLigatureOutil(grille[1]);
+            SlotInventaire ligB = NormaliserLigatureOutil(grille[3]);
+            SlotInventaire ligC = NormaliserLigatureOutil(grille[4]);
+            bool ligaturesIdentiques = MemeVarianteLigature(ligA, ligB)
+                && MemeVarianteLigature(ligA, ligC)
+                && Joueur.SontEmpilables(ligA, ligB)
+                && Joueur.SontEmpilables(ligA, ligC);
+            if (branchesMemeEssence && ligaturesIdentiques)
+            {
+                byte varianteLig = VarianteLigatureCraft(ligA);
+                string genomeAtelle = string.Join(";", new[]
+                {
+                    "ATELLE134",
+                    $"BOIS={essence}",
+                    $"LIGV={varianteLig}",
+                    $"LIGC={ligA.IndexChimique}",
+                    $"LIGM={ligA.IndexMorphologique}"
+                });
+                return new SlotInventaire
+                {
+                    ID = Joueur.IdObjetAtelleBras,
+                    IndexBotanique = essence,
+                    IndexChimique = ligA.IndexChimique,
+                    IndexMorphologique = ligA.IndexMorphologique,
+                    GenomeAssemblage = genomeAtelle,
+                    NiveauFracture = Mathf.Max(
+                        Mathf.Max(Mathf.Max(grille[0].NiveauFracture, grille[2].NiveauFracture), Mathf.Max(grille[5].NiveauFracture, grille[6].NiveauFracture)),
+                        Mathf.Max(Mathf.Max(grille[7].NiveauFracture, grille[8].NiveauFracture), Mathf.Max(ligA.NiveauFracture, Mathf.Max(ligB.NiveauFracture, ligC.NiveauFracture)))
                     ),
                     EstUnEclat = false
                 };

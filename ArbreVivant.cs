@@ -52,6 +52,13 @@ public partial class ArbreVivant : StaticBody3D
 	private const float DISTANCE_LOD0 = 130f;
 	private const float DISTANCE_LOD1 = 280f;
 	private const float DISTANCE_LOD2 = 520f;
+	/// <summary>APISARA : lianes visibles plus près, coupées plus tôt au loin (moins de regen mesh).</summary>
+	private const float DISTANCE_LOD0_APISARA = 95f;
+	private const float DISTANCE_LOD1_APISARA = 200f;
+	private const float DISTANCE_LOD2_APISARA = 380f;
+	private const int MAX_LIANES_CANOPEE_LOD0 = 8;
+	private const int MAX_LIANES_CANOPEE_LOD1 = 4;
+	private const int MAX_LIANES_CANOPEE_APISARA = 6;
 	private const float INTERVALLE_MAJ_LOD = 0.75f;
 	private const int BUDGET_GENERATION_INIT_PAR_FRAME = 2;
 	private static ulong _frameBudgetGenerationInit;
@@ -787,16 +794,37 @@ public partial class ArbreVivant : StaticBody3D
 			: GlobalPosition;
 	}
 
+	private bool EstEnDimensionApisara()
+	{
+		var gm = GetTree()?.CurrentScene?.GetNodeOrNull<Gestionnaire_Monde>("Gestionnaire_Monde");
+		return gm != null && gm.ObtenirDimensionLocaleActiveId() == (int)DimensionJeu.Abysse;
+	}
+
+	private void ObtenirSeuilsLodLianes(out float lod0, out float lod1, out float lod2)
+	{
+		if (EstEnDimensionApisara())
+		{
+			lod0 = DISTANCE_LOD0_APISARA;
+			lod1 = DISTANCE_LOD1_APISARA;
+			lod2 = DISTANCE_LOD2_APISARA;
+			return;
+		}
+		lod0 = DISTANCE_LOD0;
+		lod1 = DISTANCE_LOD1;
+		lod2 = DISTANCE_LOD2;
+	}
+
 	private int EvaluerLodDistance(float distance)
 	{
+		ObtenirSeuilsLodLianes(out float d0, out float d1, out float d2);
 		// Hystérésis légère pour éviter les regen en boucle sur les frontières.
 		if (_lodActuel == 0)
-			return distance <= DISTANCE_LOD0 + 8f ? 0 : (distance < DISTANCE_LOD1 ? 1 : (distance < DISTANCE_LOD2 ? 2 : 2));
+			return distance <= d0 + 8f ? 0 : (distance < d1 ? 1 : (distance < d2 ? 2 : 2));
 		if (_lodActuel == 1)
-			return distance < DISTANCE_LOD0 - 5f ? 0 : (distance <= DISTANCE_LOD1 + 10f ? 1 : 2);
+			return distance < d0 - 5f ? 0 : (distance <= d1 + 10f ? 1 : 2);
 		if (_lodActuel == 2)
-			return distance < DISTANCE_LOD1 - 8f ? 1 : 2;
-		return distance < DISTANCE_LOD0 ? 0 : (distance < DISTANCE_LOD1 ? 1 : 2);
+			return distance < d1 - 8f ? 1 : 2;
+		return distance < d0 ? 0 : (distance < d1 ? 1 : 2);
 	}
 
 	private void RegenererSelonLod(bool forcer)
@@ -1052,13 +1080,13 @@ public partial class ArbreVivant : StaticBody3D
 									GenererFeuillagePetit(stFeuilles, tStart, AgeEnJours, tailleBase * 1.10f, facteurFeuillesLod);
 									GenererFeuillagePetit(stFeuilles, tMid, AgeEnJours, tailleBase * 0.92f, facteurFeuillesLod);
 									GenererFeuillagePetit(stFeuilles, tEnd, AgeEnJours, tailleBase * 0.78f, facteurFeuillesLod);
-									if (IndexBotanique == LSystem_Botanique.IndexJungle)
+									if (IndexBotanique == LSystem_Botanique.IndexJungle && lodNiveau < 2)
 									{
 										float chanceLiane = ChanceLianesJungleSelonAge(AgeEnJours);
 										if (Hash(SeedForme, hashBase + 501) < chanceLiane * 0.78f)
-											GenererLianesJungle(stFeuilles, tEnd, AgeEnJours, 0.90f + chanceLiane * 0.65f);
-										if (Hash(SeedForme, hashBase + 641) < chanceLiane * 0.48f)
-											GenererLianesTroncJungle(stFeuilles, tStart, AgeEnJours);
+											GenererLianesJungle(stFeuilles, tEnd, AgeEnJours, 0.90f + chanceLiane * 0.65f, lodNiveau);
+										if (lodNiveau == 0 && Hash(SeedForme, hashBase + 641) < chanceLiane * 0.48f)
+											GenererLianesTroncJungle(stFeuilles, tStart, AgeEnJours, lodNiveau);
 									}
 								}
 							}
@@ -1130,8 +1158,10 @@ public partial class ArbreVivant : StaticBody3D
 					if (IndexBotanique == LSystem_Botanique.IndexJungle)
 					{
 						float chanceLianeSommet = ChanceLianesJungleSelonAge(AgeEnJours) * 0.85f;
-						if (Hash(SeedForme, 19877 + AgeEnJours) < chanceLianeSommet)
-							GenererLianesJungle(stFeuilles, tortue, AgeEnJours, 1.05f);
+						if (lodNiveau < 2 && Hash(SeedForme, 19877 + AgeEnJours) < chanceLianeSommet)
+							GenererLianesJungle(stFeuilles, tortue, AgeEnJours, 1.05f, lodNiveau);
+						else if (lodNiveau >= 2 && AgeEnJours >= 2)
+							GenererLianesJungleGarantie(stFeuilles, tortue, AgeEnJours, lodNiveau);
 					}
 				}
 			else GenererFeuillage(stFeuilles, tortue, AgeEnJours, 0.92f, facteurFeuillesLod);
@@ -1250,8 +1280,8 @@ public partial class ArbreVivant : StaticBody3D
 		return Mathf.Clamp(0.62f + (age - 5) * 0.06f, 0.62f, 0.96f);
 	}
 
-	/// <summary>Lianes pendantes de canopée pour les arbres de jungle (mesh 3D tubulaire).</summary>
-	private void GenererLianesJungle(SurfaceTool st, Transform3D tortue, int age, float densiteMul = 1f)
+	/// <summary>Lianes pendantes (rubans légers ou tube réduit) — pas de raycast physique à la génération.</summary>
+	private void GenererLianesJungle(SurfaceTool st, Transform3D tortue, int age, float densiteMul = 1f, int lodNiveau = 0)
 	{
 		if (EssenceMorte) return;
 		if (IndexBotanique != LSystem_Botanique.IndexJungle) return;
@@ -1265,7 +1295,14 @@ public partial class ArbreVivant : StaticBody3D
 		if (Mathf.Abs(refPerp.Dot(axe)) > 0.95f) refPerp = tortue.Basis.Z.Normalized();
 		refPerp = (refPerp - axe * axe.Dot(refPerp)).Normalized();
 
-		int n = Mathf.Clamp((int)((1 + age * 0.90f) * densiteMul), 1, 14);
+		bool apisara = EstEnDimensionApisara();
+		int maxLianes = lodNiveau switch
+		{
+			0 => apisara ? MAX_LIANES_CANOPEE_APISARA : MAX_LIANES_CANOPEE_LOD0,
+			1 => MAX_LIANES_CANOPEE_LOD1,
+			_ => 1
+		};
+		int n = Mathf.Clamp((int)((1 + age * 0.72f) * densiteMul), 1, maxLianes);
 		int nbAjoutees = 0;
 		for (int i = 0; i < n; i++)
 		{
@@ -1274,28 +1311,32 @@ public partial class ArbreVivant : StaticBody3D
 			Vector3 radial = refPerp.Rotated(axe, theta).Normalized();
 			Vector3 ancre = centre + radial * (0.10f + Hash(SeedForme, 17100 + i) * 0.18f);
 			float longueur = (0.85f + Hash(SeedForme, 17200 + i) * (1.20f + age * 0.10f)) * Mathf.Lerp(0.30f, 1f, _progressionLianesJungle);
-			float rayon = 0.030f + Hash(SeedForme, 17300 + i) * 0.016f;
 			bool viserSol = Hash(SeedForme, 17750 + i + age * 9) < 0.62f;
-			AjouterLianeTubulaire(st, ancre, longueur, rayon, radial, 17600 + i * 17, viserSol, CouleurLianeJungle);
+			AjouterLianeVisuelle(st, ancre, longueur, radial, 17600 + i * 17, viserSol, CouleurLianeJungle, lodNiveau, apisara);
 			nbAjoutees++;
 		}
 
-		// Sécurité visuelle: garantit au moins une liane exploitable sur arbres non bébé.
 		if (nbAjoutees == 0 && age >= 2 && chance > 0.08f)
-		{
-			Vector3 radial = refPerp.Rotated(axe, Hash(SeedForme, 18888 + age) * Mathf.Tau).Normalized();
-			Vector3 ancre = centre + radial * 0.16f;
-			float longueur = (1.10f + Hash(SeedForme, 18911 + age) * 1.35f) * Mathf.Lerp(0.35f, 1f, _progressionLianesJungle);
-			float rayon = 0.036f;
-			AjouterLianeTubulaire(st, ancre, longueur, rayon, radial, 18977 + age * 17, true, CouleurLianeJungle);
-		}
+			GenererLianesJungleGarantie(st, tortue, age, lodNiveau);
 		st.SetColor(couleurFeuillage);
 	}
 
-	/// <summary>Liane collée au tronc, plus courte, générée aléatoirement.</summary>
-	private void GenererLianesTroncJungle(SurfaceTool st, Transform3D tortue, int age)
+	private void GenererLianesJungleGarantie(SurfaceTool st, Transform3D tortue, int age, int lodNiveau)
 	{
-		if (EssenceMorte) return;
+		Vector3 axe = tortue.Basis.Y.Normalized();
+		Vector3 refPerp = tortue.Basis.X.Normalized();
+		if (Mathf.Abs(refPerp.Dot(axe)) > 0.95f) refPerp = tortue.Basis.Z.Normalized();
+		refPerp = (refPerp - axe * axe.Dot(refPerp)).Normalized();
+		Vector3 radial = refPerp.Rotated(axe, Hash(SeedForme, 18888 + age) * Mathf.Tau).Normalized();
+		Vector3 ancre = tortue.Origin + radial * 0.16f;
+		float longueur = (1.10f + Hash(SeedForme, 18911 + age) * 1.35f) * Mathf.Lerp(0.35f, 1f, _progressionLianesJungle);
+		AjouterLianeVisuelle(st, ancre, longueur, radial, 18977 + age * 17, true, CouleurLianeJungle, lodNiveau, EstEnDimensionApisara());
+	}
+
+	/// <summary>Liane collée au tronc (LOD0 uniquement).</summary>
+	private void GenererLianesTroncJungle(SurfaceTool st, Transform3D tortue, int age, int lodNiveau = 0)
+	{
+		if (EssenceMorte || lodNiveau > 0) return;
 		if (IndexBotanique != LSystem_Botanique.IndexJungle) return;
 		float chance = ChanceLianesJungleSelonAge(age) * 0.72f * _progressionLianesJungle;
 		if (Hash(SeedForme, 17400 + age) > chance) return;
@@ -1307,54 +1348,79 @@ public partial class ArbreVivant : StaticBody3D
 		if (radial.LengthSquared() < 1e-5f) radial = Vector3.Right;
 		Vector3 ancre = centre + radial * (0.06f + Hash(SeedForme, 17470 + age) * 0.06f);
 		float longueur = (0.55f + Hash(SeedForme, 17500 + age) * 0.75f) * Mathf.Lerp(0.30f, 1f, _progressionLianesJungle);
-		float rayon = 0.022f + Hash(SeedForme, 17600 + age) * 0.010f;
-		AjouterLianeTubulaire(st, ancre, longueur, rayon, radial, 18100 + age * 13, false, CouleurLianeJungle);
+		AjouterLianeVisuelle(st, ancre, longueur, radial, 18100 + age * 13, false, CouleurLianeJungle, 0, EstEnDimensionApisara());
 		st.SetColor(couleurFeuillage);
 	}
 
-	/// <summary>Liane 3D: tube courbé texturé (pas un simple plan).</summary>
-	private void AjouterLianeTubulaire(SurfaceTool st, Vector3 ancre, float longueur, float rayonBase, Vector3 radial, int saltBase, bool viserSol, Color couleur)
+	private static float EstimerLongueurLianeVersSol(Vector3 ancre, float longueurDemandee, bool viserSol, float progressionLianes)
 	{
-		// Pousse vers le sol: ajuste la longueur selon un raycast vertical.
-		var space = GetWorld3D()?.DirectSpaceState;
-		bool toucheSol = false;
-		if (space != null)
+		float versSol = Mathf.Max(0.25f, ancre.Y - 1.2f);
+		if (viserSol)
 		{
-			Vector3 bas = ancre + Vector3.Down * 220f;
-			var q = PhysicsRayQueryParameters3D.Create(ancre, bas);
-			q.CollisionMask = 1;
-			q.Exclude = new Godot.Collections.Array<Rid> { GetRid() };
-			var hit = space.IntersectRay(q);
-			if (hit.Count > 0 && hit.ContainsKey("position"))
-			{
-				toucheSol = true;
-				Vector3 sol = hit["position"].AsVector3();
-				float distSol = Mathf.Max(0.10f, ancre.DistanceTo(sol) - 0.10f);
-				if (viserSol)
-				{
-					// Certaines lianes vont vraiment près du sol.
-					float cibleSol = distSol * Mathf.Lerp(0.88f, 0.98f, _progressionLianesJungle);
-					longueur = Mathf.Clamp(cibleSol, 0.30f, distSol);
-				}
-				else
-				{
-					float cibleSol = distSol * Mathf.Lerp(0.65f, 0.92f, _progressionLianesJungle);
-					longueur = Mathf.Clamp(Mathf.Max(longueur, cibleSol), 0.25f, distSol);
-				}
-			}
+			float cible = versSol * Mathf.Lerp(0.88f, 0.98f, progressionLianes);
+			return Mathf.Clamp(Mathf.Min(longueurDemandee * 1.05f, cible), 0.30f, cible);
 		}
-		if (viserSol && !toucheSol)
-			longueur = Mathf.Max(longueur, 6.5f);
-		const int segments = 6;
+		float cibleCourte = versSol * Mathf.Lerp(0.62f, 0.90f, progressionLianes);
+		return Mathf.Clamp(Mathf.Max(longueurDemandee, cibleCourte * 0.55f), 0.25f, Mathf.Min(longueurDemandee * 1.4f, versSol));
+	}
+
+	/// <summary>Rubans croisés : même silhouette verte pendante, ~20× moins de triangles qu’un tube 5×6 segments.</summary>
+	private void AjouterLianeRubanLegere(SurfaceTool st, Vector3 ancre, float longueur, Vector3 radial, int saltBase, bool viserSol, Color couleur)
+	{
+		longueur = EstimerLongueurLianeVersSol(ancre, longueur, viserSol, _progressionLianesJungle);
+		float sway = (Hash(SeedForme, saltBase) * 2f - 1f) * 0.07f;
+		Vector3 bas = ancre + Vector3.Down * longueur + radial * sway;
+		Vector3 droite = radial.Cross(Vector3.Down);
+		if (droite.LengthSquared() < 1e-5f) droite = Vector3.Right;
+		droite = droite.Normalized();
+		Vector3 avant = droite.Cross(Vector3.Down).Normalized();
+		float epaisseur = 0.040f + Hash(SeedForme, saltBase + 3) * 0.018f;
+
+		void AjouterQuad(Vector3 tangent, Vector3 normale)
+		{
+			Vector3 t = tangent.Normalized();
+			Vector3 n = normale.Normalized();
+			Vector3 a0 = ancre - t * epaisseur;
+			Vector3 a1 = ancre + t * epaisseur;
+			Vector3 b0 = bas - t * epaisseur;
+			Vector3 b1 = bas + t * epaisseur;
+			st.SetColor(couleur); st.SetNormal(n); st.SetUV(new Vector2(0, 0)); st.AddVertex(a0);
+			st.SetColor(couleur); st.SetNormal(n); st.SetUV(new Vector2(1, 0)); st.AddVertex(a1);
+			st.SetColor(couleur); st.SetNormal(n); st.SetUV(new Vector2(1, 1)); st.AddVertex(b1);
+			st.SetColor(couleur); st.SetNormal(n); st.SetUV(new Vector2(0, 0)); st.AddVertex(a0);
+			st.SetColor(couleur); st.SetNormal(n); st.SetUV(new Vector2(1, 1)); st.AddVertex(b1);
+			st.SetColor(couleur); st.SetNormal(n); st.SetUV(new Vector2(0, 1)); st.AddVertex(b0);
+		}
+
+		AjouterQuad(droite, radial);
+		AjouterQuad(avant, radial);
+	}
+
+	private void AjouterLianeVisuelle(SurfaceTool st, Vector3 ancre, float longueur, Vector3 radial, int saltBase, bool viserSol, Color couleur, int lodNiveau, bool apisara)
+	{
+		bool ruban = apisara || lodNiveau >= 1;
+		if (ruban)
+		{
+			AjouterLianeRubanLegere(st, ancre, longueur, radial, saltBase, viserSol, couleur);
+			return;
+		}
+		AjouterLianeTubulaireReduit(st, ancre, longueur, radial, saltBase, viserSol, couleur);
+	}
+
+	/// <summary>Tube léger (proche) : 3 segments, 4 côtés, sans raycast.</summary>
+	private void AjouterLianeTubulaireReduit(SurfaceTool st, Vector3 ancre, float longueur, Vector3 radial, int saltBase, bool viserSol, Color couleur)
+	{
+		longueur = EstimerLongueurLianeVersSol(ancre, longueur, viserSol, _progressionLianesJungle);
+		const int segments = 3;
+		float rayonBase = 0.028f;
 		Vector3 prev = ancre;
 		for (int s = 1; s <= segments; s++)
 		{
 			float t = (float)s / segments;
-			float sway = (Hash(SeedForme, saltBase + s * 3) * 2f - 1f) * 0.06f;
-			Vector3 offsetLateral = radial * (Mathf.Sin(t * Mathf.Pi) * 0.08f + sway);
-			Vector3 curr = ancre + Vector3.Down * (longueur * t) + offsetLateral;
-			float rayon = Mathf.Max(0.0025f, rayonBase * (1f - t * 0.55f));
-			AjouterTubeSegmentLiane(st, prev, curr, rayon, 5, couleur);
+			float sway = (Hash(SeedForme, saltBase + s * 3) * 2f - 1f) * 0.05f;
+			Vector3 curr = ancre + Vector3.Down * (longueur * t) + radial * (Mathf.Sin(t * Mathf.Pi) * 0.07f + sway);
+			float rayon = Mathf.Max(0.003f, rayonBase * (1f - t * 0.5f));
+			AjouterTubeSegmentLiane(st, prev, curr, rayon, 4, couleur);
 			prev = curr;
 		}
 	}

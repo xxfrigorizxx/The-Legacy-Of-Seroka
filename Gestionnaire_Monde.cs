@@ -127,6 +127,8 @@ public partial class Gestionnaire_Monde : Node3D
 	private double _cooldownRearmementVerrouAbysse;
 	private const double CooldownRearmementVerrouAbysseSec = 10.0;
 	private bool _gateTpDimensionActif;
+	/// <summary>Position cible pendant un TP dimension (streaming chunks tant que le joueur est hors arbre).</summary>
+	private Vector3 _positionReferenceTransfertDimension;
 	private double _secondesGateTpDimension;
 	private const double DureeMaxGateTpDimensionSec = 8.0;
 	private bool _portailsNexusPlaces;
@@ -256,9 +258,12 @@ public partial class Gestionnaire_Monde : Node3D
 		_dimensionParPeer[peerId] = dimensionId;
 	}
 
-	private void ReparenterNoeudDansDimension(Node3D noeud, int dimensionId)
+	private void ReparenterNoeudDansDimension(Node3D noeud, int dimensionId, bool immediat = false)
 	{
-		CallDeferred(nameof(ReparenterNoeudDansDimensionDiffere), noeud, dimensionId);
+		if (immediat)
+			ReparenterNoeudDansDimensionDiffere(noeud, dimensionId);
+		else
+			CallDeferred(nameof(ReparenterNoeudDansDimensionDiffere), noeud, dimensionId);
 	}
 
 	private void ReparenterNoeudDansDimensionDiffere(Node3D noeud, int dimensionId)
@@ -277,10 +282,55 @@ public partial class Gestionnaire_Monde : Node3D
 		noeud.GlobalPosition = posGlobale;
 	}
 
+	/// <summary>Vrai si le nœud joueur existe encore (évite <see cref="ObjectDisposedException"/> après mort / transition).</summary>
+	public bool JoueurReferenceValide()
+	{
+		if (_joueur == null)
+			return false;
+		try
+		{
+			if (!GodotObject.IsInstanceValid(_joueur))
+			{
+				_joueur = null;
+				return false;
+			}
+			if (!_joueur.IsInsideTree())
+				return false;
+			return true;
+		}
+		catch (ObjectDisposedException)
+		{
+			_joueur = null;
+			return false;
+		}
+	}
+
+	public CharacterBody3D ObtenirJoueurSiValide()
+	{
+		return JoueurReferenceValide() ? _joueur : null;
+	}
+
+	public Vector3 ObtenirPositionJoueurOuSpawn()
+	{
+		if (_gateTpDimensionActif)
+			return _positionReferenceTransfertDimension;
+		if (!JoueurReferenceValide())
+			return _spawnInitialEnAttente;
+		try
+		{
+			return _joueur.GlobalPosition;
+		}
+		catch (ObjectDisposedException)
+		{
+			_joueur = null;
+			return _spawnInitialEnAttente;
+		}
+	}
+
 	/// <summary>Vrai si le chunk sous les pieds du joueur a sa collision construite (évite chute libre au spawn).</summary>
 	public bool EstSpawnPret()
 	{
-		if (_joueur == null) return false;
+		if (!JoueurReferenceValide()) return false;
 		Vector3 pos = ObtenirPointReferenceSpawn();
 		if (UseArchitectureReseau)
 		{
@@ -416,19 +466,64 @@ public partial class Gestionnaire_Monde : Node3D
 		}
 	}
 
+	/// <summary>Collision terrain + sol physique réel sous le corps (évite dégel prématuré au reload).</summary>
+	private bool EstSolPhysiquePretSousRigidBody(RigidBody3D rb)
+	{
+		if (rb == null || !GodotObject.IsInstanceValid(rb) || !rb.IsInsideTree())
+			return false;
+		if (!EstCollisionTerrainChunkPretPourPoint(rb.GlobalPosition))
+			return false;
+		if (UseArchitectureReseau && _mondeClient != null
+			&& !_mondeClient.CollisionTerrainActiveAutourPoint(rb.GlobalPosition, 1))
+			return false;
+
+		PhysicsDirectSpaceState3D espace = rb.GetWorld3D()?.DirectSpaceState;
+		if (espace == null)
+			return true;
+
+		Vector3 origine = rb.GlobalPosition + Vector3.Up * 0.35f;
+		Vector3 fin = rb.GlobalPosition + Vector3.Down * 2.5f;
+		var requete = PhysicsRayQueryParameters3D.Create(origine, fin);
+		requete.CollisionMask = 1;
+		requete.CollideWithAreas = false;
+		requete.Exclude = new Godot.Collections.Array<Rid> { rb.GetRid() };
+		var impact = espace.IntersectRay(requete);
+		if (impact.Count == 0 || !impact.ContainsKey("position"))
+			return false;
+
+		float ySol = ((Vector3)impact["position"]).Y;
+		float ecart = rb.GlobalPosition.Y - ySol;
+		return ecart <= 1.35f && ecart >= -0.45f;
+	}
+
+	private void AjouterRigidBodyFileAttenteRestaurationSol(RigidBody3D rb)
+	{
+		if (_rigidBodiesAttenteCollisionSolRestauration.Contains(rb))
+			return;
+		rb.Freeze = true;
+		rb.LinearVelocity = Vector3.Zero;
+		rb.AngularVelocity = Vector3.Zero;
+		rb.Sleeping = true;
+		_rigidBodiesAttenteCollisionSolRestauration.Add(rb);
+	}
+
 	/// <summary>Gèle le corps jusqu’à ce que le terrain soit streamé sous lui, puis dégel progressif dans <see cref="TraiterDepgelRigidBodiesRestaurationSol"/>.</summary>
 	public void EnregistrerRigidBodyRestaurationSolSiCollisionManquante(RigidBody3D rb)
 	{
 		if (rb == null || !GodotObject.IsInstanceValid(rb)) return;
 		if (rb is ItemPhysique ipMeuble && ItemPhysique.EstMeublePoseStatique(ipMeuble.ID_Objet))
 			return;
-		if (EstCollisionTerrainChunkPretPourPoint(rb.GlobalPosition)) return;
-		if (_rigidBodiesAttenteCollisionSolRestauration.Contains(rb)) return;
-		rb.Freeze = true;
-		rb.LinearVelocity = Vector3.Zero;
-		rb.AngularVelocity = Vector3.Zero;
-		rb.Sleeping = true;
-		_rigidBodiesAttenteCollisionSolRestauration.Add(rb);
+		if (EstSolPhysiquePretSousRigidBody(rb)) return;
+		AjouterRigidBodyFileAttenteRestaurationSol(rb);
+	}
+
+	/// <summary>Au chargement de sauvegarde : toujours geler les corps dynamiques jusqu’à sol physique prêt (positions sauvegardées).</summary>
+	public void EnregistrerRigidBodyRestaurationSolAuChargement(RigidBody3D rb)
+	{
+		if (rb == null || !GodotObject.IsInstanceValid(rb)) return;
+		if (rb is ItemPhysique ipMeuble && ItemPhysique.EstMeublePoseStatique(ipMeuble.ID_Objet))
+			return;
+		AjouterRigidBodyFileAttenteRestaurationSol(rb);
 	}
 
 	private void TraiterDepgelRigidBodiesRestaurationSol(int maxParFrame)
@@ -443,7 +538,7 @@ public partial class Gestionnaire_Monde : Node3D
 				budget--;
 				continue;
 			}
-			if (EstCollisionTerrainChunkPretPourPoint(rb.GlobalPosition))
+			if (EstSolPhysiquePretSousRigidBody(rb))
 			{
 				if (rb is ItemPhysique ipFigé && ItemPhysique.EstMeublePoseStatique(ipFigé.ID_Objet))
 				{
@@ -468,7 +563,7 @@ public partial class Gestionnaire_Monde : Node3D
 	{
 		if (_spawnDoitEtreAligneAuSol && !_spawnAligneAuSol)
 			return _spawnInitialEnAttente;
-		return _joueur != null ? _joueur.GlobalPosition : _spawnInitialEnAttente;
+		return ObtenirPositionJoueurOuSpawn();
 	}
 
 	private bool ChunkEtVoisinsCardinauxPretsAuPoint(Vector3 point)
@@ -495,36 +590,47 @@ public partial class Gestionnaire_Monde : Node3D
 	public bool EstDimensionLocaleAbysse() => _dimensionLocaleActive == (int)DimensionJeu.Abysse;
 	public int ObtenirDimensionLocaleActiveId() => _dimensionLocaleActive;
 
+	/// <summary>Racine 3D de la dimension (ARAPA, BETA, …) — parent des objets posés / joueur reparenté.</summary>
+	public Node3D ObtenirRacineDimension(int dimensionId)
+	{
+		if (_racineParDimension.TryGetValue(dimensionId, out Node3D racine) && racine != null && GodotObject.IsInstanceValid(racine))
+			return racine;
+		return null;
+	}
+
 	/// <summary>Vrai si la zone locale du joueur est prête pour un déplacement physique sûr.</summary>
 	public bool EstDeplacementLocalPret()
 	{
-		if (!UseArchitectureReseau || _mondeClient == null || _joueur == null)
+		if (!UseArchitectureReseau || _mondeClient == null || !JoueurReferenceValide())
 			return true;
+		Vector3 posJoueur = _joueur.GlobalPosition;
 		if (_dimensionLocaleActive == (int)DimensionJeu.Abysse)
-			return _mondeClient.AbysseCollisionLocaleActive(_joueur.GlobalPosition);
-		Vector2I c = WorldToChunkCoord(_joueur.GlobalPosition, TailleChunk);
+			return _mondeClient.AbysseCollisionLocaleActive(posJoueur);
+		Vector2I c = WorldToChunkCoord(posJoueur, TailleChunk);
 		return _mondeClient.ChunkCollisionActive(c);
 	}
 
 	private void JournaliserDiagnosticCollisionAbysse()
 	{
-		if (!ActiverDiagnosticCollisionAbysse || _dimensionLocaleActive != (int)DimensionJeu.Abysse || _joueur == null || _mondeClient == null)
+		if (!ActiverDiagnosticCollisionAbysse || _dimensionLocaleActive != (int)DimensionJeu.Abysse || !JoueurReferenceValide() || _mondeClient == null)
 			return;
+		Vector3 posJoueur = _joueur.GlobalPosition;
 		bool spawnPret = EstSpawnPret();
 		bool deplacementPret = EstDeplacementLocalPret();
-		bool collisionLocale = _mondeClient.AbysseCollisionLocaleActive(_joueur.GlobalPosition);
+		bool collisionLocale = _mondeClient.AbysseCollisionLocaleActive(posJoueur);
 		bool gateTp = _gateTpDimensionActif;
-		Vector2I chunk = WorldToChunkCoord(_joueur.GlobalPosition, TailleChunk);
+		Vector2I chunk = WorldToChunkCoord(posJoueur, TailleChunk);
 		GD.Print($"ZERO-K ABYSSE DIAG MONDE: chunk={chunk} spawnPret={spawnPret} deplacementPret={deplacementPret} collisionLocale={collisionLocale} gateTp={gateTp} overlay={(_overlayChargement?.Visible ?? false)}");
 	}
 
 	private bool CollisionLocalePretePourTpDimension()
 	{
-		if (!UseArchitectureReseau || _mondeClient == null || _joueur == null)
+		if (!UseArchitectureReseau || _mondeClient == null)
 			return true;
+		Vector3 posJoueur = ObtenirPositionJoueurOuSpawn();
 		if (_dimensionLocaleActive == (int)DimensionJeu.Abysse)
-			return _mondeClient.AbysseCollisionLocaleActive(_joueur.GlobalPosition);
-		Vector2I c = WorldToChunkCoord(_joueur.GlobalPosition, TailleChunk);
+			return _mondeClient.AbysseCollisionLocaleActive(posJoueur);
+		Vector2I c = WorldToChunkCoord(posJoueur, TailleChunk);
 		return _mondeClient.ChunkCollisionActive(c);
 	}
 
@@ -723,6 +829,23 @@ public partial class Gestionnaire_Monde : Node3D
 	/// Finalise le spawn du nouveau monde : la map/collision doit être prête, puis raycast vertical au point de spawn.
 	/// Tant que le raycast n'a pas de hit valide, on ne finalise PAS (évite spawn sous la map).
 	/// </summary>
+	/// <summary>Après mort : nouveau personnage au point de spawn initial (même seed / carte), sans recharger la scène.</summary>
+	public void RepositionnerJoueurApresMortNouveauPersonnage()
+	{
+		if (_joueur == null)
+			return;
+		Vector3 posSpawn = CalculerSpawnInitialDepuisSeed();
+		posSpawn = AssurerSpawnAuDessusDuSol(posSpawn);
+		_spawnInitialEnAttente = posSpawn;
+		_spawnDoitEtreAligneAuSol = true;
+		_spawnAligneAuSol = false;
+		_joueur.GlobalPosition = posSpawn;
+		_joueur.Velocity = Vector3.Zero;
+		_joueur.Visible = false;
+		if (!FinaliserSpawnInitialAuSol(autoriserFallbackSansRaycast: true) && _joueur is Joueur jo)
+			jo.Visible = true;
+	}
+
 	private bool FinaliserSpawnInitialAuSol(bool autoriserFallbackSansRaycast = false)
 	{
 		if (!_spawnDoitEtreAligneAuSol || _spawnAligneAuSol || _joueur == null) return true;
@@ -972,6 +1095,8 @@ public partial class Gestionnaire_Monde : Node3D
 
 		if (UseArchitectureReseau)
 		{
+			if (sessionSauvegardee.HasValue)
+				_dimensionLocaleActive = dimensionReconnexion;
 			DemarrerArchitectureReseau();
 			// Reconnexion : si la dernière dimension active n'est pas Alpha (déjà l'état par défaut au boot)
 			// et qu'elle existe bien dans nos serveurs, on bascule dessus à la même position. Couvre Abysse + Beta/Omega/Delta.
@@ -1702,9 +1827,10 @@ void fragment()
 		_effetsRemousParCorps.Clear();
 		_corpsSuiviRemous.Clear();
 		_corpsDansOcean.Clear();
-		// Inventaire / objets au sol : déjà gravés dans Joueur._ExitTree (le joueur quitte l’arbre avant ce nœud).
-		// Ici uniquement les chunks voxel + données serveur associées.
-		if (UseArchitectureReseau)
+		// Inventaire / objets : Joueur._ExitTree si encore dans l’arbre ; chunks pour toutes les dimensions ici.
+		if (IsInsideTree())
+			SauvegarderChunksVoxelToutesDimensions("Gestionnaire_Monde._ExitTree");
+		else if (UseArchitectureReseau)
 		{
 			foreach (var kv in _serveurParDimension)
 				kv.Value?.SauvegarderCritiqueAvantSortie("Gestionnaire_Monde._ExitTree");
@@ -1778,7 +1904,25 @@ void fragment()
 	}
 
 	/// <summary>Même logique que le bouton Sauvegarder du menu pause et de l’inventaire (position + monde / chunks).</summary>
-	public void SauvegarderManuelDepuisMenu(string contexte = "menu")
+	/// <summary>Grave le terrain modifié pour toutes les dimensions (ARAPA, APISARA, PETA, OMEGA, DERATA).</summary>
+	public void SauvegarderChunksVoxelToutesDimensions(string contexte = "persist")
+	{
+		if (UseArchitectureReseau)
+		{
+			foreach (var info in ConstantesDimensions.ToutesAvecPersistanceModifications())
+			{
+				if (!_serveurParDimension.TryGetValue(info.Id, out Monde_Serveur serveur) || serveur == null)
+					continue;
+				serveur.SauvegarderCritiqueAvantSortie($"{contexte}/{info.NomCanonique}");
+			}
+			return;
+		}
+		foreach (var kv in _chunks)
+			(kv.Value as Generateur_Voxel)?.Sauvegarder(kv.Key);
+	}
+
+	/// <summary>Constructions, objets, faune et chunks pour chaque dimension (génération APISARA distincte, modifications persistées).</summary>
+	public void SauvegarderPersistanceCompleteMonde(string contexte = "persist")
 	{
 		if (_joueur != null)
 		{
@@ -1795,21 +1939,15 @@ void fragment()
 					j.SauvegarderEtatPersistantJoueurSeulement();
 			}
 			else
-			{
 				GD.Print("ZERO-K : Sauvegarde joueur différée (phase restauration joueur pas encore exécutée).");
-			}
 		}
-		if (UseArchitectureReseau)
-		{
-			foreach (var kv in _serveurParDimension)
-				kv.Value?.SauvegarderCritiqueAvantSortie($"Gestionnaire_Monde.SauvegarderManuelDepuisMenu:{contexte}");
-		}
-		else
-		{
-			foreach (var kv in _chunks)
-				(kv.Value as Generateur_Voxel)?.Sauvegarder(kv.Key);
-		}
-		GD.Print("ZERO-K : Sauvegarde manuelle effectuée.");
+		SauvegarderChunksVoxelToutesDimensions(contexte);
+		GD.Print($"ZERO-K : Persistance complète monde ({contexte}).");
+	}
+
+	public void SauvegarderManuelDepuisMenu(string contexte = "menu")
+	{
+		SauvegarderPersistanceCompleteMonde($"menu:{contexte}");
 	}
 
 	private void CreerMenuPause()
@@ -2313,8 +2451,9 @@ void fragment()
 			GetNode<GameState>("/root/GameState").SeedTerrainActuel,
 			coord =>
 			{
-				int coordY = Mathf.FloorToInt((_joueur?.GlobalPosition.Y ?? 0f) / Mathf.Max(1f, _mondeServeur?.HauteurMax ?? 1));
-				_mondeServeur?.EnregistrerDemandeChunk(coord, coordY, _joueur?.GlobalPosition ?? Vector3.Zero);
+				Vector3 posJ = ObtenirPositionJoueurOuSpawn();
+				int coordY = Mathf.FloorToInt(posJ.Y / Mathf.Max(1f, _mondeServeur?.HauteurMax ?? 1));
+				_mondeServeur?.EnregistrerDemandeChunk(coord, coordY, posJ);
 			},
 			(pointImpact, rayon, forceDegats) => _mondeServeur.AppliquerDestructionGlobale(pointImpact, rayon, forceDegats),
 			(pointImpact, normale, rayon, idMatiere) => _mondeServeur.AppliquerCreationGlobale(pointImpact, normale, rayon, idMatiere)
@@ -2333,6 +2472,7 @@ void fragment()
 		AddChild(_mondeClient);
 		ReparenterNoeudDansDimension(_joueur, (int)DimensionJeu.Alpha);
 		MettreAJourAtmosphereAbysseLocale(_dimensionLocaleActive);
+		MettreAJourSuspensionServeursDimensions(_dimensionLocaleActive);
 
 		// Croissance des arbres + jour absolu au passage minuit
 		var cycleSolaire = GetParent()?.GetNodeOrNull<Cycle_Solaire>("CycleSolaire");
@@ -2345,7 +2485,11 @@ void fragment()
 			{
 				GameState.Instance?.IncrementerJourAbsolu();
 				foreach (var kv in _serveurParDimension)
-					kv.Value?.FairePousserArbresDuJour();
+				{
+					if (kv.Value == null || kv.Value.EstSimulationSuspendue)
+						continue;
+					kv.Value.FairePousserArbresDuJour();
+				}
 			}));
 		}
 
@@ -2755,7 +2899,7 @@ void fragment()
 				if (Multiplayer.IsServer())
 					DiffuserDestructionChunkDimension(dimensionId, coord);
 			},
-			() => _joueur?.GlobalPosition ?? Vector3.Zero,
+			ObtenirPositionJoueurOuSpawn,
 			() => _dimensionLocaleActive,
 			dimensionId
 		);
@@ -2768,6 +2912,17 @@ void fragment()
 			if (kv.Value == null || !GodotObject.IsInstanceValid(kv.Value))
 				continue;
 			kv.Value.Visible = (kv.Key == dimensionIdActif);
+		}
+	}
+
+	/// <summary>Seule la dimension visitée simule terrain / eau / décharge ; les autres restent sur disque jusqu'au retour.</summary>
+	private void MettreAJourSuspensionServeursDimensions(int dimensionActiveId)
+	{
+		foreach (var kv in _serveurParDimension)
+		{
+			if (kv.Value == null || !GodotObject.IsInstanceValid(kv.Value))
+				continue;
+			kv.Value.DefinirSimulationSuspendue(kv.Key != dimensionActiveId);
 		}
 	}
 
@@ -3062,21 +3217,15 @@ void fragment()
 		int dimensionActuelle = ObtenirDimensionPeer(peerId);
 		if (peerId == Multiplayer.GetUniqueId())
 		{
-			Vector3 positionAvantTp = _joueur?.GlobalPosition ?? positionCible;
+			Vector3 positionAvantTp = JoueurReferenceValide() ? _joueur.GlobalPosition : positionCible;
 			GameState.Instance?.SauvegarderPositionJoueur(positionAvantTp);
 			// Mémorise la position actuelle dans la dim qu'on quitte (clé = dimensionActuelle).
 			_positionsSauvegardeesParDimension[dimensionActuelle] = positionAvantTp;
 			SauvegarderSessionJoueur(dimensionActuelle, positionAvantTp);
-			if (_joueur is Joueur j)
-			{
-				// Toutes les dimensions Alpha-like (Alpha + Beta + Omega + Delta) doivent sauver l'état complet du monde
-				// (objets posés, blocs construits) pour ne rien perdre. Seule APISARA garde son comportement light (joueur seul).
-				bool estAlphaLike = ConstantesDimensions.EssayerObtenirInfo(dimensionActuelle, out var infoCourante) && infoCourante.EstAlphaLike;
-				if (estAlphaLike)
-					j.SauvegarderEtatPersistantMonde(GetTree());
-				else
-					j.SauvegarderEtatPersistantJoueurSeulement();
-			}
+			if (_joueur is Joueur j && ConstantesDimensions.EssayerObtenirInfo(dimensionActuelle, out var infoCourante))
+				SauvegarderPersistanceCompleteMonde($"TransfererPeer.quit.{infoCourante.NomCanonique}");
+			else if (_joueur is Joueur jFallback)
+				jFallback.SauvegarderEtatPersistantJoueurSeulement();
 		}
 		DefinirDimensionPeer(peerId, dimensionCible);
 		if (peerId == Multiplayer.GetUniqueId())
@@ -3239,30 +3388,32 @@ void fragment()
 		_dimensionLocaleActive = dimensionId;
 		DefinirDimensionPeer(Multiplayer.GetUniqueId(), dimensionId);
 		_mondeServeur = ObtenirServeurDimension(dimensionId) ?? _mondeServeurAlpha;
+		MettreAJourSuspensionServeursDimensions(dimensionId);
 		_mondeServeur?.ForcerPulseReveilPierres();
 		_mondeClient?.DefinirDimensionReseauActive(dimensionId);
-		_mondeClient?.ReinitialiserTousLesChunksLocaux();
+		_positionReferenceTransfertDimension = positionCible;
+		_gateTpDimensionActif = true;
+		_secondesGateTpDimension = 0.0;
+		_cooldownPulseReveilPierresTp = 0.0;
 		MarquerPortailsDimensionPourRealignementSol(dimensionId);
 		PrioriserChunksClientAutourPortailsDimension(dimensionId);
 		ReinitialiserEmerukedesiParotaromaStage1();
 		MettreAJourVisibiliteArbresParDimension(dimensionId);
 		MettreAJourVisibilitePortailsParDimension(dimensionId);
-		ReparenterNoeudDansDimension(_joueur, dimensionId);
-		if (_joueur != null)
+		if (_joueur != null && GodotObject.IsInstanceValid(_joueur))
 		{
+			ReparenterNoeudDansDimension(_joueur, dimensionId, immediat: true);
 			_joueur.GlobalPosition = positionCible;
 			_joueur.Velocity = Vector3.Zero;
 			if (_joueur is Joueur joueurPersistant)
 				joueurPersistant.RechargerEtatPersistantDimensionActive();
 		}
+		_mondeClient?.ReinitialiserTousLesChunksLocaux();
 		_chargementAbysseEnCours = dimensionId == (int)DimensionJeu.Abysse;
 		_chargementAbysseEnCours = false; // Abysse suit le chargement Alpha (pas de verrou dédié).
 		_secondesStabiliteAbyssePret = 0.0;
 		_secondesVerrouAbysse = 0.0;
 		_cooldownRearmementVerrouAbysse = 0.0;
-		_gateTpDimensionActif = true;
-		_secondesGateTpDimension = 0.0;
-		_cooldownPulseReveilPierresTp = 0.0;
 		_verrouMarcheAbysseActif = false;
 		_secondesVerrouMarcheAbysse = 0.0;
 		_secondesStabiliteMarcheAbysse = 0.0;
@@ -3626,7 +3777,7 @@ void fragment()
 			};
 			AddChild(_meshWarmupShaders);
 		}
-		_meshWarmupShaders.GlobalPosition = (_joueur?.GlobalPosition ?? Vector3.Zero) + new Vector3(0f, -0.4f, 0f);
+		_meshWarmupShaders.GlobalPosition = ObtenirPositionJoueurOuSpawn() + new Vector3(0f, -0.4f, 0f);
 		_meshWarmupShaders.Scale = new Vector3(0.001f, 0.001f, 0.001f);
 		_indexWarmupMateriau = 0;
 		_cooldownWarmupShaders = 0f;
@@ -4131,7 +4282,8 @@ FinBlocOverlay:
 		bool itemLegerPetit = ItemPhysique.EstRigidBodyLegerEtPetitReactif(rb);
 		bool structureStatique = rb is ItemPhysique ipStatique && ItemPhysique.EstMeublePoseStatique(ipStatique.ID_Objet);
 
-		if (!structureStatique && budgetFiletSecurite > 0)
+		if (!structureStatique && budgetFiletSecurite > 0
+			&& !_rigidBodiesAttenteCollisionSolRestauration.Contains(rb))
 		{
 			budgetFiletSecurite--;
 			EssayerRecalerRigidBodySousSol(rb, terrainPret);
@@ -4143,12 +4295,14 @@ FinBlocOverlay:
 			if (dist2 <= 6f * 6f)
 			{
 				if (!terrainPret)
-					FigerRigidBodyDormance(rb);
-				else
 				{
-					if (rb.Freeze) rb.Freeze = false;
-					if (rb.Sleeping) rb.Sleeping = false;
+					EnregistrerRigidBodyRestaurationSolSiCollisionManquante(rb);
+					return;
 				}
+				if (_rigidBodiesAttenteCollisionSolRestauration.Contains(rb))
+					return;
+				// Dégeler seulement la dormance — ne pas réveiller un objet déjà au repos sur le sol.
+				if (rb.Freeze) rb.Freeze = false;
 				return;
 			}
 		}
@@ -4157,12 +4311,13 @@ FinBlocOverlay:
 		if (dansRayon)
 		{
 			if (!terrainPret)
-				FigerRigidBodyDormance(rb);
-			else
 			{
-				if (rb.Freeze) rb.Freeze = false;
-				if (rb.Sleeping) rb.Sleeping = false;
+				EnregistrerRigidBodyRestaurationSolSiCollisionManquante(rb);
+				return;
 			}
+			if (_rigidBodiesAttenteCollisionSolRestauration.Contains(rb))
+				return;
+			if (rb.Freeze) rb.Freeze = false;
 			return;
 		}
 
@@ -4171,9 +4326,11 @@ FinBlocOverlay:
 			if (rb.Freeze) rb.Freeze = false;
 			return;
 		}
-		if (!terrainPret || (!rb.Freeze || !rb.Sleeping))
+		// Lointain : figer seulement si encore actif (évite de casser le repos naturel Sleeping au sol).
+		if (!terrainPret || rb.Freeze || !rb.Sleeping)
 		{
-			FigerRigidBodyDormance(rb);
+			if (!terrainPret || rb.LinearVelocity.LengthSquared() > 0.08f || rb.AngularVelocity.LengthSquared() > 0.08f || rb.Freeze)
+				FigerRigidBodyDormance(rb);
 		}
 	}
 
@@ -4187,26 +4344,61 @@ FinBlocOverlay:
 
 	private void EssayerRecalerRigidBodySousSol(RigidBody3D rb, bool terrainPret)
 	{
-		if (!terrainPret)
+		if (!terrainPret || !GodotObject.IsInstanceValid(rb))
 			return;
-		float yObjet = rb.GlobalPosition.Y;
-		int x = Mathf.FloorToInt(rb.GlobalPosition.X);
-		int z = Mathf.FloorToInt(rb.GlobalPosition.Z);
+
+		// Objet au repos : le filet ne doit pas le téléporter (cause principale du « saut » après pose).
+		if (rb.Sleeping
+			&& rb.LinearVelocity.LengthSquared() < 0.06f
+			&& rb.AngularVelocity.LengthSquared() < 0.06f)
+			return;
+
+		Vector3 pos = rb.GlobalPosition;
+		PhysicsDirectSpaceState3D espace = rb.GetWorld3D()?.DirectSpaceState;
+		if (espace != null)
+		{
+			var requete = PhysicsRayQueryParameters3D.Create(pos + Vector3.Up * 0.35f, pos + Vector3.Down * 8f);
+			requete.CollisionMask = 1;
+			requete.CollideWithAreas = false;
+			requete.Exclude = new Godot.Collections.Array<Rid> { rb.GetRid() };
+			var impact = espace.IntersectRay(requete);
+			if (impact.Count > 0 && impact.ContainsKey("position"))
+			{
+				float ySol = ((Vector3)impact["position"]).Y;
+				float ecart = pos.Y - ySol;
+				// Déjà posé sur le mesh collision réel : ne pas remonter vers la hauteur procédurale.
+				if (ecart >= -0.3f)
+					return;
+				// Enfoui sous le mesh seulement : petit recal au contact, sans filet de dégel.
+				if (ecart >= -1.5f)
+				{
+					float yCorrige = ySol + Mathf.Max(0.02f, MargeRemonteeObjetsMetres);
+					if (Mathf.Abs(yCorrige - pos.Y) < 0.02f)
+						return;
+					rb.GlobalPosition = new Vector3(pos.X, yCorrige, pos.Z);
+					rb.LinearVelocity = Vector3.Zero;
+					rb.AngularVelocity = Vector3.Zero;
+					rb.Sleeping = true;
+					return;
+				}
+			}
+		}
+
+		// Chute dans le vide (pas de sol raycast) : dernier recours procédural, puis attente collision.
+		int x = Mathf.FloorToInt(pos.X);
+		int z = Mathf.FloorToInt(pos.Z);
 		int h = _dimensionLocaleActive == (int)DimensionJeu.Abysse
 			? ApisaraHauteurTerrain.ObtenirHauteurSolMonde(x, z, SeedTerrain)
 			: Generateur_Voxel.ObtenirHauteurTerrainMonde(x, z, SeedTerrain);
 		float ySurface = h + 1.0f;
-		float seuil = ySurface - Mathf.Max(0.35f, SeuilEnfouissementObjetsMetres);
-		if (yObjet >= seuil)
+		if (pos.Y >= ySurface - 0.6f)
 			return;
 
-		float yCorrige = ySurface + Mathf.Max(0.02f, MargeRemonteeObjetsMetres);
-		rb.GlobalPosition = new Vector3(rb.GlobalPosition.X, yCorrige, rb.GlobalPosition.Z);
+		float yCorrigeProc = ySurface + Mathf.Max(0.02f, MargeRemonteeObjetsMetres);
+		rb.GlobalPosition = new Vector3(pos.X, yCorrigeProc, pos.Z);
 		rb.LinearVelocity = Vector3.Zero;
 		rb.AngularVelocity = Vector3.Zero;
-		rb.Sleeping = true;
-		if (rb.Freeze)
-			rb.Freeze = false;
+		EnregistrerRigidBodyRestaurationSolSiCollisionManquante(rb);
 	}
 
 	private Vector2I ObtenirCoordonneesChunkJoueur()

@@ -37,6 +37,7 @@ public partial class GameState : Node
 	public override void _Ready()
 	{
 		Instance = this;
+		UserDataMigrationService.ExecuterMigrationAuDemarrageSiBesoin();
 		JournaliserEmpreinteRuntime();
 		// Godot 4 : SceneTree n’expose pas le signal « tree_exiting » (Godot 3). Fermeture via fenêtre racine + notification WM.
 		Window fenetre = GetWindow();
@@ -638,15 +639,16 @@ public partial class GameState : Node
 		}
 	}
 
-	/// <summary>Efface les sauvegardes personnage du monde courant, marque la reprise par création perso, sans toucher au terrain ni aux objets du monde.</summary>
-	public void PreparerRetourCreationPersonnageApresMort()
+	/// <summary>Efface la progression perso après mort (carte / chunks inchangés). L’UI de recréation se fait en jeu.</summary>
+	public void PreparerMortNouveauPersonnageMemeMonde()
 	{
-		if (string.IsNullOrWhiteSpace(NomMondeActuel)) return;
+		if (string.IsNullOrWhiteSpace(NomMondeActuel))
+			return;
 		EffacerDonneesPersonnageMondeActuel();
-		RecreationPersonnageMemeMondeEnAttente = true;
 		NomPersonnageJoue = "";
 		RaceJoueurCourante = RaceJoueur.Humain;
 		SexeJoueurCourante = SexeJoueur.Masculin;
+		GD.Print($"ZERO-K : Mort — recréez un personnage pour le monde « {NomMondeActuel} » (carte conservée).");
 	}
 
 	public void AnnulerRecreationPersonnageMemeMondeEnAttente()

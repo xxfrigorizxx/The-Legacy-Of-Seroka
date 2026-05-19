@@ -96,22 +96,7 @@ public partial class MenuPrincipal : Control
 
 		RafraichirListeMondes();
 		SelectionnerDernierMondeJoueDansListeSiConnu();
-		if (Etat.RecreationPersonnageMemeMondeEnAttente)
-		{
-			Input.MouseMode = Input.MouseModeEnum.Visible;
-			_panelMenuPrincipal.Visible = false;
-			_panelEtapeMonde.Visible = false;
-			_panelEtapePerso.Visible = true;
-			_labelErreurPerso.Text = "";
-			_nomPersonnage.Text = "";
-			_raceSelectionnee = Etat.RaceJoueurCourante;
-			_sexeSelectionne = Etat.SexeJoueurCourante;
-			MettreAJourAffichageRace();
-			MettreAJourAffichageSexe();
-			_apercu3d?.DefinirRaceEtSexe(_raceSelectionnee, _sexeSelectionne);
-		}
-		else
-			AfficherPanneauPrincipal();
+		AfficherPanneauPrincipal();
 	}
 
 	private void ConfigurerVisuelsAccueil()

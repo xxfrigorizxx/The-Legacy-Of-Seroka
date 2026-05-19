@@ -347,9 +347,46 @@ public partial class ItemPhysique : RigidBody3D
 	{
 		if (_gestionnaireMondeCache != null && GodotObject.IsInstanceValid(_gestionnaireMondeCache))
 			return _gestionnaireMondeCache;
+
 		Node p = GetParent();
-		_gestionnaireMondeCache = p?.GetNodeOrNull<Gestionnaire_Monde>("Gestionnaire_Monde");
-		return _gestionnaireMondeCache;
+		while (p != null)
+		{
+			if (p is Gestionnaire_Monde gmDirect)
+			{
+				_gestionnaireMondeCache = gmDirect;
+				return gmDirect;
+			}
+			Gestionnaire_Monde gmEnfant = p.GetNodeOrNull<Gestionnaire_Monde>("Gestionnaire_Monde");
+			if (gmEnfant != null)
+			{
+				_gestionnaireMondeCache = gmEnfant;
+				return gmEnfant;
+			}
+			p = p.GetParent();
+		}
+
+		Node scene = GetTree()?.CurrentScene;
+		if (scene != null)
+		{
+			if (scene is Gestionnaire_Monde gmScene)
+			{
+				_gestionnaireMondeCache = gmScene;
+				return gmScene;
+			}
+			Gestionnaire_Monde gmNomme = scene.GetNodeOrNull<Gestionnaire_Monde>("Gestionnaire_Monde");
+			if (gmNomme != null)
+			{
+				_gestionnaireMondeCache = gmNomme;
+				return gmNomme;
+			}
+			if (scene.FindChild("Gestionnaire_Monde", recursive: true, owned: false) is Gestionnaire_Monde gmTrouve)
+			{
+				_gestionnaireMondeCache = gmTrouve;
+				return gmTrouve;
+			}
+		}
+
+		return null;
 	}
 
 	private Joueur ObtenirJoueurMonde()
@@ -989,7 +1026,14 @@ public partial class ItemPhysique : RigidBody3D
 		_echantillonsImmersionObjet[4] = new Vector3(-x, yMilieu, 0f);
 		_echantillonsImmersionObjet[5] = new Vector3(0f, yMilieu, z);
 		_echantillonsImmersionObjet[6] = new Vector3(0f, yMilieu, -z);
-		return gm.CalculerRatioImmersion(GlobalPosition, _echantillonsImmersionObjet);
+		Transform3D xf = GlobalTransform;
+		int pointsImmerges = 0;
+		for (int i = 0; i < _echantillonsImmersionObjet.Length; i++)
+		{
+			if (gm.EstPointImmergeEau(xf * _echantillonsImmersionObjet[i]))
+				pointsImmerges++;
+		}
+		return pointsImmerges / (float)_echantillonsImmersionObjet.Length;
 	}
 
 	private void TransformerIntestinEnVersionNettoyee()
@@ -1002,6 +1046,7 @@ public partial class ItemPhysique : RigidBody3D
 		Node3D meshRoot = GetNodeOrNull<Node3D>("MeshInstance3D");
 		if (meshRoot != null)
 			Joueur.InstancierModeleIntestinBoeufNettoye(meshRoot, new SlotInventaire { ID = Joueur.IdObjetIntestinBoeufNettoye }, 0.24f);
+		GD.Print("ZERO-K : Intestin nettoyé à l'eau (intestin propre).");
 	}
 
 	private static MeshInstance3D TrouverPremierMeshInstanceAvecMesh(Node n)
@@ -1174,10 +1219,17 @@ public partial class ItemPhysique : RigidBody3D
 			ResistanceActuelle = 1f;
 			return;
 		}
-		if (ID_Objet == Joueur.IdObjetAtelleJambe)
+		if (ID_Objet == Joueur.IdObjetAtelleJambe || ID_Objet == Joueur.IdObjetAtelleBras)
 		{
 			Mass = 0.34f;
 			ResistanceActuelle = 8f;
+			Scale = Vector3.One;
+			return;
+		}
+		if (ID_Objet == Joueur.IdObjetBandageTier1)
+		{
+			Mass = 0.12f;
+			ResistanceActuelle = 4f;
 			Scale = Vector3.One;
 			return;
 		}
@@ -1385,7 +1437,13 @@ public partial class ItemPhysique : RigidBody3D
 		if (ID_Objet == Joueur.IdObjetIntestinBoeuf)
 		{
 			Gestionnaire_Monde gmIntestin = ObtenirGestionnaireMonde();
-			float ratioIntestin = gmIntestin != null ? CalculerRatioImmersionObjet(gmIntestin) : 0f;
+			float ratioIntestin = 0f;
+			if (gmIntestin != null)
+			{
+				ratioIntestin = CalculerRatioImmersionObjet(gmIntestin);
+				if (ratioIntestin < 0.5f && gmIntestin.EstPointImmergeEau(GlobalPosition))
+					ratioIntestin = 0.5f;
+			}
 			if (ratioIntestin >= 0.5f)
 				_tempsImmersionIntestin += delta;
 			else

@@ -3159,40 +3159,6 @@ public partial class Monde_Client : Node3D
 			return;
 		}
 
-		// Indispensable : le budget « transitions » peut laisser le chunk sous les PIEDS du corps dormant
-		// alors que la caméra TPS / radar a déjà réveillé le décor lointain → joueur qui « vole » au-dessus du voxel visible.
-		if (_joueur != null)
-		{
-			Vector2I cp = Gestionnaire_Monde.WorldToChunkCoord(_joueur.GlobalPosition, TailleChunk);
-			for (int dx = -1; dx <= 1; dx++)
-			{
-				for (int dz = -1; dz <= 1; dz++)
-				{
-					var coord = new Vector2I(cp.X + dx, cp.Y + dz);
-					if (!_chunksData.TryGetValue(coord, out ChunkData d)) continue;
-					if (d.PhysicsBodyRID.IsValid)
-					{
-						if (d.Dormant)
-						{
-							d.Dormant = false;
-							PhysicsServer3D.Singleton.BodySetSpace(d.PhysicsBodyRID, space);
-							if (d.EstEnFileSolidification)
-							{
-								RetirerDeFileSolidification(d);
-							}
-							SynchroniserFloreDesQueCollisionChunkActive(d);
-						}
-					}
-					else if (!d.EstEnFileSolidification)
-					{
-						RetirerDeFileSolidification(d);
-						EnfilerSolidificationUrgenteUnique(d);
-						d.EstEnFileSolidification = true;
-					}
-				}
-			}
-		}
-
 		int transitions = 0;
 		int limite = Mathf.Max(1, maxTransitions);
 		int rayonReveil = Mathf.Max(1, RayonDormancePhysique);
@@ -3213,6 +3179,21 @@ public partial class Monde_Client : Node3D
 				RetirerDeFileSolidification(data);
 				EnfilerSolidificationUrgenteUnique(data);
 				data.EstEnFileSolidification = true;
+			}
+		}
+
+		// La dormance suit la caméra (obsChunk) : garder le sol actif autour du corps joueur même si on regarde ailleurs.
+		if (_joueur != null)
+		{
+			Vector2I cp = Gestionnaire_Monde.WorldToChunkCoord(_joueur.GlobalPosition, TailleChunk);
+			for (int dx = -rayonReveil; dx <= rayonReveil; dx++)
+			{
+				for (int dz = -rayonReveil; dz <= rayonReveil; dz++)
+				{
+					var coord = new Vector2I(cp.X + dx, cp.Y + dz);
+					if (!_chunksData.TryGetValue(coord, out ChunkData d)) continue;
+					ReveillerChunkPourPortailNexusSansBudget(d);
+				}
 			}
 		}
 

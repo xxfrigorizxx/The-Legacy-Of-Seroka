@@ -25,6 +25,7 @@ public partial class Joueur
     private float _progressionRecuperationAtelier;
     private float _cooldownParticulesRecuperationAtelier;
     private float _cooldownMessageRecuperationFondation;
+    private float _cooldownMessageEtatBrasAction;
     private ItemPhysique _atelierCibleRecuperation;
     private const float DureeRecolteBuissonOutilSecondes = 3.0f;
     private const float DureeRecolteLianeDagueSecondes = 2.0f;
@@ -121,6 +122,7 @@ public partial class Joueur
         _progressionRecuperationAtelier = 0f;
         _cooldownParticulesRecuperationAtelier = 0f;
         _cooldownMessageRecuperationFondation = 0f;
+        _cooldownMessageEtatBrasAction = 0f;
         _atelierCibleRecuperation = null;
         _progressionRecolteBuisson = 0f;
         _cooldownParticulesMinageBuisson = 0f;
@@ -130,6 +132,28 @@ public partial class Joueur
         _bloquerActionClicGaucheApresMinageBuisson = false;
         ReinitialiserDepecageCadavreDagueProgression();
         ReinitialiserMinageLianeDagueProgression();
+    }
+
+    private EtatOsSimple ObtenirEtatOsBrasMainActive()
+    {
+        string sectionBras = MainGaucheEstActive ? SectionCorpsBrasGauche : SectionCorpsBrasDroit;
+        return EvaluerEtatEffectifMembre(sectionBras);
+    }
+
+    private void AfficherMessageEtatBrasAction(string message)
+    {
+        if (_cooldownMessageEtatBrasAction > 0f)
+            return;
+        _cooldownMessageEtatBrasAction = 0.8f;
+        GD.Print(message);
+    }
+
+    private float ObtenirMultiplicateurDegatsFrappeSelonEtatOsBras()
+    {
+        EtatOsSimple etatBras = ObtenirEtatOsBrasMainActive();
+        if (etatBras == EtatOsSimple.Casse)
+            return 0f;
+        return etatBras == EtatOsSimple.Felure ? 0.5f : 1f;
     }
 
     private void ReinitialiserMinageLianeDagueProgression()
@@ -500,7 +524,13 @@ public partial class Joueur
         normaleImpact = _rayon.GetCollisionNormal();
         Node objetTouche = NoeudDepuisColliderRaycast(_rayon.GetCollider());
         var item = ResoudreItemPhysiqueDepuisNoeudRaycast(objetTouche);
-        if (item == null || (item.ID_Objet != 200 && item.ID_Objet != IdObjetRackBatons && item.ID_Objet != IdObjetRackBuches)) return false;
+        if (item == null) return false;
+        bool estMeubleRecuperable = item.ID_Objet == 200
+            || item.ID_Objet == IdObjetTableAnalyseTier1
+            || item.ID_Objet == IdObjetRackBatons
+            || item.ID_Objet == IdObjetRackBuches
+            || item.ID_Objet == IdObjetCoffreBoisTier0;
+        if (!estMeubleRecuperable) return false;
         atelier = item;
         return true;
     }
@@ -734,6 +764,7 @@ public partial class Joueur
     private void MettreAJourMinageMainNueOuAtelier(float dt, SlotInventaire mainActive)
     {
         _cooldownMessageRecuperationFondation = Mathf.Max(0f, _cooldownMessageRecuperationFondation - dt);
+        _cooldownMessageEtatBrasAction = Mathf.Max(0f, _cooldownMessageEtatBrasAction - dt);
         bool mainVide = mainActive.EstVide;
         bool hachette = mainActive.ID == 106 || mainActive.ID == IdObjetHachePierreTier1;
         bool hachePierreTier1 = mainActive.ID == IdObjetHachePierreTier1;
@@ -743,6 +774,14 @@ public partial class Joueur
 
         if (EssayerObtenirAtelierSousVisee(out ItemPhysique atelier, out Vector3 pAtelier, out Vector3 nAtelier))
         {
+            EtatOsSimple etatBrasAction = ObtenirEtatOsBrasMainActive();
+            if (etatBrasAction == EtatOsSimple.Casse)
+            {
+                AfficherMessageEtatBrasAction("ZERO-K : Bras casse -> action refusee sur meuble/structure.");
+                ReinitialiserMinageMainNueProgression();
+                return;
+            }
+
             if (!mainVide && !hachette)
             {
                 ReinitialiserMinageMainNueProgression();
@@ -775,6 +814,8 @@ public partial class Joueur
             float duree = estRack
                 ? (mainVide ? DureeRecuperationRackMainNue : DureeRecuperationRackHachette)
                 : (mainVide ? DureeRecuperationAtelierMainNue : DureeRecuperationAtelierHachette);
+            if (etatBrasAction == EtatOsSimple.Felure)
+                duree *= 2f;
             if (hachePierreTier1 && !mainVide)
                 duree *= 0.5f;
             if (_progressionRecuperationAtelier < duree)
@@ -791,15 +832,28 @@ public partial class Joueur
                 StockageRackBatonsOuvert = false;
             atelier.QueueFree();
             RafraichirHUD();
-            GD.Print(estRack
-                ? (atelier.ID_Objet == IdObjetRackBatons ? "ZERO-K : Rack à bâtons récupéré dans l'inventaire." : "ZERO-K : Rack à bûches récupéré dans l'inventaire.")
-                : "ZERO-K : Atelier récupéré dans l'inventaire.");
+            GD.Print(atelier.ID_Objet switch
+            {
+                IdObjetRackBatons => "ZERO-K : Rack à bâtons récupéré dans l'inventaire.",
+                IdObjetRackBuches => "ZERO-K : Rack à bûches récupéré dans l'inventaire.",
+                IdObjetTableAnalyseTier1 => "ZERO-K : Table d'analyse récupérée dans l'inventaire.",
+                IdObjetCoffreBoisTier0 => "ZERO-K : Coffre en bois récupéré dans l'inventaire.",
+                _ => "ZERO-K : Atelier récupéré dans l'inventaire."
+            });
             ReinitialiserMinageMainNueProgression();
             return;
         }
 
         if (EssayerObtenirFondationSousVisee(out ItemPhysique fondation, out Vector3 pFondation, out Vector3 nFondation))
         {
+            EtatOsSimple etatBrasAction = ObtenirEtatOsBrasMainActive();
+            if (etatBrasAction == EtatOsSimple.Casse)
+            {
+                AfficherMessageEtatBrasAction("ZERO-K : Bras casse -> action refusee sur meuble/structure.");
+                ReinitialiserMinageMainNueProgression();
+                return;
+            }
+
             if (!OutilValideRecuperationFondation(fondation.ID_Objet, hachette, pioche))
             {
                 AfficherMessageRecuperationFondation("ZERO-K : Outil invalide pour cette fondation (hachette/ pioche selon matériau).");
@@ -831,6 +885,8 @@ public partial class Joueur
             }
 
             float duree = ObtenirDureeRecuperationFondation(fondation.ID_Objet);
+            if (etatBrasAction == EtatOsSimple.Felure)
+                duree *= 2f;
             if (hachePierreTier1 && fondation.ID_Objet != IdObjetFondationRoche)
                 duree *= 0.5f;
             if (_progressionRecuperationAtelier < duree)
@@ -1363,6 +1419,13 @@ public partial class Joueur
 
     private void ExecuterFrappeMainNue(float force, Node objetTouche, Vector3 pointImpact, Vector3 directionFrappe, TypeMouvementFrappe mouvement)
     {
+        float multiplicateurDegatsBras = ObtenirMultiplicateurDegatsFrappeSelonEtatOsBras();
+        if (multiplicateurDegatsBras <= 0f)
+        {
+            AfficherMessageEtatBrasAction("ZERO-K : Bras casse -> aucun degat de frappe.");
+            return;
+        }
+
         ArbreVivant arbre = ObtenirArbreDepuisCollider(objetTouche);
         if (arbre != null)
         {
@@ -1388,6 +1451,7 @@ public partial class Joueur
                 0.74f,
                 CoefficientZoneBovin(nomZone));
             float degats = Mathf.Clamp(intensite * 0.92f, 0.06f, 12f);
+            degats *= multiplicateurDegatsBras;
             bool applique = boeufTouche.RecevoirImpactCombat(
                 degats,
                 pointImpact,
@@ -1417,6 +1481,7 @@ public partial class Joueur
             CoefMainNueRigid,
             0.76f,
             0.88f);
+        intensiteRigid *= multiplicateurDegatsBras;
         rbCible.ApplyCentralImpulse(dirFrappeObj.Normalized() * Mathf.Clamp(intensiteRigid * 0.16f, 0.35f, 4.6f));
 
         var item = rbCible as ItemPhysique ?? rbCible.GetNodeOrNull<ItemPhysique>("ItemPhysique");
@@ -1561,6 +1626,12 @@ public partial class Joueur
     private void ExecuterFrappePhysique(float force, float efficaciteHache, float masseOutil, Node objetTouche, Vector3 pointImpact, Vector3 directionFrappe, TypeMouvementFrappe mouvement)
     {
         SlotInventaire mainActive = MainGaucheEstActive ? MainGauche : MainDroite;
+        float multiplicateurDegatsBras = ObtenirMultiplicateurDegatsFrappeSelonEtatOsBras();
+        if (multiplicateurDegatsBras <= 0f)
+        {
+            AfficherMessageEtatBrasAction("ZERO-K : Bras casse -> aucun degat de frappe.");
+            return;
+        }
         float multiplicateurForce = ObtenirMultiplicateurDegatsForce();
 
         // Évite un « soft-lock » : avec pelle/outil lourd ou mauvais angle, efficaciteHache peut chuter avant d'atteindre ArbreMort.
@@ -1600,6 +1671,7 @@ public partial class Joueur
             facteurContactOutil,
             1f,
             1f) * 9.4f;
+        forceImpact *= multiplicateurDegatsBras;
         float epaisseurLame = CalculerEpaisseurLamePourImpact(mainActive, directionFrappe);
 
         if (objetTouche == null)
@@ -1706,6 +1778,8 @@ public partial class Joueur
             {
                 if (mainActive.ID == 105)
                     GD.Print("ZERO-K : Maintenez clic gauche 3s avec la dague pour dépiter ce cadavre.");
+                else if (mainActive.ID == 106 || mainActive.ID == IdObjetHachePierreTier1)
+                    GD.Print("ZERO-K : La hachette ne dépèce pas — maintenez clic gauche 3s avec la dague (105) sur la carcasse.");
                 return;
             }
             bool etaitCadavreDepecable = boeufTouche.EstCadavreDepecable();
@@ -1740,6 +1814,7 @@ public partial class Joueur
                 materiau,
                 CoefficientZoneBovin(nomZone));
             baseDegats = Mathf.Clamp(baseDegats, 0.05f, 120f);
+            baseDegats *= multiplicateurDegatsBras;
 
             bool applique = boeufTouche.RecevoirImpactCombat(
                 baseDegats,
@@ -2169,7 +2244,7 @@ public partial class Joueur
     /// <summary>Rayon vertical sur le masque collision 1 ; place un point au-dessus du sol (évite tronc/branches sous le terrain).</summary>
     private void ExecuterLootDepecageCadavreBoeuf(BoeufSauvage boeuf, Vector3 pointImpact, Vector3 directionFrappe)
     {
-        if (boeuf == null || !GodotObject.IsInstanceValid(boeuf))
+        if (boeuf == null || !GodotObject.IsInstanceValid(boeuf) || !boeuf.EstCadavreDepecable())
             return;
         Texture2D texPeau = boeuf.EssayerObtenirTexturePeauPourCuir();
         string genomeCuir = boeuf.ConstruireGenomePeauPourSlotCuir(texPeau);

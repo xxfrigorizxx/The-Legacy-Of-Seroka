@@ -38,11 +38,19 @@ public partial class Joueur
     public static bool EstVarianteHerbeSolide(SlotInventaire s) =>
         !s.EstVide && (s.IndexBotanique == Joueur.TagVarianteHerbeSolide || EstEncodageLegacyHerbeSolide(s));
 
+    public static bool EstIntestinUtilisablePourCraft(SlotInventaire s) =>
+        !s.EstVide && (s.ID == Joueur.IdObjetIntestinBoeufNettoye || s.ID == Joueur.IdObjetIntestinBoeuf);
+
     public static bool EstVarianteIntestin(SlotInventaire s) =>
         !s.EstVide && s.IndexBotanique == Joueur.TagVarianteIntestin;
 
     public static bool EstVarianteIntestinSolide(SlotInventaire s) =>
         !s.EstVide && s.IndexBotanique == Joueur.TagVarianteIntestinSolide;
+
+    public static bool EstVarianteCordeIntestinMixe(SlotInventaire s) =>
+        !s.EstVide && (s.IndexBotanique == Joueur.TagVarianteCordeIntestinMixe
+            || s.IndexChimique == Joueur.IdObjetIntestinBoeufNettoye
+            || s.IndexMorphologique == Joueur.IdObjetIntestinBoeufNettoye);
 
     public static bool EstSacTier0Liane(SlotInventaire s) => !s.EstVide && s.ID == Joueur.IdObjetSacTier0 && EstVarianteLiane(s);
     public static bool EstSacTier0HerbeSolide(SlotInventaire s) => !s.EstVide && s.ID == Joueur.IdObjetSacTier0 && EstVarianteHerbeSolide(s);

@@ -32,6 +32,12 @@ public partial class Cycle_Solaire : Node
 	private bool _alerteTypeSkyMaterialEmise;
 	/// <summary>Énergie de référence lue sur le nœud Lune (éditeur), utilisée si <see cref="_energieLuneMaxNuit"/> = -1.</summary>
 	private float _energieLuneEditeur = 0.055f;
+	/// <summary>Évite l'oscillation jour/nuit autour de l'horizon (pompage lumineux).</summary>
+	private bool _modeNuitActif = true;
+
+	private const float SeuilEntreeModeNuit = -0.03f;
+	private const float SeuilSortieModeNuit = 0.05f;
+	private const float VitesseLissageLumiere = 4.2f;
 
 	/// <summary>RPC appelé par le Serveur une seule fois quand le joueur spawn ou traverse un portail.</summary>
 	[Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = true)]
@@ -186,6 +192,12 @@ public partial class Cycle_Solaire : Node
 		return Mathf.Lerp(energieMin, energieMax, t);
 	}
 
+	private static float LisserVers(float courant, float cible, double delta, float vitesse)
+	{
+		float t = 1f - Mathf.Exp(-Mathf.Max(0.01f, vitesse) * (float)delta);
+		return Mathf.Lerp(courant, cible, t);
+	}
+
 	public override void _Process(double delta)
 	{
 		if (!IsInsideTree()) return; // GARROT SPATIAL : le Soleil ne tourne pas si l'univers s'effondre.
@@ -213,11 +225,20 @@ public partial class Cycle_Solaire : Node
 		float angleX = 90f - (float)(pourcentageJournee * 360.0);
 		// Hauteur : 1 = Zénith (Midi), 0 = Horizon, -1 = Nadir (Minuit)
 		float hauteurSoleil = Mathf.Sin(Mathf.DegToRad(-angleX));
+		if (_modeNuitActif)
+		{
+			if (hauteurSoleil >= SeuilSortieModeNuit)
+				_modeNuitActif = false;
+		}
+		else if (hauteurSoleil <= SeuilEntreeModeNuit)
+		{
+			_modeNuitActif = true;
+		}
 
 		// Toujours rafraîchir l’atmosphère / le ciel procédural, même si le nœud Soleil manque (sinon ciel figé noir).
 		if (_soleil == null)
 		{
-			MettreAJourAtmosphereEtCiel(hauteurSoleil);
+			MettreAJourAtmosphereEtCiel(hauteurSoleil, delta);
 			return;
 		}
 
@@ -230,7 +251,7 @@ public partial class Cycle_Solaire : Node
 		{
 			// Luminaires masqués (anti-flash spawn), mais le ciel procédural / brouillard suivent l'heure.
 			AppliquerEtatSansSoleilNiLune();
-			MettreAJourAtmosphereEtCiel(hauteurSoleil);
+			MettreAJourAtmosphereEtCiel(hauteurSoleil, delta);
 			return;
 		}
 
@@ -240,14 +261,15 @@ public partial class Cycle_Solaire : Node
 		// --- GESTION DE LA NUIT ET DE L'ATMOSPHÈRE ---
 		// Le soleil s'éteint sous l'horizon, la lune s'allume
 		// ProceduralSkyMaterial affiche 1 disque par DirectionalLight → sky_mode=1 (LightOnly) exclut du ciel
-		if (hauteurSoleil < 0)
+		if (_modeNuitActif)
 		{
-			_soleil.LightEnergy = 0f;
+			_soleil.LightEnergy = LisserVers(_soleil.LightEnergy, 0f, delta, VitesseLissageLumiere);
 			_soleil.Set("sky_mode", 1); // Pas de disque soleil (sous l'horizon)
 			if (_lune != null)
 			{
 				_lune.Visible = true;
-				_lune.LightEnergy = CalculerEnergieLuneNuit(hauteurSoleil);
+				float energieLuneCible = CalculerEnergieLuneNuit(hauteurSoleil);
+				_lune.LightEnergy = LisserVers(_lune.LightEnergy, energieLuneCible, delta, VitesseLissageLumiere);
 				_lune.Set("sky_mode", 1); // LightOnly : pas de disque blanc parasite.
 				_lune.Set("light_volumetric_fog_energy", 0.0f);
 			}
@@ -255,22 +277,23 @@ public partial class Cycle_Solaire : Node
 		else
 		{
 			// Midi : moins agressif qu’avant (soleil « brûlé » + ciel trop dur).
-			_soleil.LightEnergy = Mathf.Clamp(hauteurSoleil * 1.15f, 0f, 1.05f);
+			float energieSoleilCible = Mathf.Clamp(hauteurSoleil * 1.15f, 0f, 1.05f);
+			_soleil.LightEnergy = LisserVers(_soleil.LightEnergy, energieSoleilCible, delta, VitesseLissageLumiere);
 			_soleil.Set("sky_mode", 0); // LightAndSky (soleil visible via les nodes existants)
 			if (_lune != null)
 			{
 				_lune.Visible = false;
-				_lune.LightEnergy = 0f;
+				_lune.LightEnergy = LisserVers(_lune.LightEnergy, 0f, delta, VitesseLissageLumiere);
 				_lune.Set("sky_mode", 1); // CRITIQUE : LightOnly = pas de disque dans le ciel
 				_lune.Set("light_volumetric_fog_energy", 0.0f);
 			}
 		}
 
-		MettreAJourAtmosphereEtCiel(hauteurSoleil);
+		MettreAJourAtmosphereEtCiel(hauteurSoleil, delta);
 	}
 
 	/// <summary>Ambiance, brouillard et couleurs du <see cref="ProceduralSkyMaterial"/> selon la hauteur du soleil.</summary>
-	private void MettreAJourAtmosphereEtCiel(float hauteurSoleil)
+	private void MettreAJourAtmosphereEtCiel(float hauteurSoleil, double delta)
 	{
 		if (_environnement == null || _environnement.Environment == null)
 			return;
@@ -293,13 +316,19 @@ public partial class Cycle_Solaire : Node
 		Color couleurBrouillardJour = new Color(0.6f, 0.7f, 0.8f);
 		Color couleurBrouillardNuit = new Color(0.01f, 0.01f, 0.03f);
 
-		envGlobal.AmbientLightEnergy = intensiteJourLisse;
-		envGlobal.AmbientLightSkyContribution = intensiteJourLisse;
+		float ambientEnergyCible = intensiteJourLisse;
+		float ambientSkyCible = intensiteJourLisse;
+		float fogAmbientInjectCible = Mathf.Lerp(0.015f, _injectAmbiantVolBrouillardJour, intensiteJourLisse);
+		envGlobal.AmbientLightEnergy = LisserVers(envGlobal.AmbientLightEnergy, ambientEnergyCible, delta, VitesseLissageLumiere);
+		envGlobal.AmbientLightSkyContribution = LisserVers(envGlobal.AmbientLightSkyContribution, ambientSkyCible, delta, VitesseLissageLumiere);
 		envGlobal.VolumetricFogAmbientInject =
-			Mathf.Lerp(0.015f, _injectAmbiantVolBrouillardJour, intensiteJourLisse);
+			LisserVers(envGlobal.VolumetricFogAmbientInject, fogAmbientInjectCible, delta, VitesseLissageLumiere);
 
 		if (envGlobal.FogEnabled)
-			envGlobal.FogLightColor = couleurBrouillardNuit.Lerp(couleurBrouillardJour, intensiteJour);
+		{
+			Color cibleFog = couleurBrouillardNuit.Lerp(couleurBrouillardJour, intensiteJour);
+			envGlobal.FogLightColor = envGlobal.FogLightColor.Lerp(cibleFog, 1f - Mathf.Exp(-VitesseLissageLumiere * (float)delta));
+		}
 
 		// Ciel dynamique : jour (bleu) ↔ crépuscule (orange/rose) ↔ nuit (sombre)
 		var sky = envGlobal.Sky;
@@ -359,8 +388,10 @@ public partial class Cycle_Solaire : Node
 		skyMat.GroundHorizonColor = solHorizon;
 		skyMat.GroundBottomColor = solHorizonNuit.Lerp(new Color(0.2f, 0.17f, 0.13f), intensiteJourLisse);
 		// Évite le "ciel noir total" la nuit.
-		skyMat.SkyEnergyMultiplier = Mathf.Lerp(0.24f, 1f, intensiteJourLisse);
-		skyMat.GroundEnergyMultiplier = Mathf.Lerp(0.14f, 1f, intensiteJourLisse);
+		float skyEnergyCible = Mathf.Lerp(0.24f, 1f, intensiteJourLisse);
+		float groundEnergyCible = Mathf.Lerp(0.14f, 1f, intensiteJourLisse);
+		skyMat.SkyEnergyMultiplier = LisserVers(skyMat.SkyEnergyMultiplier, skyEnergyCible, delta, VitesseLissageLumiere);
+		skyMat.GroundEnergyMultiplier = LisserVers(skyMat.GroundEnergyMultiplier, groundEnergyCible, delta, VitesseLissageLumiere);
 		// Étoiles : découplées du léger +0.11 sur intensiteJour (sinon ciel noir sans patch d’étoiles).
 		float alphaEtoiles = Mathf.Clamp((-0.055f - hauteurSoleil) / 0.36f, 0f, 1f);
 		skyMat.SkyCoverModulate = new Color(0.95f, 0.98f, 1f, alphaEtoiles);

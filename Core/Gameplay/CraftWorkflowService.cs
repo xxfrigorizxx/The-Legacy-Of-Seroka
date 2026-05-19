@@ -24,6 +24,8 @@ public partial class Joueur
             || idObjet == IdObjetMailletBois
             || idObjet == IdObjetMortierPilonBois
             || idObjet == IdObjetAtelleJambe
+            || idObjet == IdObjetAtelleBras
+            || idObjet == IdObjetBandageTier1
             || idObjet == IdObjetCoffreBoisTier0;
     }
 
