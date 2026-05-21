@@ -45,6 +45,8 @@ public class ChunkData
 	public bool EstEnFileSolidification { get; set; }
 	/// <summary>Chunk entièrement vide (aucun voxel solide). Utilisé pour éviter le mode panique dans le trou noir Abysse.</summary>
 	public bool EstVideIntegral { get; set; }
+	/// <summary>Empreinte des derniers octets serveur intégrés : évite de refaire marching cubes si le même chunk est renvoyé.</summary>
+	public ulong EmpreinteDonneesServeur { get; set; }
 
 	/// <summary>Bruit climat (une seule instance par chunk, réutilisée pour tous les voxels).</summary>
 	public FastNoiseLite NoiseTemperature { get; set; }
@@ -143,5 +145,15 @@ public class ChunkData
 			_nodeFlore.QueueFree();
 			_nodeFlore = null;
 		}
+	}
+
+	/// <summary>Libère aussi les tableaux voxel en RAM (chunk retiré du dictionnaire client).</summary>
+	public void LibererDonneesVoxel()
+	{
+		DensitiesFlat = null;
+		MaterialsFlat = null;
+		DensitiesEauFlat = null;
+		InventaireFlore = null;
+		EmpreinteDonneesServeur = 0;
 	}
 }

@@ -86,21 +86,48 @@ public partial class Joueur
         int ancienNombre = LireNombreObjetsPosesDepuisFichier(chemin);
         if (ancienNombre <= 0)
             return false;
-        if (dimensionId != ObtenirDimensionLocaleActiveId())
+
+        int dimensionActive = ObtenirDimensionLocaleActiveId();
+        bool estDimensionActive = dimensionId == dimensionActive;
+
+        // Hors dimension active, les constructions ne sont pas respawnées en scène au boot (seul placed_objects.ARAPA.dat est chargé).
+        // Toute sauvegarde globale (autosync post-restauration, pose d’objet, menu) ne doit jamais écraser OMEGA/PETA/etc. avec 0 entrée.
+        if (!estDimensionActive && nombreTrouve == 0)
+        {
+            GD.Print($"ZERO-K : Sauvegarde {Path.GetFileName(chemin)} ignorée — 0 en scène, {ancienNombre} sur disque (dimension {ConstantesDimensions.ObtenirNomCanonique(dimensionId)} non active).");
+            return true;
+        }
+
+        if (!estDimensionActive)
             return false;
+
         if (nombreTrouve == 0)
         {
-            if (!_persistantObjetsSolCharges
-                || (_objetsPosesAttendusDernierChargement > 0 && _objetsPosesSpawnesDernierChargement == 0))
+            GD.PrintErr($"ZERO-K : Sauvegarde objets posés refusée — 0 en scène alors que {ancienNombre} sur disque (protection perte).");
+            return true;
+        }
+        if (_persistantObjetsSolCharges)
+        {
+            if (nombreTrouve < ancienNombre
+                && _objetsPosesAttendusDernierChargement > 0
+                && _objetsPosesSpawnesDernierChargement < _objetsPosesAttendusDernierChargement)
             {
-                GD.PrintErr($"ZERO-K : Sauvegarde objets posés refusée — 0 en scène alors que {ancienNombre} sur disque (protection perte).");
+                GD.PrintErr($"ZERO-K : Sauvegarde objets posés refusée — {nombreTrouve} en scène vs {ancienNombre} disque (respawn incomplet).");
                 return true;
             }
             return false;
         }
-        if (_persistantObjetsSolCharges)
-            return false;
         return nombreTrouve < ancienNombre;
+    }
+
+    /// <summary>Ne pas écraser un fichier dimension hors scène active (même en-tête version + count que les objets posés).</summary>
+    private bool DoitPreserverFichierPersistantDimensionInactive(string chemin, int nombreTrouve, int dimensionId)
+    {
+        if (nombreTrouve != 0 || dimensionId == ObtenirDimensionLocaleActiveId())
+            return false;
+        if (!File.Exists(chemin))
+            return false;
+        return LireNombreObjetsPosesDepuisFichier(chemin) > 0;
     }
 
     private static string ObtenirNomFichierObjetsPosesDimension(string suffixeDimensionCanonique)
@@ -267,7 +294,8 @@ public partial class Joueur
     /// <summary>Phase B — après que le terrain sous le spawn soit prêt ; gèle les corps jusqu’à collision chunk sous chaque objet.</summary>
     public void ChargerEtatPersistantPhaseObjetsAuSolEtFaune()
     {
-        if (_persistantObjetsSolCharges) return;
+        if (PersistanceObjetsSolChargeeAvecSucces())
+            return;
         try
         {
             ChargerObjetsPosesMonde();
@@ -276,19 +304,46 @@ public partial class Joueur
         }
         finally
         {
-            _persistantObjetsSolCharges = true;
+            MarquerPersistanceObjetsSolChargeeSiSucces();
         }
         RafraichirHUD();
+    }
+
+    public const string NomMethodeRechargerPersistanceDimensionDifferee = nameof(RechargerEtatPersistantDimensionActiveDiffere);
+
+    /// <summary>Appel différé après changement de dimension (chunks réinitialisés).</summary>
+    public void RechargerEtatPersistantDimensionActiveDiffere()
+    {
+        RechargerEtatPersistantDimensionActive();
     }
 
     /// <summary>Recharge l'état persistant lié à la dimension active (objets posés, blocs chutants, faune) après un transfert dimensionnel.</summary>
     public void RechargerEtatPersistantDimensionActive()
     {
+        string nomDim = ConstantesDimensions.ObtenirNomCanonique(ObtenirDimensionLocaleActiveId());
+        GD.Print($"ZERO-K : Rechargement persistance dimension active [{nomDim}]…");
         ChargerObjetsPosesMonde();
         ChargerBlocsChutantsMonde();
         ObtenirGestionnaireFauneCourant(null)?.ChargerFauneMonde();
-        _persistantObjetsSolCharges = true;
+        MarquerPersistanceObjetsSolChargeeSiSucces();
         RafraichirHUD();
+    }
+
+    private bool PersistanceObjetsSolChargeeAvecSucces()
+    {
+        if (!_persistantObjetsSolCharges)
+            return false;
+        if (_objetsPosesAttendusDernierChargement <= 0)
+            return true;
+        return _objetsPosesSpawnesDernierChargement >= _objetsPosesAttendusDernierChargement;
+    }
+
+    private void MarquerPersistanceObjetsSolChargeeSiSucces()
+    {
+        if (_objetsPosesAttendusDernierChargement == 0 || _objetsPosesSpawnesDernierChargement >= _objetsPosesAttendusDernierChargement)
+            _persistantObjetsSolCharges = true;
+        else
+            GD.PrintErr($"ZERO-K : Persistance objets sol incomplète ({_objetsPosesSpawnesDernierChargement}/{_objetsPosesAttendusDernierChargement}) — nouvel essai possible.");
     }
 
     private void EnregistrerGelRestaurationSolSiBesoin(Node3D noeud)
@@ -859,7 +914,7 @@ public partial class Joueur
         string nomFichier = Path.GetFileName(chemin);
         var aSauver = CollecterObjetsPosesDimension(tree, dimensionId);
 
-        int nbAtelier200 = 0, nbRack = 0, nbCoffre = 0, nbAutres = 0;
+        int nbAtelier200 = 0, nbRack = 0, nbCoffre = 0, nbFondations = 0, nbAutres = 0;
         foreach (var e in aSauver)
         {
             if (e.slot.EstVide) continue;
@@ -867,11 +922,12 @@ public partial class Joueur
             if (id == 200) nbAtelier200++;
             else if (id == IdObjetRackBatons || id == IdObjetRackBuches) nbRack++;
             else if (id == IdObjetCoffreBoisTier0) nbCoffre++;
+            else if (EstIdFondation(id)) nbFondations++;
             else nbAutres++;
         }
         string nomDim = ConstantesDimensions.ObtenirNomCanonique(dimensionId);
         GD.Print($"ZERO-K : Sauvegarde objets posés → {nomFichier} [{nomDim}] : {aSauver.Count} objet(s) " +
-            $"(atelier 200={nbAtelier200}, racks={nbRack}, coffres={nbCoffre}, autres={nbAutres}) — monde {GameState.Instance?.NomMondeActuel ?? "?"}");
+            $"(fondations={nbFondations}, atelier 200={nbAtelier200}, racks={nbRack}, coffres={nbCoffre}, autres={nbAutres}) — monde {GameState.Instance?.NomMondeActuel ?? "?"}");
 
         if (DoitAnnulerSauvegardeObjetsPosesIncomplete(chemin, aSauver.Count, dimensionId))
         {
@@ -968,7 +1024,7 @@ public partial class Joueur
                 }
             }
 
-            int nbAtelier200L = 0, nbRackL = 0, nbCoffreL = 0, nbAutresL = 0;
+            int nbAtelier200L = 0, nbRackL = 0, nbCoffreL = 0, nbFondationsL = 0, nbAutresL = 0;
             foreach (var e in entrees)
             {
                 if (e.slot.EstVide) continue;
@@ -976,10 +1032,12 @@ public partial class Joueur
                 if (id == 200) nbAtelier200L++;
                 else if (id == IdObjetRackBatons || id == IdObjetRackBuches) nbRackL++;
                 else if (id == IdObjetCoffreBoisTier0) nbCoffreL++;
+                else if (EstIdFondation(id)) nbFondationsL++;
                 else nbAutresL++;
             }
-            GD.Print($"ZERO-K : Chargement objets posés depuis {Path.GetFileName(chemin)} : {entrees.Count} entrée(s) " +
-                $"(atelier 200={nbAtelier200L}, racks={nbRackL}, coffres={nbCoffreL}, autres={nbAutresL}) — monde {GameState.Instance?.NomMondeActuel ?? "?"}");
+            string dimActive = ConstantesDimensions.ObtenirNomCanonique(ObtenirDimensionLocaleActiveId());
+            GD.Print($"ZERO-K : Chargement objets posés [{dimActive}] depuis {Path.GetFileName(chemin)} : {entrees.Count} entrée(s) " +
+                $"(fondations={nbFondationsL}, atelier 200={nbAtelier200L}, racks={nbRackL}, coffres={nbCoffreL}, autres={nbAutresL}) — monde {GameState.Instance?.NomMondeActuel ?? "?"}");
 
             // Référencer les anciens avant de respawner : évite une fenêtre où le groupe BlocsPoses est vide
             // si une sauvegarde (autosave, pose, fermeture) s’exécute entre QueueFree et CreerBlocPose.
@@ -998,6 +1056,7 @@ public partial class Joueur
             _chargementObjetsPosesMondeEnCours = true;
             try
             {
+                var nouveauxBlocsPoses = new List<Node>();
                 foreach (var e in entrees)
                 {
                     if (e.slot.EstVide) continue;
@@ -1009,6 +1068,7 @@ public partial class Joueur
                     Node3D n = CreerBlocPose(p, s);
                     if (n != null)
                     {
+                        nouveauxBlocsPoses.Add(n);
                         _objetsPosesSpawnesDernierChargement++;
                         n.GlobalRotationDegrees = rot;
                         if ((s.ID == 200 || s.ID == IdObjetRackBatons || s.ID == IdObjetRackBuches) && grilleAtelier != null)
@@ -1037,12 +1097,30 @@ public partial class Joueur
                         }
                         EnregistrerGelRestaurationSolSiBesoin(n);
                     }
+                    else if (EstIdFondation(s.ID) || s.ID == 200 || s.ID == IdObjetTableAnalyseTier1)
+                        GD.PrintErr($"ZERO-K : Échec respawn objet posé id={s.ID} pos={p} (fichier conservé).");
                 }
 
-                foreach (Node n in anciensBlocsPoses)
+                bool remplacerAnciens = entrees.Count == 0
+                    || _objetsPosesSpawnesDernierChargement > 0
+                    || anciensBlocsPoses.Count == 0;
+                if (remplacerAnciens)
                 {
-                    if (GodotObject.IsInstanceValid(n) && n.IsInsideTree())
-                        n.QueueFree();
+                    foreach (Node n in anciensBlocsPoses)
+                    {
+                        if (GodotObject.IsInstanceValid(n) && n.IsInsideTree())
+                            n.QueueFree();
+                    }
+                }
+                else
+                {
+                    foreach (Node n in nouveauxBlocsPoses)
+                    {
+                        if (GodotObject.IsInstanceValid(n) && n.IsInsideTree())
+                            n.QueueFree();
+                    }
+                    _objetsPosesSpawnesDernierChargement = 0;
+                    GD.PrintErr($"ZERO-K : Respawn objets posés annulé — anciennes constructions conservées en scène.");
                 }
             }
             finally
@@ -1101,6 +1179,11 @@ public partial class Joueur
         string chemin = ObtenirCheminBlocsChutantsPourDimension(dimensionId);
         var aSauver = CollecterBlocsChutantsDimension(tree, dimensionId);
         string nomDim = ConstantesDimensions.ObtenirNomCanonique(dimensionId);
+        if (DoitPreserverFichierPersistantDimensionInactive(chemin, aSauver.Count, dimensionId))
+        {
+            GD.Print($"ZERO-K : Sauvegarde {Path.GetFileName(chemin)} ignorée — dimension {nomDim} non active, données conservées.");
+            return;
+        }
         GD.Print($"ZERO-K : Sauvegarde blocs chutants → {Path.GetFileName(chemin)} [{nomDim}] : {aSauver.Count} entrée(s).");
         EcrireFichierBlocsChutants(chemin, aSauver);
     }

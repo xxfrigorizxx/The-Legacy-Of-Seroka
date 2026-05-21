@@ -400,42 +400,6 @@ public partial class Joueur
 		},
 		new RecetteAnalysable
 		{
-			CleCraft = "id_124",
-			IdResultat = IdObjetFondationBois,
-			Masque = CategorieAnalyse.DemiBuche,
-			Titre = "Fondation bois",
-			LegendeSymboles = new[] { "D = Demi-buche standard (x9, meme essence)" },
-			PatronCraft = new[] { "(D)(D)(D)", "(D)(D)(D)", "(D)(D)(D)" }
-		},
-		new RecetteAnalysable
-		{
-			CleCraft = "id_125",
-			IdResultat = IdObjetFondationRoche,
-			Masque = CategorieAnalyse.RocheMatiere,
-			Titre = "Fondation roche",
-			LegendeSymboles = new[] { "R = Roche matiere (x9, meme type chimique)" },
-			PatronCraft = new[] { "(R)(R)(R)", "(R)(R)(R)", "(R)(R)(R)" }
-		},
-		new RecetteAnalysable
-		{
-			CleCraft = "id_126",
-			IdResultat = IdObjetFondationBoisSoleRoche,
-			Masque = CategorieAnalyse.DemiBuche | CategorieAnalyse.RocheMatiere,
-			Titre = "Fondation bois sole roche",
-			LegendeSymboles = new[] { "D = Demi-buche standard (x6, meme essence)", "R = Roche matiere (x3, meme type)" },
-			PatronCraft = new[] { "(D)(D)(D)", "(D)(D)(D)", "(R)(R)(R)" }
-		},
-		new RecetteAnalysable
-		{
-			CleCraft = "id_127",
-			IdResultat = IdObjetFondationRocheSoleBois,
-			Masque = CategorieAnalyse.DemiBuche | CategorieAnalyse.RocheMatiere,
-			Titre = "Fondation roche sole bois",
-			LegendeSymboles = new[] { "R = Roche matiere (x6, meme type)", "D = Demi-buche standard (x3, meme essence)" },
-			PatronCraft = new[] { "(R)(R)(R)", "(R)(R)(R)", "(D)(D)(D)" }
-		},
-		new RecetteAnalysable
-		{
 			CleCraft = "id_200",
 			IdResultat = 200,
 			Masque = CategorieAnalyse.DemiBuche | CategorieAnalyse.BuchePleine | CategorieAnalyse.RocheRonde | CategorieAnalyse.Corde,
@@ -445,7 +409,7 @@ public partial class Joueur
 		}
 	};
 
-	// Règle de gameplay: la table T1 peut débloquer RecettesAnalyseurTier0 + ces recettes T1.
+	// Table T1 : débloque ces recettes (+ RecettesAnalyseurTier0 en fusion). Pas l'analyseur manuel seul.
 	private static readonly RecetteAnalysable[] RecettesAnalyseurTier1 = new RecetteAnalysable[]
 	{
 		new RecetteAnalysable
@@ -456,6 +420,68 @@ public partial class Joueur
 			Titre = "Hache en pierre",
 			LegendeSymboles = new[] { "R = Petite roche plate (x2, meme matiere)", "B = Baton (x3, meme essence)" },
 			PatronCraft = new[] { "(R)(R)(B)", "( )( )(B)", "( )( )(B)" }
+		},
+		new RecetteAnalysable
+		{
+			CleCraft = "id_124",
+			IdResultat = IdObjetFondationBois,
+			Masque = CategorieAnalyse.Aucune,
+			Titre = "Fondation bois",
+			LegendeSymboles = new[] { "Table T1 : 1 demi-buche standard (buche fendue en 2)", "Craft atelier : grille 3×3 (x9 demi-buches, meme essence)" },
+			PatronCraft = new[] { "(D)(D)(D)", "(D)(D)(D)", "(D)(D)(D)" }
+		},
+		new RecetteAnalysable
+		{
+			CleCraft = "id_125",
+			IdResultat = IdObjetFondationRoche,
+			Masque = CategorieAnalyse.Aucune,
+			Titre = "Fondation roche",
+			LegendeSymboles = new[] { "Table T1 : 1 roche moyenne (taille 2)", "Craft atelier : grille 3×3 (x9 roches moyennes, meme type)" },
+			PatronCraft = new[] { "(R)(R)(R)", "(R)(R)(R)", "(R)(R)(R)" }
+		},
+		new RecetteAnalysable
+		{
+			CleCraft = "id_126",
+			IdResultat = IdObjetFondationBoisSoleRoche,
+			Masque = CategorieAnalyse.Aucune,
+			Titre = "Fondation bois (sole roche)",
+			LegendeSymboles = new[]
+			{
+				"Table T1 : 1 demi-buche standard + 1 roche moyenne",
+				"Craft atelier : (D)(D)(D) / (D)(D)(D) / (R)(R)(R)"
+			},
+			PatronCraft = new[] { "(D)(D)(D)", "(D)(D)(D)", "(R)(R)(R)" }
+		},
+		new RecetteAnalysable
+		{
+			CleCraft = "id_127",
+			IdResultat = IdObjetFondationRocheSoleBois,
+			Masque = CategorieAnalyse.Aucune,
+			Titre = "Fondation roche (sole bois)",
+			LegendeSymboles = new[]
+			{
+				"Table T1 : 1 demi-buche standard + 1 roche moyenne",
+				"Craft atelier : (R)(R)(R) / (R)(R)(R) / (D)(D)(D)"
+			},
+			PatronCraft = new[] { "(R)(R)(R)", "(R)(R)(R)", "(D)(D)(D)" }
+		},
+		new RecetteAnalysable
+		{
+			CleCraft = "id_136",
+			IdResultat = IdObjetSolBois,
+			Masque = CategorieAnalyse.Aucune,
+			Titre = "Plancher bois",
+			LegendeSymboles = new[] { "Table T1 : au moins 1 demi-buche standard (fendue en 2)", "Craft atelier : ligne du milieu (D)(D)(D)" },
+			PatronCraft = new[] { "( )( )( )", "(D)(D)(D)", "( )( )( )" }
+		},
+		new RecetteAnalysable
+		{
+			CleCraft = "id_137",
+			IdResultat = IdObjetSolRoche,
+			Masque = CategorieAnalyse.Aucune,
+			Titre = "Plancher roche",
+			LegendeSymboles = new[] { "Table T1 : 1 roche moyenne (taille 2)", "Craft atelier : ligne du milieu (R)(R)(R)" },
+			PatronCraft = new[] { "( )( )( )", "(R)(R)(R)", "( )( )( )" }
 		}
 	};
 
@@ -624,15 +650,74 @@ public partial class Joueur
 	public void ImporterCraftsDecouverts(IEnumerable<string> keys)
 	{
 		_craftsDecouverts.Clear();
-		if (keys == null) return;
-		foreach (string key in keys)
+		if (keys != null)
 		{
-			if (!string.IsNullOrWhiteSpace(key))
-				_craftsDecouverts.Add(key);
+			foreach (string key in keys)
+			{
+				if (!string.IsNullOrWhiteSpace(key))
+					_craftsDecouverts.Add(key);
+			}
 		}
 		// Sauvegardes : « corde_mixte_intestin » débloqué avant l'ajout de corde_intestin.
 		if (_craftsDecouverts.Contains("corde_mixte_intestin"))
 			_craftsDecouverts.Add("corde_intestin");
+	}
+
+	private static void FiltrerCandidatsAnalyseFondationMixte(List<RecetteAnalysable> candidates, SlotInventaire[] grilleAnalyse)
+	{
+		if (!GrilleAnalyseContientDemiBucheStandard(grilleAnalyse) || !GrilleAnalyseContientRocheMoyenne(grilleAnalyse))
+			return;
+		for (int i = candidates.Count - 1; i >= 0; i--)
+		{
+			string cle = candidates[i].CleCraft;
+			if (cle is "id_124" or "id_125" or "id_136" or "id_137")
+				candidates.RemoveAt(i);
+		}
+	}
+
+	/// <summary>Demi-bûche standard fendue en 2 (ID 30, morpho 1, taille 1).</summary>
+	private static bool EstDemiBucheStandardFendue(in SlotInventaire s) =>
+		!s.EstVide && s.ID == 30 && s.IndexMorphologique == 1 && s.IndexTaille == 1;
+
+	private static bool EstRocheMoyenneMatiere(in SlotInventaire s) =>
+		!s.EstVide && ItemPhysique.EstIdRocheMatiere(s.ID) && s.IndexTaille == 2;
+
+	private static bool GrilleAnalyseContientDemiBucheStandard(SlotInventaire[] grille)
+	{
+		if (grille == null) return false;
+		for (int i = 0; i < grille.Length; i++)
+		{
+			if (EstDemiBucheStandardFendue(grille[i]))
+				return true;
+		}
+		return false;
+	}
+
+	private static bool GrilleAnalyseContientRocheMoyenne(SlotInventaire[] grille)
+	{
+		if (grille == null) return false;
+		for (int i = 0; i < grille.Length; i++)
+		{
+			if (EstRocheMoyenneMatiere(grille[i]))
+				return true;
+		}
+		return false;
+	}
+
+	/// <summary>Déblocage table T1 : échantillons simples (1 matériau ou mix bois+roche), pas l'union bit à bit seule.</summary>
+	private static bool AnalyseurTableT1SatisfaitFondationPlancher(RecetteAnalysable r, SlotInventaire[] grille)
+	{
+		bool aBois = GrilleAnalyseContientDemiBucheStandard(grille);
+		bool aRoche = GrilleAnalyseContientRocheMoyenne(grille);
+		return r.CleCraft switch
+		{
+			"id_124" => aBois && !aRoche,
+			"id_125" => aRoche && !aBois,
+			"id_126" or "id_127" => aBois && aRoche,
+			"id_136" => aBois,
+			"id_137" => aRoche,
+			_ => false
+		};
 	}
 
 	private static CategorieAnalyse DeterminerCategoriesAnalyse(in SlotInventaire s)
@@ -739,6 +824,8 @@ public partial class Joueur
 			}
 			return nbIntestins >= 2;
 		}
+		if (r.CleCraft is "id_124" or "id_125" or "id_126" or "id_127" or "id_136" or "id_137")
+			return grilleAnalyse != null && AnalyseurTableT1SatisfaitFondationPlancher(r, grilleAnalyse);
 		return (union & r.Masque) == r.Masque;
 	}
 
@@ -777,6 +864,7 @@ public partial class Joueur
 			if (AnalyseurUnionSatisfaitRecette(masque, r, grilleAnalyse))
 				candidates.Add(r);
 		}
+		FiltrerCandidatsAnalyseFondationMixte(candidates, grilleAnalyse);
 		if (candidates.Count == 0)
 		{
 			ConsommerAnalyseur();

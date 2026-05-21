@@ -47,7 +47,9 @@ public partial class ItemPhysique : RigidBody3D
 		|| idObjet == Joueur.IdObjetFondationBois
 		|| idObjet == Joueur.IdObjetFondationRoche
 		|| idObjet == Joueur.IdObjetFondationBoisSoleRoche
-		|| idObjet == Joueur.IdObjetFondationRocheSoleBois;
+		|| idObjet == Joueur.IdObjetFondationRocheSoleBois
+		|| idObjet == Joueur.IdObjetSolBois
+		|| idObjet == Joueur.IdObjetSolRoche;
 
 	private const float SeuilMasseObjetLegerKg = 35f;
 	private const float SeuilHauteurObjetPetitMetres = 0.6f;

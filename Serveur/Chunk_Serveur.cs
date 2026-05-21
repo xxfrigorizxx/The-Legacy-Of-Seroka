@@ -251,31 +251,72 @@ public partial class Chunk_Serveur : RefCounted
 			_densities = new float[TailleChunk + 1, HauteurMax + 1, TailleChunk + 1];
 			_materials = new byte[TailleChunk + 1, HauteurMax + 1, TailleChunk + 1];
 			_densitiesEau = new float[TailleChunk + 1, HauteurMax + 1, TailleChunk + 1];
-			int[,] sommetSolide = new int[TailleChunk + 1, TailleChunk + 1];
+			int taille = TailleChunk + 1;
+			int[,] sommetSolide = new int[taille, taille];
 			bool activerGrottes = !_generationAbysseActive;
-			for (int x = 0; x <= TailleChunk; x++)
-				for (int z = 0; z <= TailleChunk; z++)
+			for (int x = 0; x < taille; x++)
+				for (int z = 0; z < taille; z++)
 					sommetSolide[x, z] = -1;
 
-			for (int x = 0; x <= TailleChunk; x++)
+			// Hauteur / climat par colonne (x,z) : évite ~700× recalculs bruit 2D/3D par chunk en Abysse.
+			var hauteurColonne = new int[taille, taille];
+			var temperatureColonne = new float[taille, taille];
+			var humiditeColonne = new float[taille, taille];
+			bool[,] dansTrouNoirColonne = _generationAbysseActive ? new bool[taille, taille] : null;
+			for (int x = 0; x < taille; x++)
 			{
-				for (int y = 0; y <= HauteurMax; y++)
+				for (int z = 0; z < taille; z++)
 				{
-					for (int z = 0; z <= TailleChunk; z++)
+					float xGlobal = ChunkOffsetX * TailleChunk + x;
+					float zGlobal = ChunkOffsetZ * TailleChunk + z;
+					int xInt = (int)xGlobal;
+					int zInt = (int)zGlobal;
+					hauteurColonne[x, z] = CalculerHauteurTerrain(xInt, zInt);
+					if (_generationAbysseActive)
 					{
-						// Espace GLOBAL du monde — évite le tiling biomique (chaleur/humidité fracturée).
-						float xGlobal = ChunkOffsetX * TailleChunk + x;
-						float zGlobal = ChunkOffsetZ * TailleChunk + z;
+						float distanceRadiale = Mathf.Sqrt((xGlobal * xGlobal) + (zGlobal * zGlobal));
+						dansTrouNoirColonne[x, z] = distanceRadiale <= AbyssRayonTrouNoir;
+						temperatureColonne[x, z] = 0f;
+						humiditeColonne[x, z] = 0f;
+					}
+					else
+					{
+						temperatureColonne[x, z] = _noiseTemperature.GetNoise2D(xGlobal, zGlobal);
+						humiditeColonne[x, z] = CalculerHumiditeGlobale(xGlobal, zGlobal);
+					}
+				}
+			}
+
+			const float yMinBandeExtrusionAbysse = AbyssYAnneauTransitionBottom - 1f;
+			const float yMaxBandeExtrusionAbysse = AbyssYSpiraleTop + 1f;
+
+			for (int x = 0; x < taille; x++)
+			{
+				for (int z = 0; z < taille; z++)
+				{
+					float xGlobal = ChunkOffsetX * TailleChunk + x;
+					float zGlobal = ChunkOffsetZ * TailleChunk + z;
+					int hauteurSurface = hauteurColonne[x, z];
+					float temperature = temperatureColonne[x, z];
+					float humidite = humiditeColonne[x, z];
+					bool dansTrouNoirCol = _generationAbysseActive && dansTrouNoirColonne[x, z];
+
+					for (int y = 0; y <= HauteurMax; y++)
+					{
 						float globalY = ChunkOffsetY * HauteurMax + y;
-						bool extrusionParoiAbysse = _generationAbysseActive
-							&& EvaluerExtrusionParoiAbysse(xGlobal, globalY, zGlobal, out _);
-						bool extrusionAnneauAbysse = _generationAbysseActive
-							&& !extrusionParoiAbysse
-							&& EvaluerExtrusionAnneauAbysse(xGlobal, globalY, zGlobal, out _);
-						bool picSupplementSpiraleAbysse = _generationAbysseActive
-							&& !extrusionParoiAbysse
-							&& !extrusionAnneauAbysse
-							&& EvaluerPicSupplementSpiraleAbysse(xGlobal, globalY, zGlobal, out _);
+						bool extrusionParoiAbysse = false;
+						bool extrusionAnneauAbysse = false;
+						bool picSupplementSpiraleAbysse = false;
+						if (_generationAbysseActive
+							&& globalY >= yMinBandeExtrusionAbysse
+							&& globalY <= yMaxBandeExtrusionAbysse)
+						{
+							extrusionParoiAbysse = EvaluerExtrusionParoiAbysse(xGlobal, globalY, zGlobal, out _);
+							if (!extrusionParoiAbysse)
+								extrusionAnneauAbysse = EvaluerExtrusionAnneauAbysse(xGlobal, globalY, zGlobal, out _);
+							if (!extrusionParoiAbysse && !extrusionAnneauAbysse)
+								picSupplementSpiraleAbysse = EvaluerPicSupplementSpiraleAbysse(xGlobal, globalY, zGlobal, out _);
+						}
 
 						if (extrusionParoiAbysse || extrusionAnneauAbysse || picSupplementSpiraleAbysse)
 						{
@@ -286,15 +327,11 @@ public partial class Chunk_Serveur : RefCounted
 							continue;
 						}
 
-						int hauteurSurface = CalculerHauteurTerrain((int)xGlobal, (int)zGlobal);
-						float temperature = _generationAbysseActive ? 0f : _noiseTemperature.GetNoise2D(xGlobal, zGlobal);
-						float humidite = _generationAbysseActive ? 0f : CalculerHumiditeGlobale(xGlobal, zGlobal);
-
 						_densitiesEau[x, y, z] = -1.0f;
 
 						bool socleZeroMonde = globalY >= 0f
 							&& globalY <= 2f
-							&& !EstDansTrouNoirAbysseMonde(xGlobal, zGlobal);
+							&& !dansTrouNoirCol;
 						if (socleZeroMonde)
 						{
 							_densities[x, y, z] = 1000.0f;

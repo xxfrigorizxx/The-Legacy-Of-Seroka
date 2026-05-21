@@ -26,7 +26,13 @@ public partial class Joueur
             || idObjet == IdObjetAtelleJambe
             || idObjet == IdObjetAtelleBras
             || idObjet == IdObjetBandageTier1
-            || idObjet == IdObjetCoffreBoisTier0;
+            || idObjet == IdObjetCoffreBoisTier0
+            || idObjet == IdObjetSolBois
+            || idObjet == IdObjetSolRoche
+            || idObjet == IdObjetFondationBois
+            || idObjet == IdObjetFondationRoche
+            || idObjet == IdObjetFondationBoisSoleRoche
+            || idObjet == IdObjetFondationRocheSoleBois;
     }
 
     private static bool EstCraftForgeron(int idObjet)

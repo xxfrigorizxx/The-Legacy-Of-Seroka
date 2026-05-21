@@ -272,7 +272,14 @@ public partial class Monde_Client : Node3D
 	private const float IntervalleDiagCoherenceAbysseSec = 1.25f;
 	private float _cooldownLogDiagnosticCollisionAbysse = 0f;
 	private const float IntervalleDiagnosticCollisionAbysseSec = 0.80f;
-	private const int MaxFileDemandesChunksAbysse = 2600;
+	private const int MaxFileDemandesChunksAbysse = 1400;
+	/// <summary>Plafond file maths (marching cubes) : au-delà, on retire les chunks les plus lointains (évite lag croissant en exploration).</summary>
+	private const int MaxFileAttenteMathsChunks = 200;
+	/// <summary>Plafond intégrations mesh en attente (FIFO si dépassement).</summary>
+	private const int MaxFileIntegrationEnAttente = 320;
+	private const int MaxChunksAChargerAlpha = 900;
+	private float _timerEpurationBacklog = 0f;
+	private const float IntervalleEpurationBacklogSec = 0.22f;
 
 	private Camera3D ObtenirCameraObservation()
 	{
@@ -611,7 +618,8 @@ public partial class Monde_Client : Node3D
 		// Grâce post-panneau graphismes : sinon le gate peut bloquer tout (0 requête chunk) malgré un RenderDistance élevé.
 		if (_timerGraceStreamingReglageUtilisateur > 0f) return budgetActuel;
 		if (!ActiverGateFpsStrict) return budgetActuel;
-		if (_gateStreamingGele) return 0;
+		// Ne pas renvoyer 0 : bloque toute intégration mesh / requête distante → sol visible sous les pieds seulement, arbres flottants.
+		if (_gateStreamingGele) return minSortieGel;
 		if (_tempsDepuisDegel < DureeRampUpPostDegel)
 		{
 			float t = Mathf.Clamp(_tempsDepuisDegel / Mathf.Max(0.01f, DureeRampUpPostDegel), 0f, 1f);
@@ -866,8 +874,19 @@ public partial class Monde_Client : Node3D
 	public void EnqueueChunkGeneration(ChunkData data, DonneesChunk donnees)
 	{
 		if (data == null || donnees == null) return;
+		ulong empreinte = CalculerEmpreinteDonneesChunk(donnees);
+		if (data.VisualInstanceRID.IsValid && data.EmpreinteDonneesServeur == empreinte && empreinte != 0)
+			return;
+		data.EmpreinteDonneesServeur = empreinte;
 		lock (_lockFileAttenteMaths)
+		{
+			for (int i = _fileAttenteMathsData.Count - 1; i >= 0; i--)
+			{
+				if (ReferenceEquals(_fileAttenteMathsData[i].data, data))
+					_fileAttenteMathsData.RemoveAt(i);
+			}
 			_fileAttenteMathsData.Add((data, donnees));
+		}
 	}
 
 	/// <summary>Architecture AAA : fusionne les 45 SectionPayload en un mesh + shape, crée les RIDs RenderingServer/PhysicsServer3D, attache au monde. À appeler sur le Main Thread.</summary>
@@ -1241,6 +1260,12 @@ public partial class Monde_Client : Node3D
 				}
 			}
 		}
+		_timerEpurationBacklog -= dt;
+		if (_timerEpurationBacklog <= 0f)
+		{
+			_timerEpurationBacklog = IntervalleEpurationBacklogSec;
+			EpurerBacklogsChunkLointains(positionObservation);
+		}
 		int backlogCharge = CompterBacklog();
 		float facteurAntiSpikeBacklog = 1f;
 		if (ModeSurvieFpsAgressif)
@@ -1348,18 +1373,20 @@ public partial class Monde_Client : Node3D
 		}
 		// GATE FPS STRICT : hors zone critique, gel total si FPS < seuil, puis ramp-up 1→budget.
 		maxIntegrations = AppliquerGateEtRampUp(maxIntegrations, doitGarantirProcheJoueur, 1);
-		if (!doitGarantirProcheJoueur && _gateStreamingGele) budgetVerticesDyn = 0;
+		// Sous gel : garder un flux minimal de triangles (0 = 1 seul mesh/frame puis blocage total au-delà).
+		if (!doitGarantirProcheJoueur && _gateStreamingGele)
+			budgetVerticesDyn = Mathf.Max(budgetVerticesDyn, 22000);
 		else if (!doitGarantirProcheJoueur && _tempsDepuisDegel < DureeRampUpPostDegel)
 		{
 			float tRamp = Mathf.Clamp(_tempsDepuisDegel / Mathf.Max(0.01f, DureeRampUpPostDegel), 0f, 1f);
 			budgetVerticesDyn = Mathf.Min(budgetVerticesDyn, Mathf.RoundToInt(Mathf.Lerp(12000, budgetVerticesDyn, tRamp)));
 		}
-		// Sous gel : maxIntegrations = 0 → aucune fusion mesh / frame alors que les workers ont livré → impression que « le client refuse d’afficher ».
-		if (maxIntegrations <= 0 && !doitGarantirProcheJoueur && _fileIntegrationMainThread.TryPeek(out _)
-			&& ActiverGateFpsStrict && _gateStreamingGele && _timerGraceStreamingReglageUtilisateur <= 0f)
+		// File d’intégration non vide : au moins 2 meshes/frame pour que le terrain « rattrape » la vue (pas seulement le chunk sous les pieds).
+		if (!doitGarantirProcheJoueur && _fileIntegrationMainThread.TryPeek(out _)
+			&& (_gateStreamingGele || maxIntegrations <= 1))
 		{
-			maxIntegrations = 1;
-			budgetVerticesDyn = Mathf.Max(budgetVerticesDyn, 14000);
+			maxIntegrations = Mathf.Max(maxIntegrations, _gateStreamingGele ? 2 : 1);
+			budgetVerticesDyn = Mathf.Max(budgetVerticesDyn, _gateStreamingGele ? 22000 : 16000);
 		}
 		int integrations = 0;
 		int verticesIntegres = 0;
@@ -1878,7 +1905,7 @@ public partial class Monde_Client : Node3D
 			int gapAntiVide = Mathf.Max(0, rayonDetailStreaming - _rayonRequetesActuel);
 			// Sous gel : déjà couvert par gap ; hors gel (ex. rampe post-dégel à 0) : garder un flux si la file attend encore.
 			bool besoinFlux = _gateStreamingGele
-				? gapAntiVide >= Mathf.Max(3, SeuilGapRequetesMin / 2)
+				? gapAntiVide >= 1 || backlog >= 1
 				: gapAntiVide > 0 || backlog >= SeuilBacklogBas;
 			if (besoinFlux)
 				nbRequetes = 1;
@@ -2378,6 +2405,81 @@ public partial class Monde_Client : Node3D
 			+ Thread.VolatileRead(ref _chunksEnCoursDeCalcul);
 	}
 
+	/// <summary>Empreinte légère du paquet serveur : détecte un renvoi identique sans comparer tout le voxel.</summary>
+	private static ulong CalculerEmpreinteDonneesChunk(DonneesChunk d)
+	{
+		if (d == null) return 0;
+		var hc = new HashCode();
+		hc.Add(d.CoordChunk.X);
+		hc.Add(d.CoordChunk.Y);
+		hc.Add(d.CoordChunkY);
+		hc.Add(d.TailleChunk);
+		hc.Add(d.HauteurMax);
+		hc.Add(d.EstVideIntegral);
+		if (d.MaterialsFlat != null)
+		{
+			hc.Add(d.MaterialsFlat.Length);
+			int pas = Mathf.Max(1, d.MaterialsFlat.Length / 48);
+			for (int i = 0; i < d.MaterialsFlat.Length; i += pas)
+				hc.Add(d.MaterialsFlat[i]);
+		}
+		if (d.DensitiesQuantifiees != null)
+		{
+			hc.Add(d.DensitiesQuantifiees.Length);
+			int pas = Mathf.Max(1, d.DensitiesQuantifiees.Length / 32);
+			for (int i = 0; i < d.DensitiesQuantifiees.Length; i += pas)
+				hc.Add(d.DensitiesQuantifiees[i]);
+		}
+		else if (d.DensitiesFlat != null)
+		{
+			hc.Add(d.DensitiesFlat.Length);
+			int pas = Mathf.Max(1, d.DensitiesFlat.Length / 32);
+			for (int i = 0; i < d.DensitiesFlat.Length; i += pas)
+				hc.Add(d.DensitiesFlat[i]);
+		}
+		return unchecked((ulong)(uint)hc.ToHashCode());
+	}
+
+	/// <summary>Évite que les files de streaming grossissent sans borne pendant une longue marche (lag croissant).</summary>
+	private void EpurerBacklogsChunkLointains(Vector3 positionObservation)
+	{
+		Vector2I obs = Gestionnaire_Monde.WorldToChunkCoord(positionObservation, TailleChunk);
+		int rayonGarder = Mathf.Max(RayonDormancePhysique + 1, _rayonRequetesActuel + 3);
+		float gardeCarre = rayonGarder * rayonGarder;
+
+		lock (_lockFileAttenteMaths)
+		{
+			while (_fileAttenteMathsData.Count > MaxFileAttenteMathsChunks)
+			{
+				int pire = -1;
+				float pireD = -1f;
+				for (int i = 0; i < _fileAttenteMathsData.Count; i++)
+				{
+					Vector2I c = _fileAttenteMathsData[i].data.Coordonnees;
+					float d = DistanceCarreeChunk(obs, c);
+					if (d > pireD)
+					{
+						pireD = d;
+						pire = i;
+					}
+				}
+				if (pire < 0 || pireD <= gardeCarre)
+					break;
+				_fileAttenteMathsData.RemoveAt(pire);
+			}
+		}
+
+		int surplusIntegration = _fileIntegrationMainThread.Count - MaxFileIntegrationEnAttente;
+		for (int n = 0; n < surplusIntegration && _fileIntegrationMainThread.TryDequeue(out _); n++) { }
+	}
+
+	private static float DistanceCarreeChunk(Vector2I obs, Vector2I chunk)
+	{
+		int dx = chunk.X - obs.X;
+		int dz = chunk.Y - obs.Y;
+		return dx * dx + dz * dz;
+	}
+
 	/// <summary>Vrai si le streaming peut prendre un peu plus de marge (FPS/backlog stables, voir <see cref="AjusterFenetreRequetes"/>).</summary>
 	private bool StreamingPeutElargirTranquillement()
 	{
@@ -2516,6 +2618,7 @@ public partial class Monde_Client : Node3D
 			return;
 		}
 		if (data.DensitiesFlat == null || data.MaterialsFlat == null) return;
+		data.EmpreinteDonneesServeur = 0;
 		// Libérer l'ancien mesh et la collision avant de recréer (sinon fuite RID)
 		data.LibérerRids();
 		var payloads = Chunk_Client.ReconstruirePayloadsDepuisData(data);
@@ -2541,10 +2644,29 @@ public partial class Monde_Client : Node3D
 			if (d2 > rayonMaxCarre)
 				_chunksACharger.RemoveAt(i);
 		}
-		if (_dimensionReseauActive == (int)DimensionJeu.Abysse && _chunksACharger.Count > MaxFileDemandesChunksAbysse)
+		int plafondFile = _dimensionReseauActive == (int)DimensionJeu.Abysse
+			? MaxFileDemandesChunksAbysse
+			: MaxChunksAChargerAlpha;
+		if (_chunksACharger.Count > plafondFile)
 		{
-			int surplus = _chunksACharger.Count - MaxFileDemandesChunksAbysse;
-			_chunksACharger.RemoveRange(Mathf.Max(0, _chunksACharger.Count - surplus), surplus);
+			Vector2I obs = Gestionnaire_Monde.WorldToChunkCoord(positionObservation, TailleChunk);
+			while (_chunksACharger.Count > plafondFile)
+			{
+				int pire = -1;
+				float pireD = -1f;
+				for (int i = 0; i < _chunksACharger.Count; i++)
+				{
+					float d = DistanceCarreeChunk(obs, _chunksACharger[i]);
+					if (d > pireD)
+					{
+						pireD = d;
+						pire = i;
+					}
+				}
+				if (pire < 0)
+					break;
+				_chunksACharger.RemoveAt(pire);
+			}
 		}
 	}
 
@@ -2584,10 +2706,19 @@ public partial class Monde_Client : Node3D
 				_setFloreDifferee.Remove(cleFlore);
 				_fileFloreDifferee.Remove(cleFlore);
 				_frameEnqueueFlore.Remove(cleFlore);
+				RetirerTravauxEnAttentePourChunk(data);
 				data.LibérerRids();
+				data.LibererDonneesVoxel();
 				NettoyerRegistreReconstruction(coord);
 			}
 		}
+	}
+
+	private void RetirerTravauxEnAttentePourChunk(ChunkData data)
+	{
+		if (data == null) return;
+		lock (_lockFileAttenteMaths)
+			_fileAttenteMathsData.RemoveAll(entree => ReferenceEquals(entree.data, data));
 	}
 
 	private void VerifierCoherenceCachesAbysse()
@@ -2973,17 +3104,25 @@ public partial class Monde_Client : Node3D
 			_demandesAbysseFrameDerniereEmission.Remove(cle3DNormalisee);
 		}
 		// Architecture AAA : ChunkData (RID) uniquement, plus de Node.
+		ulong empreinte = CalculerEmpreinteDonneesChunk(donnees);
 		if (modeAbysse && _chunksDataAbysse3D.TryGetValue(cle3DNormalisee, out var existingAbysse))
 		{
 			existingAbysse.CoordChunkY = coordYCle;
 			existingAbysse.EstVideIntegral = donnees?.EstVideIntegral ?? false;
+			if (existingAbysse.VisualInstanceRID.IsValid && existingAbysse.EmpreinteDonneesServeur == empreinte && empreinte != 0)
+			{
+				_chunksData[coordChunk] = existingAbysse;
+				return;
+			}
 			EnqueueChunkGeneration(existingAbysse, donnees);
-			_chunksData[coordChunk] = existingAbysse; // vue 2D = couche la plus récente demandée
+			_chunksData[coordChunk] = existingAbysse;
 			return;
 		}
 		if (!modeAbysse && _chunksData.TryGetValue(coordChunk, out var existing))
 		{
 			existing.CoordChunkY = coordY;
+			if (existing.VisualInstanceRID.IsValid && existing.EmpreinteDonneesServeur == empreinte && empreinte != 0)
+				return;
 			EnqueueChunkGeneration(existing, donnees);
 			return;
 		}
@@ -3551,7 +3690,9 @@ public partial class Monde_Client : Node3D
 				NettoyerRegistreReconstruction(data.Coordonnees);
 			}
 		}
+		RetirerTravauxEnAttentePourChunk(data);
 		data.LibérerRids();
+		data.LibererDonneesVoxel();
 	}
 
 	private void PurgerChunksAbysseHorsFenetre(Vector3 positionObservation, Vector3 positionJoueur)

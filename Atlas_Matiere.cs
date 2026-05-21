@@ -727,6 +727,17 @@ public static class Atlas_Matiere
             return "Fondation bois sole roche";
         if (id == Joueur.IdObjetFondationRocheSoleBois)
             return "Fondation roche sole bois";
+        if (id == Joueur.IdObjetSolBois)
+        {
+            string essence = slot.IndexBotanique switch { 0 => "Chêne", 1 => "Bouleau", 2 => "Pin", 3 => "Sapin", 4 => "Fromager", _ => "Bois" };
+            return $"Plancher bois ({essence})";
+        }
+        if (id == Joueur.IdObjetSolRoche)
+        {
+            int chim = Mathf.Clamp(slot.IndexChimique, 0, ItemPhysique.TableGeologique.Length - 1);
+            string nomRoche = ItemPhysique.TableGeologique[chim].Nom;
+            return $"Plancher roche ({nomRoche})";
+        }
         if (id == Joueur.IdObjetMailletBois)
         {
             string essence = slot.IndexBotanique switch { 0 => "Chêne", 1 => "Bouleau", 2 => "Pin", 3 => "Sapin", 4 => "Fromager", _ => "Bois" };
@@ -1432,8 +1443,8 @@ public static class Atlas_Matiere
         {
             static bool EstDemiBucheStandardFondation(SlotInventaire s) =>
                 !s.EstVide && s.ID == 30 && s.IndexMorphologique == 1 && s.IndexTaille == 1;
-            static bool EstRocheMatiereFondation(SlotInventaire s) =>
-                !s.EstVide && ItemPhysique.EstIdRocheMatiere(s.ID) && s.IndexTaille == 1;
+            static bool EstRocheMoyenneFondation(SlotInventaire s) =>
+                !s.EstVide && ItemPhysique.EstIdRocheMatiere(s.ID) && s.IndexTaille == 2;
             static int TypeRocheFondation(SlotInventaire s) =>
                 ItemPhysique.IndexChimiqueDepuisIdRoche(s.ID);
 
@@ -1475,7 +1486,7 @@ public static class Atlas_Matiere
             for (int i = 0; i < 9; i++)
             {
                 SlotInventaire s = grille[i];
-                if (!EstRocheMatiereFondation(s) || TypeRocheFondation(s) != chimieRefRoche)
+                if (!EstRocheMoyenneFondation(s) || TypeRocheFondation(s) != chimieRefRoche)
                 {
                     fondationRoche = false;
                     break;
@@ -1510,7 +1521,7 @@ public static class Atlas_Matiere
             for (int i = 6; i < 9 && fondationBoisSoleRoche; i++)
             {
                 SlotInventaire s = grille[i];
-                if (!EstRocheMatiereFondation(s) || TypeRocheFondation(s) != chimieMixteA)
+                if (!EstRocheMoyenneFondation(s) || TypeRocheFondation(s) != chimieMixteA)
                 {
                     fondationBoisSoleRoche = false;
                     break;
@@ -1526,6 +1537,7 @@ public static class Atlas_Matiere
                     IndexMorphologique = 0,
                     IndexTaille = 0,
                     NiveauFracture = MaxFractureSlots(grille),
+                    GenomeAssemblage = "FONDMIX:TOPBOIS_SIDEROCH",
                     EstUnEclat = false
                 };
             }
@@ -1536,7 +1548,7 @@ public static class Atlas_Matiere
             for (int i = 0; i < 6; i++)
             {
                 SlotInventaire s = grille[i];
-                if (!EstRocheMatiereFondation(s) || TypeRocheFondation(s) != chimieMixteB)
+                if (!EstRocheMoyenneFondation(s) || TypeRocheFondation(s) != chimieMixteB)
                 {
                     fondationRocheSoleBois = false;
                     break;
@@ -1561,8 +1573,82 @@ public static class Atlas_Matiere
                     IndexMorphologique = 0,
                     IndexTaille = 0,
                     NiveauFracture = MaxFractureSlots(grille),
+                    GenomeAssemblage = "FONDMIX:TOPROCH_SIDEBOIS",
                     EstUnEclat = false
                 };
+            }
+
+            // Plancher bois : 3 demi-bûches standard (fendues en 2) côte à côte, même essence, ligne du milieu.
+            bool solBoisPatron =
+                EstDemiBucheStandardFondation(grille[3])
+                && EstDemiBucheStandardFondation(grille[4])
+                && EstDemiBucheStandardFondation(grille[5])
+                && grille[3].IndexBotanique == grille[4].IndexBotanique
+                && grille[4].IndexBotanique == grille[5].IndexBotanique;
+            if (solBoisPatron)
+            {
+                bool autresVides = true;
+                for (int i = 0; i < 9; i++)
+                {
+                    if (i == 3 || i == 4 || i == 5) continue;
+                    if (!grille[i].EstVide)
+                    {
+                        autresVides = false;
+                        break;
+                    }
+                }
+                if (autresVides)
+                {
+                    return new SlotInventaire
+                    {
+                        ID = Joueur.IdObjetSolBois,
+                        IndexBotanique = grille[3].IndexBotanique,
+                        IndexChimique = 0,
+                        IndexMorphologique = 0,
+                        IndexTaille = 0,
+                        NiveauFracture = MaxFractureSlots(grille),
+                        EstUnEclat = false
+                    };
+                }
+            }
+
+            // Plancher roche : 3 roches moyennes (taille 2) côte à côte, même type chimique, ligne du milieu.
+            static bool EstRocheMoyenneSol(SlotInventaire s) =>
+                !s.EstVide && ItemPhysique.EstIdRocheMatiere(s.ID) && s.IndexTaille == 2;
+            static int TypeRocheSol(SlotInventaire s) =>
+                ItemPhysique.IndexChimiqueDepuisIdRoche(s.ID);
+
+            bool solRochePatron =
+                EstRocheMoyenneSol(grille[3])
+                && EstRocheMoyenneSol(grille[4])
+                && EstRocheMoyenneSol(grille[5])
+                && TypeRocheSol(grille[3]) == TypeRocheSol(grille[4])
+                && TypeRocheSol(grille[4]) == TypeRocheSol(grille[5]);
+            if (solRochePatron)
+            {
+                bool autresVides = true;
+                for (int i = 0; i < 9; i++)
+                {
+                    if (i == 3 || i == 4 || i == 5) continue;
+                    if (!grille[i].EstVide)
+                    {
+                        autresVides = false;
+                        break;
+                    }
+                }
+                if (autresVides)
+                {
+                    return new SlotInventaire
+                    {
+                        ID = Joueur.IdObjetSolRoche,
+                        IndexBotanique = 0,
+                        IndexChimique = TypeRocheSol(grille[3]),
+                        IndexMorphologique = 0,
+                        IndexTaille = 0,
+                        NiveauFracture = MaxFractureSlots(grille),
+                        EstUnEclat = false
+                    };
+                }
             }
         }
 

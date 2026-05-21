@@ -639,6 +639,57 @@ public partial class GameState : Node
 		}
 	}
 
+	private const string FichierDernierePoseMort = "player_last_pose.dat";
+
+	/// <summary>Mémorise la position exacte au décès (non effacée avec la progression) pour réapparition au même endroit.</summary>
+	public void SauvegarderDernierePoseMort(int dimensionId, Vector3 position)
+	{
+		if (string.IsNullOrWhiteSpace(NomMondeActuel))
+			return;
+		string dossier = ProjectSettings.GlobalizePath($"user://saves/{NomMondeActuel}");
+		Directory.CreateDirectory(dossier);
+		string chemin = Path.Combine(dossier, FichierDernierePoseMort);
+		try
+		{
+			using var w = new BinaryWriter(File.Open(chemin, FileMode.Create));
+			w.Write(1);
+			w.Write(dimensionId);
+			w.Write(position.X);
+			w.Write(position.Y);
+			w.Write(position.Z);
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"ZERO-K : Erreur sauvegarde pose mort : {ex.Message}");
+		}
+	}
+
+	/// <summary>Pose au moment de la dernière mort (même monde). Null si absente.</summary>
+	public bool EssayerChargerDernierePoseMort(out int dimensionId, out Vector3 position)
+	{
+		dimensionId = (int)DimensionJeu.Alpha;
+		position = Vector3.Zero;
+		if (string.IsNullOrWhiteSpace(NomMondeActuel))
+			return false;
+		string chemin = Path.Combine(ProjectSettings.GlobalizePath($"user://saves/{NomMondeActuel}"), FichierDernierePoseMort);
+		if (!File.Exists(chemin))
+			return false;
+		try
+		{
+			using var r = new BinaryReader(File.Open(chemin, FileMode.Open, System.IO.FileAccess.Read, FileShare.Read));
+			if (r.ReadInt32() != 1)
+				return false;
+			dimensionId = r.ReadInt32();
+			position = new Vector3(r.ReadSingle(), r.ReadSingle(), r.ReadSingle());
+			return true;
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"ZERO-K : Erreur lecture pose mort : {ex.Message}");
+			return false;
+		}
+	}
+
 	/// <summary>Efface la progression perso après mort (carte / chunks inchangés). L’UI de recréation se fait en jeu.</summary>
 	public void PreparerMortNouveauPersonnageMemeMonde()
 	{

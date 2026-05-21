@@ -152,6 +152,14 @@ public partial class Joueur : CharacterBody3D
     public const int IdObjetFondationBoisSoleRoche = 126;
     /// <summary>Fondation mixte : base roche, sole bois.</summary>
     public const int IdObjetFondationRocheSoleBois = 127;
+    /// <summary>Plancher bois (3 demi-bûches standard côte à côte) posé sur une fondation.</summary>
+    public const int IdObjetSolBois = 136;
+    /// <summary>Plancher roche (3 roches moyennes côte à côte, même type) posé sur une fondation.</summary>
+    public const int IdObjetSolRoche = 137;
+    /// <summary>Emprise horizontale des planchers posés (carré X×Z, léger débord sur fondation 4 m).</summary>
+    public const float PlancherEmpriseMetres = 4.1f;
+    /// <summary>Épaisseur des planchers bois / roche.</summary>
+    public const float PlancherEpaisseurMetres = 0.08f;
     /// <summary>Maillet en bois (outil simple, craft établi avec mini morceau de bûche).</summary>
     public const int IdObjetMailletBois = 128;
     /// <summary>Bol en bois (artisanat établi, sculpté avec dague).</summary>
@@ -199,6 +207,10 @@ public partial class Joueur : CharacterBody3D
         || id == IdObjetFondationRoche
         || id == IdObjetFondationBoisSoleRoche
         || id == IdObjetFondationRocheSoleBois;
+
+    private static bool EstIdSolBois(int id) => id == IdObjetSolBois;
+    private static bool EstIdSolRoche(int id) => id == IdObjetSolRoche;
+    private static bool EstIdPlancher(int id) => EstIdSolBois(id) || EstIdSolRoche(id);
 
     /// <summary>Albedo procédural (main, sol, GLB teinté).</summary>
     public static Color ObtenirCouleurAlbedoBaie(int indexChimique)
@@ -575,6 +587,8 @@ public partial class Joueur : CharacterBody3D
     private const string MetaSignaturePitFeu120 = "SigPitFeu120";
     private const string MetaSignaturePitFeuRoche122 = "SigPitFeuRoche122";
     private const string MetaSignatureFondation = "SigFondation";
+    private const string MetaSignatureSolBois136 = "SigSolBois136";
+    private const string MetaSignatureSolRoche137 = "SigSolRoche137";
     private const string MetaSignatureAllumeFeu121 = "SigAllumeFeu121";
     private const string MetaSignatureMailletBois128 = "SigMailletBois128";
     private const string MetaSignatureBolBois129 = "SigBolBois129";
@@ -596,6 +610,8 @@ public partial class Joueur : CharacterBody3D
     private float _rotationManuelleY = 0f;
     private float _rotationManuelleX = 0f;
     private float _rotationManuelleZ = 0f;
+    /// <summary>Étages supplémentaires en mode pose fondation (molette / Page Haut-Bas), pas de limite basse.</summary>
+    private int _offsetEtagesFondationManuel = 0;
     private bool _modePlacementStructureActif;
     private bool _modePlacementLancerShiftActif;
     private Node3D _ghostPlacementStructure;
@@ -3956,6 +3972,8 @@ void fragment()
         if (!IsInstanceValid(this))
             return;
         Input.MouseMode = Input.MouseModeEnum.Visible;
+        int dimMort = _gestionnaireMonde?.ObtenirDimensionLocaleActiveId() ?? (int)DimensionJeu.Alpha;
+        GameState.Instance?.SauvegarderDernierePoseMort(dimMort, GlobalPosition);
         GameState.Instance?.PreparerMortNouveauPersonnageMemeMonde();
         AssurerUiMortRecreationPersonnage();
         OuvrirUiMortApresDeces();
@@ -4400,6 +4418,7 @@ void fragment()
         _rotationManuelleX = 0f;
         _rotationManuelleY = 0f;
         _rotationManuelleZ = 0f;
+        _offsetEtagesFondationManuel = 0;
     }
 
     private static bool EstStructureSupporteeModePlacement(int id)
@@ -4411,7 +4430,8 @@ void fragment()
             || id == IdObjetCoffreBoisTier0
             || id == IdObjetPitFeu
             || id == IdObjetPitFeuRoche
-            || EstIdFondation(id);
+            || EstIdFondation(id)
+            || EstIdPlancher(id);
     }
 
     private bool EstModePlacementStructurePourSlot(SlotInventaire mainActive)
@@ -4476,6 +4496,8 @@ void fragment()
         _ghostPlacementStructure = null;
         if (reinitialiserRotation)
             ReinitialiserRotationManuelle();
+        else
+            _offsetEtagesFondationManuel = 0;
     }
 
     private void RecreerGhostPlacementStructure(SlotInventaire mainActive)
@@ -4512,6 +4534,10 @@ void fragment()
                 InstancierModelePitFeu(meshRoot, mainActive, 0.92f, true);
             else if (EstIdFondation(mainActive.ID))
                 InstancierModeleFondation(meshRoot, mainActive, 4.0f, true);
+            else if (EstIdSolBois(mainActive.ID))
+                InstancierModeleSolBois(meshRoot, mainActive, true);
+            else if (EstIdSolRoche(mainActive.ID))
+                InstancierModeleSolRoche(meshRoot, mainActive, true);
         }
 
         _ghostPlacementStructure.SetMeta("ID_Matiere", mainActive.ID);
@@ -4978,7 +5004,7 @@ void fragment()
                 bool estTableAnalyseEnMain = mainActive.ID == IdObjetTableAnalyseTier1;
                 bool estRackBatonsEnMain = mainActive.ID == IdObjetRackBatons || mainActive.ID == IdObjetRackBuches;
                 bool estCoffreEnMain = mainActive.ID == IdObjetCoffreBoisTier0;
-                bool estPitFeuEnMain = EstIdPitFeu(mainActive.ID) || EstIdFondation(mainActive.ID);
+                bool estPitFeuEnMain = EstIdPitFeu(mainActive.ID) || EstIdFondation(mainActive.ID) || EstIdPlancher(mainActive.ID);
                 bool estBuissonEnMain = mainActive.ID == 10 || mainActive.ID == 11;
                 if (shiftMaintenu && estObjetLancable)
                 {
@@ -5058,10 +5084,43 @@ void fragment()
             _menuAnatomie?.RafraichirMenu();
             GD.Print(MainGaucheEstActive ? "ZERO-K : Main Gauche sÃ©lectionnÃ©e (Tab)." : "ZERO-K : Main Droite sÃ©lectionnÃ©e (Tab).");
         }
+        else if (@event is InputEventMouseButton { Pressed: true } mbFondation)
+        {
+            SlotInventaire mainPose = MainGaucheEstActive ? MainGauche : MainDroite;
+            if (EstModePlacementGhostActifPourSlot(mainPose) && EstIdFondation(mainPose.ID))
+            {
+                if (mbFondation.ButtonIndex == MouseButton.WheelUp)
+                    AjusterOffsetEtagesFondation(+1);
+                else if (mbFondation.ButtonIndex == MouseButton.WheelDown)
+                    AjusterOffsetEtagesFondation(-1);
+                else
+                    return;
+                MettreAJourGhostPlacementStructure(mainPose);
+                GetViewport().SetInputAsHandled();
+            }
+        }
         else if (@event is InputEventKey keyEvent)
         {
             if (keyEvent.Pressed && !keyEvent.Echo)
             {
+                SlotInventaire mainPose = MainGaucheEstActive ? MainGauche : MainDroite;
+                if (EstModePlacementGhostActifPourSlot(mainPose) && EstIdFondation(mainPose.ID))
+                {
+                    if (keyEvent.Keycode == Key.Pageup)
+                    {
+                        AjusterOffsetEtagesFondation(+1);
+                        MettreAJourGhostPlacementStructure(mainPose);
+                        GetViewport().SetInputAsHandled();
+                        return;
+                    }
+                    if (keyEvent.Keycode == Key.Pagedown)
+                    {
+                        AjusterOffsetEtagesFondation(-1);
+                        MettreAJourGhostPlacementStructure(mainPose);
+                        GetViewport().SetInputAsHandled();
+                        return;
+                    }
+                }
                 if (keyEvent.Keycode == Key.R)
                 {
                     if (keyEvent.CtrlPressed)
@@ -5878,6 +5937,8 @@ void fragment()
         IdObjetFondationRoche => 62f,
         IdObjetFondationBoisSoleRoche => 54f,
         IdObjetFondationRocheSoleBois => 58f,
+        IdObjetSolBois => 12f,
+        IdObjetSolRoche => 18f,
         IdObjetMailletBois => 0.72f,
         IdObjetBolBois => 0.28f,
         IdObjetMortierPilonBois => 0.98f,
@@ -6284,7 +6345,7 @@ void fragment()
         else if (id == IdObjetAtelleJambe) return null; // GLB res://Modeles/soin/Atelle_jambe.glb via InstancierModeleAtelleJambe
         else if (id == IdObjetAtelleBras) return null; // GLB res://Modeles/soin/Atelle_Bras.glb via InstancierModeleAtelleBras
         else if (id == IdObjetBandageTier1) return null; // GLB res://Modeles/soin/Bandage_tier1.glb via InstancierModeleBandageTier1
-        else if (EstIdFondation(id)) return null; // GLB fondations via InstancierModeleFondation
+        else if (EstIdFondation(id) || EstIdPlancher(id)) return null; // GLB via InstancierModeleFondation / InstancierModeleSol*
         else if (id == 30 || id == 32)
         {
             CalculerDimensionsBoisPose(id, indexMorpho, indexTaille, out float br, out float bl, out _, out _);
@@ -7248,32 +7309,51 @@ void fragment()
             var meshRoot = new Node3D { Name = "MeshInstance3D" };
             InstancierModeleFondation(meshRoot, mainActive, 4.0f, true);
             item.AddChild(meshRoot);
-            var pileFondation = new List<Node> { meshRoot };
-            for (int i = 0; i < pileFondation.Count; i++)
+            AjouterCollisionPlateauFondation(item, meshRoot);
+            corps = item;
+        }
+        else if (EstIdSolBois(id))
+        {
+            var item = new ItemPhysique
             {
-                foreach (Node c in pileFondation[i].GetChildren())
-                {
-                    if (c is MeshInstance3D mi && mi.Mesh != null)
-                    {
-                        Shape3D shape = mi.Mesh.CreateTrimeshShape();
-                        if (shape != null)
-                        {
-                            Transform3D t = mi.Transform;
-                            Node parentNode = mi.GetParent();
-                            while (parentNode != null && parentNode != item && parentNode is Node3D n3d)
-                            {
-                                t = n3d.Transform * t;
-                                parentNode = parentNode.GetParent();
-                            }
-                            var colNode = new CollisionShape3D { Shape = shape, Transform = t };
-                            item.AddChild(colNode);
-                        }
-                    }
-                    pileFondation.Add(c);
-                }
-            }
-            if (item.GetChildCount() <= 1)
-                item.AddChild(new CollisionShape3D { Shape = new BoxShape3D { Size = new Vector3(4f, 1f, 4f) }, Position = new Vector3(0f, 0.5f, 0f) });
+                ID_Objet = id,
+                IndexBotanique = mainActive.IndexBotanique,
+                IndexChimique = mainActive.IndexChimique,
+                IndexCacheMemoire = mainActive.IndexMorphologique,
+                GenomeAssemblage = mainActive.GenomeAssemblage ?? "",
+                Name = "ItemPhysique",
+                ContinuousCd = true,
+                Freeze = true,
+                FreezeMode = RigidBody3D.FreezeModeEnum.Static
+            };
+            if (!string.IsNullOrEmpty(item.GenomeAssemblage))
+                item.SetMeta(MetaGenomeAssemblage, item.GenomeAssemblage);
+            var meshRoot = new Node3D { Name = "MeshInstance3D" };
+            InstancierModeleSolBois(meshRoot, mainActive, true);
+            item.AddChild(meshRoot);
+            AjouterCollisionPlancherSolBois(item, meshRoot);
+            corps = item;
+        }
+        else if (EstIdSolRoche(id))
+        {
+            var item = new ItemPhysique
+            {
+                ID_Objet = id,
+                IndexBotanique = mainActive.IndexBotanique,
+                IndexChimique = mainActive.IndexChimique,
+                IndexCacheMemoire = mainActive.IndexMorphologique,
+                GenomeAssemblage = mainActive.GenomeAssemblage ?? "",
+                Name = "ItemPhysique",
+                ContinuousCd = true,
+                Freeze = true,
+                FreezeMode = RigidBody3D.FreezeModeEnum.Static
+            };
+            if (!string.IsNullOrEmpty(item.GenomeAssemblage))
+                item.SetMeta(MetaGenomeAssemblage, item.GenomeAssemblage);
+            var meshRoot = new Node3D { Name = "MeshInstance3D" };
+            InstancierModeleSolRoche(meshRoot, mainActive, true);
+            item.AddChild(meshRoot);
+            AjouterCollisionPlancherSolBois(item, meshRoot);
             corps = item;
         }
         else if (id == 200)
@@ -7757,13 +7837,15 @@ void fragment()
             ipQuantite.SetMeta(MetaQuantiteObjetPose, mainActive.Quantite);
         bool enChargementPersistant = _chargementObjetsPosesMondeEnCours;
         bool estFondationPose = EstIdFondation(id);
+        bool estPlancherPose = EstIdPlancher(id);
         if (!modeGhost)
         {
             corps.AddToGroup("BlocsPoses");
             Node parentPose = GetParent();
-            if (_gestionnaireMonde != null && GodotObject.IsInstanceValid(_gestionnaireMonde))
+            Gestionnaire_Monde gmPose = ObtenirGestionnaireMondePersistant();
+            if (gmPose != null)
             {
-                Node3D racineDim = _gestionnaireMonde.ObtenirRacineDimension(_gestionnaireMonde.ObtenirDimensionLocaleActiveId());
+                Node3D racineDim = gmPose.ObtenirRacineDimension(gmPose.ObtenirDimensionLocaleActiveId());
                 if (racineDim != null)
                     parentPose = racineDim;
             }
@@ -7776,41 +7858,15 @@ void fragment()
             // Placement pur : pas de translation Y supplÃ©mentaire (Ã©vite double offset / lÃ©vitation atelier).
             corps.GlobalPosition = pointDeChute;
         }
-        if (estFondationPose && !enChargementPersistant && !modeGhost)
+        if ((estFondationPose || estPlancherPose) && !enChargementPersistant && !modeGhost)
             AjouterXpMetier("Batisseur", 1UL);
-        bool alignerEtageFondation = false;
-        float yEtageFondation = 0f;
-        if (estFondationPose && !enChargementPersistant && !modeGhost)
-        {
-            var nodes = GetTree()?.GetNodesInGroup("BlocsPoses");
-            if (nodes != null)
-            {
-                float meilleurDistSq = float.MaxValue;
-                for (int i = 0; i < nodes.Count; i++)
-                {
-                    if (nodes[i] == corps) continue;
-                    if (nodes[i] is not ItemPhysique voisin || !EstIdFondation(voisin.ID_Objet))
-                        continue;
-                    Vector3 p = voisin.GlobalPosition;
-                    float dx = Mathf.Abs(p.X - corps.GlobalPosition.X);
-                    float dz = Mathf.Abs(p.Z - corps.GlobalPosition.Z);
-                    if (!SontFondationsAdjacentes(dx, dz))
-                        continue;
-                    float distSq = (p - corps.GlobalPosition).LengthSquared();
-                    if (distSq < meilleurDistSq)
-                    {
-                        meilleurDistSq = distSq;
-                        yEtageFondation = p.Y;
-                        alignerEtageFondation = true;
-                    }
-                }
-            }
-        }
+        bool fondationSurSupportEleve = estFondationPose && !enChargementPersistant && !modeGhost
+            && (FondationReposantSurFondationOuStructure(corps.GlobalPosition) || ObtenirOffsetVerticalFondationManuel() != 0f);
         if (!modeGhost && (id == IdObjetTableAnalyseTier1 || id == IdObjetRackBatons || id == IdObjetRackBuches || id == IdObjetCoffreBoisTier0 || EstIdPitFeu(id) || EstIdFondation(id)))
         {
             // Snap sol robuste pour le rack: corrige les cas oÃ¹ le raycast vise une surface dÃ©calÃ©e.
             var espace = GetWorld3D()?.DirectSpaceState;
-            if (espace != null && !enChargementPersistant && !(estFondationPose && alignerEtageFondation))
+            if (espace != null && !enChargementPersistant && !(estFondationPose && fondationSurSupportEleve))
             {
                 Vector3 origine = corps.GlobalPosition + Vector3.Up * 4f;
                 Vector3 dest = corps.GlobalPosition + Vector3.Down * 8f;
@@ -7829,12 +7885,10 @@ void fragment()
                         float hitY = ((Vector3)hit["position"]).Y;
                         corps.GlobalPosition += Vector3.Up * (hitY - minY + 0.005f);
                         if (EstIdFondation(id))
-                            corps.GlobalPosition += Vector3.Down * 0.08f;
+                            corps.GlobalPosition += Vector3.Down * 0.02f;
                     }
                 }
             }
-            if (!enChargementPersistant && estFondationPose && alignerEtageFondation)
-                corps.GlobalPosition = new Vector3(corps.GlobalPosition.X, yEtageFondation, corps.GlobalPosition.Z);
         }
         // MÃªme calque que le terrain PhysicsServer3D / StaticBody (bit 1) : collision fiable au sol.
         if (corps is RigidBody3D rbPose)
@@ -7873,7 +7927,7 @@ void fragment()
                     rbPose.AngularDamp = 0.88f;
                 }
             }
-            else if (id == 30 || id == 32 || id == 200 || id == IdObjetTableAnalyseTier1 || id == IdObjetRackBatons || id == IdObjetRackBuches || id == IdObjetCoffreBoisTier0 || EstIdPitFeu(id) || EstIdFondation(id))
+            else if (id == 30 || id == 32 || id == 200 || id == IdObjetTableAnalyseTier1 || id == IdObjetRackBatons || id == IdObjetRackBuches || id == IdObjetCoffreBoisTier0 || EstIdPitFeu(id) || EstIdFondation(id) || EstIdPlancher(id))
             {
                 rbPose.PhysicsMaterialOverride = _physMatBois;
                 rbPose.LinearDampMode = RigidBody3D.DampMode.Replace;
@@ -7915,6 +7969,14 @@ void fragment()
                 {
                     rbPose.Mass = ObtenirMasseSlotInventaireKg(new SlotInventaire { ID = id });
                     rbPose.GravityScale = 0f;
+                    rbPose.LockRotation = true;
+                    rbPose.Sleeping = true;
+                }
+                else if (EstIdPlancher(id))
+                {
+                    rbPose.Mass = ObtenirMasseSlotInventaireKg(new SlotInventaire { ID = id });
+                    rbPose.GravityScale = 0f;
+                    rbPose.LockRotation = true;
                     rbPose.Sleeping = true;
                 }
             }

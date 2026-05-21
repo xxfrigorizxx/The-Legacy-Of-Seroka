@@ -11,10 +11,17 @@ public partial class Joueur
     private const float FondationRayonSnapDouxMetres = 4.8f;
     private const float FondationToleranceAxePrincipalMetres = 0.12f;
     private const float FondationToleranceAxeSecondaireMetres = 0.12f;
+    private const float FondationToleranceEmpilementXZMetres = 2.05f;
+    private const float FondationToleranceDessusMetres = 0.55f;
+    private const int OffsetEtagesFondationMax = 12;
     private const float NormaleSupportStructureMinY = 0.6f;
     private const float MargeChevauchementMetres = 0.02f;
     private const float MargeEmpilementStructureMetres = 0.01f;
     private const float PasRotationStructuresFixesDegres = 15f;
+    private const float HauteurApproxFondationMetres = 1f;
+    private const float HauteurSolBoisMetres = PlancherEpaisseurMetres;
+    private const float PasRotationSolBoisDegres = 90f;
+    private const float ToleranceSolSurFondationMetres = 0.35f;
 
     /// <summary>Ouvre le conteneur/station sous visée (atelier 200, table analyse 131, racks 109/110, coffre 113, pit roche 122).</summary>
     private bool EssayerOuvrirAtelierSousVisee()
@@ -661,9 +668,9 @@ public partial class Joueur
 			}
 			GD.Print("ZERO-K : Buisson replanté.");
 		}
-        else if (id == 999 || id == BlocChutant.ID_BRANCHE || id == IdObjetBaie || ItemPhysique.EstIdRocheMatiere(id) || id == 15 || id == 16 || id == 17 || id == 20 || id == 21 || id == IdObjetCeinturePoches || id == IdObjetCeintureSacoches || id == IdObjetPochetteTier0 || id == IdObjetSacTier0 || id == IdObjetCarnetSavoir || id == 30 || id == 32 || id == 34 || id == 105 || id == 106 || id == IdObjetHachePierreTier1 || id == IdObjetAtelleJambe || id == IdObjetAtelleBras || id == IdObjetBandageTier1 || id == IdObjetPellePierreTier0 || id == IdObjetPiochePierreTier0 || id == IdObjetLancePierreTier0 || id == IdObjetFauxPierreTier0 || id == IdObjetAllumeFeu || id == 200 || id == IdObjetTableAnalyseTier1 || id == IdObjetRackBatons || id == IdObjetRackBuches || id == IdObjetCoffreBoisTier0 || EstIdPitFeu(id) || EstIdFondation(id))
+        else if (id == 999 || id == BlocChutant.ID_BRANCHE || id == IdObjetBaie || ItemPhysique.EstIdRocheMatiere(id) || id == 15 || id == 16 || id == 17 || id == 20 || id == 21 || id == IdObjetCeinturePoches || id == IdObjetCeintureSacoches || id == IdObjetPochetteTier0 || id == IdObjetSacTier0 || id == IdObjetCarnetSavoir || id == 30 || id == 32 || id == 34 || id == 105 || id == 106 || id == IdObjetHachePierreTier1 || id == IdObjetAtelleJambe || id == IdObjetAtelleBras || id == IdObjetBandageTier1 || id == IdObjetPellePierreTier0 || id == IdObjetPiochePierreTier0 || id == IdObjetLancePierreTier0 || id == IdObjetFauxPierreTier0 || id == IdObjetAllumeFeu || id == 200 || id == IdObjetTableAnalyseTier1 || id == IdObjetRackBatons || id == IdObjetRackBuches || id == IdObjetCoffreBoisTier0 || EstIdPitFeu(id) || EstIdFondation(id) || EstIdPlancher(id))
         {
-            Vector3 pointSpawn = (structureFixe && EstIdFondation(mainActive.ID))
+            Vector3 pointSpawn = (structureFixe && (EstIdFondation(mainActive.ID) || EstIdPlancher(mainActive.ID)))
                 ? pointAligneStructure
                 : pointDeChute;
             Node3D nePose = CreerBlocPose(pointSpawn, mainActive);
@@ -714,6 +721,9 @@ public partial class Joueur
         if (mainActive.EstVide || !EstStructureFixePose(mainActive.ID))
             return false;
 
+        if (EstIdPlancher(mainActive.ID))
+            return EssayerCalculerPosePlancher(mainActive.ID, depuisInteragir, out pointDeChute, out pointAligne, out rotationDeg, out poseValide);
+
         Node noeudCol = NoeudDepuisColliderRaycast(_rayon.GetCollider());
         if (!EstSurfaceSupportStructureVisee(_rayon, noeudCol))
         {
@@ -727,6 +737,7 @@ public partial class Joueur
         // L'objet se pose EXACTEMENT sur le point du raycast, ancré par son pivot.
         pointDeChute = _rayon.GetCollisionPoint();
         ItemPhysique structureSupport = ResoudreStructureSupportDepuisNoeud(noeudCol);
+        bool empileSurFondation = false;
         if (structureSupport != null)
         {
             // Si la visée touche une structure existante, on impose un plancher Y au-dessus de son sommet.
@@ -735,11 +746,23 @@ public partial class Joueur
             float yMinimalPose = ySommetSupport + MargeEmpilementStructureMetres;
             if (pointDeChute.Y < yMinimalPose)
                 pointDeChute = new Vector3(pointDeChute.X, yMinimalPose, pointDeChute.Z);
+            if (EstIdFondation(mainActive.ID) && EstIdFondation(structureSupport.ID_Objet)
+                && pointDeChute.Y >= ySommetSupport - FondationToleranceDessusMetres)
+            {
+                empileSurFondation = true;
+                pointDeChute = new Vector3(structureSupport.GlobalPosition.X, pointDeChute.Y, structureSupport.GlobalPosition.Z);
+            }
         }
-        pointAligne = EstIdFondation(mainActive.ID)
-            ? CalculerPositionPoseFondation(pointDeChute)
-            : pointDeChute;
-        rotationDeg = CalculerRotationStructureFixe();
+        if (EstIdFondation(mainActive.ID))
+        {
+            if (!empileSurFondation)
+                EssayerAlignerPoseFondationEmpilee(ref pointDeChute);
+            pointDeChute.Y += ObtenirOffsetVerticalFondationManuel();
+            pointAligne = CalculerPositionPoseFondation(pointDeChute, empileSurFondation);
+        }
+        else
+            pointAligne = pointDeChute;
+        rotationDeg = CalculerRotationStructureFixe(mainActive.ID);
         if (!EssayerAjusterStructureSansChevauchement(mainActive.ID, ref pointDeChute, ref pointAligne))
         {
             GD.Print("ZERO-K : Espace insuffisant autour de la cible (aucune position libre proche).");
@@ -763,7 +786,113 @@ public partial class Joueur
             || idObjet == IdObjetRackBuches
             || idObjet == IdObjetCoffreBoisTier0
             || EstIdPitFeu(idObjet)
-            || EstIdFondation(idObjet);
+            || EstIdFondation(idObjet)
+            || EstIdPlancher(idObjet);
+    }
+
+    private bool EssayerCalculerPosePlancher(
+        int idPlancher,
+        bool depuisInteragir,
+        out Vector3 pointDeChute,
+        out Vector3 pointAligne,
+        out Vector3 rotationDeg,
+        out bool poseValide)
+    {
+        pointDeChute = Vector3.Zero;
+        pointAligne = Vector3.Zero;
+        rotationDeg = Vector3.Zero;
+        poseValide = false;
+
+        if (!_rayon.IsColliding())
+            return false;
+
+        Vector3 pointVisée = _rayon.GetCollisionPoint();
+        Node noeudCol = NoeudDepuisColliderRaycast(_rayon.GetCollider());
+        ItemPhysique fondation = ResoudreFondationHoteDepuisNoeud(noeudCol)
+            ?? TrouverFondationSousPoint(pointVisée);
+        if (fondation == null)
+        {
+            GD.Print("ZERO-K : Posez le plancher sur le dessus d'une fondation.");
+            return false;
+        }
+
+        if (FondationPossedeDejaPlancher(fondation.GlobalPosition))
+        {
+            GD.Print("ZERO-K : Cette fondation possède déjà un plancher.");
+            return false;
+        }
+
+        float yPlateau = fondation.GlobalPosition.Y + HauteurApproxFondationMetres;
+        pointDeChute = new Vector3(fondation.GlobalPosition.X, yPlateau + MargeEmpilementStructureMetres, fondation.GlobalPosition.Z);
+        pointAligne = pointDeChute;
+        rotationDeg = CalculerRotationStructureFixe(idPlancher);
+        if (!EstPositionStructureLibre(idPlancher, pointDeChute, pointAligne))
+        {
+            GD.Print("ZERO-K : Espace insuffisant pour poser le plancher ici.");
+            return false;
+        }
+
+        float distance = GlobalPosition.DistanceTo(pointDeChute);
+        float distMin = depuisInteragir ? 0.35f : 0.55f;
+        poseValide = distance >= distMin;
+        return true;
+    }
+
+    private ItemPhysique ResoudreFondationHoteDepuisNoeud(Node n)
+    {
+        for (Node cur = n; cur != null; cur = cur.GetParent())
+        {
+            if (cur is ItemPhysique item && item.IsInGroup("BlocsPoses") && EstIdFondation(item.ID_Objet))
+                return item;
+        }
+        return null;
+    }
+
+    private ItemPhysique TrouverFondationSousPoint(Vector3 worldPoint)
+    {
+        var nodes = GetTree()?.GetNodesInGroup("BlocsPoses");
+        if (nodes == null)
+            return null;
+
+        ItemPhysique meilleure = null;
+        float meilleurScore = float.MaxValue;
+        float demiEmprise = FondationPasSnapMetres * 0.5f;
+        for (int i = 0; i < nodes.Count; i++)
+        {
+            if (nodes[i] is not ItemPhysique ip || !EstIdFondation(ip.ID_Objet))
+                continue;
+            float dx = Mathf.Abs(ip.GlobalPosition.X - worldPoint.X);
+            float dz = Mathf.Abs(ip.GlobalPosition.Z - worldPoint.Z);
+            if (dx > demiEmprise || dz > demiEmprise)
+                continue;
+            float yTop = ip.GlobalPosition.Y + HauteurApproxFondationMetres;
+            if (worldPoint.Y < ip.GlobalPosition.Y - 0.25f || worldPoint.Y > yTop + 0.45f)
+                continue;
+            float score = dx * dx + dz * dz;
+            if (score < meilleurScore)
+            {
+                meilleurScore = score;
+                meilleure = ip;
+            }
+        }
+        return meilleure;
+    }
+
+    private bool FondationPossedeDejaPlancher(Vector3 centreFondation)
+    {
+        var nodes = GetTree()?.GetNodesInGroup("BlocsPoses");
+        if (nodes == null)
+            return false;
+        for (int i = 0; i < nodes.Count; i++)
+        {
+            if (nodes[i] is not ItemPhysique ip || !EstIdPlancher(ip.ID_Objet))
+                continue;
+            float dx = Mathf.Abs(ip.GlobalPosition.X - centreFondation.X);
+            float dz = Mathf.Abs(ip.GlobalPosition.Z - centreFondation.Z);
+            if (dx <= ToleranceSolSurFondationMetres && dz <= ToleranceSolSurFondationMetres)
+                return true;
+        }
+        return false;
     }
 
     private bool EssayerCalculerApercuPlacementStructure(
@@ -828,16 +957,18 @@ public partial class Joueur
         Vector3 pointAligne = pointDeChute;
         bool estFondation = EstIdFondation(idObjet);
         if (estFondation)
-            pointAligne = CalculerPositionPoseFondation(pointDeChute);
+            pointAligne = CalculerPositionPoseFondation(pointDeChute, FondationReposantSurFondationOuStructure(pointDeChute));
         Vector3 rotation = EstStructureFixePose(idObjet)
-            ? CalculerRotationStructureFixe()
+            ? CalculerRotationStructureFixe(idObjet)
             : new Vector3(_rotationManuelleX, _rotationManuelleY, _rotationManuelleZ);
         AppliquerTransformPoseStructure(structure, pointAligne, rotation);
     }
 
-    private Vector3 CalculerRotationStructureFixe()
+    private Vector3 CalculerRotationStructureFixe(int idObjet = 0)
     {
-        float rotationY = Mathf.Round(_rotationManuelleY / PasRotationStructuresFixesDegres) * PasRotationStructuresFixesDegres;
+        float pas = EstIdPlancher(idObjet) ? PasRotationSolBoisDegres : PasRotationStructuresFixesDegres;
+        float rotationY = Mathf.Round(_rotationManuelleY / pas) * pas;
+        rotationY = Mathf.PosMod(rotationY, 360f);
         return new Vector3(0f, rotationY, 0f);
     }
 
@@ -863,9 +994,82 @@ public partial class Joueur
         return adjacentX || adjacentZ;
     }
 
-    /// <summary>Fondation : première pose libre, puis snap doux uniquement près d'une fondation existante.</summary>
-    private Vector3 CalculerPositionPoseFondation(Vector3 pointDeChute)
+    private float ObtenirOffsetVerticalFondationManuel()
+        => _offsetEtagesFondationManuel * HauteurApproxFondationMetres;
+
+    private void AjusterOffsetEtagesFondation(int delta)
     {
+        int avant = _offsetEtagesFondationManuel;
+        _offsetEtagesFondationManuel = Mathf.Clamp(_offsetEtagesFondationManuel + delta, -OffsetEtagesFondationMax, OffsetEtagesFondationMax);
+        if (_offsetEtagesFondationManuel == avant)
+            return;
+        float metres = ObtenirOffsetVerticalFondationManuel();
+        GD.Print(metres == 0f
+            ? "ZERO-K : Hauteur fondation — niveau sol (molette / Page Haut-Bas pour ajuster)."
+            : $"ZERO-K : Hauteur fondation +{metres:0.##} m ({_offsetEtagesFondationManuel} étage(s) manuel(s)).");
+    }
+
+    /// <summary>True si une fondation ou structure fixe est juste sous la position (empilement, pas sol libre).</summary>
+    private bool FondationReposantSurFondationOuStructure(Vector3 pos)
+    {
+        var espace = GetWorld3D()?.DirectSpaceState;
+        if (espace == null)
+            return false;
+        float profondeur = HauteurApproxFondationMetres + 0.35f;
+        var q = PhysicsRayQueryParameters3D.Create(pos + Vector3.Up * 0.08f, pos + Vector3.Down * profondeur);
+        q.CollideWithAreas = false;
+        var hit = espace.IntersectRay(q);
+        if (hit.Count == 0 || !hit.ContainsKey("collider"))
+            return false;
+        Node noeud = NoeudDepuisColliderRaycast(hit["collider"].AsGodotObject());
+        ItemPhysique support = ResoudreStructureSupportDepuisNoeud(noeud);
+        if (support == null || !EstStructureFixePose(support.ID_Objet))
+            return false;
+        float ySupport = support.GlobalPosition.Y + ObtenirDimensionsApproxStructurePose(support.ID_Objet).Y;
+        return pos.Y >= ySupport + MargeEmpilementStructureMetres - 0.08f;
+    }
+
+    /// <summary>Aligne X/Z sur une fondation sous le curseur quand on pose au-dessus (empilement).</summary>
+    private bool EssayerAlignerPoseFondationEmpilee(ref Vector3 pointDeChute)
+    {
+        var nodes = GetTree()?.GetNodesInGroup("BlocsPoses");
+        if (nodes == null)
+            return false;
+        ItemPhysique hote = null;
+        float meilleurScore = float.MaxValue;
+        for (int i = 0; i < nodes.Count; i++)
+        {
+            if (nodes[i] is not ItemPhysique ip || !EstIdFondation(ip.ID_Objet))
+                continue;
+            Vector3 c = ip.GlobalPosition;
+            float yTop = c.Y + HauteurApproxFondationMetres;
+            if (pointDeChute.Y + 0.15f < yTop - FondationToleranceDessusMetres)
+                continue;
+            float dx = Mathf.Abs(pointDeChute.X - c.X);
+            float dz = Mathf.Abs(pointDeChute.Z - c.Z);
+            if (dx > FondationToleranceEmpilementXZMetres || dz > FondationToleranceEmpilementXZMetres)
+                continue;
+            float score = dx + dz;
+            if (score >= meilleurScore)
+                continue;
+            meilleurScore = score;
+            hote = ip;
+        }
+        if (hote == null)
+            return false;
+        float yPose = hote.GlobalPosition.Y + HauteurApproxFondationMetres + MargeEmpilementStructureMetres;
+        if (pointDeChute.Y < yPose)
+            yPose = pointDeChute.Y;
+        pointDeChute = new Vector3(hote.GlobalPosition.X, yPose, hote.GlobalPosition.Z);
+        return true;
+    }
+
+    /// <summary>Fondation : première pose libre, puis snap doux uniquement près d'une fondation existante (même étage).</summary>
+    private Vector3 CalculerPositionPoseFondation(Vector3 pointDeChute, bool empilementPrioritaire = false)
+    {
+        if (empilementPrioritaire)
+            return pointDeChute;
+
         Vector3 meilleur = pointDeChute;
         float meilleurDistSq = float.MaxValue;
         bool meilleurAxePrefere = false;
@@ -911,6 +1115,8 @@ public partial class Joueur
                 continue;
             fondationExistante = true;
             Vector3 c = ip.GlobalPosition;
+            if (Mathf.Abs(pointDeChute.Y - c.Y) > FondationToleranceDessusMetres)
+                continue;
             Vector3 delta = pointDeChute - c;
             bool axePrefereX = Mathf.Abs(delta.X) >= Mathf.Abs(delta.Z);
             bool signePreferePositif = axePrefereX ? delta.X >= 0f : delta.Z >= 0f;
@@ -928,7 +1134,9 @@ public partial class Joueur
     private Vector3 ObtenirDimensionsApproxStructurePose(int idObjet)
     {
         if (EstIdFondation(idObjet))
-            return new Vector3(FondationDistanceCentreAdjacente, 1f, FondationDistanceCentreAdjacente);
+            return new Vector3(FondationDistanceCentreAdjacente, HauteurApproxFondationMetres, FondationDistanceCentreAdjacente);
+        if (EstIdPlancher(idObjet))
+            return new Vector3(PlancherEmpriseMetres, PlancherEpaisseurMetres, PlancherEmpriseMetres);
         if (idObjet == 200)
             return new Vector3(1.2f, 1.0f, 0.9f);
         if (idObjet == IdObjetTableAnalyseTier1)
@@ -953,16 +1161,23 @@ public partial class Joueur
         {
             if (nodes[i] is not ItemPhysique ip || !EstStructureFixePose(ip.ID_Objet))
                 continue;
-            Vector3 dimsRef = ObtenirDimensionsApproxStructurePose(ip.ID_Objet);
             Vector3 posRef = ip.GlobalPosition;
-            // Les structures fixes sont ancrées au sol (Y = base). On considère collision
-            // si la séparation verticale est inférieure à la plus petite hauteur utile.
+            float dx = Mathf.Abs(posPose.X - posRef.X);
+            float dz = Mathf.Abs(posPose.Z - posRef.Z);
+            // Planchers voisins sur fondations adjacentes (~3,985 m) : autorisés (un plancher par fondation).
+            if (EstIdPlancher(idObjet) && EstIdPlancher(ip.ID_Objet))
+            {
+                if (dx <= ToleranceSolSurFondationMetres && dz <= ToleranceSolSurFondationMetres)
+                    return false;
+                continue;
+            }
+            Vector3 dimsRef = ObtenirDimensionsApproxStructurePose(ip.ID_Objet);
             float yTolerance = Mathf.Min(dimsPose.Y, dimsRef.Y) - MargeChevauchementMetres;
             if (Mathf.Abs(posPose.Y - posRef.Y) > yTolerance)
                 continue;
             float xTolerance = ((dimsPose.X + dimsRef.X) * 0.5f) - MargeChevauchementMetres;
             float zTolerance = ((dimsPose.Z + dimsRef.Z) * 0.5f) - MargeChevauchementMetres;
-            if (Mathf.Abs(posPose.X - posRef.X) < xTolerance && Mathf.Abs(posPose.Z - posRef.Z) < zTolerance)
+            if (dx < xTolerance && dz < zTolerance)
                 return false;
         }
         return true;
@@ -982,6 +1197,8 @@ public partial class Joueur
     {
         if (!EstStructureFixePose(idObjet))
             return true;
+        if (EstIdPlancher(idObjet))
+            return EstPositionStructureLibre(idObjet, pointDeChute, pointAligne);
         if (EstPositionStructureLibre(idObjet, pointDeChute, pointAligne))
             return true;
 
@@ -997,7 +1214,9 @@ public partial class Joueur
             new Vector2(0.70710677f, -0.70710677f),
             new Vector2(-0.70710677f, -0.70710677f),
         };
-        float[] yOffsets = new float[] { 0f, 0.2f, -0.2f, 0.4f };
+        float[] yOffsets = EstIdFondation(idObjet)
+            ? new float[] { 0f, HauteurApproxFondationMetres, HauteurApproxFondationMetres * 2f, HauteurApproxFondationMetres * 3f }
+            : new float[] { 0f, 0.2f, -0.2f, 0.4f };
 
         for (int ring = 1; ring <= 4; ring++)
         {
@@ -1007,8 +1226,9 @@ public partial class Joueur
                 for (int y = 0; y < yOffsets.Length; y++)
                 {
                     Vector3 candidatChute = pointDeChute + new Vector3(directions[d].X * step, yOffsets[y], directions[d].Y * step);
+                    bool empileCandidat = EstIdFondation(idObjet) && EssayerAlignerPoseFondationEmpilee(ref candidatChute);
                     Vector3 candidatAligne = EstIdFondation(idObjet)
-                        ? CalculerPositionPoseFondation(candidatChute)
+                        ? CalculerPositionPoseFondation(candidatChute, empileCandidat)
                         : candidatChute;
                     if (!EstPositionStructureLibre(idObjet, candidatChute, candidatAligne))
                         continue;
@@ -1030,7 +1250,7 @@ public partial class Joueur
         bool estRackBatons = slot.ID == IdObjetRackBatons || slot.ID == IdObjetRackBuches;
         bool estBuisson = slot.ID == 10 || slot.ID == 11;
         bool estCoffre = slot.ID == IdObjetCoffreBoisTier0;
-        bool estPitFeu = EstIdPitFeu(slot.ID) || EstIdFondation(slot.ID);
+        bool estPitFeu = EstIdPitFeu(slot.ID) || EstIdFondation(slot.ID) || EstIdPlancher(slot.ID);
         return !estTerrainVoxel && !estAtelier && !estTableAnalyse && !estRackBatons && !estBuisson && !estCoffre && !estPitFeu;
     }
 

@@ -131,6 +131,7 @@ public partial class MenuAnatomie : Control
 	private readonly List<int> _indicesFiltresCreatifAdmin = new List<int>();
 	private int _pageCreatifAdmin;
 	private const int TaillePageCreatifAdmin = 24;
+	private int _versionCatalogueCreatifChargee;
 	private CategorieCreatifAdmin _categorieCreatifActive = CategorieCreatifAdmin.Tous;
 
 	private enum CategorieCreatifAdmin
@@ -2876,7 +2877,10 @@ public partial class MenuAnatomie : Control
 
 	private void ReconstruireCatalogueCreatifAdminSiNecessaire()
 	{
-		if (_catalogueCreatifAdmin.Count > 0) return;
+		if (_catalogueCreatifAdmin.Count > 0 && _versionCatalogueCreatifChargee == CreatifCatalogueService.VersionCatalogue)
+			return;
+		_catalogueCreatifAdmin.Clear();
+		_versionCatalogueCreatifChargee = CreatifCatalogueService.VersionCatalogue;
 		var signatures = new HashSet<string>(StringComparer.Ordinal);
 		static bool EstEssenceBoisValide(byte e) => e <= 4;
 		static string NomEssence(byte e) => e switch
@@ -3004,9 +3008,12 @@ public partial class MenuAnatomie : Control
 			Ajouter(new SlotInventaire { ID = Joueur.IdObjetRackBatons, IndexBotanique = essence, Quantite = 1 }, CategorieCreatifAdmin.Structures, $"Rack bâtons {NomEssence(essence)}");
 			Ajouter(new SlotInventaire { ID = Joueur.IdObjetRackBuches, IndexBotanique = essence, Quantite = 1 }, CategorieCreatifAdmin.Structures, $"Rack bûches {NomEssence(essence)}");
 			Ajouter(new SlotInventaire { ID = Joueur.IdObjetFondationBois, IndexBotanique = essence, Quantite = 1 }, CategorieCreatifAdmin.Structures, $"Fondation bois {NomEssence(essence)}");
+			Ajouter(new SlotInventaire { ID = Joueur.IdObjetSolBois, IndexBotanique = essence, Quantite = 1 }, CategorieCreatifAdmin.Structures, $"Plancher bois {NomEssence(essence)}");
 			Ajouter(new SlotInventaire { ID = Joueur.IdObjetMailletBois, IndexBotanique = essence, Quantite = 1 }, CategorieCreatifAdmin.Structures, $"Maillet {NomEssence(essence)}");
 			Ajouter(new SlotInventaire { ID = Joueur.IdObjetBolBois, IndexBotanique = essence, Quantite = 1 }, CategorieCreatifAdmin.Structures, $"Bol {NomEssence(essence)}");
 		}
+		for (int chim = 0; chim < ItemPhysique.TableGeologique.Length; chim++)
+			Ajouter(new SlotInventaire { ID = Joueur.IdObjetSolRoche, IndexChimique = chim, Quantite = 1 }, CategorieCreatifAdmin.Structures, $"Plancher roche {ItemPhysique.TableGeologique[chim].Nom}");
 		foreach (byte essenceBol in essencesBois)
 		{
 			foreach (byte essencePilon in essencesBois)
@@ -3093,6 +3100,24 @@ public partial class MenuAnatomie : Control
 		// Objets admin orientés test/debug.
 		Ajouter(new SlotInventaire { ID = Joueur.IdObjetAllumeFeu, IndexChimique = 10, Quantite = 1 }, CategorieCreatifAdmin.Admin, "Marcassite");
 		Ajouter(new SlotInventaire { ID = Joueur.IdObjetAllumeFeu, IndexChimique = 11, Quantite = 1 }, CategorieCreatifAdmin.Admin, "Pyrite");
+
+		// Tout IdObjet* de Joueur absent du catalogue (nouveaux objets craftés / posables).
+		var entreesPourAuto = new List<CreatifCatalogueService.EntreeCatalogueCreatif>(_catalogueCreatifAdmin.Count);
+		for (int i = 0; i < _catalogueCreatifAdmin.Count; i++)
+		{
+			var e = _catalogueCreatifAdmin[i];
+			entreesPourAuto.Add(new CreatifCatalogueService.EntreeCatalogueCreatif
+			{
+				Slot = e.Slot,
+				Nom = e.Nom,
+				Suffixe = e.Suffixe,
+				Categorie = (CreatifCatalogueService.CategorieCreatif)e.Categorie
+			});
+		}
+		CreatifCatalogueService.CompleterEntreesDepuisIdsObjetsJoueur(
+			entreesPourAuto,
+			signatures,
+			(s, cat, suffixe) => Ajouter(s, (CategorieCreatifAdmin)cat, suffixe));
 
 		// Nettoyage final des entrées dont le nom ne se résout pas proprement.
 		_catalogueCreatifAdmin.RemoveAll(e => string.IsNullOrWhiteSpace(e.Nom) || !EstEssenceBoisValide(e.Slot.IndexBotanique) && e.Slot.IndexBotanique <= 4);
