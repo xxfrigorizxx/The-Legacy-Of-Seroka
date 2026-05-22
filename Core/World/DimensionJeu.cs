@@ -181,7 +181,14 @@ public static class ConstantesDimensionAbysse
 	public const float FondAbsolu = -15000f;
 	public const float RayonTrouNoir = 500f;
 	public const int TaillePalierMetres = 500;
-	public const int DemiFenetrePaliersActifs = 1;
+	/// <summary>Couches Y chargées autour du palier courant (0 = une seule tranche, perf APISARA hors goufre).</summary>
+	public const int DemiFenetrePaliersActifs = 0;
+	/// <summary>Dans le trou XZ : palier courant ±1 (rebords / spirale coupent souvent deux étages de 500 m).</summary>
+	public const int DemiFenetrePaliersGoufre = 1;
+
+	/// <summary>Fenêtre de paliers Y à charger selon la position d'observation.</summary>
+	public static int ObtenirDemiFenetrePaliersActifs(float xMonde, float zMonde) =>
+		EstDansTrouNoirXZ(xMonde, zMonde) ? DemiFenetrePaliersGoufre : DemiFenetrePaliersActifs;
 	/// <summary>Dans la colonne du trou APISARA : herbe possible sur replats jusqu’à cette altitude monde (inclusive basse).</summary>
 	public const float LimiteInferieureHerbeTrouMonde = -500f;
 

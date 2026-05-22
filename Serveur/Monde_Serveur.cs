@@ -837,7 +837,8 @@ public partial class Monde_Serveur : Node
 		int palierChunk = ObtenirIndexPalierAbysse(centreChunkY);
 		int palierObservation = ObtenirIndexPalierAbysse(observation.Y);
 		int ecart = Mathf.Abs(palierChunk - palierObservation);
-		return ecart <= Mathf.Max(0, ConstantesDimensionAbysse.DemiFenetrePaliersActifs);
+		int demiFenetre = ConstantesDimensionAbysse.ObtenirDemiFenetrePaliersActifs(observation.X, observation.Z);
+		return ecart <= Mathf.Max(0, demiFenetre);
 	}
 
 	private static int LocalYDepuisMondeY(int yMonde, int hauteurMax)
@@ -1501,6 +1502,8 @@ public partial class Monde_Serveur : Node
 			GD.PrintErr($"ZERO-K REJET : Chunk {coord} — AppliquerTableauBytes a échoué ({cheminGodot}). Régénération forcée.");
 			return null;
 		}
+		if (ActiverGenerationAbysse)
+			chunk.ReparerGeometrieExtrusionAbysseSiChargee();
 		ChargerFloreChunk(coord, chunk);
 		return chunk;
 	}
@@ -1567,6 +1570,8 @@ public partial class Monde_Serveur : Node
 			GD.PrintErr($"ZERO-K : Erreur chargement flore chunk {coord} : {ex.Message}");
 			chunk.RegenererInventaireFloreDepuisSurface();
 		}
+		if (ActiverGenerationAbysse)
+			chunk.AppliquerEnsemencementFloreTrouAbysse(notifierClient: false);
 	}
 
 	private Chunk_Serveur CreerChunkServeur(Vector2I coord, int coordY = 0)
@@ -3036,8 +3041,9 @@ public partial class Monde_Serveur : Node
 		Vector2I obs = Gestionnaire_Monde.WorldToChunkCoord(positionObservation, TailleChunk);
 		float seuilDistCarree = (RenderDistance + 2) * (RenderDistance + 2);
 		int stageObservation = ConstantesDimensionAbysse.ObtenirIndexStageDepuisYMonde(positionObservation.Y);
-		int stageMin = stageObservation - Mathf.Max(0, ConstantesDimensionAbysse.DemiFenetrePaliersActifs);
-		int stageMax = stageObservation + Mathf.Max(0, ConstantesDimensionAbysse.DemiFenetrePaliersActifs);
+		int demiFenetre = ConstantesDimensionAbysse.ObtenirDemiFenetrePaliersActifs(positionObservation.X, positionObservation.Z);
+		int stageMin = stageObservation - Mathf.Max(0, demiFenetre);
+		int stageMax = stageObservation + Mathf.Max(0, demiFenetre);
 		var stagesASupprimer = new List<int>();
 		foreach (var kvStage in _chunksAbysseParStage2D)
 		{

@@ -382,6 +382,8 @@ public partial class Monde_Client : Node3D
 	private int RayonChargementChunksActif()
 	{
 		int rendu = Mathf.Max(RayonDormancePhysique + 1, RenderDistance);
+		if (_dimensionReseauActive == (int)DimensionJeu.Abysse)
+			rendu = Mathf.Min(rendu, 10);
 		return Mathf.Max(rendu, RayonDetailChunksActif());
 	}
 
@@ -441,8 +443,7 @@ public partial class Monde_Client : Node3D
 	public void ReappliquerReglagesGraphiquesRuntime()
 	{
 		Chunk_Client.RayonQualiteMaxChunks = Mathf.Max(1, RayonQualiteMaxChunks);
-		Chunk_Client.RayonVisibiliteGazonChunks = Mathf.Max(1, RayonGazonVisibleChunks);
-		Chunk_Client.RayonVisibiliteBuissonsChunks = Mathf.Max(2, RayonBuissonsVisibleChunks);
+		AppliquerLimitesVisibiliteFloreDimension();
 		AppliquerParametresLodTextureTerrain();
 		if (ActiverHorizonLod)
 		{
@@ -582,8 +583,7 @@ public partial class Monde_Client : Node3D
 		_demanderDestruction = demanderDestruction;
 		_demanderCreation = demanderCreation;
 		Chunk_Client.RayonQualiteMaxChunks = Mathf.Max(1, RayonQualiteMaxChunks);
-		Chunk_Client.RayonVisibiliteGazonChunks = Mathf.Max(1, RayonGazonVisibleChunks);
-		Chunk_Client.RayonVisibiliteBuissonsChunks = Mathf.Max(2, RayonBuissonsVisibleChunks);
+		AppliquerLimitesVisibiliteFloreDimension();
 		_rayonRequetesActuel = Mathf.Max(RayonDormancePhysique + 1, RayonInitialRequetesChunks);
 		_timerExpansionRequetes = IntervalleExpansionRequetesSec;
 		_timerProgressionForceeRayon = IntervalleProgressionForceeRayonSec;
@@ -597,6 +597,7 @@ public partial class Monde_Client : Node3D
 		_dimensionReseauActive = dimensionActive;
 		_timerTrimAbysse = 0f;
 		_demandesAbysseFrameDerniereEmission.Clear();
+		AppliquerLimitesVisibiliteFloreDimension();
 	}
 
 	public void DefinirDimensionReseauActive(int dimensionId)
@@ -604,6 +605,24 @@ public partial class Monde_Client : Node3D
 		_dimensionReseauActive = dimensionId;
 		_timerTrimAbysse = 0f;
 		_demandesAbysseFrameDerniereEmission.Clear();
+		AppliquerLimitesVisibiliteFloreDimension();
+	}
+
+	/// <summary>APISARA : plafonne gazon/buissons pour éviter des milliers d'instances MultiMesh dans le goufre.</summary>
+	private void AppliquerLimitesVisibiliteFloreDimension()
+	{
+		if (_dimensionReseauActive == (int)DimensionJeu.Abysse)
+		{
+			bool dansGoufre = _joueur != null && ConstantesDimensionAbysse.EstDansTrouNoirXZ(_joueur.GlobalPosition.X, _joueur.GlobalPosition.Z);
+			int maxGazon = dansGoufre ? 9 : 6;
+			Chunk_Client.RayonVisibiliteGazonChunks = Mathf.Clamp(RayonGazonVisibleChunks, 1, maxGazon);
+			Chunk_Client.RayonVisibiliteBuissonsChunks = Mathf.Clamp(RayonBuissonsVisibleChunks, 2, dansGoufre ? 12 : 10);
+		}
+		else
+		{
+			Chunk_Client.RayonVisibiliteGazonChunks = Mathf.Max(1, RayonGazonVisibleChunks);
+			Chunk_Client.RayonVisibiliteBuissonsChunks = Mathf.Max(2, RayonBuissonsVisibleChunks);
+		}
 	}
 
 	/// <summary>
@@ -1156,7 +1175,7 @@ public partial class Monde_Client : Node3D
 
 	private void EnfilerSolidificationUrgenteAutour(Vector3 pointMonde, int rayonChunks)
 	{
-		int rayonMax = _dimensionReseauActive == (int)DimensionJeu.Abysse ? 6 : 3;
+		int rayonMax = _dimensionReseauActive == (int)DimensionJeu.Abysse ? 4 : 3;
 		int rayon = Mathf.Clamp(rayonChunks, 0, rayonMax);
 		Vector2I c = Gestionnaire_Monde.WorldToChunkCoord(pointMonde, TailleChunk);
 		for (int dx = -rayon; dx <= rayon; dx++)
@@ -1351,6 +1370,11 @@ public partial class Monde_Client : Node3D
 			maxIntegrations = Mathf.Min(maxIntegrations, 2);
 			budgetVerticesDyn = Mathf.Min(budgetVerticesDyn, 18000);
 		}
+		if (_dimensionReseauActive == (int)DimensionJeu.Abysse && !doitGarantirProcheJoueur)
+		{
+			maxIntegrations = Mathf.Min(maxIntegrations, 1);
+			budgetVerticesDyn = Mathf.Min(budgetVerticesDyn, 14000);
+		}
 		// Plancher dur : si le sol manque, on refuse toute limite < 3 intégrations et 22k vertices.
 		if (doitGarantirProcheJoueur)
 		{
@@ -1361,14 +1385,10 @@ public partial class Monde_Client : Node3D
 			budgetWorkersMainMs = Mathf.Max(budgetWorkersMainMs, 1.0f);
 			if (_dimensionReseauActive == (int)DimensionJeu.Abysse)
 			{
-				// APISARA : plusieurs intégrations lourdes (fusion mesh + RID + file physique) dans la même
-				// frame produisaient des saccades visibles. On étale sur 2–3 frames max ; le chargement initial
-				// reste un peu plus gourmand pour éviter un écran nu prolongé.
-				int plafondIntegAbysse = enChargement ? 3 : 2;
-				if (joueurEnChute || vitesseJoueurXZ >= 4.5f)
-					plafondIntegAbysse = enChargement ? 4 : 3;
-				maxIntegrations = Mathf.Clamp(Mathf.Max(maxIntegrations, 2), 1, plafondIntegAbysse);
-				budgetVerticesDyn = Mathf.Max(budgetVerticesDyn, 24000);
+				// APISARA (muraille comprise) : 1 mesh lourd/frame max hors urgence anti-chute.
+				int plafondIntegAbysse = (doitGarantirProcheJoueur && (joueurEnChute || vitesseJoueurXZ >= 3.5f)) ? 2 : 1;
+				maxIntegrations = Mathf.Clamp(maxIntegrations, 1, plafondIntegAbysse);
+				budgetVerticesDyn = Mathf.Min(budgetVerticesDyn, 14000);
 			}
 		}
 		// GATE FPS STRICT : hors zone critique, gel total si FPS < seuil, puis ramp-up 1→budget.
@@ -3629,7 +3649,7 @@ public partial class Monde_Client : Node3D
 		int palierCourant = ObtenirIndexPalierAbysse(observation.Y);
 		// Mode 2D par étages: fenêtre fixe courant ±N.
 		AjouterCoordYPalierAbysse(palierCourant, sortie);
-		int demiFenetre = Mathf.Max(0, ConstantesDimensionAbysse.DemiFenetrePaliersActifs);
+		int demiFenetre = Mathf.Max(0, ConstantesDimensionAbysse.ObtenirDemiFenetrePaliersActifs(observation.X, observation.Z));
 		for (int i = 1; i <= demiFenetre; i++)
 		{
 			AjouterCoordYPalierAbysse(palierCourant - i, sortie);
@@ -3653,7 +3673,8 @@ public partial class Monde_Client : Node3D
 		int palierChunk = ConstantesDimensionAbysse.ObtenirIndexStageDepuisCoordYChunk(coordY, HauteurMax);
 		int palierObservation = ObtenirIndexPalierAbysse(observation.Y);
 		int ecart = Mathf.Abs(palierChunk - palierObservation);
-		return ecart <= Mathf.Max(0, ConstantesDimensionAbysse.DemiFenetrePaliersActifs);
+		int demiFenetre = ConstantesDimensionAbysse.ObtenirDemiFenetrePaliersActifs(observation.X, observation.Z);
+		return ecart <= Mathf.Max(0, demiFenetre);
 	}
 
 	private ChunkData TrouverCoucheAbysseColonne(Vector2I coord)

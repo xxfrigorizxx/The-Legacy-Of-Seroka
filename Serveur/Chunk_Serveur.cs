@@ -79,6 +79,12 @@ public partial class Chunk_Serveur : RefCounted
 	private const float AbyssPicSpiraleNombre = 14f;
 	/// <summary>Petit affleurement praticable à l'angle de sortie de spirale (m, profondeur max) — sans dalle large.</summary>
 	private const float AbyssPicLipSortieProfondeurMax = 22f;
+	/// <summary>Plateau du fond du goufre (herbe + baies cyan) : rayon autour de l'origine monde XZ.</summary>
+	private const float AbyssRayonPlateauCentralFlore = 115f;
+	private const float AbyssChanceBuissonFluo = 0.022f;
+	private const float AbyssChanceBuissonFluoCentre = 0.11f;
+	/// <summary>Extrusion 3D (spirale, pics) : uniquement près du goufre — hors muraille (900–1100 m) inutile de scanner.</summary>
+	private const float AbyssRayonProfilExtrusionMax = AbyssRayonTrouNoir + 110f;
 
 	/// <summary>Registre flore: 0=gazon, puis couples buisson (impair=plein, pair=vide) pour variantes futures.</summary>
 	public Dictionary<Vector3I, byte> InventaireFlore { get; } = new Dictionary<Vector3I, byte>();
@@ -301,13 +307,30 @@ public partial class Chunk_Serveur : RefCounted
 					float humidite = humiditeColonne[x, z];
 					bool dansTrouNoirCol = _generationAbysseActive && dansTrouNoirColonne[x, z];
 
-					for (int y = 0; y <= HauteurMax; y++)
+					bool colonneExtrusionTrou = _generationAbysseActive && ColonneDansBandeExtrusionTrou(xGlobal, zGlobal);
+					int yDebutCol = 0;
+					int yFinCol = HauteurMax;
+					if (_generationAbysseActive)
+					{
+						if (dansTrouNoirCol || colonneExtrusionTrou)
+							ObtenirPlageIndiceYMonde(yMinBandeExtrusionAbysse, yMaxBandeExtrusionAbysse, out yDebutCol, out yFinCol);
+						else if (hauteurSurface >= ChunkOffsetY * HauteurMax - 2
+							&& hauteurSurface <= ChunkOffsetY * HauteurMax + HauteurMax + 2)
+							ObtenirPlageIndiceYMonde(hauteurSurface - 10f, hauteurSurface + 14f, out yDebutCol, out yFinCol);
+						else
+						{
+							yDebutCol = 1;
+							yFinCol = 0;
+						}
+					}
+
+					for (int y = yDebutCol; y <= yFinCol; y++)
 					{
 						float globalY = ChunkOffsetY * HauteurMax + y;
 						bool extrusionParoiAbysse = false;
 						bool extrusionAnneauAbysse = false;
 						bool picSupplementSpiraleAbysse = false;
-						if (_generationAbysseActive
+						if (colonneExtrusionTrou
 							&& globalY >= yMinBandeExtrusionAbysse
 							&& globalY <= yMaxBandeExtrusionAbysse)
 						{
@@ -407,8 +430,7 @@ public partial class Chunk_Serveur : RefCounted
 				}
 			}
 			AppliquerBiomeParasiteCornichesAbysse();
-			EnsemencerFloreTrouAbysseReplats();
-			EnsemencerBuissonsFluoTrouAbysse();
+			AppliquerEnsemencementFloreTrouAbysse(notifierClient: false);
 			InitialiserEauVolumetrique(sommetSolide);
 
 			// Pass L-System : injection des Chênes (voxels bois ID 30, feuilles ID 31)
@@ -1035,9 +1057,12 @@ public partial class Chunk_Serveur : RefCounted
 	private void AppliquerBiomeParasiteCornichesAbysse()
 	{
 		if (!_generationAbysseActive || _densities == null || _materials == null) return;
+		if (!EstChunkAvecGeometrieExtrusionTrou()) return;
+		ObtenirPlageIndiceYMonde(AbyssYAnneauTransitionBottom - 8f, AbyssYSpiraleTop + 32f, out int yDebut, out int yFin);
+		if (yDebut > yFin) return;
 		for (int x = 0; x <= TailleChunk; x++)
 		{
-			for (int y = 0; y <= HauteurMax; y++)
+			for (int y = yDebut; y <= yFin; y++)
 			{
 				float globalY = ChunkOffsetY * HauteurMax + y;
 
@@ -1047,6 +1072,7 @@ public partial class Chunk_Serveur : RefCounted
 
 					float xGlobal = ChunkOffsetX * TailleChunk + x;
 					float zGlobal = ChunkOffsetZ * TailleChunk + z;
+					if (!ColonneDansBandeExtrusionTrou(xGlobal, zGlobal)) continue;
 					bool appartientSpirale = EvaluerExtrusionParoiAbysse(xGlobal, globalY, zGlobal, out _);
 					bool appartientAnneau = !appartientSpirale && EvaluerExtrusionAnneauAbysse(xGlobal, globalY, zGlobal, out _);
 					bool appartientPicSupplement = !appartientSpirale && !appartientAnneau && EvaluerPicSupplementSpiraleAbysse(xGlobal, globalY, zGlobal, out _);
@@ -1072,26 +1098,38 @@ public partial class Chunk_Serveur : RefCounted
 	/// <summary>APISARA : buissons à baies cyan fluorescentes (variante 8) uniquement dans le trou, Y monde [-500, 0], sur gazon existant avec espacement.</summary>
 	private void EnsemencerBuissonsFluoTrouAbysse()
 	{
-		if (!_generationAbysseActive || _densities == null) return;
-		const float chanceBuissonFluo = 0.018f;
+		if (!_generationAbysseActive) return;
 		float yMin = ConstantesDimensionAbysse.LimiteInferieureHerbeTrouMonde;
-		for (int x = 0; x <= TailleChunk; x++)
-		for (int z = 0; z <= TailleChunk; z++)
+		var gazonATraiter = new List<Vector3I>(64);
+		foreach (var kv in InventaireFlore)
 		{
-			float xG = ChunkOffsetX * TailleChunk + x;
-			float zG = ChunkOffsetZ * TailleChunk + z;
-			if (!EstDansTrouNoirAbysseMonde(xG, zG)) continue;
-			for (int y = 0; y <= HauteurMax; y++)
-			{
-				float globalY = ChunkOffsetY * HauteurMax + y;
-				if (globalY < yMin || globalY > 0f) continue;
-				var pos = new Vector3I((int)xG, (int)globalY, (int)zG);
-				if (!InventaireFlore.TryGetValue(pos, out byte t) || t != FloreTypeGazon) continue;
-				if (DeterministicRand(xG * 1.03f + globalY * 0.019f, zG * 0.97f) > chanceBuissonFluo) continue;
-				if (!PeutPlacerBuissonAvecEspacement(pos, 3)) continue;
-				InventaireFlore[pos] = ConstruireTypeBuisson(8, true);
-			}
+			if (kv.Value != FloreTypeGazon) continue;
+			float yM = kv.Key.Y;
+			if (yM < yMin || yM > 0f) continue;
+			if (!EstDansTrouNoirAbysseMonde(kv.Key.X, kv.Key.Z)) continue;
+			if (!PositionFloreDansChunk(kv.Key)) continue;
+			gazonATraiter.Add(kv.Key);
 		}
+		for (int i = 0; i < gazonATraiter.Count; i++)
+		{
+			Vector3I pos = gazonATraiter[i];
+			float xG = pos.X;
+			float zG = pos.Z;
+			float distCentre = Mathf.Sqrt((xG * xG) + (zG * zG));
+			float chanceBuissonFluo = distCentre <= AbyssRayonPlateauCentralFlore
+				? AbyssChanceBuissonFluoCentre
+				: AbyssChanceBuissonFluo;
+			if (DeterministicRand(xG * 1.03f + pos.Y * 0.019f, zG * 0.97f) > chanceBuissonFluo) continue;
+			if (!PeutPlacerBuissonAvecEspacement(pos, 3)) continue;
+			InventaireFlore[pos] = ConstruireTypeBuisson(8, true);
+		}
+	}
+
+	private bool PositionFloreDansChunk(Vector3I posGlobale)
+	{
+		int lx = posGlobale.X - ChunkOffsetX * TailleChunk;
+		int lz = posGlobale.Z - ChunkOffsetZ * TailleChunk;
+		return lx >= 0 && lx <= TailleChunk && lz >= 0 && lz <= TailleChunk;
 	}
 
 	/// <summary>APISARA : gazon seul sur replats du trou (spirale/pics), sans buissons ni arbres.</summary>
@@ -1100,35 +1138,47 @@ public partial class Chunk_Serveur : RefCounted
 		if (!_generationAbysseActive || _densities == null || _materials == null) return;
 		float yMin = ConstantesDimensionAbysse.LimiteInferieureHerbeTrouMonde;
 		float yMax = AbyssYSpiraleTop + 28f;
+		ObtenirPlageIndiceYMonde(yMin, yMax, out int yIndiceMin, out int yIndiceMax);
+		if (yIndiceMin > yIndiceMax) return;
 		for (int x = 0; x <= TailleChunk; x++)
 		for (int z = 0; z <= TailleChunk; z++)
 		{
 			float xG = ChunkOffsetX * TailleChunk + x;
 			float zG = ChunkOffsetZ * TailleChunk + z;
 			if (!EstDansTrouNoirAbysseMonde(xG, zG)) continue;
-			for (int y = 0; y <= HauteurMax; y++)
+			float distCentre = Mathf.Sqrt((xG * xG) + (zG * zG));
+			bool plateauCentral = distCentre <= AbyssRayonPlateauCentralFlore;
+			int ySurface = -1;
+			for (int y = yIndiceMax; y >= yIndiceMin; y--)
 			{
-				float globalY = ChunkOffsetY * HauteurMax + y;
-				if (globalY < yMin || globalY > yMax) continue;
-				if (_materials[x, y, z] != 1) continue;
+				if (_densities[x, y, z] <= Isolevel) continue;
 				bool airDessus = y >= HauteurMax
 					|| (_densities[x, y + 1, z] <= Isolevel && (_densitiesEau == null || _densitiesEau[x, y + 1, z] <= Isolevel));
 				if (!airDessus) continue;
-				if (!AbysseReplatreHerbeTrouPlat(x, y, z)) continue;
-				// Pas de brins sur la rampe de la spirale (même masque que le ciselage paroi).
-				if (CalculerIntensiteSpiraleDescenteAbysse(xG, globalY, zG) > 0.02f) continue;
-				var pos = new Vector3I((int)xG, (int)globalY, (int)zG);
-				InventaireFlore[pos] = FloreTypeGazon;
+				ySurface = y;
+				break;
 			}
+			if (ySurface < 0) continue;
+			float globalY = ChunkOffsetY * HauteurMax + ySurface;
+			bool surfaceHerbe = _materials[x, ySurface, z] == 1;
+			bool surfacePlateauCentral = plateauCentral
+				&& EstSurfacePraticablePicAbysseRelaxee(x, ySurface, z);
+			if (!surfaceHerbe && !surfacePlateauCentral) continue;
+			if (!AbysseReplatreHerbeTrouPlat(x, ySurface, z, xG, zG)) continue;
+			if (CalculerIntensiteSpiraleDescenteAbysse(xG, globalY, zG) > 0.42f && !surfacePlateauCentral) continue;
+			var pos = new Vector3I((int)xG, (int)globalY, (int)zG);
+			InventaireFlore[pos] = FloreTypeGazon;
 		}
 	}
 
 	/// <summary>Replats horizontaux dans le puits : voisins en 8 dans le chunk ; hors grille ignorés. Surface strictement plate (même Y que le centre) pour éviter l’herbe sur les marches.</summary>
-	private bool AbysseReplatreHerbeTrouPlat(int lx, int ly, int lz)
+	private bool AbysseReplatreHerbeTrouPlat(int lx, int ly, int lz, float xGlobal, float zGlobal)
 	{
 		if (_densities == null) return false;
 		int h0 = ly;
+		bool plateauCentral = Mathf.Sqrt((xGlobal * xGlobal) + (zGlobal * zGlobal)) <= AbyssRayonPlateauCentralFlore;
 		int voisinsExaminés = 0;
+		int ecartMax = 0;
 		for (int dz = -1; dz <= 1; dz++)
 		for (int dx = -1; dx <= 1; dx++)
 		{
@@ -1139,8 +1189,11 @@ public partial class Chunk_Serveur : RefCounted
 			voisinsExaminés++;
 			int hy = ObtenirHauteurSurfaceLocale(nx, nz);
 			if (hy < 0) return false;
-			if (hy != h0) return false;
+			ecartMax = Mathf.Max(ecartMax, Mathf.Abs(hy - h0));
+			if (!plateauCentral && hy != h0) return false;
 		}
+		if (plateauCentral)
+			return ecartMax <= 1;
 		return voisinsExaminés > 0;
 	}
 
@@ -1482,6 +1535,114 @@ public partial class Chunk_Serveur : RefCounted
 	{
 		InventaireFlore.Clear();
 		GenererInventaireFloreDepuisSurface();
+		AppliquerEnsemencementFloreTrouAbysse(notifierClient: false);
+	}
+
+	/// <summary>Répare les parois / rebords du goufre sur chunks disque générés avant l'optimisation Y (extrusion absente).</summary>
+	public void ReparerGeometrieExtrusionAbysseSiChargee()
+	{
+		if (!_generationAbysseActive || !_chargeDepuisDisque || _densities == null || _materials == null)
+			return;
+		if (!EstChunkAvecGeometrieExtrusionTrou())
+			return;
+
+		const float yMinBande = AbyssYAnneauTransitionBottom - 1f;
+		const float yMaxBande = AbyssYSpiraleTop + 1f;
+		bool modifie = false;
+		lock (_verrouVoxel)
+		{
+			int taille = TailleChunk + 1;
+			ObtenirPlageIndiceYMonde(yMinBande, yMaxBande, out int yDebut, out int yFin);
+			if (yDebut > yFin) return;
+
+			for (int x = 0; x < taille; x++)
+			for (int z = 0; z < taille; z++)
+			{
+				float xGlobal = ChunkOffsetX * TailleChunk + x;
+				float zGlobal = ChunkOffsetZ * TailleChunk + z;
+				float distXZ = Mathf.Sqrt((xGlobal * xGlobal) + (zGlobal * zGlobal));
+				bool dansTrou = distXZ <= AbyssRayonTrouNoir;
+				if (!dansTrou && !ColonneDansBandeExtrusionTrou(xGlobal, zGlobal))
+					continue;
+
+				for (int y = yDebut; y <= yFin; y++)
+				{
+					float globalY = ChunkOffsetY * HauteurMax + y;
+					if (globalY < yMinBande || globalY > yMaxBande) continue;
+
+					bool extrusionParoi = EvaluerExtrusionParoiAbysse(xGlobal, globalY, zGlobal, out _);
+					bool extrusionAnneau = !extrusionParoi && EvaluerExtrusionAnneauAbysse(xGlobal, globalY, zGlobal, out _);
+					bool extrusionPic = !extrusionParoi && !extrusionAnneau && EvaluerPicSupplementSpiraleAbysse(xGlobal, globalY, zGlobal, out _);
+					if (!extrusionParoi && !extrusionAnneau && !extrusionPic) continue;
+
+					if (_densities[x, y, z] > Isolevel && _materials[x, y, z] > 0)
+						continue;
+
+					_densities[x, y, z] = 10.0f;
+					_materials[x, y, z] = 2;
+					if (_densitiesEau != null)
+						_densitiesEau[x, y, z] = -1.0f;
+					modifie = true;
+				}
+			}
+
+			if (modifie)
+			{
+				AppliquerBiomeParasiteCornichesAbysse();
+				_estModifie = true;
+			}
+		}
+
+		if (modifie)
+			AppliquerEnsemencementFloreTrouAbysse(notifierClient: false);
+	}
+
+	/// <summary>Herbe sur replats + baies cyan (variante 8) dans le goufre APISARA. Idempotent ; génération procédurale uniquement (pas à chaque chargement disque).</summary>
+	public void AppliquerEnsemencementFloreTrouAbysse(bool notifierClient = true)
+	{
+		if (!_generationAbysseActive || _densities == null || !ChunkColonneIntersecteTrouNoirAbysse()) return;
+		int avant = InventaireFlore.Count;
+		EnsemencerFloreTrouAbysseReplats();
+		EnsemencerBuissonsFluoTrouAbysse();
+		if (notifierClient && InventaireFlore.Count != avant)
+			_onFlorePurgée?.Invoke(new Vector2I(ChunkOffsetX, ChunkOffsetZ), ChunkOffsetY, new Dictionary<Vector3I, byte>(InventaireFlore));
+	}
+
+	/// <summary>Le chunk (XZ) touche le disque du goufre (rayon 500 m) — évite un scan voxel complet hors zone.</summary>
+	private bool ChunkColonneIntersecteTrouNoirAbysse()
+	{
+		if (!_generationAbysseActive) return false;
+		float minX = ChunkOffsetX * TailleChunk;
+		float maxX = minX + TailleChunk;
+		float minZ = ChunkOffsetZ * TailleChunk;
+		float maxZ = minZ + TailleChunk;
+		float closestX = Mathf.Clamp(0f, minX, maxX);
+		float closestZ = Mathf.Clamp(0f, minZ, maxZ);
+		float dist2 = (closestX * closestX) + (closestZ * closestZ);
+		return dist2 <= AbyssRayonTrouNoir * AbyssRayonTrouNoir;
+	}
+
+	private bool ColonneDansBandeExtrusionTrou(float xGlobal, float zGlobal) =>
+		CalculerDistanceProfilAbysse(xGlobal, zGlobal) <= AbyssRayonProfilExtrusionMax;
+
+	private bool EstChunkAvecGeometrieExtrusionTrou()
+	{
+		if (!_generationAbysseActive) return false;
+		float minX = ChunkOffsetX * TailleChunk;
+		float maxX = minX + TailleChunk;
+		float minZ = ChunkOffsetZ * TailleChunk;
+		float maxZ = minZ + TailleChunk;
+		return ColonneDansBandeExtrusionTrou(minX, minZ)
+			|| ColonneDansBandeExtrusionTrou(maxX, minZ)
+			|| ColonneDansBandeExtrusionTrou(minX, maxZ)
+			|| ColonneDansBandeExtrusionTrou(maxX, maxZ);
+	}
+
+	private void ObtenirPlageIndiceYMonde(float yMondeMin, float yMondeMax, out int yIndiceMin, out int yIndiceMax)
+	{
+		float baseYMonde = ChunkOffsetY * HauteurMax;
+		yIndiceMin = Mathf.Clamp(Mathf.CeilToInt(yMondeMin - baseYMonde), 0, HauteurMax);
+		yIndiceMax = Mathf.Clamp(Mathf.FloorToInt(yMondeMax - baseYMonde), 0, HauteurMax);
 	}
 
 	/// <summary>Migration douce: anciens chunks avec gazon seul -> injecte des buissons sans recréer toute la flore.</summary>

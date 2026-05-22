@@ -2939,10 +2939,18 @@ public partial class MenuAnatomie : Control
 
 		int[] idsConsommables = {
 			1,2,3,4,5,6,7,8,9,
-			Joueur.IdObjetSteakCru, Joueur.IdObjetSteakCuit, Joueur.IdObjetBaie, Joueur.IdObjetAtelleJambe, Joueur.IdObjetAtelleBras, Joueur.IdObjetBandageTier1
+			Joueur.IdObjetSteakCru, Joueur.IdObjetSteakCuit, Joueur.IdObjetAtelleJambe, Joueur.IdObjetAtelleBras, Joueur.IdObjetBandageTier1
 		};
 		foreach (int id in idsConsommables)
 			Ajouter(new SlotInventaire { ID = id, Quantite = 1 }, CategorieCreatifAdmin.Consommables);
+
+		for (int couleurBaie = 0; couleurBaie < Joueur.BaieNombreCouleurs; couleurBaie++)
+		{
+			Ajouter(
+				new SlotInventaire { ID = Joueur.IdObjetBaie, IndexChimique = couleurBaie, Quantite = 1 },
+				CategorieCreatifAdmin.Consommables,
+				$"Baie {Joueur.ObtenirLexemeCouleurBaiePourNomInventaire(couleurBaie)}");
+		}
 
 		int[] idsAdminDivers = {
 			Joueur.IdObjetCarnetSavoir, Joueur.IdObjetOsBoeuf, Joueur.IdObjetCuirBoeuf,
@@ -2967,7 +2975,19 @@ public partial class MenuAnatomie : Control
 				CategorieCreatifAdmin.Bois, $"Bâton façonné {NomEssence(essence)}");
 			Ajouter(new SlotInventaire { ID = 32, IndexBotanique = essence, IndexChimique = 1, IndexMorphologique = 4, Quantite = 1 },
 				CategorieCreatifAdmin.Bois, $"Bâton en T {NomEssence(essence)}");
-			Ajouter(new SlotInventaire { ID = BlocChutant.ID_BRANCHE, IndexBotanique = essence, Quantite = 1 }, CategorieCreatifAdmin.Bois, $"Essence: {NomEssence(essence)}");
+			Ajouter(new SlotInventaire { ID = BlocChutant.ID_BRANCHE, IndexBotanique = essence, IndexMorphologique = 0, Quantite = 1 },
+				CategorieCreatifAdmin.Bois, $"Branche arbre · {NomEssence(essence)}");
+			Ajouter(new SlotInventaire { ID = BlocChutant.ID_BRANCHE, IndexBotanique = essence, IndexMorphologique = 1, Quantite = 1 },
+				CategorieCreatifAdmin.Bois, $"Branche buisson · {NomEssence(essence)}");
+			Ajouter(new SlotInventaire { ID = BlocChutant.ID_FEUILLE_ARRACHEE, IndexBotanique = essence, Quantite = 1 },
+				CategorieCreatifAdmin.Bois, $"Feuille {NomEssence(essence)}");
+		}
+		byte[] essencesBrancheMortes = { 5, 6 };
+		foreach (byte essenceMort in essencesBrancheMortes)
+		{
+			string nomMort = essenceMort switch { 5 => "Chêne mort", 6 => "Bouleau mort", _ => "Bois mort" };
+			Ajouter(new SlotInventaire { ID = BlocChutant.ID_BRANCHE, IndexBotanique = essenceMort, IndexMorphologique = 0, Quantite = 1 },
+				CategorieCreatifAdmin.Bois, $"Branche arbre · {nomMort}");
 		}
 
 		// Variantes ligatures / textile / équipements souples.
@@ -3119,8 +3139,14 @@ public partial class MenuAnatomie : Control
 			signatures,
 			(s, cat, suffixe) => Ajouter(s, (CategorieCreatifAdmin)cat, suffixe));
 
-		// Nettoyage final des entrées dont le nom ne se résout pas proprement.
-		_catalogueCreatifAdmin.RemoveAll(e => string.IsNullOrWhiteSpace(e.Nom) || !EstEssenceBoisValide(e.Slot.IndexBotanique) && e.Slot.IndexBotanique <= 4);
+		// Nettoyage final : noms vides, ou catégorie Bois avec IndexBotanique hors plage jeu (0–4 vivant, 5–6 mort).
+		_catalogueCreatifAdmin.RemoveAll(e =>
+		{
+			if (string.IsNullOrWhiteSpace(e.Nom)) return true;
+			if (e.Categorie != CategorieCreatifAdmin.Bois) return false;
+			byte bot = e.Slot.IndexBotanique;
+			return bot > 6 || (bot > 4 && bot != 5 && bot != 6);
+		});
 		_catalogueCreatifAdmin.Sort((a, b) =>
 		{
 			int c = a.Categorie.CompareTo(b.Categorie);

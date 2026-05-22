@@ -2311,6 +2311,23 @@ public partial class Joueur
         parent.AddChild(modele);
     }
 
+    /// <summary>Feuille arrachée (bouleau, chêne, sapin, …) : GLB dédié (sol, inventaire, main, lancer).</summary>
+    public static void InstancierModeleFeuilleArrachee(Node3D parent, SlotInventaire slot, float tailleMaxMetres = 0.2f)
+    {
+        if (!BlocChutant.EssenceUtiliseFeuilleGlb(slot.IndexBotanique))
+            return;
+        NettoyerModelesEnfants(parent);
+        Node3D? visuel = BlocChutant.InstancierRacineVisuelFeuilleGlb(slot.IndexBotanique, parent, tailleMaxMetres, variationAleatoire: false, out _);
+        if (visuel == null)
+            GD.PrintErr($"ZERO-K : Feuille GLB essence {slot.IndexBotanique} — repli sans modèle.");
+        else
+            visuel.Name = "ModeleArme";
+    }
+
+    /// <inheritdoc cref="InstancierModeleFeuilleArrachee"/>
+    public static void InstancierModeleFeuilleBouleau(Node3D parent, SlotInventaire slot, float tailleMaxMetres = 0.2f)
+        => InstancierModeleFeuilleArrachee(parent, slot, tailleMaxMetres);
+
     /// <summary>Steak cru (GLB) — loot bovin.</summary>
     public static void InstancierModeleSteakCru(Node3D parent, SlotInventaire slot, float tailleMaxMetres = 0.2f)
     {

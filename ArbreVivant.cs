@@ -722,6 +722,11 @@ public partial class ArbreVivant : StaticBody3D
 		}
 
 		cadavre.AddChild(hitboxCopy);
+		AjouterCollisionEnglobanteCadavre(cadavre, meshBoisCad, meshFeuCad, _hauteurTroncTotale, _rayonTroncBase);
+
+		cadavre.CanSleep = false;
+		cadavre.Sleeping = false;
+		cadavre.AddToGroup("CadavreArbre");
 
 		GetParent().AddChild(cadavre);
 		cadavre.GlobalTransform = poseArbre;
@@ -729,6 +734,25 @@ public partial class ArbreVivant : StaticBody3D
 		cadavre.ApplyCentralImpulse(directionFrappe * (40f * AgeEnJours) + Vector3.Up * 20f);
 
 		QueueFree();
+	}
+
+	/// <summary>Hitbox large (feuillage souvent sans collider) pour que le raycast et la hachette atteignent le cadavre au sol.</summary>
+	private static void AjouterCollisionEnglobanteCadavre(RigidBody3D cadavre, Mesh meshBois, Mesh meshFeu, float hauteurTronc, float rayonBase)
+	{
+		Aabb emprise = meshBois != null ? meshBois.GetAabb() : new Aabb(Vector3.Zero, Vector3.One * 0.2f);
+		if (meshFeu != null)
+			emprise = emprise.Merge(meshFeu.GetAabb());
+		Vector3 taille = emprise.Size;
+		taille = new Vector3(
+			Mathf.Max(taille.X, Mathf.Max(0.55f, rayonBase * 2.6f)),
+			Mathf.Max(taille.Y, Mathf.Max(0.85f, hauteurTronc * 0.72f)),
+			Mathf.Max(taille.Z, Mathf.Max(0.55f, rayonBase * 2.6f)));
+		cadavre.AddChild(new CollisionShape3D
+		{
+			Name = "CollisionEnglobanteCadavre",
+			Shape = new BoxShape3D { Size = taille },
+			Position = emprise.GetCenter()
+		});
 	}
 
 	/// <summary>L’impact est souvent dans le volume du feuillage/tronc : repousser depuis la racine puis garder au-dessus du sol.</summary>

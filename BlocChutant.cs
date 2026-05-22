@@ -136,12 +136,99 @@ public partial class BlocChutant : RigidBody3D
 		return bloc;
 	}
 
+	private const string CheminGlbFeuilleBouleau = "res://Modeles/materials/naturelle/feuille_bouleaux.glb";
+	private const string CheminGlbFeuilleChene = "res://Modeles/materials/naturelle/feuille_chene.glb";
+	private const string CheminGlbFeuilleSapin = "res://Modeles/materials/naturelle/Feuille_sapin.glb";
+	private const string CheminGlbFeuillePin = "res://Modeles/materials/naturelle/feuille_pine.glb";
+	private const string CheminGlbFeuilleKapokier = "res://Modeles/materials/naturelle/feuille_kapokier.glb";
+	private static PackedScene _cacheSceneFeuilleBouleau;
+	private static PackedScene _cacheSceneFeuilleChene;
+	private static PackedScene _cacheSceneFeuilleSapin;
+	private static PackedScene _cacheSceneFeuillePin;
+	private static PackedScene _cacheSceneFeuilleKapokier;
+
+	/// <summary>Essences dont les feuilles arrachées utilisent un GLB dédié (pas les quads procéduraux).</summary>
+	public static bool EssenceUtiliseFeuilleGlb(byte essence) =>
+		essence == LSystem_Botanique.IndexBouleau
+		|| essence == LSystem_Botanique.IndexChene
+		|| essence == LSystem_Botanique.IndexPin
+		|| essence == LSystem_Botanique.IndexSapin
+		|| essence == LSystem_Botanique.IndexJungle;
+
+	private static bool EssayerObtenirFeuilleGlb(byte essence, out string cheminGlb, out string nomNoeud)
+	{
+		if (essence == LSystem_Botanique.IndexBouleau)
+		{
+			cheminGlb = CheminGlbFeuilleBouleau;
+			nomNoeud = "FeuilleBouleau";
+			return true;
+		}
+		if (essence == LSystem_Botanique.IndexChene)
+		{
+			cheminGlb = CheminGlbFeuilleChene;
+			nomNoeud = "FeuilleChene";
+			return true;
+		}
+		if (essence == LSystem_Botanique.IndexSapin)
+		{
+			cheminGlb = CheminGlbFeuilleSapin;
+			nomNoeud = "FeuilleSapin";
+			return true;
+		}
+		if (essence == LSystem_Botanique.IndexPin)
+		{
+			cheminGlb = CheminGlbFeuillePin;
+			nomNoeud = "FeuillePin";
+			return true;
+		}
+		if (essence == LSystem_Botanique.IndexJungle)
+		{
+			cheminGlb = CheminGlbFeuilleKapokier;
+			nomNoeud = "FeuilleKapokier";
+			return true;
+		}
+		cheminGlb = "";
+		nomNoeud = "";
+		return false;
+	}
+
+	private static PackedScene ObtenirOuChargerSceneFeuilleGlb(byte essence)
+	{
+		if (!EssayerObtenirFeuilleGlb(essence, out string chemin, out _))
+			return null;
+		if (essence == LSystem_Botanique.IndexBouleau)
+		{
+			_cacheSceneFeuilleBouleau ??= GD.Load<PackedScene>(chemin);
+			return _cacheSceneFeuilleBouleau;
+		}
+		if (essence == LSystem_Botanique.IndexChene)
+		{
+			_cacheSceneFeuilleChene ??= GD.Load<PackedScene>(chemin);
+			return _cacheSceneFeuilleChene;
+		}
+		if (essence == LSystem_Botanique.IndexSapin)
+		{
+			_cacheSceneFeuilleSapin ??= GD.Load<PackedScene>(chemin);
+			return _cacheSceneFeuilleSapin;
+		}
+		if (essence == LSystem_Botanique.IndexPin)
+		{
+			_cacheSceneFeuillePin ??= GD.Load<PackedScene>(chemin);
+			return _cacheSceneFeuillePin;
+		}
+		_cacheSceneFeuilleKapokier ??= GD.Load<PackedScene>(chemin);
+		return _cacheSceneFeuilleKapokier;
+	}
+
 	/// <summary>Crée un BlocChutant feuillage (même visuel que les feuilles d'arbre). Utiliser quand on arrache le feuillage d'un arbre.</summary>
-	public static BlocChutant CreerFeuillageArrache(Vector3 positionMonde, Material matFeuilles, Mesh meshFeuillageSource = null)
+	/// <param name="indexBotanique">Essence (bouleau, chêne, sapin, …) pour un mesh GLB dédié ; <see cref="byte.MaxValue"/> = quads procéduraux.</param>
+	public static BlocChutant CreerFeuillageArrache(Vector3 positionMonde, Material matFeuilles, Mesh meshFeuillageSource = null, byte indexBotanique = byte.MaxValue)
 	{
 		var bloc = new BlocChutant();
 		bloc.SetMeta("ID_Matiere", (int)ID_FEUILLE_ARRACHEE);
-		bloc._ConstruireVisuelFeuillage(matFeuilles, meshFeuillageSource);
+		if (indexBotanique != byte.MaxValue)
+			bloc.SetMeta("IndexBotanique", (int)indexBotanique);
+		bloc._ConstruireVisuelFeuillage(matFeuilles, meshFeuillageSource, indexBotanique);
 		return bloc;
 	}
 
@@ -184,8 +271,14 @@ public partial class BlocChutant : RigidBody3D
 			&& Mathf.IsEqualApprox(c.B, 1f);
 	}
 
-	private void _ConstruireVisuelFeuillage(Material matFeuilles, Mesh meshFeuillageSource = null)
+	private void _ConstruireVisuelFeuillage(Material matFeuilles, Mesh meshFeuillageSource = null, byte indexBotanique = byte.MaxValue)
 	{
+		byte essence = indexBotanique;
+		if (essence == byte.MaxValue && HasMeta("IndexBotanique"))
+			essence = (byte)Mathf.Clamp(GetMeta("IndexBotanique").AsInt32(), 0, 255);
+		if (EssenceUtiliseFeuilleGlb(essence) && EssayerConstruireVisuelFeuilleGlbEssence(essence))
+			return;
+
 		// Petit cluster de feuilles (quads ovales) — même style que le feuillage d'arbre, pas des brins d'herbe.
 		Color teinteFallback = new Color(0.2f, 0.55f, 0.15f);
 		if (EssayerExtraireTeinteMoyenneFeuillage(meshFeuillageSource, out Color teinteSource))
@@ -222,6 +315,139 @@ public partial class BlocChutant : RigidBody3D
 		}
 		var collision = new CollisionShape3D { Shape = new BoxShape3D { Size = new Vector3(0.15f, l, 0.15f) }, Position = new Vector3(0, l * 0.5f, 0) };
 		AddChild(collision);
+	}
+
+	/// <summary>Instancie le GLB de feuille selon l'essence (bouleau, chêne, pin, sapin, kapokier/jungle) sous <paramref name="parent"/>.</summary>
+	public static Node3D? InstancierRacineVisuelFeuilleGlb(byte essence, Node3D parent, float tailleMaxMetres, bool variationAleatoire, out Aabb empriseLocale)
+	{
+		empriseLocale = new Aabb(Vector3.Zero, new Vector3(0.12f, 0.02f, 0.12f));
+		if (!EssayerObtenirFeuilleGlb(essence, out string chemin, out string nomNoeud))
+			return null;
+
+		PackedScene scene = ObtenirOuChargerSceneFeuilleGlb(essence);
+		if (scene == null)
+		{
+			GD.PrintErr($"ZERO-K : GLB feuille introuvable ({chemin}).");
+			return null;
+		}
+
+		var visuel = scene.Instantiate<Node3D>();
+		visuel.Name = nomNoeud;
+		AppliquerMateriauxFeuilleGlb(visuel, essence);
+		if (variationAleatoire)
+		{
+			float echelle = 0.88f + GD.Randf() * 0.28f;
+			visuel.Scale = Vector3.One * echelle;
+			visuel.Rotation = new Vector3(
+				GD.Randf() * 0.35f - 0.17f,
+				GD.Randf() * Mathf.Tau,
+				GD.Randf() * 0.25f - 0.12f);
+		}
+
+		parent.AddChild(visuel);
+		Joueur.NormaliserEchelleEtCentrerModeleArme(visuel, tailleMaxMetres);
+		empriseLocale = FusionnerAabbMeshesLocaux(visuel);
+		return visuel;
+	}
+
+	/// <summary>Instancie <c>feuille_bouleaux.glb</c> sous <paramref name="parent"/> (textures du GLB conservées).</summary>
+	public static Node3D? InstancierRacineVisuelFeuilleBouleau(Node3D parent, float tailleMaxMetres, bool variationAleatoire, out Aabb empriseLocale)
+		=> InstancierRacineVisuelFeuilleGlb(LSystem_Botanique.IndexBouleau, parent, tailleMaxMetres, variationAleatoire, out empriseLocale);
+
+	/// <summary>Instancie <c>feuille_chene.glb</c> sous <paramref name="parent"/>.</summary>
+	public static Node3D? InstancierRacineVisuelFeuilleChene(Node3D parent, float tailleMaxMetres, bool variationAleatoire, out Aabb empriseLocale)
+		=> InstancierRacineVisuelFeuilleGlb(LSystem_Botanique.IndexChene, parent, tailleMaxMetres, variationAleatoire, out empriseLocale);
+
+	/// <summary>Instancie <c>Feuille_sapin.glb</c> sous <paramref name="parent"/>.</summary>
+	public static Node3D? InstancierRacineVisuelFeuilleSapin(Node3D parent, float tailleMaxMetres, bool variationAleatoire, out Aabb empriseLocale)
+		=> InstancierRacineVisuelFeuilleGlb(LSystem_Botanique.IndexSapin, parent, tailleMaxMetres, variationAleatoire, out empriseLocale);
+
+	/// <summary>Instancie <c>feuille_pine.glb</c> sous <paramref name="parent"/>.</summary>
+	public static Node3D? InstancierRacineVisuelFeuillePin(Node3D parent, float tailleMaxMetres, bool variationAleatoire, out Aabb empriseLocale)
+		=> InstancierRacineVisuelFeuilleGlb(LSystem_Botanique.IndexPin, parent, tailleMaxMetres, variationAleatoire, out empriseLocale);
+
+	/// <summary>Instancie <c>feuille_kapokier.glb</c> (arbre jungle) sous <paramref name="parent"/>.</summary>
+	public static Node3D? InstancierRacineVisuelFeuilleKapokier(Node3D parent, float tailleMaxMetres, bool variationAleatoire, out Aabb empriseLocale)
+		=> InstancierRacineVisuelFeuilleGlb(LSystem_Botanique.IndexJungle, parent, tailleMaxMetres, variationAleatoire, out empriseLocale);
+
+	private static void AppliquerMateriauxFeuilleGlb(Node3D racine, byte essence)
+	{
+		Color teinteSansTexture = essence == LSystem_Botanique.IndexChene
+			? new Color(0.42f, 0.52f, 0.22f)
+			: essence == LSystem_Botanique.IndexSapin
+				? new Color(0.22f, 0.40f, 0.18f)
+				: essence == LSystem_Botanique.IndexPin
+					? new Color(0.20f, 0.36f, 0.16f)
+					: essence == LSystem_Botanique.IndexJungle
+						? new Color(0.28f, 0.58f, 0.20f)
+						: new Color(0.45f, 0.62f, 0.28f);
+		foreach (MeshInstance3D mi in racine.FindChildren("*", "MeshInstance3D", true, false))
+		{
+			if (mi.Mesh == null || mi.Mesh.GetSurfaceCount() == 0)
+				continue;
+
+			Material src = mi.GetSurfaceOverrideMaterial(0);
+			if (src == null)
+				src = mi.Mesh.SurfaceGetMaterial(0);
+			if (src == null)
+				continue;
+
+			Material mat = (Material)src.Duplicate(true);
+			if (mat is StandardMaterial3D std)
+			{
+				std.CullMode = BaseMaterial3D.CullModeEnum.Disabled;
+				if (std.AlbedoTexture != null)
+				{
+					std.Transparency = BaseMaterial3D.TransparencyEnum.AlphaScissor;
+					std.AlphaScissorThreshold = 0.4f;
+					std.AlbedoColor = Colors.White;
+				}
+				else if (EstBlancApprox(std.AlbedoColor))
+					std.AlbedoColor = teinteSansTexture;
+			}
+			else if (mat is BaseMaterial3D bm)
+				bm.CullMode = BaseMaterial3D.CullModeEnum.Disabled;
+
+			mi.MaterialOverride = mat;
+		}
+	}
+
+	public static CollisionShape3D CreerCollisionFeuilleBouleauDepuisEmprise(Aabb empriseLocale)
+	{
+		Vector3 taille = empriseLocale.Size;
+		if (taille.LengthSquared() < 1e-8f)
+			taille = new Vector3(0.14f, 0.03f, 0.14f);
+		taille = new Vector3(
+			Mathf.Max(taille.X, 0.06f),
+			Mathf.Max(taille.Y, 0.02f),
+			Mathf.Max(taille.Z, 0.06f));
+		return new CollisionShape3D
+		{
+			Shape = new BoxShape3D { Size = taille },
+			Position = empriseLocale.GetCenter()
+		};
+	}
+
+	private bool EssayerConstruireVisuelFeuilleGlbEssence(byte essence)
+	{
+		Node3D? visuel = InstancierRacineVisuelFeuilleGlb(essence, this, 0.22f, variationAleatoire: true, out Aabb emprise);
+		if (visuel == null)
+			return false;
+		AddChild(CreerCollisionFeuilleBouleauDepuisEmprise(emprise));
+		return true;
+	}
+
+	private static Aabb FusionnerAabbMeshesLocaux(Node3D racine)
+	{
+		Aabb? fusion = null;
+		foreach (MeshInstance3D mi in racine.FindChildren("*", "MeshInstance3D", true, false))
+		{
+			if (mi.Mesh == null)
+				continue;
+			Aabb local = mi.Transform * mi.GetAabb();
+			fusion = fusion == null ? local : fusion.Value.Merge(local);
+		}
+		return fusion ?? new Aabb(Vector3.Zero, new Vector3(0.12f, 0.02f, 0.12f));
 	}
 
 	private void _ConstruireVisuelEtCollision(byte idMateriau, Material matTerrain, byte indexCouleurBaie = 0)

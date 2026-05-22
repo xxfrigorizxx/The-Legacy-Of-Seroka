@@ -12,6 +12,10 @@ public class SectionPayload
 	public Color[] CouleursVisuels;
 	public Vector3[] SommetsEau;
 	public Vector3[] NormalsEau;
+
+	public bool EstGeometrieVide() =>
+		(SommetsVisuels == null || SommetsVisuels.Length == 0)
+		&& (SommetsEau == null || SommetsEau.Length == 0);
 }
 
 /// <summary>Paquet flore précalculé dans le Task.Run : positions et couleurs pour un seul passage MultiMesh (évite AddChild désynchronisé).</summary>
@@ -226,10 +230,11 @@ public partial class Chunk_Client : Node3D
 				chunkRef.AppliquerPayloadFlore(null);
 			});
 
-		// 45 sections en séquence dans ce worker (pas de Task.Run par section)
+		// 45 sections en séquence dans ce worker (pas de Task.Run par section) — sections vides ignorées (muraille / ciel).
 		for (int idxSec = 0; idxSec < NB_SECTIONS; idxSec++)
 		{
 			SectionPayload payload = ConstruireSectionPayloadEnBackground(idxSec, baseX, baseZ);
+			if (payload.EstGeometrieVide()) continue;
 			int sec = idxSec;
 			enqueueIntegration?.Invoke(() => chunkRef.IntegrerSectionPayload(sec, payload));
 		}
@@ -544,7 +549,8 @@ public partial class Chunk_Client : Node3D
 				float facteurHum = Mathf.Clamp((humidite + 1f) * 0.5f, 0f, 1f);
 				float facteurHauteur = Mathf.Lerp(1.0f, 1.32f, facteurHum);
 				float facteurLargeur = Mathf.Lerp(0.92f, 1.12f, facteurHum);
-				int densiteGazon = CalculerDensiteGazonSelonHumidite(humidite, 19);
+				int densiteMax = ConstantesDimensionAbysse.EstDansTrouNoirXZ(kv.Key.X, kv.Key.Z) ? 11 : 19;
+				int densiteGazon = CalculerDensiteGazonSelonHumidite(humidite, densiteMax);
 				for (int i = 0; i < densiteGazon; i++)
 				{
 					CalculerVariationBrin(hashBase, i, densiteGazon, out float offsetX, out float offsetZ, out float echelleAlea, out float angleBrin);
@@ -949,7 +955,8 @@ public partial class Chunk_Client : Node3D
 				float facteurHum = Mathf.Clamp((humidite + 1f) * 0.5f, 0f, 1f);
 				float facteurHauteur = Mathf.Lerp(1.0f, 1.32f, facteurHum);
 				float facteurLargeur = Mathf.Lerp(0.92f, 1.12f, facteurHum);
-				int densiteGazon = CalculerDensiteGazonSelonHumidite(humidite, 19);
+				int densiteMax = ConstantesDimensionAbysse.EstDansTrouNoirXZ(kv.Key.X, kv.Key.Z) ? 11 : 19;
+				int densiteGazon = CalculerDensiteGazonSelonHumidite(humidite, densiteMax);
 				for (int i = 0; i < densiteGazon; i++)
 				{
 					CalculerVariationBrin(hashBase, i, densiteGazon, out float offsetX, out float offsetZ, out float echelleAlea, out float angleBrin);
@@ -1942,6 +1949,7 @@ private static bool EstCorpsAuSol(PhysicsBody3D body)
 		try
 		{
 			int stride = tailleY * tz;
+			int nbVoxels = stride * tz;
 			for (int x = 0; x < tx; x++)
 				for (int y = 0; y < tailleY; y++)
 					for (int z = 0; z < tz; z++)
@@ -1951,6 +1959,21 @@ private static bool EstCorpsAuSol(PhysicsBody3D body)
 						bufferMaterials[idx] = _materialsFlat[Idx(x, yDebut + y, z)];
 						if (bufferEau != null) bufferEau[idx] = _densitiesEauFlat[Idx(x, yDebut + y, z)];
 					}
+
+			bool sectionVide = true;
+			for (int i = 0; i < nbVoxels; i++)
+			{
+				if (bufferDensities[i] > Isolevel) { sectionVide = false; break; }
+			}
+			if (sectionVide && bufferEau != null)
+			{
+				for (int i = 0; i < nbVoxels; i++)
+				{
+					if (bufferEau[i] > Isolevel) { sectionVide = false; break; }
+				}
+			}
+			if (sectionVide)
+				return new SectionPayload();
 
 			float ValD(int x, int y, int z) => bufferDensities[x * stride + y * tz + z];
 			byte MatD(int x, int y, int z) => bufferMaterials[x * stride + y * tz + z];
@@ -2390,7 +2413,9 @@ private static bool EstCorpsAuSol(PhysicsBody3D body)
 			Color couleurSol = ObtenirCouleurTerrainDepuisChunkData(data, kv.Key.X, kv.Key.Y, kv.Key.Z);
 			Color couleurHerbe = couleurSol.Lerp(new Color(0.22f, 0.32f, 0.20f, 1f), 0.08f);
 			uint hashBase = (uint)(kv.Key.X * 73856093) ^ (uint)(kv.Key.Z * 19349663);
-			int densiteBase = distCarree <= rayonQualiteCarre ? 19 : (distCarree <= rayonQualiteCarre * 2.6f ? 11 : 5);
+			int densiteBase = ConstantesDimensionAbysse.EstDansTrouNoirXZ(kv.Key.X, kv.Key.Z)
+				? 11
+				: (distCarree <= rayonQualiteCarre ? 19 : (distCarree <= rayonQualiteCarre * 2.6f ? 11 : 5));
 			float humidite = CalculerHumiditeGlobaleDepuisChunkData(data, kv.Key.X, kv.Key.Z);
 			float facteurHum = Mathf.Clamp((humidite + 1f) * 0.5f, 0f, 1f);
 			float facteurHauteur = Mathf.Lerp(1.0f, 1.32f, facteurHum);
@@ -2544,6 +2569,7 @@ private static bool EstCorpsAuSol(PhysicsBody3D body)
 		try
 		{
 			int stride = tailleY * tz;
+			int nbVoxels = stride * tx;
 			for (int x = 0; x < tx; x++)
 				for (int y = 0; y < tailleY; y++)
 					for (int z = 0; z < tz; z++)
@@ -2553,6 +2579,21 @@ private static bool EstCorpsAuSol(PhysicsBody3D body)
 						bufferMaterials[idx] = data.MaterialsFlat[data.Idx(x, yDebut + y, z)];
 						if (bufferEau != null) bufferEau[idx] = data.DensitiesEauFlat[data.Idx(x, yDebut + y, z)];
 					}
+
+			bool sectionVide = true;
+			for (int i = 0; i < nbVoxels; i++)
+			{
+				if (bufferDensities[i] > IsolevelData) { sectionVide = false; break; }
+			}
+			if (sectionVide && bufferEau != null)
+			{
+				for (int i = 0; i < nbVoxels; i++)
+				{
+					if (bufferEau[i] > IsolevelData) { sectionVide = false; break; }
+				}
+			}
+			if (sectionVide)
+				return new SectionPayload();
 
 			float ValD(int x, int y, int z) => bufferDensities[x * stride + y * tz + z];
 			byte MatD(int x, int y, int z) => bufferMaterials[x * stride + y * tz + z];

@@ -6351,7 +6351,7 @@ void fragment()
             CalculerDimensionsBoisPose(id, indexMorpho, indexTaille, out float br, out float bl, out _, out _);
             return GenererMeshBoisFendu(br, bl, indexMorpho);
         }
-        else if (id == 34) return new QuadMesh { Size = new Vector2(0.12f, 0.18f) }; // Feuilles (mÃªme style que feuillage arbre)
+        else if (id == 34) return new QuadMesh { Size = new Vector2(0.12f, 0.18f) }; // Feuilles (GLB bouleau/chêne via InstancierModeleFeuilleArrachee)
         else if (id == IdObjetBaie) return new SphereMesh { Radius = 0.05f, Height = 0.10f, RadialSegments = 10, Rings = 6 };
         if (id >= 1 && id <= 9)
             return new BoxMesh { Size = new Vector3(0.2f, 0.2f, 0.2f) };
@@ -6431,7 +6431,14 @@ void fragment()
             visuel.MaterialOverride = ArbreVivant.ObtenirMaterielBoisTriplanar(indexBotanique);
             return;
         }
-        if (idObjet == 34) { visuel.MaterialOverride = new StandardMaterial3D { AlbedoColor = new Color(0.2f, 0.55f, 0.15f), Roughness = 0.95f, Metallic = 0f }; return; }
+        if (idObjet == 34)
+        {
+            if (BlocChutant.EssenceUtiliseFeuilleGlb(indexBotanique))
+                visuel.MaterialOverride = null;
+            else
+                visuel.MaterialOverride = new StandardMaterial3D { AlbedoColor = new Color(0.2f, 0.55f, 0.15f), Roughness = 0.95f, Metallic = 0f };
+            return;
+        }
         if (idObjet == IdObjetBaie)
         {
             Color c = ObtenirCouleurAlbedoBaie(indexChimique);
@@ -6464,6 +6471,50 @@ void fragment()
         for (Node n = col; n != null; n = n.GetParent())
             if (n is RigidBody3D rb) return rb;
         return null;
+    }
+
+    /// <summary>Cadavre d'arbre abattu (<c>ArbreMort</c>) depuis un collider enfant (feuillage, tronc, hitbox).</summary>
+    private static RigidBody3D ResoudreCadavreArbreDepuisCollider(Node col)
+    {
+        for (Node n = col; n != null; n = n.GetParent())
+        {
+            if (n is RigidBody3D rb && rb.Name.ToString().Contains("ArbreMort"))
+                return rb;
+        }
+        return null;
+    }
+
+    /// <summary>Après abattage, la visée peut toucher le sol/feuillage sans collider : on cherche un cadavre proche du point d'impact.</summary>
+    private RigidBody3D ChercherCadavreArbreProchePointImpact(Vector3 pointMonde, float rayonMetres = 2.35f)
+    {
+        var space = GetWorld3D()?.DirectSpaceState;
+        if (space == null) return null;
+        float rayonSq = rayonMetres * rayonMetres;
+        var ppq = new PhysicsPointQueryParameters3D
+        {
+            Position = pointMonde,
+            CollisionMask = 0xFFFFFFFF,
+            CollideWithAreas = false,
+            CollideWithBodies = true
+        };
+        Godot.Collections.Array<Godot.Collections.Dictionary> results = space.IntersectPoint(ppq, 48);
+        RigidBody3D meilleur = null;
+        float meilleureDistSq = rayonSq;
+        for (int i = 0; i < results.Count; i++)
+        {
+            if (!results[i].TryGetValue("collider", out Variant vCol)) continue;
+            var colObj = vCol.AsGodotObject();
+            Node noeud = colObj is CollisionShape3D sh ? sh.GetParent() as Node : colObj as Node;
+            RigidBody3D rb = ResoudreCadavreArbreDepuisCollider(noeud);
+            if (rb == null || !GodotObject.IsInstanceValid(rb) || !rb.IsInsideTree()) continue;
+            float d = rb.GlobalPosition.DistanceSquaredTo(pointMonde);
+            if (d < meilleureDistSq)
+            {
+                meilleureDistSq = d;
+                meilleur = rb;
+            }
+        }
+        return meilleur;
     }
 
     /// <summary>Surface dâ€™appui uniquement ROCHE (sol ID 2, cailloux matiÃ¨re 40â€“49). Le bois posÃ© nâ€™est pas une enclume.</summary>
@@ -7688,11 +7739,30 @@ void fragment()
             item.AddChild(colNode);
             corps = item;
         }
-        else if (id == 34) // Feuilles arrachÃ©es (mÃªme mesh que le feuillage d'arbre)
+        else if (id == 34) // Feuilles arrachées
         {
-            var matFeuilles = new StandardMaterial3D { AlbedoColor = new Color(0.2f, 0.55f, 0.15f), Roughness = 0.95f, Metallic = 0f };
-            var bloc = BlocChutant.CreerFeuillageArrache(pointDeChute, matFeuilles);
-            corps = bloc;
+            byte essenceFeuille = mainActive.IndexBotanique;
+            if (BlocChutant.EssenceUtiliseFeuilleGlb(essenceFeuille))
+            {
+                var item = new ItemPhysique
+                {
+                    ID_Objet = id,
+                    IndexBotanique = essenceFeuille,
+                    IndexCacheMemoire = 0,
+                    Name = "ItemPhysique",
+                    ContinuousCd = true
+                };
+                var meshRoot = new Node3D { Name = "MeshInstance3D" };
+                InstancierModeleFeuilleArrachee(meshRoot, mainActive, 0.22f);
+                item.AddChild(meshRoot);
+                item.AddChild(new CollisionShape3D { Shape = new BoxShape3D { Size = new Vector3(0.14f, 0.03f, 0.14f) } });
+                corps = item;
+            }
+            else
+            {
+                var matFeuilles = new StandardMaterial3D { AlbedoColor = new Color(0.2f, 0.55f, 0.15f), Roughness = 0.95f, Metallic = 0f };
+                corps = BlocChutant.CreerFeuillageArrache(pointDeChute, matFeuilles, null, essenceFeuille);
+            }
         }
         else if (id == 10 || id == 11 || id == BlocChutant.ID_BRANCHE)
         {
@@ -7861,7 +7931,7 @@ void fragment()
         if ((estFondationPose || estPlancherPose) && !enChargementPersistant && !modeGhost)
             AjouterXpMetier("Batisseur", 1UL);
         bool fondationSurSupportEleve = estFondationPose && !enChargementPersistant && !modeGhost
-            && (FondationReposantSurFondationOuStructure(corps.GlobalPosition) || ObtenirOffsetVerticalFondationManuel() != 0f);
+            && (FondationReposantSurFondationOuStructure(corps.GlobalPosition) || _offsetEtagesFondationManuel != 0);
         if (!modeGhost && (id == IdObjetTableAnalyseTier1 || id == IdObjetRackBatons || id == IdObjetRackBuches || id == IdObjetCoffreBoisTier0 || EstIdPitFeu(id) || EstIdFondation(id)))
         {
             // Snap sol robuste pour le rack: corrige les cas oÃ¹ le raycast vise une surface dÃ©calÃ©e.

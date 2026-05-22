@@ -5,7 +5,7 @@ using System.Reflection;
 /// <summary>Construction du catalogue inventaire créatif/admin (variantes + IDs objets manquants).</summary>
 public static class CreatifCatalogueService
 {
-    public const int VersionCatalogue = 3;
+    public const int VersionCatalogue = 5;
 
     public enum CategorieCreatif
     {
@@ -114,7 +114,7 @@ public static class CreatifCatalogueService
             return CategorieCreatif.Consommables;
         if (ItemPhysique.EstIdRocheMatiere(id))
             return CategorieCreatif.Pierre;
-        if (id == 30 || id == 32 || id == BlocChutant.ID_BRANCHE)
+        if (id == 30 || id == 32 || id == BlocChutant.ID_BRANCHE || id == BlocChutant.ID_FEUILLE_ARRACHEE)
             return CategorieCreatif.Bois;
         if (id == 200 || id == Joueur.IdObjetTableAnalyseTier1 || id == Joueur.IdObjetRackBatons
             || id == Joueur.IdObjetRackBuches || id == Joueur.IdObjetCoffreBoisTier0

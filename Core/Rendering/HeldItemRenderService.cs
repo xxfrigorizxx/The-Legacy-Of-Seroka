@@ -443,6 +443,16 @@ public partial class Joueur
             _objetEnMain.RotationDegrees = new Vector3(-6f + _rotationManuelleX, 22f + _rotationManuelleY, 2f + _rotationManuelleZ);
             return;
         }
+        if (main.ID == BlocChutant.ID_FEUILLE_ARRACHEE && BlocChutant.EssenceUtiliseFeuilleGlb(main.IndexBotanique))
+        {
+            _objetEnMain.Mesh = null;
+            _objetEnMain.MaterialOverride = null;
+            NettoyerModelesEnfants(_objetEnMain);
+            InstancierModeleFeuilleArrachee(_objetEnMain, main, 0.2f);
+            _objetEnMain.Scale = Vector3.One;
+            _objetEnMain.RotationDegrees = new Vector3(-8f + _rotationManuelleX, 28f + _rotationManuelleY, 4f + _rotationManuelleZ);
+            return;
+        }
         if (main.ID == IdObjetSteakCru)
         {
             _objetEnMain.Mesh = null;
@@ -1119,6 +1129,16 @@ public partial class Joueur
             InstancierModeleBaie(meshNode, slot, 0.14f);
             meshNode.Scale = Vector3.One;
             meshNode.RotationDegrees = new Vector3(0f, 30f, 0f);
+            return;
+        }
+        if (slot.ID == BlocChutant.ID_FEUILLE_ARRACHEE && BlocChutant.EssenceUtiliseFeuilleGlb(slot.IndexBotanique))
+        {
+            meshNode.Mesh = null;
+            meshNode.MaterialOverride = null;
+            NettoyerModelesEnfants(meshNode);
+            InstancierModeleFeuilleArrachee(meshNode, slot, 0.16f);
+            meshNode.Scale = Vector3.One;
+            meshNode.RotationDegrees = new Vector3(-4f, 32f, 2f);
             return;
         }
         if (slot.ID == IdObjetSteakCru)

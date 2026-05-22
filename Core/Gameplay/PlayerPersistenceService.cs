@@ -7,7 +7,7 @@ using System.Text.Json;
 public partial class Joueur
 {
     private const int VersionPersistenceJoueur = 7;
-    private const int VersionPersistenceObjetsPoses = 4;
+    private const int VersionPersistenceObjetsPoses = 5;
     private const int VersionPersistenceProgression = 3;
     private bool _persistantPhaseJoueurChargee;
     private bool _persistantObjetsSolCharges;
@@ -1144,9 +1144,9 @@ public partial class Joueur
         return Path.Combine(dossier, ObtenirNomFichierBlocsChutantsDimension(ConstantesDimensions.ObtenirNomCanonique(dimensionId)));
     }
 
-    private List<(byte id, Vector3 pos, Vector3 rot)> CollecterBlocsChutantsDimension(SceneTree tree, int dimensionId)
+    private List<(byte id, Vector3 pos, Vector3 rot, byte indexBotanique)> CollecterBlocsChutantsDimension(SceneTree tree, int dimensionId)
     {
-        var aSauver = new List<(byte id, Vector3 pos, Vector3 rot)>();
+        var aSauver = new List<(byte id, Vector3 pos, Vector3 rot, byte indexBotanique)>();
         if (tree == null)
             return aSauver;
         foreach (Node n in tree.GetNodesInGroup("PersistantsBlocChutant"))
@@ -1156,12 +1156,15 @@ public partial class Joueur
             if (n is not BlocChutant bc || !GodotObject.IsInstanceValid(bc) || !bc.IsInsideTree()) continue;
             int id = bc.HasMeta("ID_Matiere") ? bc.GetMeta("ID_Matiere").AsInt32() : 0;
             if (id <= 0 || id > 255 || !EstBlocChutantPersistable(id)) continue;
-            aSauver.Add(((byte)id, bc.GlobalPosition, bc.GlobalRotationDegrees));
+            byte idxBot = byte.MaxValue;
+            if (bc.HasMeta("IndexBotanique"))
+                idxBot = (byte)Mathf.Clamp(bc.GetMeta("IndexBotanique").AsInt32(), 0, 255);
+            aSauver.Add(((byte)id, bc.GlobalPosition, bc.GlobalRotationDegrees, idxBot));
         }
         return aSauver;
     }
 
-    private void EcrireFichierBlocsChutants(string chemin, List<(byte id, Vector3 pos, Vector3 rot)> aSauver)
+    private void EcrireFichierBlocsChutants(string chemin, List<(byte id, Vector3 pos, Vector3 rot, byte indexBotanique)> aSauver)
     {
         using var w = new BinaryWriter(File.Open(chemin, FileMode.Create));
         w.Write(VersionPersistenceObjetsPoses);
@@ -1171,6 +1174,7 @@ public partial class Joueur
             w.Write(e.id);
             w.Write(e.pos.X); w.Write(e.pos.Y); w.Write(e.pos.Z);
             w.Write(e.rot.X); w.Write(e.rot.Y); w.Write(e.rot.Z);
+            w.Write(e.indexBotanique);
         }
     }
 
@@ -1221,7 +1225,7 @@ public partial class Joueur
                 GD.Print($"ZERO-K : Migration legacy blocs chutants détectée ({Path.GetFileName(cheminLegacy)} -> {Path.GetFileName(cheminDimension)}).");
             }
 
-            var entrees = new List<(byte id, Vector3 pos, Vector3 rot)>();
+            var entrees = new List<(byte id, Vector3 pos, Vector3 rot, byte indexBotanique)>();
             using (var r = new BinaryReader(File.Open(chemin, FileMode.Open, System.IO.FileAccess.Read, FileShare.Read)))
             {
                 int version = r.ReadInt32();
@@ -1236,7 +1240,8 @@ public partial class Joueur
                     byte id = r.ReadByte();
                     Vector3 pos = new Vector3(r.ReadSingle(), r.ReadSingle(), r.ReadSingle());
                     Vector3 rot = new Vector3(r.ReadSingle(), r.ReadSingle(), r.ReadSingle());
-                    entrees.Add((id, pos, rot));
+                    byte idxBot = version >= 5 ? r.ReadByte() : byte.MaxValue;
+                    entrees.Add((id, pos, rot, idxBot));
                 }
             }
 
@@ -1253,10 +1258,13 @@ public partial class Joueur
             foreach (var e in entrees)
             {
                 if (!EstBlocChutantPersistable(e.id)) continue;
+                byte essence = e.indexBotanique;
                 BlocChutant bloc = e.id == BlocChutant.ID_FEUILLE_ARRACHEE
-                    ? BlocChutant.CreerFeuillageArrache(e.pos, null)
+                    ? BlocChutant.CreerFeuillageArrache(e.pos, null, null, essence)
                     : BlocChutant.Creer(e.pos, e.id, matTerrain);
                 if (bloc == null) continue;
+                if (essence != byte.MaxValue && e.id != BlocChutant.ID_FEUILLE_ARRACHEE)
+                    bloc.SetMeta("IndexBotanique", (int)essence);
                 if (GetParent() != null)
                 {
                     if (IsInsideTree())
