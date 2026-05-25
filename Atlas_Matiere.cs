@@ -738,6 +738,68 @@ public static class Atlas_Matiere
             string nomRoche = ItemPhysique.TableGeologique[chim].Nom;
             return $"Plancher roche ({nomRoche})";
         }
+        if (id == Joueur.IdObjetMuretBois)
+        {
+            string essence = slot.IndexBotanique switch { 0 => "Chêne", 1 => "Bouleau", 2 => "Pin", 3 => "Sapin", 4 => "Fromager", _ => "Bois" };
+            return $"Muret bois ({essence})";
+        }
+        if (id == Joueur.IdObjetMuretPierre)
+        {
+            int chim = Mathf.Clamp(slot.IndexChimique, 0, ItemPhysique.TableGeologique.Length - 1);
+            string nomRoche = ItemPhysique.TableGeologique[chim].Nom;
+            return $"Muret roche ({nomRoche})";
+        }
+        if (id == Joueur.IdObjetMurBois)
+        {
+            string essence = slot.IndexBotanique switch { 0 => "Chêne", 1 => "Bouleau", 2 => "Pin", 3 => "Sapin", 4 => "Fromager", _ => "Bois" };
+            return $"Mur bois ({essence})";
+        }
+        if (id == Joueur.IdObjetMurBoisFenetre)
+        {
+            string EssenceBois(byte e) => e switch { 0 => "Chêne", 1 => "Bouleau", 2 => "Pin", 3 => "Sapin", 4 => "Fromager", _ => "Bois" };
+            byte essenceMur = slot.IndexBotanique;
+            byte essenceFenetre = (byte)Mathf.Clamp(slot.IndexChimique, 0, 4);
+            return $"Mur fenêtré ({EssenceBois(essenceMur)} / {EssenceBois(essenceFenetre)})";
+        }
+        if (id == Joueur.IdObjetMurBoisCadrePorte)
+        {
+            string essence = slot.IndexBotanique switch { 0 => "Chêne", 1 => "Bouleau", 2 => "Pin", 3 => "Sapin", 4 => "Fromager", _ => "Bois" };
+            return $"Mur cadre de porte ({essence})";
+        }
+        if (id == Joueur.IdObjetPorteBois)
+        {
+            string essence = slot.IndexBotanique switch { 0 => "Chêne", 1 => "Bouleau", 2 => "Pin", 3 => "Sapin", 4 => "Fromager", _ => "Bois" };
+            return $"Porte bois ({essence})";
+        }
+        if (id == Joueur.IdObjetToitChaume)
+        {
+            string ligature = slot.IndexBotanique switch
+            {
+                Joueur.TagVarianteLiane => "liane",
+                Joueur.TagVarianteHerbeSolide => "herbe solide",
+                Joueur.TagVarianteIntestin => "intestin",
+                Joueur.TagVarianteIntestinSolide => "intestin solide",
+                _ => "liane"
+            };
+            return $"Toit chaume ({ligature})";
+        }
+        if (id == Joueur.IdObjetTorche)
+        {
+            string ligature = slot.IndexBotanique switch
+            {
+                Joueur.TagVarianteLiane => "liane",
+                Joueur.TagVarianteHerbeSolide => "herbe solide",
+                Joueur.TagVarianteIntestin => "intestin",
+                Joueur.TagVarianteIntestinSolide => "intestin solide",
+                _ => "tissu"
+            };
+            return $"Torche ({ligature})";
+        }
+        if (id == Joueur.IdObjetFenetreBois)
+        {
+            string essence = slot.IndexBotanique switch { 0 => "Chêne", 1 => "Bouleau", 2 => "Pin", 3 => "Sapin", 4 => "Fromager", _ => "Bois" };
+            return $"Fenêtre bois ({essence})";
+        }
         if (id == Joueur.IdObjetMailletBois)
         {
             string essence = slot.IndexBotanique switch { 0 => "Chêne", 1 => "Bouleau", 2 => "Pin", 3 => "Sapin", 4 => "Fromager", _ => "Bois" };
@@ -1077,6 +1139,36 @@ public static class Atlas_Matiere
                     DurabiliteOutilMax = dMax,
                     DurabiliteOutilActuelle = dMax
                 };
+            }
+
+            bool aTissu = sA.ID == 21;
+            bool bTissu = sB.ID == 21;
+            bool aBranche = sA.ID == BlocChutant.ID_BRANCHE;
+            bool bBranche = sB.ID == BlocChutant.ID_BRANCHE;
+            if ((aTissu && bBranche) || (bTissu && aBranche))
+            {
+                int idxTissu = aTissu ? indicesIngredients[0] : indicesIngredients[1];
+                int idxBranche = aBranche ? indicesIngredients[0] : indicesIngredients[1];
+                int rowTissu = idxTissu / strideColonne;
+                int colTissu = idxTissu % strideColonne;
+                int rowBranche = idxBranche / strideColonne;
+                int colBranche = idxBranche % strideColonne;
+                bool tissuAuDessusBranche = colTissu == colBranche && rowBranche - rowTissu == 1;
+                if (tissuAuDessusBranche)
+                {
+                    SlotInventaire tissu = aTissu ? sA : sB;
+                    SlotInventaire branche = aBranche ? sA : sB;
+                    return new SlotInventaire
+                    {
+                        ID = Joueur.IdObjetTorche,
+                        IndexBotanique = branche.IndexBotanique,
+                        IndexChimique = tissu.IndexChimique,
+                        IndexMorphologique = tissu.IndexMorphologique,
+                        IndexTaille = 0,
+                        EstUnEclat = false,
+                        NiveauFracture = 0
+                    };
+                }
             }
 
             // 2 cordes d'herbe simples -> 1 corde d'herbe solide tier 2.
@@ -1612,19 +1704,16 @@ public static class Atlas_Matiere
                 }
             }
 
-            // Plancher roche : 3 roches moyennes (taille 2) côte à côte, même type chimique, ligne du milieu.
-            static bool EstRocheMoyenneSol(SlotInventaire s) =>
-                !s.EstVide && ItemPhysique.EstIdRocheMatiere(s.ID) && s.IndexTaille == 2;
-            static int TypeRocheSol(SlotInventaire s) =>
-                ItemPhysique.IndexChimiqueDepuisIdRoche(s.ID);
-
-            bool solRochePatron =
-                EstRocheMoyenneSol(grille[3])
-                && EstRocheMoyenneSol(grille[4])
-                && EstRocheMoyenneSol(grille[5])
-                && TypeRocheSol(grille[3]) == TypeRocheSol(grille[4])
-                && TypeRocheSol(grille[4]) == TypeRocheSol(grille[5]);
-            if (solRochePatron)
+            // Muret bois : 3 bûches standards pleines côte à côte, même essence, ligne du milieu.
+            static bool EstBuchePleineStandardMuret(SlotInventaire s) =>
+                !s.EstVide && s.ID == 30 && s.IndexMorphologique == 0 && s.IndexTaille == 1;
+            bool muretBoisPatron =
+                EstBuchePleineStandardMuret(grille[3])
+                && EstBuchePleineStandardMuret(grille[4])
+                && EstBuchePleineStandardMuret(grille[5])
+                && grille[3].IndexBotanique == grille[4].IndexBotanique
+                && grille[4].IndexBotanique == grille[5].IndexBotanique;
+            if (muretBoisPatron)
             {
                 bool autresVides = true;
                 for (int i = 0; i < 9; i++)
@@ -1640,15 +1729,289 @@ public static class Atlas_Matiere
                 {
                     return new SlotInventaire
                     {
-                        ID = Joueur.IdObjetSolRoche,
-                        IndexBotanique = 0,
-                        IndexChimique = TypeRocheSol(grille[3]),
+                        ID = Joueur.IdObjetMuretBois,
+                        IndexBotanique = grille[3].IndexBotanique,
+                        IndexChimique = 0,
                         IndexMorphologique = 0,
                         IndexTaille = 0,
                         NiveauFracture = MaxFractureSlots(grille),
                         EstUnEclat = false
                     };
                 }
+            }
+
+            // Mur bois : 9 bûches standards pleines (3x3), toutes de la même essence.
+            bool murBoisPatron = true;
+            byte essenceMurBois = 0;
+            for (int i = 0; i < 9; i++)
+            {
+                SlotInventaire s = grille[i];
+                bool estBucheStandardPleine = !s.EstVide && s.ID == 30 && s.IndexMorphologique == 0 && s.IndexTaille == 1;
+                if (!estBucheStandardPleine)
+                {
+                    murBoisPatron = false;
+                    break;
+                }
+                if (i == 0)
+                    essenceMurBois = s.IndexBotanique;
+                else if (s.IndexBotanique != essenceMurBois)
+                {
+                    murBoisPatron = false;
+                    break;
+                }
+            }
+            if (murBoisPatron)
+            {
+                return new SlotInventaire
+                {
+                    ID = Joueur.IdObjetMurBois,
+                    IndexBotanique = essenceMurBois,
+                    IndexChimique = 0,
+                    IndexMorphologique = 0,
+                    IndexTaille = 0,
+                    NiveauFracture = MaxFractureSlots(grille),
+                    EstUnEclat = false
+                };
+            }
+
+            // Mur bois fenêtré :
+            // (B)(B)(B)
+            // (B)(F)(B)
+            // (B)(B)(B)
+            // avec B = bûche standard pleine (toutes de la même essence), F = fenêtre bois.
+            static bool EstBuchePleineStandardMurFenetre(SlotInventaire s) =>
+                !s.EstVide && s.ID == 30 && s.IndexMorphologique == 0 && s.IndexTaille == 1;
+            bool murFenetrePatron =
+                EstBuchePleineStandardMurFenetre(grille[0]) && EstBuchePleineStandardMurFenetre(grille[1]) && EstBuchePleineStandardMurFenetre(grille[2]) &&
+                EstBuchePleineStandardMurFenetre(grille[3]) && !grille[4].EstVide && grille[4].ID == Joueur.IdObjetFenetreBois && EstBuchePleineStandardMurFenetre(grille[5]) &&
+                EstBuchePleineStandardMurFenetre(grille[6]) && EstBuchePleineStandardMurFenetre(grille[7]) && EstBuchePleineStandardMurFenetre(grille[8]);
+            if (murFenetrePatron)
+            {
+                byte essenceMur = grille[0].IndexBotanique;
+                bool buchesMemesEssence =
+                    grille[1].IndexBotanique == essenceMur
+                    && grille[2].IndexBotanique == essenceMur
+                    && grille[3].IndexBotanique == essenceMur
+                    && grille[5].IndexBotanique == essenceMur
+                    && grille[6].IndexBotanique == essenceMur
+                    && grille[7].IndexBotanique == essenceMur
+                    && grille[8].IndexBotanique == essenceMur;
+                if (buchesMemesEssence)
+                {
+                    return new SlotInventaire
+                    {
+                        ID = Joueur.IdObjetMurBoisFenetre,
+                        IndexBotanique = essenceMur,
+                        // La fenêtre intégrée garde l'essence de la fenêtre composant craftée.
+                        IndexChimique = grille[4].IndexBotanique,
+                        IndexMorphologique = 0,
+                        IndexTaille = 0,
+                        NiveauFracture = MaxFractureSlots(grille),
+                        EstUnEclat = false
+                    };
+                }
+            }
+
+            // Mur cadre de porte bois :
+            // (B)(B)(B)
+            // (B)( )(B)
+            // (B)( )(B)
+            // avec B = bûche standard pleine, toutes de la même essence.
+            static bool EstBuchePleineStandardMurCadre(SlotInventaire s) =>
+                !s.EstVide && s.ID == 30 && s.IndexMorphologique == 0 && s.IndexTaille == 1;
+            bool murCadrePortePatron =
+                EstBuchePleineStandardMurCadre(grille[0]) && EstBuchePleineStandardMurCadre(grille[1]) && EstBuchePleineStandardMurCadre(grille[2]) &&
+                EstBuchePleineStandardMurCadre(grille[3]) && grille[4].EstVide && EstBuchePleineStandardMurCadre(grille[5]) &&
+                EstBuchePleineStandardMurCadre(grille[6]) && grille[7].EstVide && EstBuchePleineStandardMurCadre(grille[8]);
+            if (murCadrePortePatron)
+            {
+                byte essenceMurCadre = grille[0].IndexBotanique;
+                bool memeEssence =
+                    grille[1].IndexBotanique == essenceMurCadre
+                    && grille[2].IndexBotanique == essenceMurCadre
+                    && grille[3].IndexBotanique == essenceMurCadre
+                    && grille[5].IndexBotanique == essenceMurCadre
+                    && grille[6].IndexBotanique == essenceMurCadre
+                    && grille[8].IndexBotanique == essenceMurCadre;
+                if (memeEssence)
+                {
+                    return new SlotInventaire
+                    {
+                        ID = Joueur.IdObjetMurBoisCadrePorte,
+                        IndexBotanique = essenceMurCadre,
+                        IndexChimique = 0,
+                        IndexMorphologique = 0,
+                        IndexTaille = 0,
+                        NiveauFracture = MaxFractureSlots(grille),
+                        EstUnEclat = false
+                    };
+                }
+            }
+
+            // Porte bois :
+            // ( )(DB)( )
+            // ( )(DB)( )
+            // ( )(DB)( )
+            // DB = demi-bûche standard fendue en 2 (ID 30, morpho 1, taille 1), même essence.
+            bool porteBoisPatron =
+                grille[0].EstVide && EstDemiBucheStandardFondation(grille[1]) && grille[2].EstVide
+                && grille[3].EstVide && EstDemiBucheStandardFondation(grille[4]) && grille[5].EstVide
+                && grille[6].EstVide && EstDemiBucheStandardFondation(grille[7]) && grille[8].EstVide;
+            if (porteBoisPatron)
+            {
+                byte essencePorte = grille[1].IndexBotanique;
+                bool memeEssence =
+                    grille[4].IndexBotanique == essencePorte
+                    && grille[7].IndexBotanique == essencePorte;
+                if (memeEssence)
+                {
+                    return new SlotInventaire
+                    {
+                        ID = Joueur.IdObjetPorteBois,
+                        IndexBotanique = essencePorte,
+                        IndexChimique = 0,
+                        IndexMorphologique = 0,
+                        IndexTaille = 0,
+                        NiveauFracture = MaxFractureSlots(grille),
+                        EstUnEclat = false
+                    };
+                }
+            }
+
+            // Toit chaume :
+            // ( )(L)( )
+            // (L)(Br)(L)
+            // ( )( )( )
+            // L = ligature (corde/liane), Br = branche brute.
+            bool toitChaumePatron =
+                grille[0].EstVide && EstSlotCordeOuLianeCraft(grille[1]) && grille[2].EstVide
+                && EstSlotCordeOuLianeCraft(grille[3]) && !grille[4].EstVide && grille[4].ID == BlocChutant.ID_BRANCHE && EstSlotCordeOuLianeCraft(grille[5])
+                && grille[6].EstVide && grille[7].EstVide && grille[8].EstVide;
+            if (toitChaumePatron)
+            {
+                SlotInventaire ligA = grille[1];
+                SlotInventaire ligB = grille[3];
+                SlotInventaire ligC = grille[5];
+                bool ligaturesIdentiques =
+                    MemeVarianteLigature(ligA, ligB)
+                    && MemeVarianteLigature(ligA, ligC)
+                    && Joueur.SontEmpilables(ligA, ligB)
+                    && Joueur.SontEmpilables(ligA, ligC);
+                if (ligaturesIdentiques)
+                {
+                    byte varianteLig = VarianteLigatureCraft(ligA);
+                    return new SlotInventaire
+                    {
+                        ID = Joueur.IdObjetToitChaume,
+                        // La texture du toit suit la variante de ligature utilisée au craft.
+                        IndexBotanique = varianteLig,
+                        IndexChimique = ligA.IndexChimique,
+                        IndexMorphologique = ligA.IndexMorphologique,
+                        IndexTaille = 0,
+                        NiveauFracture = Mathf.Max(Mathf.Max(ligA.NiveauFracture, ligB.NiveauFracture), Mathf.Max(ligC.NiveauFracture, grille[4].NiveauFracture)),
+                        EstUnEclat = false
+                    };
+                }
+            }
+
+            // Fenêtre bois (composant) :
+            // (L)(DB)(L)
+            // (DB)(B)(DB)
+            // (L)(DB)(L)
+            bool fenetreBoisPatron =
+                EstSlotCordeOuLianeCraft(grille[0]) && EstDemiBucheStandardFondation(grille[1]) && EstSlotCordeOuLianeCraft(grille[2]) &&
+                EstDemiBucheStandardFondation(grille[3]) && EstSlotBatonCraft(grille[4]) && EstDemiBucheStandardFondation(grille[5]) &&
+                EstSlotCordeOuLianeCraft(grille[6]) && EstDemiBucheStandardFondation(grille[7]) && EstSlotCordeOuLianeCraft(grille[8]);
+            if (fenetreBoisPatron)
+            {
+                bool boisUniformes =
+                    grille[1].IndexBotanique == grille[3].IndexBotanique
+                    && grille[3].IndexBotanique == grille[5].IndexBotanique
+                    && grille[5].IndexBotanique == grille[7].IndexBotanique
+                    && grille[7].IndexBotanique == grille[4].IndexBotanique;
+                bool ligaturesUniformes =
+                    MemeVarianteLigature(grille[0], grille[2])
+                    && MemeVarianteLigature(grille[0], grille[6])
+                    && MemeVarianteLigature(grille[0], grille[8]);
+                if (boisUniformes && ligaturesUniformes)
+                {
+                    return new SlotInventaire
+                    {
+                        ID = Joueur.IdObjetFenetreBois,
+                        IndexBotanique = grille[1].IndexBotanique,
+                        IndexChimique = grille[0].IndexChimique,
+                        IndexMorphologique = grille[0].IndexMorphologique,
+                        IndexTaille = 0,
+                        NiveauFracture = MaxFractureSlots(grille),
+                        EstUnEclat = false
+                    };
+                }
+            }
+
+            // Muret pierre : 3 roches moyennes côte à côte, même type, ligne du milieu.
+            static bool EstRocheMoyenneMuret(SlotInventaire s) =>
+                !s.EstVide && ItemPhysique.EstIdRocheMatiere(s.ID) && s.IndexTaille == 2;
+            static int TypeRocheMuret(SlotInventaire s) =>
+                ItemPhysique.IndexChimiqueDepuisIdRoche(s.ID);
+
+            bool muretPierreMilieu =
+                EstRocheMoyenneMuret(grille[3])
+                && EstRocheMoyenneMuret(grille[4])
+                && EstRocheMoyenneMuret(grille[5])
+                && TypeRocheMuret(grille[3]) == TypeRocheMuret(grille[4])
+                && TypeRocheMuret(grille[4]) == TypeRocheMuret(grille[5])
+                && grille[0].EstVide && grille[1].EstVide && grille[2].EstVide
+                && grille[6].EstVide && grille[7].EstVide && grille[8].EstVide;
+            if (muretPierreMilieu)
+            {
+                int idxType = TypeRocheMuret(grille[3]);
+                return new SlotInventaire
+                {
+                    ID = Joueur.IdObjetMuretPierre,
+                    IndexBotanique = 0,
+                    IndexChimique = idxType,
+                    IndexMorphologique = 0,
+                    IndexTaille = 0,
+                    NiveauFracture = MaxFractureSlots(grille),
+                    EstUnEclat = false
+                };
+            }
+
+            // Plancher roche : 3 roches moyennes (taille 2) côte à côte, même type chimique, ligne du haut ou du bas.
+            static bool EstRocheMoyenneSol(SlotInventaire s) =>
+                !s.EstVide && ItemPhysique.EstIdRocheMatiere(s.ID) && s.IndexTaille == 2;
+            static int TypeRocheSol(SlotInventaire s) =>
+                ItemPhysique.IndexChimiqueDepuisIdRoche(s.ID);
+
+            bool solRocheHaut =
+                EstRocheMoyenneSol(grille[0])
+                && EstRocheMoyenneSol(grille[1])
+                && EstRocheMoyenneSol(grille[2])
+                && TypeRocheSol(grille[0]) == TypeRocheSol(grille[1])
+                && TypeRocheSol(grille[1]) == TypeRocheSol(grille[2])
+                && grille[3].EstVide && grille[4].EstVide && grille[5].EstVide
+                && grille[6].EstVide && grille[7].EstVide && grille[8].EstVide;
+            bool solRocheBas =
+                EstRocheMoyenneSol(grille[6])
+                && EstRocheMoyenneSol(grille[7])
+                && EstRocheMoyenneSol(grille[8])
+                && TypeRocheSol(grille[6]) == TypeRocheSol(grille[7])
+                && TypeRocheSol(grille[7]) == TypeRocheSol(grille[8])
+                && grille[0].EstVide && grille[1].EstVide && grille[2].EstVide
+                && grille[3].EstVide && grille[4].EstVide && grille[5].EstVide;
+            if (solRocheHaut || solRocheBas)
+            {
+                int idxType = solRocheHaut ? TypeRocheSol(grille[0]) : TypeRocheSol(grille[6]);
+                return new SlotInventaire
+                {
+                    ID = Joueur.IdObjetSolRoche,
+                    IndexBotanique = 0,
+                    IndexChimique = idxType,
+                    IndexMorphologique = 0,
+                    IndexTaille = 0,
+                    NiveauFracture = MaxFractureSlots(grille),
+                    EstUnEclat = false
+                };
             }
         }
 

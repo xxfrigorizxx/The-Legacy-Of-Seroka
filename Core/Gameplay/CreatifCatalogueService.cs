@@ -5,7 +5,7 @@ using System.Reflection;
 /// <summary>Construction du catalogue inventaire créatif/admin (variantes + IDs objets manquants).</summary>
 public static class CreatifCatalogueService
 {
-    public const int VersionCatalogue = 5;
+    public const int VersionCatalogue = 14;
 
     public enum CategorieCreatif
     {
@@ -46,6 +46,12 @@ public static class CreatifCatalogueService
         Joueur.IdObjetMortierPilonBois,
         Joueur.IdObjetSolBois,
         Joueur.IdObjetSolRoche,
+        Joueur.IdObjetMuretBois,
+        Joueur.IdObjetMurBois,
+        Joueur.IdObjetMurBoisCadrePorte,
+        Joueur.IdObjetPorteBois,
+        Joueur.IdObjetTorche,
+        Joueur.IdObjetFenetreBois,
         Joueur.IdObjetBandageTier1
     };
 
@@ -70,6 +76,21 @@ public static class CreatifCatalogueService
             if (id <= 0 || idsPresents.Contains(id))
                 continue;
 
+            if (id == Joueur.IdObjetMurBoisFenetre)
+            {
+                foreach (byte essenceMur in EssencesBois)
+                {
+                    foreach (byte essenceFenetre in EssencesBois)
+                    {
+                        ajouter(
+                            new SlotInventaire { ID = id, IndexBotanique = essenceMur, IndexChimique = essenceFenetre, Quantite = 1 },
+                            CategorieCreatif.Structures,
+                            $"Mur {NomEssence(essenceMur)} / Fenêtre {NomEssence(essenceFenetre)}");
+                    }
+                }
+                continue;
+            }
+
             if (AccepteVariantesEssenceBois(id))
             {
                 foreach (byte essence in EssencesBois)
@@ -83,6 +104,18 @@ public static class CreatifCatalogueService
             }
 
             if (id == Joueur.IdObjetFondationRoche)
+            {
+                for (int chim = 0; chim < ItemPhysique.TableGeologique.Length; chim++)
+                {
+                    ajouter(
+                        new SlotInventaire { ID = id, IndexChimique = chim, Quantite = 1 },
+                        CategorieCreatif.Structures,
+                        ItemPhysique.TableGeologique[chim].Nom);
+                }
+                continue;
+            }
+
+            if (id == Joueur.IdObjetMuretPierre)
             {
                 for (int chim = 0; chim < ItemPhysique.TableGeologique.Length; chim++)
                 {
@@ -121,7 +154,8 @@ public static class CreatifCatalogueService
             || id == Joueur.IdObjetPitFeu || id == Joueur.IdObjetPitFeuRoche
             || id == Joueur.IdObjetFondationBois || id == Joueur.IdObjetFondationRoche
             || id == Joueur.IdObjetFondationBoisSoleRoche || id == Joueur.IdObjetFondationRocheSoleBois
-            || id == Joueur.IdObjetSolBois || id == Joueur.IdObjetSolRoche || id == Joueur.IdObjetMailletBois
+            || id == Joueur.IdObjetSolBois || id == Joueur.IdObjetSolRoche || id == Joueur.IdObjetMuretBois || id == Joueur.IdObjetMuretPierre || id == Joueur.IdObjetMurBois || id == Joueur.IdObjetMurBoisFenetre || id == Joueur.IdObjetMurBoisCadrePorte || id == Joueur.IdObjetPorteBois || id == Joueur.IdObjetToitChaume || id == Joueur.IdObjetMailletBois
+            || id == Joueur.IdObjetTorche || id == Joueur.IdObjetFenetreBois
             || id == Joueur.IdObjetBolBois || id == Joueur.IdObjetMortierPilonBois)
             return CategorieCreatif.Structures;
         if (id == 105 || id == 106 || id == Joueur.IdObjetHachePierreTier1

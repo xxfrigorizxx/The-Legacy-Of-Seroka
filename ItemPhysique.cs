@@ -49,7 +49,15 @@ public partial class ItemPhysique : RigidBody3D
 		|| idObjet == Joueur.IdObjetFondationBoisSoleRoche
 		|| idObjet == Joueur.IdObjetFondationRocheSoleBois
 		|| idObjet == Joueur.IdObjetSolBois
-		|| idObjet == Joueur.IdObjetSolRoche;
+		|| idObjet == Joueur.IdObjetSolRoche
+		|| idObjet == Joueur.IdObjetMuretBois
+		|| idObjet == Joueur.IdObjetMuretPierre
+		|| idObjet == Joueur.IdObjetMurBois
+		|| idObjet == Joueur.IdObjetMurBoisFenetre
+		|| idObjet == Joueur.IdObjetMurBoisCadrePorte
+		|| idObjet == Joueur.IdObjetPorteBois
+		|| idObjet == Joueur.IdObjetToitChaume
+		|| idObjet == Joueur.IdObjetTorche;
 
 	private const float SeuilMasseObjetLegerKg = 35f;
 	private const float SeuilHauteurObjetPetitMetres = 0.6f;
@@ -344,6 +352,9 @@ public partial class ItemPhysique : RigidBody3D
 	private double _pitFeuRocheResteSec = 0d;
 	private double _pitFeuRocheDernierSyncRestantSec = -1d;
 	private double _pitFeuRocheProgressCuissonSec = 0d;
+	private const string MetaTorcheAllumee = "TorcheAllumee";
+	private Node3D _torcheFlamme;
+	private OmniLight3D _torcheLight;
 
 	private Gestionnaire_Monde ObtenirGestionnaireMonde()
 	{
@@ -560,6 +571,182 @@ public partial class ItemPhysique : RigidBody3D
 			Emission = new Color(1f, 0.6f, 0.22f),
 			EmissionEnergyMultiplier = 1.9f
 		};
+	}
+
+	public static void AttacherVisuelFlammeTorche(Node3D parent)
+	{
+		if (parent == null || !GodotObject.IsInstanceValid(parent))
+			return;
+		Node3D racine = parent.GetNodeOrNull<Node3D>("TorcheFlamme");
+		if (racine == null)
+		{
+			racine = new Node3D
+			{
+				Name = "TorcheFlamme",
+				Position = new Vector3(0f, 0.86f, 0f)
+			};
+			StandardMaterial3D mat = CreerMateriauFlammePitTexture();
+			for (int i = 0; i < 3; i++)
+			{
+				var plan = new MeshInstance3D
+				{
+					Name = $"FlammeTorchePlan{i}",
+					Mesh = new QuadMesh { Size = new Vector2(0.20f, 0.32f) },
+					CastShadow = GeometryInstance3D.ShadowCastingSetting.Off,
+					Position = new Vector3(0f, i * 0.02f, 0f),
+					RotationDegrees = new Vector3(0f, i * 60f, 0f),
+					MaterialOverride = mat
+				};
+				racine.AddChild(plan);
+			}
+
+			var flammes = new GpuParticles3D
+			{
+				Name = "TorcheFlammesParticles",
+				Amount = 54,
+				Explosiveness = 0f,
+				Lifetime = 0.68,
+				OneShot = false,
+				Emitting = true,
+				Position = new Vector3(0f, 0.03f, 0f)
+			};
+			var meshFlamme = new QuadMesh { Size = new Vector2(0.18f, 0.24f) };
+			meshFlamme.Material = CreerMateriauFlammePitTexture();
+			flammes.DrawPass1 = meshFlamme;
+			flammes.ProcessMaterial = new ParticleProcessMaterial
+			{
+				Direction = new Vector3(0f, 1f, 0f),
+				Gravity = new Vector3(0f, 1.2f, 0f),
+				InitialVelocityMin = 0.045f,
+				InitialVelocityMax = 0.15f,
+				ScaleMin = 0.42f,
+				ScaleMax = 0.98f
+			};
+			racine.AddChild(flammes);
+
+			var fumee = new GpuParticles3D
+			{
+				Name = "TorcheFumeeParticles",
+				Amount = 16,
+				Explosiveness = 0f,
+				Lifetime = 2.5,
+				OneShot = false,
+				Emitting = true,
+				Position = new Vector3(0f, 0.12f, 0f),
+				VisibilityAabb = new Aabb(new Vector3(-0.8f, -0.4f, -0.8f), new Vector3(1.6f, 2.2f, 1.6f))
+			};
+			var meshFumee = new SphereMesh { Radius = 0.04f, Height = 0.08f, RadialSegments = 8, Rings = 6 };
+			meshFumee.Material = new StandardMaterial3D
+			{
+				AlbedoColor = new Color(0.72f, 0.72f, 0.72f, 0.52f),
+				Transparency = BaseMaterial3D.TransparencyEnum.Alpha,
+				ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
+				CullMode = BaseMaterial3D.CullModeEnum.Disabled
+			};
+			fumee.DrawPass1 = meshFumee;
+			fumee.ProcessMaterial = new ParticleProcessMaterial
+			{
+				Direction = new Vector3(0f, 1f, 0f),
+				Gravity = new Vector3(0f, 0.28f, 0f),
+				InitialVelocityMin = 0.012f,
+				InitialVelocityMax = 0.06f,
+				ScaleMin = 0.22f,
+				ScaleMax = 0.66f
+			};
+			racine.AddChild(fumee);
+			parent.AddChild(racine);
+		}
+		racine.Visible = true;
+
+		OmniLight3D light = parent.GetNodeOrNull<OmniLight3D>("TorcheLumiere");
+		if (light == null)
+		{
+			light = new OmniLight3D
+			{
+				Name = "TorcheLumiere",
+				LightColor = new Color(1.0f, 0.62f, 0.30f),
+				LightEnergy = 1.7f,
+				OmniRange = 5.1f,
+				Position = new Vector3(0f, 0.90f, 0f)
+			};
+			parent.AddChild(light);
+		}
+		light.Visible = true;
+	}
+
+	private void ActiverVisuelTorche(bool actif)
+	{
+		if (ID_Objet != Joueur.IdObjetTorche)
+			return;
+		if (actif)
+			AttacherVisuelFlammeTorche(this);
+		_torcheFlamme = GetNodeOrNull<Node3D>("TorcheFlamme");
+		_torcheLight = GetNodeOrNull<OmniLight3D>("TorcheLumiere");
+		if (_torcheFlamme != null)
+		{
+			_torcheFlamme.Visible = actif;
+			GpuParticles3D flammes = _torcheFlamme.GetNodeOrNull<GpuParticles3D>("TorcheFlammesParticles");
+			GpuParticles3D fumee = _torcheFlamme.GetNodeOrNull<GpuParticles3D>("TorcheFumeeParticles");
+			if (flammes != null)
+			{
+				flammes.Emitting = actif;
+				flammes.Visible = actif;
+			}
+			if (fumee != null)
+			{
+				fumee.Emitting = actif;
+				fumee.Visible = actif;
+			}
+		}
+		if (_torcheLight != null)
+			_torcheLight.Visible = actif;
+	}
+
+	private void SynchroniserGenomeTorche(bool allumee)
+	{
+		if (ID_Objet != Joueur.IdObjetTorche)
+			return;
+		GenomeAssemblage = allumee ? "TORCHE:1" : "TORCHE:0";
+		SetMeta(Joueur.MetaGenomeAssemblage, GenomeAssemblage);
+		SetMeta(MetaTorcheAllumee, allumee);
+	}
+
+	public bool EstTorcheAllumee()
+	{
+		if (ID_Objet != Joueur.IdObjetTorche)
+			return false;
+		if ((GenomeAssemblage ?? "").StartsWith("TORCHE:1", StringComparison.Ordinal))
+			return true;
+		return HasMeta(MetaTorcheAllumee) && GetMeta(MetaTorcheAllumee).AsBool();
+	}
+
+	public bool ActiverTorcheAllumee()
+	{
+		if (ID_Objet != Joueur.IdObjetTorche || EstTorcheAllumee())
+			return false;
+		ActiverVisuelTorche(true);
+		SynchroniserGenomeTorche(true);
+		return true;
+	}
+
+	public bool EteindreTorche()
+	{
+		if (ID_Objet != Joueur.IdObjetTorche || !EstTorcheAllumee())
+			return false;
+		ActiverVisuelTorche(false);
+		SynchroniserGenomeTorche(false);
+		return true;
+	}
+
+	private void ChargerEtatTorcheDepuisGenome()
+	{
+		if (ID_Objet != Joueur.IdObjetTorche)
+			return;
+		bool allumee = (GenomeAssemblage ?? "").StartsWith("TORCHE:1", StringComparison.Ordinal);
+		if (!allumee && HasMeta(MetaTorcheAllumee))
+			allumee = GetMeta(MetaTorcheAllumee).AsBool();
+		ActiverVisuelTorche(allumee);
+		SynchroniserGenomeTorche(allumee);
 	}
 
 	private void SynchroniserGenomePitFeuDepuisReste()
@@ -1176,11 +1363,49 @@ public partial class ItemPhysique : RigidBody3D
 			FreezeMode = FreezeModeEnum.Static;
 			return;
 		}
+		if (ID_Objet == Joueur.IdObjetMuretBois || ID_Objet == Joueur.IdObjetMuretPierre || ID_Objet == Joueur.IdObjetMurBois || ID_Objet == Joueur.IdObjetMurBoisFenetre || ID_Objet == Joueur.IdObjetMurBoisCadrePorte || ID_Objet == Joueur.IdObjetPorteBois || ID_Objet == Joueur.IdObjetToitChaume)
+		{
+			Mass = ID_Objet == Joueur.IdObjetPorteBois
+				? 18f
+				: (ID_Objet == Joueur.IdObjetToitChaume
+					? 14f
+					: ((ID_Objet == Joueur.IdObjetMurBois || ID_Objet == Joueur.IdObjetMurBoisFenetre || ID_Objet == Joueur.IdObjetMurBoisCadrePorte) ? 24f : 16f));
+			GravityScale = 0f;
+			ResistanceActuelle = 76f;
+			Scale = Vector3.One;
+			LinearVelocity = Vector3.Zero;
+			AngularVelocity = Vector3.Zero;
+			Sleeping = true;
+			Freeze = true;
+			FreezeMode = FreezeModeEnum.Static;
+			return;
+		}
+		if (ID_Objet == Joueur.IdObjetTorche)
+		{
+			Mass = 6f;
+			GravityScale = 0f;
+			ResistanceActuelle = 22f;
+			Scale = Vector3.One;
+			LinearVelocity = Vector3.Zero;
+			AngularVelocity = Vector3.Zero;
+			Sleeping = true;
+			Freeze = true;
+			FreezeMode = FreezeModeEnum.Static;
+			ChargerEtatTorcheDepuisGenome();
+			return;
+		}
 		if (ID_Objet == Joueur.IdObjetAllumeFeu)
 		{
 			IndexChimique = Mathf.Clamp(IndexChimique, 10, 11);
 			Mass = 0.26f;
 			ResistanceActuelle = 24f;
+			Scale = Vector3.One;
+			return;
+		}
+		if (ID_Objet == Joueur.IdObjetFenetreBois)
+		{
+			Mass = 6.5f;
+			ResistanceActuelle = 26f;
 			Scale = Vector3.One;
 			return;
 		}
@@ -1635,7 +1860,7 @@ public partial class ItemPhysique : RigidBody3D
 	{
 		if (EstMatiereSilexParIdObjet(ID_Objet)) return 80f;
 		if (EstIdRocheMatiere(ID_Objet)) return 50f;
-		if (ID_Objet == 30 || ID_Objet == 32 || ID_Objet == BlocChutant.ID_BRANCHE || ID_Objet == Joueur.IdObjetPitFeu || ID_Objet == Joueur.IdObjetPitFeuRoche) return 40f; // Bois mort durci
+		if (ID_Objet == 30 || ID_Objet == 32 || ID_Objet == BlocChutant.ID_BRANCHE || ID_Objet == Joueur.IdObjetPitFeu || ID_Objet == Joueur.IdObjetPitFeuRoche || ID_Objet == Joueur.IdObjetTorche || ID_Objet == Joueur.IdObjetFenetreBois) return 40f; // Bois mort durci
 		if (ID_Objet == Joueur.IdObjetAllumeFeu) return 44f;
 		return 10f; // Matières souples ou organiques
 	}
@@ -1655,7 +1880,7 @@ public partial class ItemPhysique : RigidBody3D
 			degats *= 0.060f;
 			capPourcent = 0.26f;
 		}
-		else if (ID_Objet == 30 || ID_Objet == 32 || ID_Objet == BlocChutant.ID_BRANCHE || ID_Objet == Joueur.IdObjetPitFeu || ID_Objet == Joueur.IdObjetPitFeuRoche)
+		else if (ID_Objet == 30 || ID_Objet == 32 || ID_Objet == BlocChutant.ID_BRANCHE || ID_Objet == Joueur.IdObjetPitFeu || ID_Objet == Joueur.IdObjetPitFeuRoche || ID_Objet == Joueur.IdObjetTorche || ID_Objet == Joueur.IdObjetFenetreBois)
 		{
 			degats *= 0.080f;
 			capPourcent = 0.34f;

@@ -156,6 +156,24 @@ public partial class Joueur : CharacterBody3D
     public const int IdObjetSolBois = 136;
     /// <summary>Plancher roche (3 roches moyennes côte à côte, même type) posé sur une fondation.</summary>
     public const int IdObjetSolRoche = 137;
+    /// <summary>Muret bois (4 m de long, 1 m de haut) à fixer sur le côté des fondations.</summary>
+    public const int IdObjetMuretBois = 138;
+    /// <summary>Muret pierre (4 m de long, 1 m de haut) à fixer sur le côté des fondations.</summary>
+    public const int IdObjetMuretPierre = 139;
+    /// <summary>Mur bois (4 m de large, 3 m de haut) à poser sur les murets.</summary>
+    public const int IdObjetMurBois = 140;
+    /// <summary>Mur bois avec fenêtre (4 m de large, 3 m de haut), double essence (mur + fenêtre).</summary>
+    public const int IdObjetMurBoisFenetre = 141;
+    /// <summary>Mur bois cadre de porte (4 m de large, 3 m de haut), essence unique.</summary>
+    public const int IdObjetMurBoisCadrePorte = 142;
+    /// <summary>Porte bois (ouvrable/fermable avec E), à poser dans un mur cadre de porte.</summary>
+    public const int IdObjetPorteBois = 143;
+    /// <summary>Toit chaume modulaire (solo/long/L/carré selon voisins), variante via liage.</summary>
+    public const int IdObjetToitChaume = 144;
+    /// <summary>Torche posable (sol/mur), allumable à l'allume-feu.</summary>
+    public const int IdObjetTorche = 145;
+    /// <summary>Fenêtre bois craftable (composant), base pour mur fenêtré.</summary>
+    public const int IdObjetFenetreBois = 146;
     /// <summary>Emprise horizontale des planchers posés (carré X×Z, léger débord sur fondation 4 m).</summary>
     public const float PlancherEmpriseMetres = 4.1f;
     /// <summary>Épaisseur des planchers bois / roche.</summary>
@@ -211,6 +229,16 @@ public partial class Joueur : CharacterBody3D
     private static bool EstIdSolBois(int id) => id == IdObjetSolBois;
     private static bool EstIdSolRoche(int id) => id == IdObjetSolRoche;
     private static bool EstIdPlancher(int id) => EstIdSolBois(id) || EstIdSolRoche(id);
+    private static bool EstIdMuretBois(int id) => id == IdObjetMuretBois;
+    private static bool EstIdMuretPierre(int id) => id == IdObjetMuretPierre;
+    private static bool EstIdMuret(int id) => EstIdMuretBois(id) || EstIdMuretPierre(id);
+    private static bool EstIdMurBoisSimple(int id) => id == IdObjetMurBois;
+    private static bool EstIdMurBoisFenetre(int id) => id == IdObjetMurBoisFenetre;
+    private static bool EstIdMurBoisCadrePorte(int id) => id == IdObjetMurBoisCadrePorte;
+    private static bool EstIdMurBois(int id) => EstIdMurBoisSimple(id) || EstIdMurBoisFenetre(id) || EstIdMurBoisCadrePorte(id);
+    private static bool EstIdPorteBois(int id) => id == IdObjetPorteBois;
+    private static bool EstIdToitChaume(int id) => id == IdObjetToitChaume;
+    private static bool EstIdTorche(int id) => id == IdObjetTorche;
 
     /// <summary>Albedo procédural (main, sol, GLB teinté).</summary>
     public static Color ObtenirCouleurAlbedoBaie(int indexChimique)
@@ -593,6 +621,7 @@ public partial class Joueur : CharacterBody3D
     private const string MetaSignatureMailletBois128 = "SigMailletBois128";
     private const string MetaSignatureBolBois129 = "SigBolBois129";
     private const string MetaSignatureMortierPilon130 = "SigMortierPilon130";
+    private const string MetaSignatureFenetreBois146 = "SigFenetreBois146";
     private const string MetaSignatureTableAnalyse131 = "SigTableAnalyse131";
     private const string MetaSignatureAtelleJambe133 = "SigAtelleJambe133";
     private const string MetaSignatureAtelleBras134 = "SigAtelleBras134";
@@ -612,6 +641,8 @@ public partial class Joueur : CharacterBody3D
     private float _rotationManuelleZ = 0f;
     /// <summary>Étages supplémentaires en mode pose fondation (molette / Page Haut-Bas), pas de limite basse.</summary>
     private int _offsetEtagesFondationManuel = 0;
+    /// <summary>Mode snap muret manuel (0:auto, 1:fondation, 2:muret, 3:terrain).</summary>
+    private int _modeSnapMuretManuel = 0;
     private bool _modePlacementStructureActif;
     private bool _modePlacementLancerShiftActif;
     private Node3D _ghostPlacementStructure;
@@ -4419,6 +4450,7 @@ void fragment()
         _rotationManuelleY = 0f;
         _rotationManuelleZ = 0f;
         _offsetEtagesFondationManuel = 0;
+        _modeSnapMuretManuel = 0;
     }
 
     private static bool EstStructureSupporteeModePlacement(int id)
@@ -4431,7 +4463,12 @@ void fragment()
             || id == IdObjetPitFeu
             || id == IdObjetPitFeuRoche
             || EstIdFondation(id)
-            || EstIdPlancher(id);
+            || EstIdPlancher(id)
+            || EstIdMuret(id)
+            || EstIdMurBois(id)
+            || EstIdPorteBois(id)
+            || EstIdToitChaume(id)
+            || EstIdTorche(id);
     }
 
     private bool EstModePlacementStructurePourSlot(SlotInventaire mainActive)
@@ -4538,6 +4575,23 @@ void fragment()
                 InstancierModeleSolBois(meshRoot, mainActive, true);
             else if (EstIdSolRoche(mainActive.ID))
                 InstancierModeleSolRoche(meshRoot, mainActive, true);
+            else if (EstIdMuret(mainActive.ID))
+                InstancierModeleMuretBois(meshRoot, mainActive, true);
+            else if (EstIdMurBois(mainActive.ID))
+            {
+                if (EstIdMurBoisFenetre(mainActive.ID))
+                    InstancierModeleMurBoisFenetre(meshRoot, mainActive, true);
+                else if (EstIdMurBoisCadrePorte(mainActive.ID))
+                    InstancierModeleMurBoisCadrePorte(meshRoot, mainActive, true);
+                else
+                    InstancierModeleMurBois(meshRoot, mainActive, true);
+            }
+            else if (EstIdPorteBois(mainActive.ID))
+                InstancierModelePorteBois(meshRoot, mainActive, true);
+            else if (EstIdToitChaume(mainActive.ID))
+                InstancierModeleToitChaume(meshRoot, mainActive, ToitChaumeVarianteVisuelle.Solo, true);
+            else if (EstIdTorche(mainActive.ID))
+                InstancierModeleTorche(meshRoot, mainActive, true);
         }
 
         _ghostPlacementStructure.SetMeta("ID_Matiere", mainActive.ID);
@@ -4702,6 +4756,87 @@ void fragment()
             && (k.Keycode == Key.K || k.PhysicalKeycode == Key.K);
     }
 
+    private static bool SlotEstAllumeFeu(SlotInventaire slot) => !slot.EstVide && slot.ID == IdObjetAllumeFeu;
+
+    private bool ConsommerUsageAllumeFeu(ref SlotInventaire slot)
+    {
+        if (!SlotEstAllumeFeu(slot))
+            return false;
+        Atlas_Matiere.InitialiserDurabiliteOutilSiBesoin(ref slot);
+        slot.DurabiliteOutilActuelle = Mathf.Max(0f, slot.DurabiliteOutilActuelle - 1f);
+        if (slot.DurabiliteOutilActuelle <= 0.001f)
+        {
+            GD.Print("ZERO-K : L'allume-feu s'est brisé.");
+            slot = new SlotInventaire();
+        }
+        return true;
+    }
+
+    private bool EssayerConsommerAllumeFeuDisponiblePourTorche()
+    {
+        if (MainGaucheEstActive)
+        {
+            if (SlotEstAllumeFeu(MainDroite))
+            {
+                var s = MainDroite;
+                bool ok = ConsommerUsageAllumeFeu(ref s);
+                MainDroite = s;
+                return ok;
+            }
+        }
+        else if (SlotEstAllumeFeu(MainGauche))
+        {
+            var s = MainGauche;
+            bool ok = ConsommerUsageAllumeFeu(ref s);
+            MainGauche = s;
+            return ok;
+        }
+
+        for (int i = 0; i < GrilleCeintureStockage.Length; i++)
+        {
+            if (!SlotEstAllumeFeu(GrilleCeintureStockage[i]))
+                continue;
+            var s = GrilleCeintureStockage[i];
+            bool ok = ConsommerUsageAllumeFeu(ref s);
+            GrilleCeintureStockage[i] = s;
+            return ok;
+        }
+
+        for (int i = 0; i < GrilleSacStockage.Length; i++)
+        {
+            if (!SlotEstAllumeFeu(GrilleSacStockage[i]))
+                continue;
+            var s = GrilleSacStockage[i];
+            bool ok = ConsommerUsageAllumeFeu(ref s);
+            GrilleSacStockage[i] = s;
+            return ok;
+        }
+
+        return false;
+    }
+
+    private bool EssayerAllumerTorcheEnMain(ref SlotInventaire mainActive)
+    {
+        if (mainActive.EstVide || !EstIdTorche(mainActive.ID))
+            return false;
+        if ((mainActive.GenomeAssemblage ?? "").StartsWith("TORCHE:1", StringComparison.Ordinal))
+        {
+            GD.Print("ZERO-K : La torche en main est déjà allumée.");
+            return false;
+        }
+        if (!EssayerConsommerAllumeFeuDisponiblePourTorche())
+        {
+            GD.Print("ZERO-K : Allume-feu requis (autre main ou inventaire) pour allumer la torche.");
+            return false;
+        }
+
+        mainActive.GenomeAssemblage = "TORCHE:1";
+        if (!Engine.IsEditorHint())
+            SauvegarderEtatPersistantMonde(GetTree());
+        GD.Print("ZERO-K : Torche allumée.");
+        return true;
+    }
+
     public override void _Input(InputEvent @event)
     {
         if (_menuFutureState != null && _menuFutureState.EstOuvert)
@@ -4863,6 +4998,11 @@ void fragment()
         {
             _gaucheMaintenu = false;
             SlotInventaire mainActive = MainGaucheEstActive ? MainGauche : MainDroite;
+            if (EssayerBasculerPorteSousVisee())
+            {
+                ReinitialiserMinageMainNueProgression();
+                return;
+            }
             if (_bloquerActionClicGaucheApresMinageBuisson || _bloquerActionClicGaucheApresDepecage)
             {
                 _bloquerActionClicGaucheApresMinageBuisson = false;
@@ -4892,6 +5032,17 @@ void fragment()
             else if (!mainActive.EstVide && mainActive.ID == IdObjetAllumeFeu)
             {
                 if (EssayerAllumerPitFeuSousVisee(ref mainActive))
+                {
+                    if (MainGaucheEstActive) MainGauche = mainActive;
+                    else MainDroite = mainActive;
+                    RafraichirHUD();
+                    ReinitialiserMinageMainNueProgression();
+                    return;
+                }
+            }
+            else if (!mainActive.EstVide && EstIdTorche(mainActive.ID))
+            {
+                if (EssayerAllumerTorcheEnMain(ref mainActive))
                 {
                     if (MainGaucheEstActive) MainGauche = mainActive;
                     else MainDroite = mainActive;
@@ -5004,7 +5155,7 @@ void fragment()
                 bool estTableAnalyseEnMain = mainActive.ID == IdObjetTableAnalyseTier1;
                 bool estRackBatonsEnMain = mainActive.ID == IdObjetRackBatons || mainActive.ID == IdObjetRackBuches;
                 bool estCoffreEnMain = mainActive.ID == IdObjetCoffreBoisTier0;
-                bool estPitFeuEnMain = EstIdPitFeu(mainActive.ID) || EstIdFondation(mainActive.ID) || EstIdPlancher(mainActive.ID);
+        bool estPitFeuEnMain = EstIdPitFeu(mainActive.ID) || EstIdFondation(mainActive.ID) || EstIdPlancher(mainActive.ID) || EstIdMuret(mainActive.ID) || EstIdMurBois(mainActive.ID) || EstIdPorteBois(mainActive.ID) || EstIdToitChaume(mainActive.ID) || EstIdTorche(mainActive.ID);
                 bool estBuissonEnMain = mainActive.ID == 10 || mainActive.ID == 11;
                 if (shiftMaintenu && estObjetLancable)
                 {
@@ -5098,6 +5249,17 @@ void fragment()
                 MettreAJourGhostPlacementStructure(mainPose);
                 GetViewport().SetInputAsHandled();
             }
+            else if (EstModePlacementGhostActifPourSlot(mainPose) && EstIdMuret(mainPose.ID))
+            {
+                if (mbFondation.ButtonIndex == MouseButton.WheelUp)
+                    AjusterModeSnapMuret(+1);
+                else if (mbFondation.ButtonIndex == MouseButton.WheelDown)
+                    AjusterModeSnapMuret(-1);
+                else
+                    return;
+                MettreAJourGhostPlacementStructure(mainPose);
+                GetViewport().SetInputAsHandled();
+            }
         }
         else if (@event is InputEventKey keyEvent)
         {
@@ -5135,7 +5297,7 @@ void fragment()
                     }
                     else
                     {
-                        _rotationManuelleY += 90f;
+                        _rotationManuelleY += (EstIdMuret(mainPose.ID) || EstIdMurBois(mainPose.ID)) ? 10f : 90f;
                         if (_rotationManuelleY >= 360f) _rotationManuelleY -= 360f;
                     }
                     MettreAJourObjetEnMain();
@@ -5939,6 +6101,15 @@ void fragment()
         IdObjetFondationRocheSoleBois => 58f,
         IdObjetSolBois => 12f,
         IdObjetSolRoche => 18f,
+        IdObjetMuretBois => 16f,
+        IdObjetMuretPierre => 16f,
+        IdObjetMurBois => 24f,
+        IdObjetMurBoisFenetre => 24f,
+        IdObjetMurBoisCadrePorte => 24f,
+        IdObjetPorteBois => 18f,
+        IdObjetToitChaume => 14f,
+        IdObjetTorche => 1.2f,
+        IdObjetFenetreBois => 6.5f,
         IdObjetMailletBois => 0.72f,
         IdObjetBolBois => 0.28f,
         IdObjetMortierPilonBois => 0.98f,
@@ -6345,7 +6516,9 @@ void fragment()
         else if (id == IdObjetAtelleJambe) return null; // GLB res://Modeles/soin/Atelle_jambe.glb via InstancierModeleAtelleJambe
         else if (id == IdObjetAtelleBras) return null; // GLB res://Modeles/soin/Atelle_Bras.glb via InstancierModeleAtelleBras
         else if (id == IdObjetBandageTier1) return null; // GLB res://Modeles/soin/Bandage_tier1.glb via InstancierModeleBandageTier1
-        else if (EstIdFondation(id) || EstIdPlancher(id)) return null; // GLB via InstancierModeleFondation / InstancierModeleSol*
+        else if (EstIdFondation(id) || EstIdPlancher(id) || EstIdMuret(id) || EstIdMurBois(id) || EstIdToitChaume(id)) return null; // GLB via InstancierModeleFondation / InstancierModeleSol* / InstancierModeleMuretBois / InstancierModeleMurBois / InstancierModeleToitChaume
+        else if (id == IdObjetTorche) return null; // GLB res://Modeles/Equipements/torch.glb via InstancierModeleTorche
+        else if (id == IdObjetFenetreBois) return null; // GLB res://Modeles/materials/travailler/fenetre.glb via InstancierModeleFenetreBois
         else if (id == 30 || id == 32)
         {
             CalculerDimensionsBoisPose(id, indexMorpho, indexTaille, out float br, out float bl, out _, out _);
@@ -7407,6 +7580,152 @@ void fragment()
             AjouterCollisionPlancherSolBois(item, meshRoot);
             corps = item;
         }
+        else if (EstIdMuret(id))
+        {
+            var item = new ItemPhysique
+            {
+                ID_Objet = id,
+                IndexBotanique = mainActive.IndexBotanique,
+                IndexChimique = mainActive.IndexChimique,
+                IndexCacheMemoire = mainActive.IndexMorphologique,
+                GenomeAssemblage = mainActive.GenomeAssemblage ?? "",
+                Name = "ItemPhysique",
+                ContinuousCd = true,
+                Freeze = true,
+                FreezeMode = RigidBody3D.FreezeModeEnum.Static
+            };
+            if (!string.IsNullOrEmpty(item.GenomeAssemblage))
+                item.SetMeta(MetaGenomeAssemblage, item.GenomeAssemblage);
+            var meshRoot = new Node3D { Name = "MeshInstance3D" };
+            InstancierModeleMuretBois(meshRoot, mainActive, true);
+            item.AddChild(meshRoot);
+            AjouterCollisionMuretBois(item, meshRoot);
+            corps = item;
+        }
+        else if (EstIdMurBois(id))
+        {
+            var item = new ItemPhysique
+            {
+                ID_Objet = id,
+                IndexBotanique = mainActive.IndexBotanique,
+                IndexChimique = mainActive.IndexChimique,
+                IndexCacheMemoire = mainActive.IndexMorphologique,
+                GenomeAssemblage = mainActive.GenomeAssemblage ?? "",
+                Name = "ItemPhysique",
+                ContinuousCd = true,
+                Freeze = true,
+                FreezeMode = RigidBody3D.FreezeModeEnum.Static
+            };
+            if (!string.IsNullOrEmpty(item.GenomeAssemblage))
+                item.SetMeta(MetaGenomeAssemblage, item.GenomeAssemblage);
+            var meshRoot = new Node3D { Name = "MeshInstance3D" };
+            if (EstIdMurBoisFenetre(id))
+                InstancierModeleMurBoisFenetre(meshRoot, mainActive, true);
+            else if (EstIdMurBoisCadrePorte(id))
+                InstancierModeleMurBoisCadrePorte(meshRoot, mainActive, true);
+            else
+                InstancierModeleMurBois(meshRoot, mainActive, true);
+            item.AddChild(meshRoot);
+            if (EstIdMurBoisCadrePorte(id))
+                AjouterCollisionMurBoisCadrePorte(item, meshRoot);
+            else
+                AjouterCollisionMurBois(item, meshRoot);
+            corps = item;
+        }
+        else if (EstIdPorteBois(id))
+        {
+            var item = new ItemPhysique
+            {
+                ID_Objet = id,
+                IndexBotanique = mainActive.IndexBotanique,
+                IndexChimique = mainActive.IndexChimique,
+                IndexCacheMemoire = mainActive.IndexMorphologique,
+                GenomeAssemblage = mainActive.GenomeAssemblage ?? "",
+                Name = "ItemPhysique",
+                ContinuousCd = true,
+                Freeze = true,
+                FreezeMode = RigidBody3D.FreezeModeEnum.Static
+            };
+            if (!string.IsNullOrEmpty(item.GenomeAssemblage))
+                item.SetMeta(MetaGenomeAssemblage, item.GenomeAssemblage);
+            var meshRoot = new Node3D { Name = "MeshInstance3D" };
+            InstancierModelePorteBois(meshRoot, mainActive, true);
+            item.AddChild(meshRoot);
+            AjouterCollisionPorteBois(item, meshRoot);
+            corps = item;
+        }
+        else if (EstIdToitChaume(id))
+        {
+            var item = new ItemPhysique
+            {
+                ID_Objet = id,
+                IndexBotanique = mainActive.IndexBotanique,
+                IndexChimique = mainActive.IndexChimique,
+                IndexCacheMemoire = mainActive.IndexMorphologique,
+                GenomeAssemblage = mainActive.GenomeAssemblage ?? "",
+                Name = "ItemPhysique",
+                ContinuousCd = true,
+                Freeze = true,
+                FreezeMode = RigidBody3D.FreezeModeEnum.Static
+            };
+            if (!string.IsNullOrEmpty(item.GenomeAssemblage))
+                item.SetMeta(MetaGenomeAssemblage, item.GenomeAssemblage);
+            var meshRoot = new Node3D { Name = "MeshInstance3D" };
+            InstancierModeleToitChaume(meshRoot, mainActive, ToitChaumeVarianteVisuelle.Solo, true);
+            item.AddChild(meshRoot);
+            AjouterCollisionToitChaume(item, meshRoot);
+            corps = item;
+        }
+        else if (id == IdObjetFenetreBois)
+        {
+            var item = new ItemPhysique
+            {
+                ID_Objet = id,
+                IndexBotanique = mainActive.IndexBotanique,
+                IndexChimique = mainActive.IndexChimique,
+                IndexCacheMemoire = mainActive.IndexMorphologique,
+                GenomeAssemblage = mainActive.GenomeAssemblage ?? "",
+                Name = "ItemPhysique",
+                ContinuousCd = true
+            };
+            if (!string.IsNullOrEmpty(item.GenomeAssemblage))
+                item.SetMeta(MetaGenomeAssemblage, item.GenomeAssemblage);
+            var meshRoot = new Node3D { Name = "MeshInstance3D" };
+            InstancierModeleFenetreBois(meshRoot, mainActive, 0.92f, false);
+            item.AddChild(meshRoot);
+            if (AjouterCollisionsConvexesDepuisMeshesSousRacineItem(item, meshRoot) == 0)
+            {
+                item.AddChild(new CollisionShape3D
+                {
+                    Name = "CollisionShape3D",
+                    Shape = new BoxShape3D { Size = new Vector3(0.78f, 0.92f, 0.12f) },
+                    Position = new Vector3(0f, 0.46f, 0f)
+                });
+            }
+            corps = item;
+        }
+        else if (EstIdTorche(id))
+        {
+            var item = new ItemPhysique
+            {
+                ID_Objet = id,
+                IndexBotanique = mainActive.IndexBotanique,
+                IndexChimique = mainActive.IndexChimique,
+                IndexCacheMemoire = mainActive.IndexMorphologique,
+                GenomeAssemblage = mainActive.GenomeAssemblage ?? "",
+                Name = "ItemPhysique",
+                ContinuousCd = true,
+                Freeze = true,
+                FreezeMode = RigidBody3D.FreezeModeEnum.Static
+            };
+            if (!string.IsNullOrEmpty(item.GenomeAssemblage))
+                item.SetMeta(MetaGenomeAssemblage, item.GenomeAssemblage);
+            var meshRoot = new Node3D { Name = "MeshInstance3D" };
+            InstancierModeleTorche(meshRoot, mainActive, true);
+            item.AddChild(meshRoot);
+            AjouterCollisionTorche(item, meshRoot);
+            corps = item;
+        }
         else if (id == 200)
         {
             var item = new ItemPhysique
@@ -7928,11 +8247,15 @@ void fragment()
             // Placement pur : pas de translation Y supplÃ©mentaire (Ã©vite double offset / lÃ©vitation atelier).
             corps.GlobalPosition = pointDeChute;
         }
-        if ((estFondationPose || estPlancherPose) && !enChargementPersistant && !modeGhost)
+        bool estMuretPose = EstIdMuret(id);
+        bool estMurPose = EstIdMurBois(id);
+        bool estPortePose = EstIdPorteBois(id);
+        bool estToitPose = EstIdToitChaume(id);
+        if ((estFondationPose || estPlancherPose || estMuretPose || estMurPose || estPortePose || estToitPose) && !enChargementPersistant && !modeGhost)
             AjouterXpMetier("Batisseur", 1UL);
         bool fondationSurSupportEleve = estFondationPose && !enChargementPersistant && !modeGhost
             && (FondationReposantSurFondationOuStructure(corps.GlobalPosition) || _offsetEtagesFondationManuel != 0);
-        if (!modeGhost && (id == IdObjetTableAnalyseTier1 || id == IdObjetRackBatons || id == IdObjetRackBuches || id == IdObjetCoffreBoisTier0 || EstIdPitFeu(id) || EstIdFondation(id)))
+        if (!modeGhost && !EstIdPorteBois(id) && !EstIdToitChaume(id) && (id == IdObjetTableAnalyseTier1 || id == IdObjetRackBatons || id == IdObjetRackBuches || id == IdObjetCoffreBoisTier0 || EstIdPitFeu(id) || EstIdFondation(id) || EstIdMuret(id) || EstIdMurBois(id)))
         {
             // Snap sol robuste pour le rack: corrige les cas oÃ¹ le raycast vise une surface dÃ©calÃ©e.
             var espace = GetWorld3D()?.DirectSpaceState;
@@ -7941,11 +8264,41 @@ void fragment()
                 Vector3 origine = corps.GlobalPosition + Vector3.Up * 4f;
                 Vector3 dest = corps.GlobalPosition + Vector3.Down * 8f;
                 var q = PhysicsRayQueryParameters3D.Create(origine, dest);
+                var excludes = new Godot.Collections.Array<Rid>();
                 if (corps is CollisionObject3D coRack)
-                    q.Exclude = new Godot.Collections.Array<Rid> { coRack.GetRid() };
+                    excludes.Add(coRack.GetRid());
+                q.Exclude = excludes;
                 q.CollideWithAreas = false;
-                var hit = espace.IntersectRay(q);
-                if (hit.Count > 0 && hit.ContainsKey("position"))
+
+                bool EstImpactToitChaume(Godot.Collections.Dictionary hitRay)
+                {
+                    if (hitRay == null || !hitRay.ContainsKey("collider"))
+                        return false;
+                    Node n = NoeudDepuisColliderRaycast(hitRay["collider"].AsGodotObject());
+                    for (Node cur = n; cur != null; cur = cur.GetParent())
+                    {
+                        if (cur is ItemPhysique ip && ip.IsInGroup("BlocsPoses"))
+                            return EstIdToitChaume(ip.ID_Objet);
+                    }
+                    return false;
+                }
+
+                Godot.Collections.Dictionary hit = null;
+                const int maxEssaisSnap = 6;
+                for (int essai = 0; essai < maxEssaisSnap; essai++)
+                {
+                    hit = espace.IntersectRay(q);
+                    if (hit.Count == 0 || !hit.ContainsKey("position"))
+                        break;
+                    if (!EstImpactToitChaume(hit))
+                        break;
+                    if (hit.ContainsKey("rid"))
+                        excludes.Add((Rid)hit["rid"]);
+                    q.Exclude = excludes;
+                    hit = null;
+                }
+
+                if (hit != null && hit.Count > 0 && hit.ContainsKey("position"))
                 {
                     Aabb? box = null;
                     AccumulerAabbMeshes(corps, Transform3D.Identity, ref box);
@@ -7997,7 +8350,7 @@ void fragment()
                     rbPose.AngularDamp = 0.88f;
                 }
             }
-            else if (id == 30 || id == 32 || id == 200 || id == IdObjetTableAnalyseTier1 || id == IdObjetRackBatons || id == IdObjetRackBuches || id == IdObjetCoffreBoisTier0 || EstIdPitFeu(id) || EstIdFondation(id) || EstIdPlancher(id))
+            else if (id == 30 || id == 32 || id == 200 || id == IdObjetTableAnalyseTier1 || id == IdObjetRackBatons || id == IdObjetRackBuches || id == IdObjetCoffreBoisTier0 || EstIdPitFeu(id) || EstIdFondation(id) || EstIdPlancher(id) || EstIdMuret(id) || EstIdMurBois(id) || EstIdPorteBois(id) || EstIdToitChaume(id) || EstIdTorche(id) || id == IdObjetFenetreBois)
             {
                 rbPose.PhysicsMaterialOverride = _physMatBois;
                 rbPose.LinearDampMode = RigidBody3D.DampMode.Replace;
@@ -8043,6 +8396,41 @@ void fragment()
                     rbPose.Sleeping = true;
                 }
                 else if (EstIdPlancher(id))
+                {
+                    rbPose.Mass = ObtenirMasseSlotInventaireKg(new SlotInventaire { ID = id });
+                    rbPose.GravityScale = 0f;
+                    rbPose.LockRotation = true;
+                    rbPose.Sleeping = true;
+                }
+                else if (EstIdMuret(id))
+                {
+                    rbPose.Mass = ObtenirMasseSlotInventaireKg(new SlotInventaire { ID = id });
+                    rbPose.GravityScale = 0f;
+                    rbPose.LockRotation = true;
+                    rbPose.Sleeping = true;
+                }
+                else if (EstIdMurBois(id))
+                {
+                    rbPose.Mass = ObtenirMasseSlotInventaireKg(new SlotInventaire { ID = id });
+                    rbPose.GravityScale = 0f;
+                    rbPose.LockRotation = true;
+                    rbPose.Sleeping = true;
+                }
+                else if (EstIdPorteBois(id))
+                {
+                    rbPose.Mass = ObtenirMasseSlotInventaireKg(new SlotInventaire { ID = id });
+                    rbPose.GravityScale = 0f;
+                    rbPose.LockRotation = true;
+                    rbPose.Sleeping = true;
+                }
+                else if (EstIdToitChaume(id))
+                {
+                    rbPose.Mass = ObtenirMasseSlotInventaireKg(new SlotInventaire { ID = id });
+                    rbPose.GravityScale = 0f;
+                    rbPose.LockRotation = true;
+                    rbPose.Sleeping = true;
+                }
+                else if (EstIdTorche(id))
                 {
                     rbPose.Mass = ObtenirMasseSlotInventaireKg(new SlotInventaire { ID = id });
                     rbPose.GravityScale = 0f;

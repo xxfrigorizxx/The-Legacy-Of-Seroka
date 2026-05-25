@@ -181,7 +181,6 @@ C:\dev\Zero-K-Frozen-Legacy-main\Launcher\SEROKALauncher\bin\Debug\net8.0\win-x6
 C:\dev\Zero-K-Frozen-Legacy-main\Launcher\SEROKALauncher\bin\Debug\net8.0\win-x64\hostfxr.dll
 C:\dev\Zero-K-Frozen-Legacy-main\Launcher\SEROKALauncher\bin\Debug\net8.0\win-x64\hostpolicy.dll
 C:\dev\Zero-K-Frozen-Legacy-main\Launcher\SEROKALauncher\bin\Debug\net8.0\win-x64\mscordaccore.dll
-C:\dev\Zero-K-Frozen-Legacy-main\Launcher\SEROKALauncher\bin\Debug\net8.0\win-x64\mscordaccore_amd64_amd64_8.0.2626.16921.dll
 C:\dev\Zero-K-Frozen-Legacy-main\Launcher\SEROKALauncher\bin\Debug\net8.0\win-x64\mscordbi.dll
 C:\dev\Zero-K-Frozen-Legacy-main\Launcher\SEROKALauncher\bin\Debug\net8.0\win-x64\mscorrc.dll
 C:\dev\Zero-K-Frozen-Legacy-main\Launcher\SEROKALauncher\bin\Debug\net8.0\win-x64\msquic.dll
@@ -196,3 +195,5 @@ C:\dev\Zero-K-Frozen-Legacy-main\Launcher\SEROKALauncher\obj\Debug\net8.0\win-x6
 C:\dev\Zero-K-Frozen-Legacy-main\Launcher\SEROKALauncher\obj\Debug\net8.0\win-x64\SEROKALauncher.pdb
 C:\dev\Zero-K-Frozen-Legacy-main\Launcher\SEROKALauncher\obj\Debug\net8.0\win-x64\SEROKALauncher.genruntimeconfig.cache
 C:\dev\Zero-K-Frozen-Legacy-main\Launcher\SEROKALauncher\obj\Debug\net8.0\win-x64\ref\SEROKALauncher.dll
+C:\dev\Zero-K-Frozen-Legacy-main\Launcher\SEROKALauncher\bin\Debug\net8.0\win-x64\launcher-config.json
+C:\dev\Zero-K-Frozen-Legacy-main\Launcher\SEROKALauncher\bin\Debug\net8.0\win-x64\mscordaccore_amd64_amd64_8.0.2726.22922.dll

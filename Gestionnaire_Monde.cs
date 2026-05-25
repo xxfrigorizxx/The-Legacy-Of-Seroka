@@ -839,11 +839,25 @@ public partial class Gestionnaire_Monde : Node3D
 		query.CollideWithBodies = true;
 		if (_joueur != null && _joueur.GetRid().IsValid)
 			query.Exclude = new Godot.Collections.Array<Rid> { _joueur.GetRid() };
-		var hit = world.DirectSpaceState.IntersectRay(query);
-		if (hit.Count == 0 || !hit.ContainsKey("position"))
-			return false;
-		pointSol = (Vector3)hit["position"];
-		return true;
+		Godot.Collections.Array<Rid> excludes = query.Exclude ?? new Godot.Collections.Array<Rid>();
+		const int maxEssais = 8;
+		for (int essai = 0; essai < maxEssais; essai++)
+		{
+			var hit = world.DirectSpaceState.IntersectRay(query);
+			if (hit.Count == 0 || !hit.ContainsKey("position"))
+				return false;
+			if (!EstImpactToitChaume(hit))
+			{
+				pointSol = (Vector3)hit["position"];
+				return true;
+			}
+			if (hit.ContainsKey("rid"))
+			{
+				excludes.Add((Rid)hit["rid"]);
+				query.Exclude = excludes;
+			}
+		}
+		return false;
 	}
 
 	/// <summary>Raycast vertical vers le terrain/collision du monde. Retourne true si un point sol est trouvé.</summary>
@@ -863,11 +877,40 @@ public partial class Gestionnaire_Monde : Node3D
 			var excludes = new Godot.Collections.Array<Rid> { _joueur.GetRid() };
 			query.Exclude = excludes;
 		}
+		Godot.Collections.Array<Rid> excludesRay = query.Exclude ?? new Godot.Collections.Array<Rid>();
+		const int maxEssais = 10;
+		for (int essai = 0; essai < maxEssais; essai++)
+		{
+			var hit = world.DirectSpaceState.IntersectRay(query);
+			if (hit.Count == 0 || !hit.ContainsKey("position"))
+				return false;
+			if (!EstImpactToitChaume(hit))
+			{
+				pointSol = (Vector3)hit["position"];
+				return true;
+			}
+			if (hit.ContainsKey("rid"))
+			{
+				excludesRay.Add((Rid)hit["rid"]);
+				query.Exclude = excludesRay;
+			}
+		}
+		return false;
+	}
 
-		var hit = world.DirectSpaceState.IntersectRay(query);
-		if (hit.Count == 0 || !hit.ContainsKey("position")) return false;
-		pointSol = (Vector3)hit["position"];
-		return true;
+	private static bool EstImpactToitChaume(Godot.Collections.Dictionary hit)
+	{
+		if (hit == null || !hit.ContainsKey("collider"))
+			return false;
+		GodotObject obj = hit["collider"].AsGodotObject();
+		if (obj is not Node n)
+			return false;
+		for (Node cur = n; cur != null; cur = cur.GetParent())
+		{
+			if (cur is ItemPhysique ip && ip.IsInGroup("BlocsPoses"))
+				return ip.ID_Objet == Joueur.IdObjetToitChaume;
+		}
+		return false;
 	}
 
 	/// <summary>
@@ -1573,6 +1616,7 @@ void fragment()
 		if (_restaurationPersistantObjetsSolFaite) return false;
 		if (!spawnPretEtAligne || _joueur is not Joueur j) return false;
 		j.ChargerEtatPersistantPhaseObjetsAuSolEtFaune();
+		j.PlanifierRecalculAssemblageToitsChaume();
 		_restaurationPersistantObjetsSolFaite = true;
 		return true;
 	}

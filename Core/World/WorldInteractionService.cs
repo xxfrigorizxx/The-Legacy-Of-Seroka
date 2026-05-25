@@ -20,6 +20,30 @@ public partial class Joueur
     private const float PasRotationStructuresFixesDegres = 15f;
     private const float HauteurApproxFondationMetres = 1f;
     private const float HauteurSolBoisMetres = PlancherEpaisseurMetres;
+    private const float MuretLongueurMetres = 4f;
+    private const float MuretHauteurMetres = 1f;
+    private const float MuretEpaisseurMetres = 0.22f;
+    private const float MuretOffsetCentreDepuisFondationMetres = FondationPasSnapMetres * 0.5f + MuretEpaisseurMetres * 0.5f - FondationPenetrationMetres;
+    private const float MuretToleranceSnapFondationMetres = 2.4f;
+    private const float MuretTolerancePresenceMetres = 0.18f;
+    private const float PasRotationMuretDegres = 10f;
+    private const float MurLargeurMetres = 4f;
+    private const float MurHauteurMetres = 3f;
+    private const float MurEpaisseurMetres = 0.22f;
+    private const float PorteLargeurMetres = 1.35f;
+    private const float PorteHauteurMetres = 2.4f;
+    private const float PorteEpaisseurMetres = 0.12f;
+    private const float ToitChaumeHauteurMetres = 0.42f;
+    private const float ToitChaumePasGrilleMetres = 4f;
+    private const float ToitChaumeDecalageHauteurMetres = 0.10f;
+    private const float TorcheHauteurMetres = 1.12f;
+    private const float TorcheRayonMetres = 0.10f;
+    private const float TorcheOffsetMurMetres = -0.015f;
+    private const float TorcheAngleMurDegres = 45f;
+    private const int ModeSnapMuretAuto = 0;
+    private const int ModeSnapMuretFondation = 1;
+    private const int ModeSnapMuretMuret = 2;
+    private const int ModeSnapMuretTerrain = 3;
     private const float PasRotationSolBoisDegres = 90f;
     private const float ToleranceSolSurFondationMetres = 0.35f;
 
@@ -97,7 +121,7 @@ public partial class Joueur
         return true;
     }
 
-    /// <summary>Clic gauche avec allume-feu : allume le pit visé, puis retire 1 point de durabilité.</summary>
+    /// <summary>Clic gauche avec allume-feu : allume un pit ou une torche visée, puis retire 1 point de durabilité.</summary>
     private bool EssayerAllumerPitFeuSousVisee(ref SlotInventaire mainActive)
     {
         if (mainActive.EstVide || mainActive.ID != IdObjetAllumeFeu)
@@ -110,8 +134,34 @@ public partial class Joueur
         var itemTouche = objetTouche as ItemPhysique
             ?? (objetTouche as Node)?.GetParent() as ItemPhysique
             ?? (objetTouche as Node)?.GetNodeOrNull<ItemPhysique>("ItemPhysique");
-        if (itemTouche == null || (itemTouche.ID_Objet != IdObjetPitFeu && itemTouche.ID_Objet != IdObjetPitFeuRoche))
+        if (itemTouche == null || (itemTouche.ID_Objet != IdObjetPitFeu && itemTouche.ID_Objet != IdObjetPitFeuRoche && !EstIdTorche(itemTouche.ID_Objet)))
             return false;
+        if (EstIdTorche(itemTouche.ID_Objet))
+        {
+            if (itemTouche.EstTorcheAllumee())
+            {
+                if (!itemTouche.EteindreTorche())
+                    return false;
+                if (!Engine.IsEditorHint())
+                    SauvegarderEtatPersistantMonde(GetTree());
+                GetViewport().SetInputAsHandled();
+                GD.Print("ZERO-K : Torche éteinte.");
+                return true;
+            }
+            if (!itemTouche.ActiverTorcheAllumee())
+                return false;
+            mainActive.DurabiliteOutilActuelle = Mathf.Max(0f, mainActive.DurabiliteOutilActuelle - 1f);
+            if (mainActive.DurabiliteOutilActuelle <= 0.001f)
+            {
+                GD.Print("ZERO-K : L'allume-feu s'est brisé.");
+                mainActive = new SlotInventaire();
+            }
+            if (!Engine.IsEditorHint())
+                SauvegarderEtatPersistantMonde(GetTree());
+            GetViewport().SetInputAsHandled();
+            GD.Print("ZERO-K : Torche allumée.");
+            return true;
+        }
         if (itemTouche.EstPitFeuAllume())
         {
             GD.Print("ZERO-K : Ce pit à feu est déjà allumé.");
@@ -194,6 +244,49 @@ public partial class Joueur
         if (EssayerRamasserBaiesBuissonSousVisee())
             return;
         ExecuterRamassageObjet();
+    }
+
+    /// <summary>Interaction porte bois : E ouvre/ferme en alternance.</summary>
+    private bool EssayerBasculerPorteSousVisee()
+    {
+        _rayon.ForceRaycastUpdate();
+        if (!_rayon.IsColliding())
+            return false;
+        Node objetTouche = NoeudDepuisColliderRaycast(_rayon.GetCollider());
+        var itemTouche = objetTouche as ItemPhysique
+            ?? (objetTouche as Node)?.GetParent() as ItemPhysique
+            ?? (objetTouche as Node)?.GetNodeOrNull<ItemPhysique>("ItemPhysique");
+        if (itemTouche == null || !EstIdPorteBois(itemTouche.ID_Objet))
+            return false;
+
+        float baseY = itemTouche.HasMeta("Porte_BaseYaw")
+            ? (float)itemTouche.GetMeta("Porte_BaseYaw").AsDouble()
+            : Mathf.PosMod(itemTouche.GlobalRotationDegrees.Y, 360f);
+        Vector3 basePos = itemTouche.HasMeta("Porte_BasePos")
+            ? itemTouche.GetMeta("Porte_BasePos").AsVector3()
+            : itemTouche.GlobalPosition;
+        bool ouverte = itemTouche.HasMeta("Porte_Ouverte") && itemTouche.GetMeta("Porte_Ouverte").AsBool();
+
+        // Pivot latéral (charnière) : la porte tourne autour de son côté gauche en état fermé.
+        float angleOuverture = ouverte ? 0f : 90f;
+        float baseRad = Mathf.DegToRad(baseY);
+        Vector3 axeLargeurFermee = new Basis(Vector3.Up, baseRad).X.Normalized();
+        Vector3 hingeWorld = basePos - axeLargeurFermee * (PorteLargeurMetres * 0.5f);
+        Vector3 demiLargeur = axeLargeurFermee * (PorteLargeurMetres * 0.5f);
+        Vector3 centreCible = hingeWorld + (new Basis(Vector3.Up, Mathf.DegToRad(angleOuverture)) * demiLargeur);
+        float cibleY = Mathf.PosMod(baseY + angleOuverture, 360f);
+
+        itemTouche.GlobalPosition = new Vector3(centreCible.X, basePos.Y, centreCible.Z);
+        itemTouche.GlobalRotationDegrees = new Vector3(0f, cibleY, 0f);
+        itemTouche.SetMeta("Porte_BaseYaw", baseY);
+        itemTouche.SetMeta("Porte_BasePos", basePos);
+        itemTouche.SetMeta("Porte_AngleOuverture", 90f);
+        itemTouche.SetMeta("Porte_Charniere", -1);
+        itemTouche.SetMeta("Porte_Ouverte", !ouverte);
+        itemTouche.Sleeping = true;
+        GD.Print(!ouverte ? "ZERO-K : Porte ouverte." : "ZERO-K : Porte fermée.");
+        GetViewport().SetInputAsHandled();
+        return true;
     }
 
     /// <summary>Cueillette instantanée des baies sur buisson plein sous la visée (le buisson passe visuellement en vide).</summary>
@@ -316,7 +409,7 @@ public partial class Joueur
     {
         if (s.EstVide || s.ID == 0) return false;
         if (EstIdTerrainVoxelPosable(s.ID)) return true;
-        return s.ID == 999 || s.ID == 10 || s.ID == 11 || s.ID == BlocChutant.ID_BRANCHE || s.ID == IdObjetBaie || ItemPhysique.EstIdRocheMatiere(s.ID) || s.ID == 30 || s.ID == 32 || s.ID == 34 || s.ID == 21 || s.ID == IdObjetCeinturePoches || s.ID == IdObjetCeintureSacoches || s.ID == IdObjetPochetteTier0 || s.ID == IdObjetSacTier0 || s.ID == IdObjetHachePierreTier1 || s.ID == IdObjetAtelleJambe || s.ID == IdObjetAtelleBras || s.ID == IdObjetBandageTier1 || s.ID == IdObjetPellePierreTier0 || s.ID == IdObjetPiochePierreTier0 || s.ID == IdObjetLancePierreTier0 || s.ID == IdObjetFauxPierreTier0 || s.ID == IdObjetAllumeFeu || s.ID == 200 || s.ID == IdObjetTableAnalyseTier1 || s.ID == IdObjetRackBatons || s.ID == IdObjetRackBuches || s.ID == IdObjetCoffreBoisTier0 || s.ID == IdObjetPitFeuRoche || s.ID == IdObjetMortierPilonBois || EstIdFondation(s.ID);
+        return s.ID == 999 || s.ID == 10 || s.ID == 11 || s.ID == BlocChutant.ID_BRANCHE || s.ID == IdObjetBaie || ItemPhysique.EstIdRocheMatiere(s.ID) || s.ID == 30 || s.ID == 32 || s.ID == 34 || s.ID == 21 || s.ID == IdObjetCeinturePoches || s.ID == IdObjetCeintureSacoches || s.ID == IdObjetPochetteTier0 || s.ID == IdObjetSacTier0 || s.ID == IdObjetHachePierreTier1 || s.ID == IdObjetAtelleJambe || s.ID == IdObjetAtelleBras || s.ID == IdObjetBandageTier1 || s.ID == IdObjetPellePierreTier0 || s.ID == IdObjetPiochePierreTier0 || s.ID == IdObjetLancePierreTier0 || s.ID == IdObjetFauxPierreTier0 || s.ID == IdObjetAllumeFeu || s.ID == IdObjetFenetreBois || s.ID == 200 || s.ID == IdObjetTableAnalyseTier1 || s.ID == IdObjetRackBatons || s.ID == IdObjetRackBuches || s.ID == IdObjetCoffreBoisTier0 || s.ID == IdObjetPitFeuRoche || s.ID == IdObjetMortierPilonBois || EstIdFondation(s.ID) || EstIdMuret(s.ID) || EstIdMurBois(s.ID) || EstIdPorteBois(s.ID) || EstIdToitChaume(s.ID) || EstIdTorche(s.ID);
     }
 
     /// <summary>Corde (20) : accrocher au point de visée si surface valide (sol, roche, arbre, bloc posé).</summary>
@@ -397,7 +490,7 @@ public partial class Joueur
             }
             var item = objetTouche as ItemPhysique ?? (objetTouche as Node)?.GetParent() as ItemPhysique ?? (objetTouche as Node)?.GetNodeOrNull<ItemPhysique>("ItemPhysique");
             byte indexBotaniqueRamasse = LSystem_Botanique.IndexChene;
-            if (item != null && (item.ID_Objet == 30 || item.ID_Objet == 32 || item.ID_Objet == BlocChutant.ID_BRANCHE || item.ID_Objet == BlocChutant.ID_FEUILLE_ARRACHEE || item.ID_Objet == 106 || item.ID_Objet == IdObjetHachePierreTier1 || item.ID_Objet == IdObjetAtelleJambe || item.ID_Objet == IdObjetAtelleBras || item.ID_Objet == IdObjetBandageTier1 || item.ID_Objet == IdObjetPellePierreTier0 || item.ID_Objet == IdObjetPiochePierreTier0 || item.ID_Objet == IdObjetLancePierreTier0 || item.ID_Objet == IdObjetFauxPierreTier0 || item.ID_Objet == IdObjetPochetteTier0 || item.ID_Objet == IdObjetSacTier0 || item.ID_Objet == IdObjetCeinturePoches || item.ID_Objet == IdObjetCeintureSacoches || item.ID_Objet == IdObjetRackBatons || item.ID_Objet == IdObjetRackBuches || item.ID_Objet == IdObjetCoffreBoisTier0 || EstIdPitFeu(item.ID_Objet) || EstIdFondation(item.ID_Objet)))
+            if (item != null && (item.ID_Objet == 30 || item.ID_Objet == 32 || item.ID_Objet == BlocChutant.ID_BRANCHE || item.ID_Objet == BlocChutant.ID_FEUILLE_ARRACHEE || item.ID_Objet == 106 || item.ID_Objet == IdObjetHachePierreTier1 || item.ID_Objet == IdObjetAtelleJambe || item.ID_Objet == IdObjetAtelleBras || item.ID_Objet == IdObjetBandageTier1 || item.ID_Objet == IdObjetPellePierreTier0 || item.ID_Objet == IdObjetPiochePierreTier0 || item.ID_Objet == IdObjetLancePierreTier0 || item.ID_Objet == IdObjetFauxPierreTier0 || item.ID_Objet == IdObjetPochetteTier0 || item.ID_Objet == IdObjetSacTier0 || item.ID_Objet == IdObjetCeinturePoches || item.ID_Objet == IdObjetCeintureSacoches || item.ID_Objet == IdObjetRackBatons || item.ID_Objet == IdObjetRackBuches || item.ID_Objet == IdObjetCoffreBoisTier0 || EstIdPitFeu(item.ID_Objet) || EstIdFondation(item.ID_Objet) || EstIdToitChaume(item.ID_Objet)))
                 indexBotaniqueRamasse = item.IndexBotanique;
             else if ((id == BlocChutant.ID_BRANCHE || id == BlocChutant.ID_BOIS || id == BlocChutant.ID_FEUILLE_ARRACHEE) && objetTouche.HasMeta("IndexBotanique"))
                 indexBotaniqueRamasse = (byte)Mathf.Clamp(objetTouche.GetMeta("IndexBotanique").AsInt32(), 0, 255);
@@ -485,7 +578,7 @@ public partial class Joueur
                 MeshEclat = item.EstUnEclat ? item.ObtenirMeshVisuel() : null,
                 NiveauFracture = item.NiveauFracture,
                 ScaleEclat = (item.ID_Objet == 30 || item.ID_Objet == 32 || item.ID_Objet == BlocChutant.ID_BRANCHE) ? ScaleEclatBoisAuRamassage(item) : item.Scale,
-                IndexBotanique = (item.ID_Objet == 30 || item.ID_Objet == 32 || item.ID_Objet == BlocChutant.ID_BRANCHE || item.ID_Objet == 106 || item.ID_Objet == IdObjetHachePierreTier1 || item.ID_Objet == IdObjetAtelleJambe || item.ID_Objet == IdObjetAtelleBras || item.ID_Objet == IdObjetBandageTier1 || item.ID_Objet == IdObjetPellePierreTier0 || item.ID_Objet == IdObjetPiochePierreTier0 || item.ID_Objet == IdObjetLancePierreTier0 || item.ID_Objet == IdObjetFauxPierreTier0 || item.ID_Objet == 200 || item.ID_Objet == IdObjetTableAnalyseTier1 || item.ID_Objet == IdObjetPochetteTier0 || item.ID_Objet == IdObjetSacTier0 || item.ID_Objet == IdObjetCeinturePoches || item.ID_Objet == IdObjetCeintureSacoches || item.ID_Objet == IdObjetRackBatons || item.ID_Objet == IdObjetRackBuches || item.ID_Objet == IdObjetCoffreBoisTier0 || EstIdPitFeu(item.ID_Objet) || EstIdFondation(item.ID_Objet))
+                IndexBotanique = (item.ID_Objet == 30 || item.ID_Objet == 32 || item.ID_Objet == BlocChutant.ID_BRANCHE || item.ID_Objet == 106 || item.ID_Objet == IdObjetHachePierreTier1 || item.ID_Objet == IdObjetAtelleJambe || item.ID_Objet == IdObjetAtelleBras || item.ID_Objet == IdObjetBandageTier1 || item.ID_Objet == IdObjetPellePierreTier0 || item.ID_Objet == IdObjetPiochePierreTier0 || item.ID_Objet == IdObjetLancePierreTier0 || item.ID_Objet == IdObjetFauxPierreTier0 || item.ID_Objet == 200 || item.ID_Objet == IdObjetTableAnalyseTier1 || item.ID_Objet == IdObjetPochetteTier0 || item.ID_Objet == IdObjetSacTier0 || item.ID_Objet == IdObjetCeinturePoches || item.ID_Objet == IdObjetCeintureSacoches || item.ID_Objet == IdObjetRackBatons || item.ID_Objet == IdObjetRackBuches || item.ID_Objet == IdObjetCoffreBoisTier0 || EstIdPitFeu(item.ID_Objet) || EstIdFondation(item.ID_Objet) || EstIdToitChaume(item.ID_Objet))
                     ? item.IndexBotanique
                     : LSystem_Botanique.IndexChene,
                 GenomeAssemblage = LireGenomeSurItemPhysique(item),
@@ -524,7 +617,7 @@ public partial class Joueur
                 MeshEclat = item.EstUnEclat ? item.ObtenirMeshVisuel() : null,
                 NiveauFracture = item.NiveauFracture,
                 ScaleEclat = (item.ID_Objet == 30 || item.ID_Objet == 32 || item.ID_Objet == BlocChutant.ID_BRANCHE) ? ScaleEclatBoisAuRamassage(item) : item.Scale,
-                IndexBotanique = (item.ID_Objet == 30 || item.ID_Objet == 32 || item.ID_Objet == BlocChutant.ID_BRANCHE || item.ID_Objet == 106 || item.ID_Objet == IdObjetHachePierreTier1 || item.ID_Objet == IdObjetAtelleJambe || item.ID_Objet == IdObjetAtelleBras || item.ID_Objet == IdObjetBandageTier1 || item.ID_Objet == IdObjetPellePierreTier0 || item.ID_Objet == IdObjetPiochePierreTier0 || item.ID_Objet == IdObjetLancePierreTier0 || item.ID_Objet == IdObjetFauxPierreTier0 || item.ID_Objet == IdObjetPochetteTier0 || item.ID_Objet == IdObjetSacTier0 || item.ID_Objet == IdObjetCeinturePoches || item.ID_Objet == IdObjetCeintureSacoches || item.ID_Objet == IdObjetRackBatons || item.ID_Objet == IdObjetRackBuches || item.ID_Objet == IdObjetCoffreBoisTier0 || EstIdPitFeu(item.ID_Objet) || EstIdFondation(item.ID_Objet))
+                IndexBotanique = (item.ID_Objet == 30 || item.ID_Objet == 32 || item.ID_Objet == BlocChutant.ID_BRANCHE || item.ID_Objet == 106 || item.ID_Objet == IdObjetHachePierreTier1 || item.ID_Objet == IdObjetAtelleJambe || item.ID_Objet == IdObjetAtelleBras || item.ID_Objet == IdObjetBandageTier1 || item.ID_Objet == IdObjetPellePierreTier0 || item.ID_Objet == IdObjetPiochePierreTier0 || item.ID_Objet == IdObjetLancePierreTier0 || item.ID_Objet == IdObjetFauxPierreTier0 || item.ID_Objet == IdObjetPochetteTier0 || item.ID_Objet == IdObjetSacTier0 || item.ID_Objet == IdObjetCeinturePoches || item.ID_Objet == IdObjetCeintureSacoches || item.ID_Objet == IdObjetRackBatons || item.ID_Objet == IdObjetRackBuches || item.ID_Objet == IdObjetCoffreBoisTier0 || EstIdPitFeu(item.ID_Objet) || EstIdFondation(item.ID_Objet) || EstIdToitChaume(item.ID_Objet))
                     ? item.IndexBotanique
                     : LSystem_Botanique.IndexChene,
                 GenomeAssemblage = LireGenomeSurItemPhysique(item),
@@ -553,7 +646,10 @@ public partial class Joueur
             GD.Print("ZERO-K : Inventaire plein. Impossible de ramasser cet objet.");
             return;
         }
+        bool etaitToitChaume = itemQuantitePose != null && EstIdToitChaume(itemQuantitePose.ID_Objet);
         objetTouche.QueueFree();
+        if (etaitToitChaume)
+            CallDeferred(nameof(RecalculerAssemblageToitsChaumeGlobal));
         ReinitialiserRotationManuelle();
         RafraichirHUD();
     }
@@ -669,9 +765,9 @@ public partial class Joueur
 			}
 			GD.Print("ZERO-K : Buisson replanté.");
 		}
-        else if (id == 999 || id == BlocChutant.ID_BRANCHE || id == IdObjetBaie || ItemPhysique.EstIdRocheMatiere(id) || id == 15 || id == 16 || id == 17 || id == 20 || id == 21 || id == IdObjetCeinturePoches || id == IdObjetCeintureSacoches || id == IdObjetPochetteTier0 || id == IdObjetSacTier0 || id == IdObjetCarnetSavoir || id == 30 || id == 32 || id == 34 || id == 105 || id == 106 || id == IdObjetHachePierreTier1 || id == IdObjetAtelleJambe || id == IdObjetAtelleBras || id == IdObjetBandageTier1 || id == IdObjetPellePierreTier0 || id == IdObjetPiochePierreTier0 || id == IdObjetLancePierreTier0 || id == IdObjetFauxPierreTier0 || id == IdObjetAllumeFeu || id == 200 || id == IdObjetTableAnalyseTier1 || id == IdObjetRackBatons || id == IdObjetRackBuches || id == IdObjetCoffreBoisTier0 || EstIdPitFeu(id) || EstIdFondation(id) || EstIdPlancher(id))
+        else if (id == 999 || id == BlocChutant.ID_BRANCHE || id == IdObjetBaie || ItemPhysique.EstIdRocheMatiere(id) || id == 15 || id == 16 || id == 17 || id == 20 || id == 21 || id == IdObjetCeinturePoches || id == IdObjetCeintureSacoches || id == IdObjetPochetteTier0 || id == IdObjetSacTier0 || id == IdObjetCarnetSavoir || id == 30 || id == 32 || id == 34 || id == 105 || id == 106 || id == IdObjetHachePierreTier1 || id == IdObjetAtelleJambe || id == IdObjetAtelleBras || id == IdObjetBandageTier1 || id == IdObjetPellePierreTier0 || id == IdObjetPiochePierreTier0 || id == IdObjetLancePierreTier0 || id == IdObjetFauxPierreTier0 || id == IdObjetAllumeFeu || id == IdObjetFenetreBois || id == 200 || id == IdObjetTableAnalyseTier1 || id == IdObjetRackBatons || id == IdObjetRackBuches || id == IdObjetCoffreBoisTier0 || EstIdPitFeu(id) || EstIdFondation(id) || EstIdPlancher(id) || EstIdMuret(id) || EstIdMurBois(id) || EstIdPorteBois(id) || EstIdToitChaume(id) || EstIdTorche(id))
         {
-            Vector3 pointSpawn = (structureFixe && (EstIdFondation(mainActive.ID) || EstIdPlancher(mainActive.ID)))
+            Vector3 pointSpawn = (structureFixe && (EstIdFondation(mainActive.ID) || EstIdPlancher(mainActive.ID) || EstIdMuret(mainActive.ID) || EstIdMurBois(mainActive.ID) || EstIdPorteBois(mainActive.ID) || EstIdToitChaume(mainActive.ID) || EstIdTorche(mainActive.ID)))
                 ? pointAligneStructure
                 : pointDeChute;
             Node3D nePose = CreerBlocPose(pointSpawn, mainActive);
@@ -679,6 +775,18 @@ public partial class Joueur
                 return;
             if (structureFixe)
                 AppliquerTransformPoseStructure(nePose, pointAligneStructure, rotationStructureDeg);
+            if (EstIdPorteBois(id) && nePose is ItemPhysique portePosee)
+            {
+                float baseYaw = Mathf.PosMod(rotationStructureDeg.Y, 360f);
+                Vector3 baseP = portePosee.GlobalPosition;
+                portePosee.SetMeta("Porte_BaseYaw", baseYaw);
+                portePosee.SetMeta("Porte_BasePos", baseP);
+                portePosee.SetMeta("Porte_AngleOuverture", 90f);
+                portePosee.SetMeta("Porte_Charniere", -1);
+                portePosee.SetMeta("Porte_Ouverte", false);
+            }
+            if (EstIdToitChaume(id))
+                CallDeferred(nameof(RecalculerAssemblageToitsChaumeGlobal));
             // Clic droit rapide : un objet lançable doit se déposer au sol sans mini-impulsion.
             // La poussée douce reste utile pour les poses via touche Interagir.
             bool estLancable = EstObjetLancableAuMaintien(mainActive);
@@ -724,6 +832,16 @@ public partial class Joueur
 
         if (EstIdPlancher(mainActive.ID))
             return EssayerCalculerPosePlancher(mainActive.ID, depuisInteragir, out pointDeChute, out pointAligne, out rotationDeg, out poseValide);
+        if (EstIdMuret(mainActive.ID))
+            return EssayerCalculerPoseMuretBois(mainActive.ID, depuisInteragir, out pointDeChute, out pointAligne, out rotationDeg, out poseValide);
+        if (EstIdMurBois(mainActive.ID))
+            return EssayerCalculerPoseMurBois(mainActive.ID, depuisInteragir, out pointDeChute, out pointAligne, out rotationDeg, out poseValide);
+        if (EstIdPorteBois(mainActive.ID))
+            return EssayerCalculerPosePorteBois(mainActive.ID, depuisInteragir, out pointDeChute, out pointAligne, out rotationDeg, out poseValide);
+        if (EstIdToitChaume(mainActive.ID))
+            return EssayerCalculerPoseToitChaume(mainActive.ID, depuisInteragir, out pointDeChute, out pointAligne, out rotationDeg, out poseValide);
+        if (EstIdTorche(mainActive.ID))
+            return EssayerCalculerPoseTorche(mainActive.ID, depuisInteragir, out pointDeChute, out pointAligne, out rotationDeg, out poseValide);
 
         Node noeudCol = NoeudDepuisColliderRaycast(_rayon.GetCollider());
         if (!EstSurfaceSupportStructureVisee(_rayon, noeudCol))
@@ -787,7 +905,12 @@ public partial class Joueur
             || idObjet == IdObjetCoffreBoisTier0
             || EstIdPitFeu(idObjet)
             || EstIdFondation(idObjet)
-            || EstIdPlancher(idObjet);
+            || EstIdPlancher(idObjet)
+            || EstIdMuret(idObjet)
+            || EstIdMurBois(idObjet)
+            || EstIdPorteBois(idObjet)
+            || EstIdToitChaume(idObjet)
+            || EstIdTorche(idObjet);
     }
 
     private bool EssayerCalculerPosePlancher(
@@ -836,6 +959,775 @@ public partial class Joueur
         float distMin = depuisInteragir ? 0.35f : 0.55f;
         poseValide = distance >= distMin;
         return true;
+    }
+
+    private bool EssayerCalculerPoseMuretBois(
+        int idMuret,
+        bool depuisInteragir,
+        out Vector3 pointDeChute,
+        out Vector3 pointAligne,
+        out Vector3 rotationDeg,
+        out bool poseValide)
+    {
+        pointDeChute = Vector3.Zero;
+        pointAligne = Vector3.Zero;
+        rotationDeg = Vector3.Zero;
+        poseValide = false;
+
+        if (!_rayon.IsColliding())
+            return false;
+
+        Vector3 pointVisee = _rayon.GetCollisionPoint();
+        Node noeudCol = NoeudDepuisColliderRaycast(_rayon.GetCollider());
+        Vector3 normale = _rayon.GetCollisionNormal();
+        float rotationManuelleMuret = Mathf.PosMod(Mathf.Round(_rotationManuelleY / PasRotationMuretDegres) * PasRotationMuretDegres, 360f);
+        bool autoriserFondation = _modeSnapMuretManuel == ModeSnapMuretAuto || _modeSnapMuretManuel == ModeSnapMuretFondation;
+        bool autoriserMuret = _modeSnapMuretManuel == ModeSnapMuretAuto || _modeSnapMuretManuel == ModeSnapMuretMuret;
+        bool autoriserTerrain = _modeSnapMuretManuel == ModeSnapMuretAuto || _modeSnapMuretManuel == ModeSnapMuretTerrain;
+
+        // Priorité auto: fondation d'abord (plus stable pour compléter les 4 côtés),
+        // puis muret->muret, puis terrain libre.
+        ItemPhysique fondation = null;
+        if (autoriserFondation)
+        {
+            fondation = ResoudreFondationHoteDepuisNoeud(noeudCol);
+            if (fondation == null)
+                fondation = TrouverFondationPourPlancher(pointVisee, null);
+        }
+        if (fondation != null)
+        {
+            Vector3 centreFondation = fondation.GlobalPosition;
+            Vector3 local = pointVisee - centreFondation;
+            bool axeX;
+            bool signePositif;
+
+            // Si on vise une face latérale, la normale donne le côté physique exact.
+            if (Mathf.Abs(normale.Y) <= 0.65f)
+            {
+                axeX = Mathf.Abs(normale.X) >= Mathf.Abs(normale.Z);
+                signePositif = axeX ? normale.X >= 0f : normale.Z >= 0f;
+            }
+            else
+            {
+                // Vise dessus / coin : choisir le côté de fondation le plus proche du point visé.
+                float demi = FondationPasSnapMetres * 0.5f;
+                float dPosX = Mathf.Abs(local.X - demi);
+                float dNegX = Mathf.Abs(local.X + demi);
+                float dPosZ = Mathf.Abs(local.Z - demi);
+                float dNegZ = Mathf.Abs(local.Z + demi);
+                float dMin = dPosX;
+                axeX = true;
+                signePositif = true;
+                if (dNegX < dMin) { dMin = dNegX; axeX = true; signePositif = false; }
+                if (dPosZ < dMin) { dMin = dPosZ; axeX = false; signePositif = true; }
+                if (dNegZ < dMin) { axeX = false; signePositif = false; }
+            }
+
+            float offset = MuretOffsetCentreDepuisFondationMetres;
+            Vector3 centreMuret = axeX
+                ? new Vector3(centreFondation.X + (signePositif ? offset : -offset), centreFondation.Y, centreFondation.Z)
+                : new Vector3(centreFondation.X, centreFondation.Y, centreFondation.Z + (signePositif ? offset : -offset));
+
+            if (Mathf.Abs((axeX ? local.X : local.Z)) > MuretToleranceSnapFondationMetres)
+            {
+                GD.Print("ZERO-K : Visez plus près du bord de la fondation pour poser le muret.");
+                return false;
+            }
+
+            float yPose = centreFondation.Y + MuretHauteurMetres * 0.5f + MargeEmpilementStructureMetres;
+            pointDeChute = new Vector3(centreMuret.X, yPose, centreMuret.Z);
+            pointAligne = pointDeChute;
+            // Axe GLB muret: longueur déjà orientée comme un côté X de fondation.
+            // -> côté X = 0°, côté Z = 90°.
+            float rotationBase = axeX ? 0f : 90f;
+            float rotationFinale = Mathf.PosMod(rotationBase + rotationManuelleMuret, 360f);
+            rotationDeg = new Vector3(0f, rotationFinale, 0f);
+        }
+        else if (autoriserMuret)
+        {
+            ItemPhysique muretSupport = ResoudreMuretDepuisNoeud(noeudCol);
+            if (muretSupport == null)
+                muretSupport = TrouverMuretProchePourSnap(pointVisee);
+            if (muretSupport != null)
+            {
+                Vector3 dimsSupport = ObtenirDimensionsApproxStructurePose(muretSupport.ID_Objet);
+                bool supportEstMur = EstIdMurBois(muretSupport.ID_Objet);
+                float rotSupport = Mathf.PosMod(Mathf.Round(muretSupport.GlobalRotationDegrees.Y / 90f) * 90f, 360f);
+                float rad = rotSupport * Mathf.Pi / 180f;
+                Vector3 dirLong = new Vector3(Mathf.Cos(rad), 0f, Mathf.Sin(rad));
+                Vector3 dirPerp = new Vector3(-dirLong.Z, 0f, dirLong.X);
+                Vector3 local = pointVisee - muretSupport.GlobalPosition;
+
+                float empriseSupport = Mathf.Max(dimsSupport.X, dimsSupport.Z);
+                bool poseAuDessus = supportEstMur
+                    || normale.Y >= 0.65f
+                    || (Mathf.Abs(local.X) <= empriseSupport * 0.5f && Mathf.Abs(local.Z) <= empriseSupport * 0.5f && local.Y >= dimsSupport.Y * 0.35f);
+                if (poseAuDessus)
+                {
+                    float yEmpile = muretSupport.GlobalPosition.Y + dimsSupport.Y * 0.5f + MuretHauteurMetres * 0.5f + MargeEmpilementStructureMetres;
+                    pointDeChute = new Vector3(muretSupport.GlobalPosition.X, yEmpile, muretSupport.GlobalPosition.Z);
+                    pointAligne = pointDeChute;
+                    rotationDeg = new Vector3(0f, Mathf.PosMod(rotSupport + rotationManuelleMuret, 360f), 0f);
+                }
+                else
+                {
+                    float projLong = local.Dot(dirLong);
+                    float projPerp = local.Dot(dirPerp);
+                    bool snapSurCote = Mathf.Abs(projPerp) >= Mathf.Abs(projLong);
+                    Vector3 centre;
+                    if (snapSurCote)
+                    {
+                        float signe = projPerp >= 0f ? 1f : -1f;
+                        centre = muretSupport.GlobalPosition + dirPerp * (MuretEpaisseurMetres - FondationPenetrationMetres) * signe;
+                    }
+                    else
+                    {
+                        float signe = projLong >= 0f ? 1f : -1f;
+                        centre = muretSupport.GlobalPosition + dirLong * (MuretLongueurMetres - FondationPenetrationMetres) * signe;
+                    }
+                    pointDeChute = new Vector3(centre.X, muretSupport.GlobalPosition.Y, centre.Z);
+                    pointAligne = pointDeChute;
+                    rotationDeg = new Vector3(0f, Mathf.PosMod(rotSupport + rotationManuelleMuret, 360f), 0f);
+                }
+            }
+            else if (autoriserTerrain)
+            {
+                float yTerrain = pointVisee.Y + MuretHauteurMetres * 0.5f + MargeEmpilementStructureMetres;
+                pointDeChute = new Vector3(pointVisee.X, yTerrain, pointVisee.Z);
+                pointAligne = pointDeChute;
+                rotationDeg = new Vector3(0f, rotationManuelleMuret, 0f);
+            }
+            else
+            {
+                GD.Print("ZERO-K : Aucun muret support trouvé pour ce mode de snap.");
+                return false;
+            }
+        }
+        else if (autoriserTerrain)
+        {
+            // Mode terrain forcé.
+            float yTerrain = pointVisee.Y + MuretHauteurMetres * 0.5f + MargeEmpilementStructureMetres;
+            pointDeChute = new Vector3(pointVisee.X, yTerrain, pointVisee.Z);
+            pointAligne = pointDeChute;
+            rotationDeg = new Vector3(0f, rotationManuelleMuret, 0f);
+        }
+        else
+        {
+            GD.Print("ZERO-K : Ce mode de snap n'a trouvé aucun support valide.");
+            return false;
+        }
+
+        if (MuretExisteDejaSurPosition(pointAligne))
+        {
+            GD.Print("ZERO-K : Un muret est déjà posé sur ce côté de fondation.");
+            return false;
+        }
+
+        float? yBaseFondation = fondation != null ? fondation.GlobalPosition.Y : null;
+        if (!EstPositionStructureLibre(idMuret, pointDeChute, pointAligne, yBaseFondation))
+        {
+            GD.Print("ZERO-K : Espace insuffisant pour poser le muret ici.");
+            return false;
+        }
+
+        float distance = GlobalPosition.DistanceTo(pointDeChute);
+        float distMin = depuisInteragir ? 0.35f : 0.55f;
+        poseValide = distance >= distMin;
+        return true;
+    }
+
+    private bool EssayerCalculerPoseMurBois(
+        int idMur,
+        bool depuisInteragir,
+        out Vector3 pointDeChute,
+        out Vector3 pointAligne,
+        out Vector3 rotationDeg,
+        out bool poseValide)
+    {
+        pointDeChute = Vector3.Zero;
+        pointAligne = Vector3.Zero;
+        rotationDeg = Vector3.Zero;
+        poseValide = false;
+        if (!_rayon.IsColliding())
+            return false;
+
+        Vector3 pointVisee = _rayon.GetCollisionPoint();
+        Node noeudCol = NoeudDepuisColliderRaycast(_rayon.GetCollider());
+        ItemPhysique support = ResoudreMurSupportDepuisNoeud(noeudCol);
+        if (support == null)
+            support = TrouverSupportMurProche(pointVisee);
+        if (support == null)
+        {
+            GD.Print("ZERO-K : Posez le mur bois sur un muret.");
+            return false;
+        }
+
+        Vector3 dimsSupport = ObtenirDimensionsApproxStructurePose(support.ID_Objet);
+        float yBase = support.GlobalPosition.Y + (dimsSupport.Y * 0.5f) + (MurHauteurMetres * 0.5f) + MargeEmpilementStructureMetres;
+        pointDeChute = new Vector3(support.GlobalPosition.X, yBase, support.GlobalPosition.Z);
+        pointAligne = pointDeChute;
+
+        float baseY = Mathf.PosMod(Mathf.Round(support.GlobalRotationDegrees.Y / 10f) * 10f, 360f);
+        float rotManuelle = Mathf.PosMod(Mathf.Round(_rotationManuelleY / 10f) * 10f, 360f);
+        rotationDeg = new Vector3(0f, Mathf.PosMod(baseY + rotManuelle, 360f), 0f);
+
+        if (!EstPositionStructureLibre(idMur, pointDeChute, pointAligne))
+        {
+            GD.Print("ZERO-K : Espace insuffisant pour poser ce mur.");
+            return false;
+        }
+        float distance = GlobalPosition.DistanceTo(pointDeChute);
+        float distMin = depuisInteragir ? 0.35f : 0.55f;
+        poseValide = distance >= distMin;
+        return true;
+    }
+
+    private bool EssayerCalculerPosePorteBois(
+        int idPorte,
+        bool depuisInteragir,
+        out Vector3 pointDeChute,
+        out Vector3 pointAligne,
+        out Vector3 rotationDeg,
+        out bool poseValide)
+    {
+        pointDeChute = Vector3.Zero;
+        pointAligne = Vector3.Zero;
+        rotationDeg = Vector3.Zero;
+        poseValide = false;
+        if (!_rayon.IsColliding())
+            return false;
+
+        Vector3 pointVisee = _rayon.GetCollisionPoint();
+        Node noeudCol = NoeudDepuisColliderRaycast(_rayon.GetCollider());
+        ItemPhysique cadre = ResoudreCadrePorteDepuisNoeud(noeudCol);
+        if (cadre == null)
+            cadre = TrouverCadrePorteProche(pointVisee);
+        if (cadre == null)
+        {
+            GD.Print("ZERO-K : Posez la porte dans un mur cadre de porte.");
+            return false;
+        }
+
+        if (CadrePossedeDejaPorte(cadre))
+        {
+            GD.Print("ZERO-K : Ce cadre de porte contient déjà une porte.");
+            return false;
+        }
+
+        // Le cadre est un mur de 3 m centré sur son volume.
+        // On aligne la base de la porte sur la base du cadre (souvent posé sur muret).
+        float yBaseCadre = cadre.GlobalPosition.Y - (MurHauteurMetres * 0.5f);
+        float yBase = yBaseCadre + (PorteHauteurMetres * 0.5f) + MargeEmpilementStructureMetres;
+        pointDeChute = new Vector3(cadre.GlobalPosition.X, yBase, cadre.GlobalPosition.Z);
+        pointAligne = pointDeChute;
+
+        float baseY = Mathf.PosMod(Mathf.Round(cadre.GlobalRotationDegrees.Y / 10f) * 10f, 360f);
+        float rotManuelle = Mathf.PosMod(Mathf.Round(_rotationManuelleY / 90f) * 90f, 360f);
+        rotationDeg = new Vector3(0f, Mathf.PosMod(baseY + rotManuelle, 360f), 0f);
+
+        if (!EstPositionStructureLibre(idPorte, pointDeChute, pointAligne))
+        {
+            GD.Print("ZERO-K : Espace insuffisant pour poser la porte dans ce cadre.");
+            return false;
+        }
+        float distance = GlobalPosition.DistanceTo(pointDeChute);
+        float distMin = depuisInteragir ? 0.35f : 0.55f;
+        poseValide = distance >= distMin;
+        return true;
+    }
+
+    private bool EssayerCalculerPoseToitChaume(
+        int idToit,
+        bool depuisInteragir,
+        out Vector3 pointDeChute,
+        out Vector3 pointAligne,
+        out Vector3 rotationDeg,
+        out bool poseValide)
+    {
+        pointDeChute = Vector3.Zero;
+        pointAligne = Vector3.Zero;
+        rotationDeg = Vector3.Zero;
+        poseValide = false;
+        if (!_rayon.IsColliding())
+            return false;
+
+        Vector3 pointVisee = _rayon.GetCollisionPoint();
+        Node noeudCol = NoeudDepuisColliderRaycast(_rayon.GetCollider());
+        ItemPhysique support = ResoudreSupportToitDepuisNoeud(noeudCol);
+        if (support == null)
+            support = TrouverSupportToitProche(pointVisee);
+        if (support == null)
+        {
+            GD.Print("ZERO-K : Posez le toit chaume sur une structure (mur, muret, plancher, fondation, toit).");
+            return false;
+        }
+
+        float yCentre;
+        if (EstIdToitChaume(support.ID_Objet))
+            yCentre = support.GlobalPosition.Y;
+        else
+        {
+            Vector3 dimsSupport = ObtenirDimensionsApproxStructurePose(support.ID_Objet);
+            yCentre = support.GlobalPosition.Y + (dimsSupport.Y * 0.5f) + (ToitChaumeHauteurMetres * 0.5f) + MargeEmpilementStructureMetres;
+        }
+        yCentre += ToitChaumeDecalageHauteurMetres;
+
+        Vector3 origineSnap = support.GlobalPosition;
+        ItemPhysique fondationRef = TrouverFondationSousPoint(pointVisee);
+        if (fondationRef == null && (EstIdMurBois(support.ID_Objet) || EstIdMuret(support.ID_Objet)))
+            fondationRef = TrouverFondationSousPoint(support.GlobalPosition);
+        if (fondationRef != null)
+            origineSnap = fondationRef.GlobalPosition;
+
+        float localX = pointVisee.X - origineSnap.X;
+        float localZ = pointVisee.Z - origineSnap.Z;
+        Vector3 centreSnap = new Vector3(
+            origineSnap.X + Mathf.Round(localX / ToitChaumePasGrilleMetres) * ToitChaumePasGrilleMetres,
+            yCentre,
+            origineSnap.Z + Mathf.Round(localZ / ToitChaumePasGrilleMetres) * ToitChaumePasGrilleMetres);
+
+        pointDeChute = centreSnap;
+        pointAligne = centreSnap;
+
+        // Le toit modulaire est orienté par la logique d'assemblage (solo/long/L/carré),
+        // pas par le support, pour garder un rendu cohérent quand le voisinage change.
+        rotationDeg = Vector3.Zero;
+
+        if (!EstPositionStructureLibre(idToit, pointDeChute, pointAligne))
+        {
+            GD.Print("ZERO-K : Un toit est déjà présent à cet emplacement.");
+            return false;
+        }
+
+        float distance = GlobalPosition.DistanceTo(pointDeChute);
+        float distMin = depuisInteragir ? 0.35f : 0.55f;
+        poseValide = distance >= distMin;
+        return true;
+    }
+
+    private bool EssayerCalculerPoseTorche(
+        int idTorche,
+        bool depuisInteragir,
+        out Vector3 pointDeChute,
+        out Vector3 pointAligne,
+        out Vector3 rotationDeg,
+        out bool poseValide)
+    {
+        pointDeChute = Vector3.Zero;
+        pointAligne = Vector3.Zero;
+        rotationDeg = Vector3.Zero;
+        poseValide = false;
+        if (!_rayon.IsColliding())
+            return false;
+
+        Vector3 pointVisee = _rayon.GetCollisionPoint();
+        Vector3 normale = _rayon.GetCollisionNormal().Normalized();
+        bool poseMur = Mathf.Abs(normale.Y) < 0.65f;
+        if (poseMur)
+        {
+            // On oriente la torche pour qu'elle sorte du mur (tête vers l'extérieur).
+            float yaw = Mathf.RadToDeg(Mathf.Atan2(-normale.X, -normale.Z));
+            float rotManuelleMur = Mathf.PosMod(Mathf.Round(_rotationManuelleY / 90f) * 90f, 360f);
+            pointDeChute = pointVisee + normale * TorcheOffsetMurMetres + Vector3.Up * 0.12f;
+            pointAligne = pointDeChute;
+            rotationDeg = new Vector3(TorcheAngleMurDegres, Mathf.PosMod(yaw + rotManuelleMur, 360f), 0f);
+        }
+        else
+        {
+            // Le modèle torche est ancré à sa base: Y = sol + marge (pas +hauteur/2).
+            float y = pointVisee.Y + MargeEmpilementStructureMetres;
+            pointDeChute = new Vector3(pointVisee.X, y, pointVisee.Z);
+            pointAligne = pointDeChute;
+            rotationDeg = new Vector3(0f, Mathf.PosMod(Mathf.Round(_rotationManuelleY / 15f) * 15f, 360f), 0f);
+        }
+
+        if (!EstPositionStructureLibre(idTorche, pointDeChute, pointAligne))
+        {
+            GD.Print("ZERO-K : Espace insuffisant pour poser la torche ici.");
+            return false;
+        }
+
+        float distance = GlobalPosition.DistanceTo(pointDeChute);
+        float distMin = depuisInteragir ? 0.35f : 0.55f;
+        poseValide = distance >= distMin;
+        return true;
+    }
+
+    private ItemPhysique ResoudreMurSupportDepuisNoeud(Node n)
+    {
+        for (Node cur = n; cur != null; cur = cur.GetParent())
+        {
+            if (cur is ItemPhysique item && item.IsInGroup("BlocsPoses")
+                && (EstIdMuret(item.ID_Objet) || EstIdMurBois(item.ID_Objet)))
+                return item;
+        }
+        return null;
+    }
+
+    private ItemPhysique ResoudreSupportToitDepuisNoeud(Node n)
+    {
+        for (Node cur = n; cur != null; cur = cur.GetParent())
+        {
+            if (cur is ItemPhysique item && item.IsInGroup("BlocsPoses")
+                && (EstIdToitChaume(item.ID_Objet) || EstIdMurBois(item.ID_Objet) || EstIdMuret(item.ID_Objet) || EstIdPlancher(item.ID_Objet) || EstIdFondation(item.ID_Objet)))
+                return item;
+        }
+        return null;
+    }
+
+    private ItemPhysique TrouverSupportToitProche(Vector3 worldPoint)
+    {
+        var nodes = GetTree()?.GetNodesInGroup("BlocsPoses");
+        if (nodes == null)
+            return null;
+        ItemPhysique meilleur = null;
+        float meilleurScore = float.MaxValue;
+        for (int i = 0; i < nodes.Count; i++)
+        {
+            if (nodes[i] is not ItemPhysique ip)
+                continue;
+            if (!(EstIdToitChaume(ip.ID_Objet) || EstIdMurBois(ip.ID_Objet) || EstIdMuret(ip.ID_Objet) || EstIdPlancher(ip.ID_Objet) || EstIdFondation(ip.ID_Objet)))
+                continue;
+            Vector3 dims = ObtenirDimensionsApproxStructurePose(ip.ID_Objet);
+            float emprise = Mathf.Max(dims.X, dims.Z) * 0.65f;
+            float dx = Mathf.Abs(ip.GlobalPosition.X - worldPoint.X);
+            float dz = Mathf.Abs(ip.GlobalPosition.Z - worldPoint.Z);
+            if (dx > emprise || dz > emprise)
+                continue;
+            float yRef = EstIdToitChaume(ip.ID_Objet)
+                ? ip.GlobalPosition.Y
+                : (ip.GlobalPosition.Y + dims.Y * 0.5f);
+            float dy = Mathf.Abs(yRef - worldPoint.Y);
+            if (dy > 2.2f)
+                continue;
+            float score = dx * dx + dz * dz + dy * dy * 0.35f;
+            if (score < meilleurScore)
+            {
+                meilleurScore = score;
+                meilleur = ip;
+            }
+        }
+        return meilleur;
+    }
+
+    private static Vector2I CleGrilleToitChaume(Vector3 positionMonde)
+    {
+        int gx = Mathf.RoundToInt(positionMonde.X / ToitChaumePasGrilleMetres);
+        int gz = Mathf.RoundToInt(positionMonde.Z / ToitChaumePasGrilleMetres);
+        return new Vector2I(gx, gz);
+    }
+
+    private static Node3D ObtenirNoeudMeshToit(ItemPhysique toit)
+    {
+        foreach (Node enfant in toit.GetChildren())
+        {
+            if (enfant is Node3D n3 && enfant.Name == "MeshInstance3D")
+                return n3;
+        }
+        return null;
+    }
+
+    private static void SupprimerCollisionsToitChaume(ItemPhysique toit)
+    {
+        var aSupprimer = new List<Node>();
+        foreach (Node enfant in toit.GetChildren())
+        {
+            if (enfant is CollisionShape3D shape && enfant.Name.ToString().Contains("CollisionToitChaume", StringComparison.Ordinal))
+                aSupprimer.Add(shape);
+        }
+        for (int i = 0; i < aSupprimer.Count; i++)
+            aSupprimer[i].QueueFree();
+    }
+
+    private static void DefinirCollisionToitActive(ItemPhysique toit, bool active)
+    {
+        foreach (Node enfant in toit.GetChildren())
+        {
+            if (enfant is CollisionShape3D shape && enfant.Name.ToString().Contains("CollisionToitChaume", StringComparison.Ordinal))
+                shape.Disabled = !active;
+        }
+    }
+
+    private static void AppliquerVisuelToitChaumeCompose(
+        ItemPhysique toit,
+        ToitChaumeVarianteVisuelle variante,
+        float rotationLocaleY,
+        Vector3 decalageLocal,
+        float facteurEchelleXZ)
+    {
+        Node3D meshRoot = ObtenirNoeudMeshToit(toit);
+        if (meshRoot == null)
+            return;
+
+        SlotInventaire slot = new SlotInventaire
+        {
+            ID = toit.ID_Objet,
+            IndexBotanique = toit.IndexBotanique,
+            IndexChimique = toit.IndexChimique,
+            IndexMorphologique = toit.IndexCacheMemoire,
+            Quantite = 1
+        };
+
+        NettoyerModelesEnfants(meshRoot);
+        InstancierModeleToitChaume(meshRoot, slot, variante, true, facteurEchelleXZ, decalageLocal, rotationLocaleY);
+        SupprimerCollisionsToitChaume(toit);
+        AjouterCollisionToitChaume(toit, meshRoot);
+        DefinirCollisionToitActive(toit, true);
+        toit.Visible = true;
+    }
+
+    public void PlanifierRecalculAssemblageToitsChaume()
+    {
+        CallDeferred(nameof(RecalculerAssemblageToitsChaumeGlobal));
+    }
+
+    private void RecalculerAssemblageToitsChaumeGlobal()
+    {
+        var nodes = GetTree()?.GetNodesInGroup("BlocsPoses");
+        if (nodes == null)
+            return;
+
+        var toits = new List<ItemPhysique>();
+        var parCellule = new Dictionary<Vector2I, ItemPhysique>();
+        for (int i = 0; i < nodes.Count; i++)
+        {
+            if (nodes[i] is not ItemPhysique ip || !EstIdToitChaume(ip.ID_Objet))
+                continue;
+            toits.Add(ip);
+            Vector2I cle = CleGrilleToitChaume(ip.GlobalPosition);
+            if (!parCellule.ContainsKey(cle))
+                parCellule[cle] = ip;
+            else
+            {
+                float dActuel = ip.GlobalPosition.DistanceSquaredTo(new Vector3(cle.X * ToitChaumePasGrilleMetres, ip.GlobalPosition.Y, cle.Y * ToitChaumePasGrilleMetres));
+                float dExistant = parCellule[cle].GlobalPosition.DistanceSquaredTo(new Vector3(cle.X * ToitChaumePasGrilleMetres, parCellule[cle].GlobalPosition.Y, cle.Y * ToitChaumePasGrilleMetres));
+                if (dActuel < dExistant)
+                    parCellule[cle] = ip;
+            }
+        }
+
+        for (int i = 0; i < toits.Count; i++)
+        {
+            AppliquerVisuelToitChaumeCompose(toits[i], ToitChaumeVarianteVisuelle.Solo, 0f, Vector3.Zero, 1f);
+            toits[i].Visible = true;
+            DefinirCollisionToitActive(toits[i], true);
+        }
+
+        var assignes = new HashSet<ItemPhysique>();
+        foreach (KeyValuePair<Vector2I, ItemPhysique> pair in parCellule)
+        {
+            Vector2I[] anchors = new[]
+            {
+                pair.Key,
+                new Vector2I(pair.Key.X - 1, pair.Key.Y),
+                new Vector2I(pair.Key.X, pair.Key.Y - 1),
+                new Vector2I(pair.Key.X - 1, pair.Key.Y - 1)
+            };
+            for (int a = 0; a < anchors.Length; a++)
+            {
+                Vector2I anchor = anchors[a];
+                Vector2I c00 = anchor;
+                Vector2I c10 = new Vector2I(anchor.X + 1, anchor.Y);
+                Vector2I c01 = new Vector2I(anchor.X, anchor.Y + 1);
+                Vector2I c11 = new Vector2I(anchor.X + 1, anchor.Y + 1);
+
+                bool h00 = parCellule.TryGetValue(c00, out ItemPhysique i00) && !assignes.Contains(i00);
+                bool h10 = parCellule.TryGetValue(c10, out ItemPhysique i10) && !assignes.Contains(i10);
+                bool h01 = parCellule.TryGetValue(c01, out ItemPhysique i01) && !assignes.Contains(i01);
+                bool h11 = parCellule.TryGetValue(c11, out ItemPhysique i11) && !assignes.Contains(i11);
+                int count = (h00 ? 1 : 0) + (h10 ? 1 : 0) + (h01 ? 1 : 0) + (h11 ? 1 : 0);
+                if (count < 2)
+                    continue;
+
+                if (!h00)
+                    continue;
+                ItemPhysique anchorItem = i00;
+                if (anchorItem == null || assignes.Contains(anchorItem))
+                    continue;
+
+                if (count == 4)
+                {
+                    Vector3 decal4 = new Vector3(ToitChaumePasGrilleMetres * 0.5f, 0f, ToitChaumePasGrilleMetres * 0.5f);
+                    AppliquerVisuelToitChaumeCompose(anchorItem, ToitChaumeVarianteVisuelle.Solo, 0f, decal4, 2f);
+                    assignes.Add(anchorItem);
+                    if (h10) { i10.Visible = false; DefinirCollisionToitActive(i10, false); assignes.Add(i10); }
+                    if (h01) { i01.Visible = false; DefinirCollisionToitActive(i01, false); assignes.Add(i01); }
+                    if (h11) { i11.Visible = false; DefinirCollisionToitActive(i11, false); assignes.Add(i11); }
+                    continue;
+                }
+
+                if (count == 3)
+                {
+                    Vector3 decal3 = new Vector3(ToitChaumePasGrilleMetres * 0.5f, 0f, ToitChaumePasGrilleMetres * 0.5f);
+                    float rotL = !h11 ? 0f : (!h01 ? 90f : (!h10 ? 270f : 180f));
+                    AppliquerVisuelToitChaumeCompose(anchorItem, ToitChaumeVarianteVisuelle.Angle, rotL, decal3, 1f);
+                    assignes.Add(anchorItem);
+                    if (h10 && i10 != anchorItem) { i10.Visible = false; DefinirCollisionToitActive(i10, false); assignes.Add(i10); }
+                    if (h01 && i01 != anchorItem) { i01.Visible = false; DefinirCollisionToitActive(i01, false); assignes.Add(i01); }
+                    if (h11 && i11 != anchorItem) { i11.Visible = false; DefinirCollisionToitActive(i11, false); assignes.Add(i11); }
+                    continue;
+                }
+
+                bool horizontal = h00 && h10;
+                bool vertical = h00 && h01;
+                if (!horizontal && !vertical)
+                    continue;
+
+                float rot = horizontal ? 0f : 90f;
+                Vector3 decal = horizontal
+                    ? new Vector3(ToitChaumePasGrilleMetres * 0.5f, 0f, 0f)
+                    : new Vector3(0f, 0f, ToitChaumePasGrilleMetres * 0.5f);
+                AppliquerVisuelToitChaumeCompose(anchorItem, ToitChaumeVarianteVisuelle.Long, rot, decal, 1f);
+                assignes.Add(anchorItem);
+                if (h10 && i10 != anchorItem) { i10.Visible = false; DefinirCollisionToitActive(i10, false); assignes.Add(i10); }
+                if (h01 && i01 != anchorItem) { i01.Visible = false; DefinirCollisionToitActive(i01, false); assignes.Add(i01); }
+                if (h11 && i11 != anchorItem) { i11.Visible = false; DefinirCollisionToitActive(i11, false); assignes.Add(i11); }
+            }
+        }
+    }
+
+    private ItemPhysique ResoudreCadrePorteDepuisNoeud(Node n)
+    {
+        for (Node cur = n; cur != null; cur = cur.GetParent())
+        {
+            if (cur is ItemPhysique item && item.IsInGroup("BlocsPoses") && EstIdMurBoisCadrePorte(item.ID_Objet))
+                return item;
+        }
+        return null;
+    }
+
+    private ItemPhysique TrouverCadrePorteProche(Vector3 worldPoint)
+    {
+        var nodes = GetTree()?.GetNodesInGroup("BlocsPoses");
+        if (nodes == null)
+            return null;
+        ItemPhysique meilleur = null;
+        float meilleurScore = float.MaxValue;
+        for (int i = 0; i < nodes.Count; i++)
+        {
+            if (nodes[i] is not ItemPhysique ip || !EstIdMurBoisCadrePorte(ip.ID_Objet))
+                continue;
+            float dx = Mathf.Abs(ip.GlobalPosition.X - worldPoint.X);
+            float dz = Mathf.Abs(ip.GlobalPosition.Z - worldPoint.Z);
+            if (dx > MurLargeurMetres * 0.65f || dz > MurLargeurMetres * 0.65f)
+                continue;
+            float dy = Mathf.Abs((ip.GlobalPosition.Y + MurHauteurMetres * 0.5f) - worldPoint.Y);
+            if (dy > 2.4f)
+                continue;
+            float score = dx * dx + dz * dz + dy * dy * 0.35f;
+            if (score < meilleurScore)
+            {
+                meilleurScore = score;
+                meilleur = ip;
+            }
+        }
+        return meilleur;
+    }
+
+    private bool CadrePossedeDejaPorte(ItemPhysique cadre)
+    {
+        var nodes = GetTree()?.GetNodesInGroup("BlocsPoses");
+        if (nodes == null)
+            return false;
+        for (int i = 0; i < nodes.Count; i++)
+        {
+            if (nodes[i] is not ItemPhysique ip || !EstIdPorteBois(ip.ID_Objet))
+                continue;
+            float yBaseCadre = cadre.GlobalPosition.Y - (MurHauteurMetres * 0.5f);
+            float yCentrePorteAttendu = yBaseCadre + PorteHauteurMetres * 0.5f;
+            if (Mathf.Abs(ip.GlobalPosition.X - cadre.GlobalPosition.X) <= 0.18f
+                && Mathf.Abs(ip.GlobalPosition.Z - cadre.GlobalPosition.Z) <= 0.18f
+                && Mathf.Abs(ip.GlobalPosition.Y - yCentrePorteAttendu) <= 0.3f)
+                return true;
+        }
+        return false;
+    }
+
+    private ItemPhysique TrouverSupportMurProche(Vector3 worldPoint)
+    {
+        var nodes = GetTree()?.GetNodesInGroup("BlocsPoses");
+        if (nodes == null)
+            return null;
+        ItemPhysique meilleur = null;
+        float meilleurScore = float.MaxValue;
+        for (int i = 0; i < nodes.Count; i++)
+        {
+            if (nodes[i] is not ItemPhysique ip || !(EstIdMuret(ip.ID_Objet) || EstIdMurBois(ip.ID_Objet)))
+                continue;
+            Vector3 dims = ObtenirDimensionsApproxStructurePose(ip.ID_Objet);
+            float dx = Mathf.Abs(ip.GlobalPosition.X - worldPoint.X);
+            float dz = Mathf.Abs(ip.GlobalPosition.Z - worldPoint.Z);
+            if (dx > dims.X * 0.65f || dz > dims.X * 0.65f)
+                continue;
+            float dy = Mathf.Abs((ip.GlobalPosition.Y + dims.Y * 0.5f) - worldPoint.Y);
+            if (dy > 2.2f)
+                continue;
+            float score = dx * dx + dz * dz + dy * dy * 0.3f;
+            if (score < meilleurScore)
+            {
+                meilleurScore = score;
+                meilleur = ip;
+            }
+        }
+        return meilleur;
+    }
+
+    private ItemPhysique ResoudreMuretDepuisNoeud(Node n)
+    {
+        for (Node cur = n; cur != null; cur = cur.GetParent())
+        {
+            if (cur is ItemPhysique item && item.IsInGroup("BlocsPoses") && (EstIdMuret(item.ID_Objet) || EstIdMurBois(item.ID_Objet)))
+                return item;
+        }
+        return null;
+    }
+
+    private ItemPhysique TrouverMuretProchePourSnap(Vector3 worldPoint)
+    {
+        var nodes = GetTree()?.GetNodesInGroup("BlocsPoses");
+        if (nodes == null)
+            return null;
+        ItemPhysique meilleur = null;
+        float meilleurScore = float.MaxValue;
+        for (int i = 0; i < nodes.Count; i++)
+        {
+            if (nodes[i] is not ItemPhysique ip || !(EstIdMuret(ip.ID_Objet) || EstIdMurBois(ip.ID_Objet)))
+                continue;
+            Vector3 dims = ObtenirDimensionsApproxStructurePose(ip.ID_Objet);
+            float emprise = Mathf.Max(dims.X, dims.Z);
+            float dx = Mathf.Abs(ip.GlobalPosition.X - worldPoint.X);
+            float dz = Mathf.Abs(ip.GlobalPosition.Z - worldPoint.Z);
+            if (dx > emprise * 0.65f || dz > emprise * 0.65f)
+                continue;
+            float dy = Mathf.Abs(ip.GlobalPosition.Y - worldPoint.Y);
+            if (dy > (dims.Y + MuretHauteurMetres) * 1.2f)
+                continue;
+            float score = dx * dx + dz * dz + dy * dy * 0.5f;
+            if (score < meilleurScore)
+            {
+                meilleurScore = score;
+                meilleur = ip;
+            }
+        }
+        return meilleur;
+    }
+
+    private bool MuretExisteDejaSurPosition(Vector3 pointAligne)
+    {
+        var nodes = GetTree()?.GetNodesInGroup("BlocsPoses");
+        if (nodes == null)
+            return false;
+        for (int i = 0; i < nodes.Count; i++)
+        {
+            if (nodes[i] is not ItemPhysique ip || !EstIdMuret(ip.ID_Objet))
+                continue;
+            if (Mathf.Abs(ip.GlobalPosition.Y - pointAligne.Y) > 0.15f)
+                continue;
+            if (Mathf.Abs(ip.GlobalPosition.X - pointAligne.X) <= MuretTolerancePresenceMetres
+                && Mathf.Abs(ip.GlobalPosition.Z - pointAligne.Z) <= MuretTolerancePresenceMetres)
+                return true;
+        }
+        return false;
     }
 
     private ItemPhysique ResoudreFondationHoteDepuisNoeud(Node n)
@@ -983,7 +1875,7 @@ public partial class Joueur
 
     private Vector3 CalculerRotationStructureFixe(int idObjet = 0)
     {
-        float pas = EstIdPlancher(idObjet) ? PasRotationSolBoisDegres : PasRotationStructuresFixesDegres;
+        float pas = (EstIdPlancher(idObjet) || EstIdToitChaume(idObjet)) ? PasRotationSolBoisDegres : PasRotationStructuresFixesDegres;
         float rotationY = Mathf.Round(_rotationManuelleY / pas) * pas;
         rotationY = Mathf.PosMod(rotationY, 360f);
         return new Vector3(0f, rotationY, 0f);
@@ -1031,6 +1923,23 @@ public partial class Joueur
         GD.Print(_offsetEtagesFondationManuel == 0
             ? "ZERO-K : Hauteur fondation — 1 étage au-dessus de la cible (molette / Page Haut-Bas)."
             : $"ZERO-K : Hauteur fondation — +{_offsetEtagesFondationManuel} étage(s) supplémentaire(s) (~{_offsetEtagesFondationManuel * HauteurApproxFondationMetres:0.##} m).");
+    }
+
+    private void AjusterModeSnapMuret(int delta)
+    {
+        const int nbModes = 4;
+        int mode = (_modeSnapMuretManuel + delta) % nbModes;
+        if (mode < 0)
+            mode += nbModes;
+        _modeSnapMuretManuel = mode;
+        string nomMode = _modeSnapMuretManuel switch
+        {
+            ModeSnapMuretFondation => "Fondation",
+            ModeSnapMuretMuret => "Muret",
+            ModeSnapMuretTerrain => "Terrain",
+            _ => "Auto"
+        };
+        GD.Print($"ZERO-K : Snap muret = {nomMode} (molette).");
     }
 
     /// <summary>True si une fondation ou structure fixe est juste sous la position (empilement, pas sol libre).</summary>
@@ -1157,6 +2066,16 @@ public partial class Joueur
             return new Vector3(FondationDistanceCentreAdjacente, HauteurApproxFondationMetres, FondationDistanceCentreAdjacente);
         if (EstIdPlancher(idObjet))
             return new Vector3(PlancherEmpriseMetres, PlancherEpaisseurMetres, PlancherEmpriseMetres);
+        if (EstIdMuret(idObjet))
+            return new Vector3(MuretLongueurMetres, MuretHauteurMetres, MuretEpaisseurMetres);
+        if (EstIdMurBois(idObjet))
+            return new Vector3(MurLargeurMetres, MurHauteurMetres, MurEpaisseurMetres);
+        if (EstIdPorteBois(idObjet))
+            return new Vector3(PorteLargeurMetres, PorteHauteurMetres, PorteEpaisseurMetres);
+        if (EstIdToitChaume(idObjet))
+            return new Vector3(ToitChaumePasGrilleMetres, ToitChaumeHauteurMetres, ToitChaumePasGrilleMetres);
+        if (EstIdTorche(idObjet))
+            return new Vector3(TorcheRayonMetres * 2f, TorcheHauteurMetres, TorcheRayonMetres * 2f);
         if (idObjet == 200)
             return new Vector3(1.2f, 1.0f, 0.9f);
         if (idObjet == IdObjetTableAnalyseTier1)
@@ -1191,9 +2110,35 @@ public partial class Joueur
                     return false;
                 continue;
             }
+            // Règle gameplay demandée : pour poser un plancher sur une fondation valide,
+            // rien d'autre qu'un autre plancher ne doit bloquer la pose.
+            if (EstIdPlancher(idObjet))
+                continue;
             // Autres fondations voisines (souvent plus hautes) : n'empêchent pas le plancher sur la fondation visée.
             if (EstIdPlancher(idObjet) && EstIdFondation(ip.ID_Objet))
                 continue;
+            // Les murets en bordure ne doivent pas bloquer la pose d'un plancher.
+            if (EstIdPlancher(idObjet) && EstIdMuret(ip.ID_Objet))
+                continue;
+            // Les murs et portes au-dessus d'une fondation ne doivent pas bloquer la pose d'un plancher.
+            if (EstIdPlancher(idObjet) && (EstIdMurBois(ip.ID_Objet) || EstIdPorteBois(ip.ID_Objet)))
+                continue;
+            // Le muret est volontairement "accolé" à une fondation : ce contact ne bloque pas la pose.
+            if (EstIdMuret(idObjet) && EstIdFondation(ip.ID_Objet))
+                continue;
+            // La porte est volontairement imbriquée dans le mur cadre de porte.
+            if (EstIdPorteBois(idObjet) && EstIdMurBoisCadrePorte(ip.ID_Objet))
+                continue;
+            // Le battant de porte est contenu dans la travée du mur: autoriser le recouvrement avec les supports.
+            if (EstIdPorteBois(idObjet) && (EstIdMuret(ip.ID_Objet) || EstIdMurBois(ip.ID_Objet)))
+                continue;
+            // Un seul battant par cadre.
+            if (EstIdPorteBois(idObjet) && EstIdPorteBois(ip.ID_Objet))
+            {
+                if (dx <= 0.2f && dz <= 0.2f && Mathf.Abs(posPose.Y - posRef.Y) <= 0.35f)
+                    return false;
+                continue;
+            }
             Vector3 dimsRef = ObtenirDimensionsApproxStructurePose(ip.ID_Objet);
             float yTolerance = Mathf.Min(dimsPose.Y, dimsRef.Y) - MargeChevauchementMetres;
             if (yBaseFondationPlancher.HasValue && EstIdFondation(ip.ID_Objet)
@@ -1242,7 +2187,9 @@ public partial class Joueur
         };
         float[] yOffsets = EstIdFondation(idObjet)
             ? new float[] { 0f, HauteurApproxFondationMetres, HauteurApproxFondationMetres * 2f, HauteurApproxFondationMetres * 3f }
-            : new float[] { 0f, 0.2f, -0.2f, 0.4f };
+            : (EstIdMuret(idObjet)
+                ? new float[] { 0f, MuretHauteurMetres, MuretHauteurMetres * 2f, 0.2f, -0.2f }
+                : new float[] { 0f, 0.2f, -0.2f, 0.4f });
 
         for (int ring = 1; ring <= 4; ring++)
         {
@@ -1288,7 +2235,7 @@ public partial class Joueur
         bool estRackBatons = slot.ID == IdObjetRackBatons || slot.ID == IdObjetRackBuches;
         bool estBuisson = slot.ID == 10 || slot.ID == 11;
         bool estCoffre = slot.ID == IdObjetCoffreBoisTier0;
-        bool estPitFeu = EstIdPitFeu(slot.ID) || EstIdFondation(slot.ID) || EstIdPlancher(slot.ID);
+        bool estPitFeu = EstIdPitFeu(slot.ID) || EstIdFondation(slot.ID) || EstIdPlancher(slot.ID) || EstIdMuret(slot.ID) || EstIdMurBois(slot.ID) || EstIdPorteBois(slot.ID) || EstIdToitChaume(slot.ID);
         return !estTerrainVoxel && !estAtelier && !estTableAnalyse && !estRackBatons && !estBuisson && !estCoffre && !estPitFeu;
     }
 
