@@ -5,7 +5,7 @@ using System.Reflection;
 /// <summary>Construction du catalogue inventaire créatif/admin (variantes + IDs objets manquants).</summary>
 public static class CreatifCatalogueService
 {
-    public const int VersionCatalogue = 14;
+    public const int VersionCatalogue = 16;
 
     public enum CategorieCreatif
     {
@@ -32,6 +32,8 @@ public static class CreatifCatalogueService
     private static readonly int[] IdsVariantesEssenceBois =
     {
         200,
+        Joueur.IdObjetTableBoisDecorative,
+        Joueur.IdObjetTableArtisanaTier1,
         Joueur.IdObjetTableAnalyseTier1,
         Joueur.IdObjetPitFeu,
         Joueur.IdObjetPitFeuRoche,
@@ -149,7 +151,7 @@ public static class CreatifCatalogueService
             return CategorieCreatif.Pierre;
         if (id == 30 || id == 32 || id == BlocChutant.ID_BRANCHE || id == BlocChutant.ID_FEUILLE_ARRACHEE)
             return CategorieCreatif.Bois;
-        if (id == 200 || id == Joueur.IdObjetTableAnalyseTier1 || id == Joueur.IdObjetRackBatons
+        if (id == 200 || id == Joueur.IdObjetTableBoisDecorative || id == Joueur.IdObjetTableArtisanaTier1 || id == Joueur.IdObjetTableAnalyseTier1 || id == Joueur.IdObjetRackBatons
             || id == Joueur.IdObjetRackBuches || id == Joueur.IdObjetCoffreBoisTier0
             || id == Joueur.IdObjetPitFeu || id == Joueur.IdObjetPitFeuRoche
             || id == Joueur.IdObjetFondationBois || id == Joueur.IdObjetFondationRoche

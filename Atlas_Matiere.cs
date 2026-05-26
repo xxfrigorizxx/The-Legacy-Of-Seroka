@@ -428,6 +428,16 @@ public static class Atlas_Matiere
             string essence = slot.IndexBotanique switch { 0 => "Chêne", 1 => "Bouleau", 2 => "Pin", 3 => "Sapin", 4 => "Fromager", _ => "Bois" };
             return $"Atelier Primitif en {essence}";
         }
+        if (id == Joueur.IdObjetTableBoisDecorative)
+        {
+            string essence = slot.IndexBotanique switch { 0 => "Chêne", 1 => "Bouleau", 2 => "Pin", 3 => "Sapin", 4 => "Fromager", _ => "Bois" };
+            return $"Table décorative ({essence})";
+        }
+        if (id == Joueur.IdObjetTableArtisanaTier1)
+        {
+            string essence = slot.IndexBotanique switch { 0 => "Chêne", 1 => "Bouleau", 2 => "Pin", 3 => "Sapin", 4 => "Fromager", _ => "Bois" };
+            return $"Table artisanat structures T1 ({essence})";
+        }
         if (id == Joueur.IdObjetTableAnalyseTier1)
         {
             string essence = slot.IndexBotanique switch { 0 => "Chêne", 1 => "Bouleau", 2 => "Pin", 3 => "Sapin", 4 => "Fromager", _ => "Bois" };
@@ -876,8 +886,9 @@ public static class Atlas_Matiere
         };
     }
 
-    /// <param name="grilleCraft3x3Table">True uniquement si le menu craft est ouvert depuis l’établi : grille 3×3 et indices c0–c3 sur le bloc haut-gauche (0,1,3,4). False = inventaire (Q) : 2×2 classique (0–3), pas de 3×3.</param>
-    public static SlotInventaire EvaluerRecette(SlotInventaire[] grille, bool grilleCraft3x3Table = false)
+    /// <param name="grilleCraft3x3Table">True uniquement si le menu craft est ouvert depuis une station : grille 3×3 et indices c0–c3 sur le bloc haut-gauche (0,1,3,4). False = inventaire (Q) : 2×2 classique (0–3), pas de 3×3.</param>
+    /// <param name="idStationCraft">ID de la station de craft ouverte (0 si inventaire/poche).</param>
+    public static SlotInventaire EvaluerRecette(SlotInventaire[] grille, bool grilleCraft3x3Table = false, int idStationCraft = 0)
     {
         if (grille == null || grille.Length < 4)
             return new SlotInventaire();
@@ -1531,7 +1542,7 @@ public static class Atlas_Matiere
             }
         }
 
-        if (grilleCraft3x3Table && grille.Length >= 9)
+        if (grilleCraft3x3Table && grille.Length >= 9 && idStationCraft == Joueur.IdObjetTableArtisanaTier1)
         {
             static bool EstDemiBucheStandardFondation(SlotInventaire s) =>
                 !s.EstVide && s.ID == 30 && s.IndexMorphologique == 1 && s.IndexTaille == 1;
@@ -2804,6 +2815,117 @@ public static class Atlas_Matiere
                     EstUnEclat = false
                 };
             }
+
+            // Table artisanat structures T1 (148) : station dédiée craft structures.
+            // (H)( )(P)
+            // (R)(R)(DB)
+            // ( )(T)( )
+            // H = hachette primitive (106), P = pioche pierre tier0 (108),
+            // R = petite roche ronde (morph 0, taille 0/1), DB = demi-bûche fendue en 2 standard, T = atelier primitif (200).
+            static bool EstPetiteRocheRondeTableArtisana(SlotInventaire s) =>
+                !s.EstVide && ItemPhysique.EstIdRocheMatiere(s.ID) && s.IndexMorphologique == 0 && (s.IndexTaille == 0 || s.IndexTaille == 1);
+            static bool EstDemiBucheStandardTableArtisana(SlotInventaire s) =>
+                !s.EstVide && s.ID == 30 && s.IndexMorphologique == 1 && s.IndexTaille == 1;
+
+            bool patronTableArtisanaT1 =
+                !grille[0].EstVide && grille[0].ID == 106
+                && grille[1].EstVide
+                && !grille[2].EstVide && grille[2].ID == Joueur.IdObjetPiochePierreTier0
+                && EstPetiteRocheRondeTableArtisana(grille[3])
+                && EstPetiteRocheRondeTableArtisana(grille[4])
+                && EstDemiBucheStandardTableArtisana(grille[5])
+                && grille[6].EstVide
+                && !grille[7].EstVide && grille[7].ID == 200
+                && grille[8].EstVide;
+            if (idStationCraft == 200 && patronTableArtisanaT1)
+            {
+                // Cohérence matériaux : les deux petites roches doivent être de même type.
+                int typeRoche = ItemPhysique.IndexChimiqueDepuisIdRoche(grille[3].ID);
+                bool rochesMemeType = ItemPhysique.IndexChimiqueDepuisIdRoche(grille[4].ID) == typeRoche;
+                if (!rochesMemeType)
+                    return new SlotInventaire();
+
+                byte essenceBase = grille[5].IndexBotanique;
+                string genomeTableArtisana = string.Join(";", new[]
+                {
+                    "TABLEARTISANA148",
+                    $"H_B={grille[0].IndexBotanique}",
+                    $"H_R={grille[0].IndexChimique}",
+                    $"H_C={grille[0].IndexMorphologique}",
+                    $"H_M={grille[0].IndexTaille}",
+                    $"P_B={grille[2].IndexBotanique}",
+                    $"P_R={grille[2].IndexChimique}",
+                    $"P_C={grille[2].IndexMorphologique}",
+                    $"P_M={grille[2].IndexTaille}",
+                    $"R_T={typeRoche}",
+                    $"T_B={grille[7].IndexBotanique}",
+                    $"T_C={grille[7].IndexChimique}",
+                    $"T_M={grille[7].IndexMorphologique}",
+                    $"DB_B={grille[5].IndexBotanique}"
+                });
+
+                return new SlotInventaire
+                {
+                    ID = Joueur.IdObjetTableArtisanaTier1,
+                    IndexBotanique = essenceBase,
+                    IndexChimique = grille[7].IndexChimique,
+                    IndexMorphologique = grille[7].IndexMorphologique,
+                    GenomeAssemblage = genomeTableArtisana,
+                    NiveauFracture = Mathf.Max(
+                        Mathf.Max(grille[0].NiveauFracture, grille[2].NiveauFracture),
+                        Mathf.Max(grille[3].NiveauFracture, Mathf.Max(grille[4].NiveauFracture, Mathf.Max(grille[5].NiveauFracture, grille[7].NiveauFracture)))),
+                    EstUnEclat = false
+                };
+            }
+        }
+
+        // Table décorative bois (147) — craft sur atelier primitif (200).
+        // (L)(BF)(L)
+        // (B)( )(B)
+        // ( )( )( )
+        if (grilleCraft3x3Table && grille.Length >= 9 && idStationCraft == 200)
+        {
+            static bool EstDemiBucheStandardTableDeco(SlotInventaire s) =>
+                !s.EstVide && s.ID == 30 && s.IndexMorphologique == 1 && s.IndexTaille == 1;
+            bool tableDecoPatron =
+                EstSlotCordeOuLianeCraft(grille[0]) && EstDemiBucheStandardTableDeco(grille[1]) && EstSlotCordeOuLianeCraft(grille[2]) &&
+                EstSlotBatonCraft(grille[3]) && grille[4].EstVide && EstSlotBatonCraft(grille[5]) &&
+                grille[6].EstVide && grille[7].EstVide && grille[8].EstVide;
+            if (tableDecoPatron)
+            {
+                SlotInventaire ligA = grille[0];
+                SlotInventaire ligB = grille[2];
+                bool ligaturesIdentiques = MemeVarianteLigature(ligA, ligB) && Joueur.SontEmpilables(ligA, ligB);
+                bool batonsMemeEssence = grille[3].IndexBotanique == grille[5].IndexBotanique;
+                if (ligaturesIdentiques && batonsMemeEssence)
+                {
+                    byte essenceDemiBuche = grille[1].IndexBotanique;
+                    byte essenceBaton = grille[3].IndexBotanique;
+                    byte varianteLig = VarianteLigatureCraft(ligA);
+                    string genomeTableDeco = string.Join(";", new[]
+                    {
+                        "TABLEDECO147",
+                        $"BF={essenceDemiBuche}",
+                        $"BAT={essenceBaton}",
+                        $"LIGV={varianteLig}",
+                        $"LIGC={ligA.IndexChimique}",
+                        $"LIGM={ligA.IndexMorphologique}"
+                    });
+                    return new SlotInventaire
+                    {
+                        ID = Joueur.IdObjetTableBoisDecorative,
+                        IndexBotanique = essenceDemiBuche,
+                        IndexChimique = ligA.IndexChimique,
+                        IndexMorphologique = ligA.IndexMorphologique,
+                        IndexTaille = 0,
+                        GenomeAssemblage = genomeTableDeco,
+                        NiveauFracture = Mathf.Max(
+                            Mathf.Max(ligA.NiveauFracture, ligB.NiveauFracture),
+                            Mathf.Max(grille[1].NiveauFracture, Mathf.Max(grille[3].NiveauFracture, grille[5].NiveauFracture))),
+                        EstUnEclat = false
+                    };
+                }
+            }
         }
 
         if (ingredients.Count == 2 && ingredients[0].ID == 15 && ingredients[1].ID == 15)
@@ -2836,12 +2958,21 @@ public static class Atlas_Matiere
 
         if (paireBoisOk && EstPetiteRocheRondeCraft(c1) && estCordeAtelier)
         {
+            int idxRocheAtelier = ItemPhysique.IndexChimiqueDepuisIdRoche(c1.ID);
+            string genomeAtelier = string.Join(";", new[]
+            {
+                "ATELIER200",
+                $"R={idxRocheAtelier}",
+                $"LIGC={c3.IndexChimique}",
+                $"LIGM={c3.IndexMorphologique}"
+            });
             return new SlotInventaire
             {
                 ID = 200,
                 IndexBotanique = essenceAtelier,
                 IndexChimique = c3.IndexChimique,
-                IndexMorphologique = c3.IndexMorphologique
+                IndexMorphologique = c3.IndexMorphologique,
+                GenomeAssemblage = genomeAtelier
             };
         }
 

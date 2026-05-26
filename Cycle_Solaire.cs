@@ -36,7 +36,7 @@ public partial class Cycle_Solaire : Node
 	private bool _modeNuitActif = true;
 
 	private const float SeuilEntreeModeNuit = -0.03f;
-	private const float SeuilSortieModeNuit = 0.05f;
+	private const float SeuilSortieModeNuit = 0.02f;
 	private const float VitesseLissageLumiere = 4.2f;
 
 	/// <summary>RPC appelé par le Serveur une seule fois quand le joueur spawn ou traverse un portail.</summary>
@@ -263,8 +263,11 @@ public partial class Cycle_Solaire : Node
 		// ProceduralSkyMaterial affiche 1 disque par DirectionalLight → sky_mode=1 (LightOnly) exclut du ciel
 		if (_modeNuitActif)
 		{
-			_soleil.LightEnergy = LisserVers(_soleil.LightEnergy, 0f, delta, VitesseLissageLumiere);
-			_soleil.Set("sky_mode", 1); // Pas de disque soleil (sous l'horizon)
+			// Crépuscule/aurore: même en mode nuit on garde une faible projection lumineuse
+			// pour éviter la coupure brutale "soleil visible mais monde noir".
+			float energieCrepuscule = Mathf.Clamp((hauteurSoleil + 0.12f) * 1.35f, 0f, 0.36f);
+			_soleil.LightEnergy = LisserVers(_soleil.LightEnergy, energieCrepuscule, delta, VitesseLissageLumiere);
+			_soleil.Set("sky_mode", hauteurSoleil > 0f ? 0 : 1); // Disque visible seulement quand au-dessus de l'horizon.
 			if (_lune != null)
 			{
 				_lune.Visible = true;

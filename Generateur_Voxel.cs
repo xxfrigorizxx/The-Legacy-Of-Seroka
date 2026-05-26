@@ -825,34 +825,29 @@ public partial class Generateur_Voxel : Node3D
 			if (bruitLittoral > seuilSable)
 				return (humidite > 0.3f) ? (byte)7 : (byte)3;
 		}
-		// Sable UNIQUEMENT quand très sec ET très chaud (temp + humidité liés logiquement)
-		if (temperature > 0.5f && humidite < -0.5f) return 3;  // Désert : sable
-		// Plusieurs stades temp/hum avec seuils progressifs (transitions lentes)
-		if (temperature > 0.4f)  // Très chaud
-		{
-			// Jungle chaude/humide : herbe (ID 1) dominante avec rares taches de boue.
-			if (humidite > 0.4f)
-				return _noiseHumidite.GetNoise2D(globalX * 1.85f + 640f, globalZ * 1.85f + 640f) > 0.66f ? (byte)7 : (byte)1;
-			if (humidite > 0.1f) return 1;
-			return 1;   // Sec mais pas assez pour sable → herbe jaunâtre (shader)
-		}
-		if (temperature > 0.15f)  // Chaud
-		{
-			if (humidite > 0.35f)
-				return _noiseHumidite.GetNoise2D(globalX * 1.5f + 1040f, globalZ * 1.5f + 1040f) > 0.72f ? (byte)7 : (byte)1;
-			if (humidite > 0.0f) return 1;
-			return 1;   // Sec → herbe (shader jaunâtre)
-		}
-		if (temperature < -0.4f) return 5;  // Très froid = toujours neige
-		if (temperature < -0.15f)  // Froid
-			return (humidite > 0.2f) ? (byte)9 : (byte)5;  // Glace si humide, neige sinon
-		// Tempéré / Frais : humide → boue, sec → roche, entre-deux → herbe
-		if (humidite < -0.35f) return 6;   // Très sec
-		if (humidite < -0.15f) return 1;   // Sec : herbe
-		if (humidite > 0.4f) return 7;     // Très humide : boue
-		if (humidite > 0.2f) return 7;    // Humide : boue
-		if (humidite > 0.05f) return 1;   // Légèrement humide : herbe
-		return 1;  // Herbe par défaut
+		// Répartition demandée:
+		// - Herbe un peu plus présente
+		// - Sable/Neige/Argile/Glace/Boue/Aride à chance équivalente
+		// Poids: herbe 50%, chaque autre matériau ~8.33%.
+		float macroBiome = (_noiseErosion.GetNoise2D(globalX * 0.60f + 9100f, globalZ * 0.60f - 9100f) + 1f) * 0.5f;
+		float macroJitter = _noiseHumidite.GetNoise2D(globalX * 0.58f + 2700f, globalZ * 0.58f - 2700f) * 0.11f;
+		float macro = Mathf.Clamp(macroBiome + macroJitter, 0f, 1f);
+		float detailHumide = _noiseHumidite.GetNoise2D(globalX * 1.55f + 1400f, globalZ * 1.55f + 1400f);
+		float detailSec = _noiseHumidite.GetNoise2D(globalX * 1.9f + 17000f, globalZ * 1.9f + 17000f);
+
+		if (macro < 0.083333f) // sable
+			return (temperature > -0.25f || detailSec > 0.35f) ? (byte)3 : (byte)6;
+		if (macro < 0.166666f) // neige
+			return (temperature < 0.38f || detailHumide > 0.4f) ? (byte)5 : (byte)1;
+		if (macro < 0.25f) // argile
+			return 8;
+		if (macro < 0.333333f) // glace
+			return (temperature < 0.30f || humidite > 0.20f) ? (byte)9 : (byte)5;
+		if (macro < 0.416666f) // boue
+			return (humidite > -0.45f || detailHumide > -0.15f) ? (byte)7 : (byte)1;
+		if (macro < 0.5f) // aride
+			return (humidite < 0.28f || detailSec > -0.05f) ? (byte)6 : (byte)1;
+		return 1; // herbe (50%)
 	}
 
 	public void GenererBruitVierge()
@@ -1123,32 +1118,25 @@ public partial class Generateur_Voxel : Node3D
 			if (bruitLittoral > seuilSable)
 				return (humidite > 0.3f) ? (byte)7 : (byte)3;
 		}
-		// Sable UNIQUEMENT quand très sec ET très chaud (temp + humidité liés)
-		if (temperature > 0.5f && humidite < -0.5f) return 3;  // Désert : sable
-		// Plusieurs stades temp/hum avec seuils progressifs (transitions lentes)
-		if (temperature > 0.4f)  // Très chaud
-		{
-			if (humidite > 0.4f)
-				return noiseNeige.GetNoise2D(globalX * 1.85f + 640f, globalZ * 1.85f + 640f) > 0.66f ? (byte)7 : (byte)1;
-			if (humidite > 0.1f) return 1;
-			return 1;   // Sec → herbe jaunâtre (shader)
-		}
-		if (temperature > 0.15f)  // Chaud
-		{
-			if (humidite < -0.4f) return 1;  // Sec → herbe (shader jaunâtre)
-			if (humidite > 0.35f)
-				return noiseNeige.GetNoise2D(globalX * 1.5f + 1040f, globalZ * 1.5f + 1040f) > 0.72f ? (byte)7 : (byte)1;
-			if (humidite > 0.0f) return 1;
-			return 1;
-		}
-		if (temperature < -0.4f) return 5;  // Très froid = toujours neige
-		if (temperature < -0.15f) return (humidite > 0.2f) ? (byte)9 : (byte)5;  // Glace si humide, neige sinon
-		if (humidite < -0.35f) return 6;
-		if (humidite < -0.15f) return 1;
-		if (humidite > 0.4f) return 7;
-		if (humidite > 0.2f) return 7;
-		if (humidite > 0.05f) return 1;
-		return 1;
+		float macroBiome = (noiseErosion.GetNoise2D(globalX * 0.60f + 9100f, globalZ * 0.60f - 9100f) + 1f) * 0.5f;
+		float macroJitter = noiseNeige.GetNoise2D(globalX * 0.58f + 2700f, globalZ * 0.58f - 2700f) * 0.11f;
+		float macro = Mathf.Clamp(macroBiome + macroJitter, 0f, 1f);
+		float detailHumide = noiseNeige.GetNoise2D(globalX * 1.55f + 1400f, globalZ * 1.55f + 1400f);
+		float detailSec = noiseNeige.GetNoise2D(globalX * 1.9f + 17000f, globalZ * 1.9f + 17000f);
+
+		if (macro < 0.083333f) // sable
+			return (temperature > -0.25f || detailSec > 0.35f) ? (byte)3 : (byte)6;
+		if (macro < 0.166666f) // neige
+			return (temperature < 0.38f || detailHumide > 0.4f) ? (byte)5 : (byte)1;
+		if (macro < 0.25f) // argile
+			return 8;
+		if (macro < 0.333333f) // glace
+			return (temperature < 0.30f || humidite > 0.20f) ? (byte)9 : (byte)5;
+		if (macro < 0.416666f) // boue
+			return (humidite > -0.45f || detailHumide > -0.15f) ? (byte)7 : (byte)1;
+		if (macro < 0.5f) // aride
+			return (humidite < 0.28f || detailSec > -0.05f) ? (byte)6 : (byte)1;
+		return 1; // herbe (50%)
 	}
 
 	/// <summary>Sauvegarde des données brutes sur disque (sans mesh).</summary>

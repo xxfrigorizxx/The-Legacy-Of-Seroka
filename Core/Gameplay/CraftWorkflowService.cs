@@ -17,6 +17,7 @@ public partial class Joueur
     private static bool EstCraftArtisana(int idObjet)
     {
         return idObjet == 200 // Table de craft / atelier
+            || idObjet == IdObjetTableArtisanaTier1
             || idObjet == IdObjetTableAnalyseTier1
             || idObjet == IdObjetRackBatons
             || idObjet == IdObjetRackBuches
@@ -46,6 +47,24 @@ public partial class Joueur
             || idObjet == IdObjetHachePierreTier1
             || idObjet == 105
             || idObjet == IdObjetMailletBois;
+    }
+
+    private static bool EstRecetteAutoriseeTableStructuresT1(int idObjet)
+    {
+        return idObjet == IdObjetFondationBois
+            || idObjet == IdObjetFondationRoche
+            || idObjet == IdObjetFondationBoisSoleRoche
+            || idObjet == IdObjetFondationRocheSoleBois
+            || idObjet == IdObjetSolBois
+            || idObjet == IdObjetSolRoche
+            || idObjet == IdObjetMuretBois
+            || idObjet == IdObjetMuretPierre
+            || idObjet == IdObjetMurBois
+            || idObjet == IdObjetMurBoisFenetre
+            || idObjet == IdObjetMurBoisCadrePorte
+            || idObjet == IdObjetPorteBois
+            || idObjet == IdObjetToitChaume
+            || idObjet == IdObjetFenetreBois;
     }
 
     public SlotInventaire AppliquerBonusMetierTraisageAuResultatCraft(SlotInventaire resultatCraft)
@@ -137,7 +156,9 @@ public partial class Joueur
         }
         SlotInventaire[] g = ObtenirGrilleCraftAffichee();
         if (g == null) return;
-        SlotInventaire resultat = Atlas_Matiere.EvaluerRecette(g, CraftGrille3x3AuTable);
+        SlotInventaire resultat = Atlas_Matiere.EvaluerRecette(g, CraftGrille3x3AuTable, IdStationCraftOuverte);
+        if (!resultat.EstVide && IdStationCraftOuverte == IdObjetTableArtisanaTier1 && !EstRecetteAutoriseeTableStructuresT1(resultat.ID))
+            resultat = new SlotInventaire();
         if (!resultat.EstVide && !EstCraftDebloque(resultat))
             resultat = new SlotInventaire();
         SlotResultatCraft = resultat;

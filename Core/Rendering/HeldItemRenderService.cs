@@ -654,7 +654,7 @@ public partial class Joueur
             _objetEnMain.RotationDegrees = new Vector3(-6f + _rotationManuelleX, 25f + _rotationManuelleY, 0f + _rotationManuelleZ);
             return;
         }
-        if (main.ID == 200 || main.ID == IdObjetTableAnalyseTier1 || main.ID == IdObjetRackBatons || main.ID == IdObjetRackBuches || main.ID == IdObjetCoffreBoisTier0 || main.ID == IdObjetPitFeu || main.ID == IdObjetPitFeuRoche || EstIdFondation(main.ID) || EstIdPlancher(main.ID) || EstIdMuret(main.ID) || EstIdMurBois(main.ID) || EstIdPorteBois(main.ID) || EstIdToitChaume(main.ID) || EstIdTorche(main.ID))
+        if (main.ID == 200 || main.ID == IdObjetTableBoisDecorative || main.ID == IdObjetTableArtisanaTier1 || main.ID == IdObjetTableAnalyseTier1 || main.ID == IdObjetRackBatons || main.ID == IdObjetRackBuches || main.ID == IdObjetCoffreBoisTier0 || main.ID == IdObjetPitFeu || main.ID == IdObjetPitFeuRoche || EstIdFondation(main.ID) || EstIdPlancher(main.ID) || EstIdMuret(main.ID) || EstIdMurBois(main.ID) || EstIdPorteBois(main.ID) || EstIdToitChaume(main.ID) || EstIdTorche(main.ID))
         {
             _objetEnMain.Mesh = null;
             _objetEnMain.MaterialOverride = null;
@@ -670,15 +670,15 @@ public partial class Joueur
                 _objetEnMain.RemoveMeta(MetaSignatureCeinture102);
             if (_objetEnMain.HasMeta(MetaSignatureCeinture104))
                 _objetEnMain.RemoveMeta(MetaSignatureCeinture104);
-            int sig = (main.ID == 200 || main.ID == IdObjetTableAnalyseTier1)
+            int sig = (main.ID == 200 || main.ID == IdObjetTableBoisDecorative || main.ID == IdObjetTableArtisanaTier1 || main.ID == IdObjetTableAnalyseTier1)
                 ? SignatureSlotAtelier200(main)
                 : (main.ID == IdObjetCoffreBoisTier0
                 ? SignatureSlotCoffre113(main)
                 : ((main.ID == IdObjetPitFeu || main.ID == IdObjetPitFeuRoche || EstIdFondation(main.ID) || EstIdPlancher(main.ID) || EstIdMuret(main.ID) || EstIdMurBois(main.ID) || EstIdPorteBois(main.ID) || EstIdToitChaume(main.ID) || EstIdTorche(main.ID))
                 ? HashCode.Combine(main.ID, main.IndexBotanique, main.IndexChimique, main.IndexMorphologique, main.NiveauFracture, main.GenomeAssemblage ?? "")
                 : SignatureSlotRack109(main)));
-            string cleSig = (main.ID == 200 || main.ID == IdObjetTableAnalyseTier1)
-                ? (main.ID == 200 ? MetaSignatureAtelier200 : MetaSignatureTableAnalyse131)
+            string cleSig = (main.ID == 200 || main.ID == IdObjetTableBoisDecorative || main.ID == IdObjetTableArtisanaTier1 || main.ID == IdObjetTableAnalyseTier1)
+                ? ((main.ID == 200 || main.ID == IdObjetTableBoisDecorative || main.ID == IdObjetTableArtisanaTier1) ? MetaSignatureAtelier200 : MetaSignatureTableAnalyse131)
                 : (main.ID == IdObjetCoffreBoisTier0
                 ? MetaSignatureCoffre113
                 : (main.ID == IdObjetPitFeu ? MetaSignaturePitFeu120 : (main.ID == IdObjetPitFeuRoche ? MetaSignaturePitFeuRoche122 : (EstIdFondation(main.ID) ? MetaSignatureFondation : ((EstIdSolBois(main.ID) || EstIdMuretBois(main.ID) || EstIdMurBois(main.ID) || EstIdPorteBois(main.ID) || EstIdToitChaume(main.ID) || EstIdTorche(main.ID)) ? MetaSignatureSolBois136 : ((EstIdSolRoche(main.ID) || EstIdMuretPierre(main.ID)) ? MetaSignatureSolRoche137 : MetaSignatureRack109))))));
@@ -697,6 +697,8 @@ public partial class Joueur
             {
                 NettoyerModelesEnfants(_objetEnMain);
                 if (main.ID == 200) InstancierModeleAtelierPrimitif(_objetEnMain, main);
+                else if (main.ID == IdObjetTableBoisDecorative) InstancierModeleTableBoisDecorative(_objetEnMain, main);
+                else if (main.ID == IdObjetTableArtisanaTier1) InstancierModeleTableArtisanaTier1(_objetEnMain, main);
                 else if (main.ID == IdObjetTableAnalyseTier1) InstancierModeleTableAnalyseTier1(_objetEnMain, main);
                 else if (main.ID == IdObjetRackBatons) InstancierModeleRackBatons(_objetEnMain, main);
                 else if (main.ID == IdObjetRackBuches) InstancierModeleRackBuches(_objetEnMain, main);
@@ -718,7 +720,7 @@ public partial class Joueur
                 else InstancierModelePitFeu(_objetEnMain, main, 0.66f, false);
                 _objetEnMain.SetMeta(cleSig, sig);
             }
-            _objetEnMain.Scale = Vector3.One * ((main.ID == 200 || main.ID == IdObjetTableAnalyseTier1) ? 0.35f : (main.ID == IdObjetCoffreBoisTier0 ? 0.38f : ((main.ID == IdObjetPitFeu || main.ID == IdObjetPitFeuRoche) ? 0.40f : (EstIdFondation(main.ID) ? 0.40f : ((EstIdPlancher(main.ID) || EstIdMuret(main.ID) || EstIdMurBois(main.ID) || EstIdPorteBois(main.ID) || EstIdToitChaume(main.ID) || EstIdTorche(main.ID)) ? 0.38f : 0.42f)))));
+            _objetEnMain.Scale = Vector3.One * ((main.ID == 200 || main.ID == IdObjetTableBoisDecorative || main.ID == IdObjetTableArtisanaTier1 || main.ID == IdObjetTableAnalyseTier1) ? 0.35f : (main.ID == IdObjetCoffreBoisTier0 ? 0.38f : ((main.ID == IdObjetPitFeu || main.ID == IdObjetPitFeuRoche) ? 0.40f : (EstIdFondation(main.ID) ? 0.40f : ((EstIdPlancher(main.ID) || EstIdMuret(main.ID) || EstIdMurBois(main.ID) || EstIdPorteBois(main.ID) || EstIdToitChaume(main.ID) || EstIdTorche(main.ID)) ? 0.38f : 0.42f)))));
             _objetEnMain.RotationDegrees = new Vector3(0 + _rotationManuelleX, 90 + _rotationManuelleY, 0 + _rotationManuelleZ);
             return;
         }
@@ -1373,7 +1375,7 @@ public partial class Joueur
             meshNode.RotationDegrees = new Vector3(0f, 28f, 0f);
             return;
         }
-        if (slot.ID == 200 || slot.ID == IdObjetTableAnalyseTier1 || slot.ID == IdObjetRackBatons || slot.ID == IdObjetRackBuches || slot.ID == IdObjetCoffreBoisTier0 || slot.ID == IdObjetPitFeu || slot.ID == IdObjetPitFeuRoche || EstIdFondation(slot.ID) || EstIdPlancher(slot.ID) || EstIdMuret(slot.ID) || EstIdMurBois(slot.ID) || EstIdPorteBois(slot.ID) || EstIdToitChaume(slot.ID) || EstIdTorche(slot.ID))
+        if (slot.ID == 200 || slot.ID == IdObjetTableBoisDecorative || slot.ID == IdObjetTableArtisanaTier1 || slot.ID == IdObjetTableAnalyseTier1 || slot.ID == IdObjetRackBatons || slot.ID == IdObjetRackBuches || slot.ID == IdObjetCoffreBoisTier0 || slot.ID == IdObjetPitFeu || slot.ID == IdObjetPitFeuRoche || EstIdFondation(slot.ID) || EstIdPlancher(slot.ID) || EstIdMuret(slot.ID) || EstIdMurBois(slot.ID) || EstIdPorteBois(slot.ID) || EstIdToitChaume(slot.ID) || EstIdTorche(slot.ID))
         {
             meshNode.Mesh = null;
             meshNode.MaterialOverride = null;
@@ -1389,15 +1391,15 @@ public partial class Joueur
                 meshNode.RemoveMeta(MetaSignatureCeinture102);
             if (meshNode.HasMeta(MetaSignatureCeinture104))
                 meshNode.RemoveMeta(MetaSignatureCeinture104);
-            int sig = (slot.ID == 200 || slot.ID == IdObjetTableAnalyseTier1)
+            int sig = (slot.ID == 200 || slot.ID == IdObjetTableBoisDecorative || slot.ID == IdObjetTableArtisanaTier1 || slot.ID == IdObjetTableAnalyseTier1)
                 ? SignatureSlotAtelier200(slot)
                 : (slot.ID == IdObjetCoffreBoisTier0
                 ? SignatureSlotCoffre113(slot)
                 : ((slot.ID == IdObjetPitFeu || slot.ID == IdObjetPitFeuRoche || EstIdFondation(slot.ID) || EstIdPlancher(slot.ID) || EstIdMuret(slot.ID) || EstIdMurBois(slot.ID) || EstIdPorteBois(slot.ID) || EstIdToitChaume(slot.ID) || EstIdTorche(slot.ID))
                 ? HashCode.Combine(slot.ID, slot.IndexBotanique, slot.IndexChimique, slot.IndexMorphologique, slot.NiveauFracture, slot.GenomeAssemblage ?? "")
                 : SignatureSlotRack109(slot)));
-            string cleSig = (slot.ID == 200 || slot.ID == IdObjetTableAnalyseTier1)
-                ? (slot.ID == 200 ? MetaSignatureAtelier200 : MetaSignatureTableAnalyse131)
+            string cleSig = (slot.ID == 200 || slot.ID == IdObjetTableBoisDecorative || slot.ID == IdObjetTableArtisanaTier1 || slot.ID == IdObjetTableAnalyseTier1)
+                ? ((slot.ID == 200 || slot.ID == IdObjetTableBoisDecorative || slot.ID == IdObjetTableArtisanaTier1) ? MetaSignatureAtelier200 : MetaSignatureTableAnalyse131)
                 : (slot.ID == IdObjetCoffreBoisTier0
                 ? MetaSignatureCoffre113
                 : (slot.ID == IdObjetPitFeu ? MetaSignaturePitFeu120 : (slot.ID == IdObjetPitFeuRoche ? MetaSignaturePitFeuRoche122 : (EstIdFondation(slot.ID) ? MetaSignatureFondation : ((EstIdSolBois(slot.ID) || EstIdMuretBois(slot.ID) || EstIdMurBois(slot.ID) || EstIdPorteBois(slot.ID) || EstIdToitChaume(slot.ID) || EstIdTorche(slot.ID)) ? MetaSignatureSolBois136 : ((EstIdSolRoche(slot.ID) || EstIdMuretPierre(slot.ID)) ? MetaSignatureSolRoche137 : MetaSignatureRack109))))));
@@ -1416,6 +1418,8 @@ public partial class Joueur
             {
                 NettoyerModelesEnfants(meshNode);
                 if (slot.ID == 200) InstancierModeleAtelierPrimitif(meshNode, slot);
+                else if (slot.ID == IdObjetTableBoisDecorative) InstancierModeleTableBoisDecorative(meshNode, slot);
+                else if (slot.ID == IdObjetTableArtisanaTier1) InstancierModeleTableArtisanaTier1(meshNode, slot);
                 else if (slot.ID == IdObjetTableAnalyseTier1) InstancierModeleTableAnalyseTier1(meshNode, slot);
                 else if (slot.ID == IdObjetRackBatons) InstancierModeleRackBatons(meshNode, slot);
                 else if (slot.ID == IdObjetRackBuches) InstancierModeleRackBuches(meshNode, slot);
@@ -1437,7 +1441,7 @@ public partial class Joueur
                 else InstancierModelePitFeu(meshNode, slot, 0.76f, false);
                 meshNode.SetMeta(cleSig, sig);
             }
-            meshNode.Scale = Vector3.One * ((slot.ID == 200 || slot.ID == IdObjetTableAnalyseTier1) ? 0.8f : (slot.ID == IdObjetCoffreBoisTier0 ? 0.82f : ((slot.ID == IdObjetPitFeu || slot.ID == IdObjetPitFeuRoche) ? 0.86f : (EstIdFondation(slot.ID) ? 0.86f : ((EstIdPlancher(slot.ID) || EstIdMuret(slot.ID) || EstIdMurBois(slot.ID) || EstIdPorteBois(slot.ID) || EstIdToitChaume(slot.ID) || EstIdTorche(slot.ID)) ? 0.84f : 0.92f)))));
+            meshNode.Scale = Vector3.One * ((slot.ID == 200 || slot.ID == IdObjetTableBoisDecorative || slot.ID == IdObjetTableArtisanaTier1 || slot.ID == IdObjetTableAnalyseTier1) ? 0.8f : (slot.ID == IdObjetCoffreBoisTier0 ? 0.82f : ((slot.ID == IdObjetPitFeu || slot.ID == IdObjetPitFeuRoche) ? 0.86f : (EstIdFondation(slot.ID) ? 0.86f : ((EstIdPlancher(slot.ID) || EstIdMuret(slot.ID) || EstIdMurBois(slot.ID) || EstIdPorteBois(slot.ID) || EstIdToitChaume(slot.ID) || EstIdTorche(slot.ID)) ? 0.84f : 0.92f)))));
             meshNode.RotationDegrees = new Vector3(0f, 45f, 0f);
             return;
         }

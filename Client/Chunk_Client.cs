@@ -25,6 +25,7 @@ public class ChunkFlorePayload
 	/// <summary>Buissons avec baies : transform + index couleur baie (0..8, voir <see cref="Joueur.BaieNombreCouleurs"/>).</summary>
 	public List<(Transform3D T, int CouleurIdx)> BuissonPlein;
 	public List<Transform3D> BuissonVide;
+	public List<Transform3D> AloeVera;
 }
 
 /// <summary>Paquet pour cailloux physiques : positions précalculées, spawn dilué (1-2 par frame) sur le Main Thread.</summary>
@@ -62,6 +63,7 @@ public partial class Chunk_Client : Node3D
 	/// <summary>Un MultiMesh par teinte de baies (draw calls regroupés par mesh procédural).</summary>
 	private MultiMeshInstance3D[] _mmBuissonPleinParCouleur;
 	private MultiMeshInstance3D _mmBuissonVide;
+	private MultiMeshInstance3D _mmAloeVera;
 
 	/// <summary>Échelle du gazon (grass.glb) partout sur ID 1. Ajustable pour uniformiser la taille.</summary>
 	public static float EchelleGazon = 2f;
@@ -92,10 +94,12 @@ public partial class Chunk_Client : Node3D
 	private int _frameFlore;
 	private readonly List<(Transform3D T, int CouleurIdx)> _tamponPleins = new List<(Transform3D T, int CouleurIdx)>(64);
 	private readonly List<Transform3D> _tamponVides = new List<Transform3D>(64);
+	private readonly List<Transform3D> _tamponAloe = new List<Transform3D>(64);
 	private readonly List<(Transform3D t, Color c)> _tamponGazon = new List<(Transform3D t, Color c)>(512);
 	private readonly List<Transform3D>[] _tamponBuissonsParCouleur = new List<Transform3D>[Joueur.BaieNombreCouleurs];
 	private MultiMesh _cacheMultiMeshGazon;
 	private MultiMesh _cacheMultiMeshBuissonVide;
+	private MultiMesh _cacheMultiMeshAloeVera;
 	private readonly MultiMesh[] _cacheMultiMeshBuissonPleinParCouleur = new MultiMesh[Joueur.BaieNombreCouleurs];
 	/// <summary>Rayon en chunks : seul le gazon (grass.glb) est visible dans cette zone autour du joueur. Les buissons restent visibles partout.</summary>
 	private const int RAYON_GAZON_CHUNKS = 1;
@@ -146,9 +150,11 @@ public partial class Chunk_Client : Node3D
 			racineBuissonsPleins.AddChild(_mmBuissonPleinParCouleur[i]);
 		}
 		_mmBuissonVide = new MultiMeshInstance3D { Name = "BuissonVide" };
+		_mmAloeVera = new MultiMeshInstance3D { Name = "AloeVera" };
 		AddChild(_mmGazon);
 		AddChild(racineBuissonsPleins);
 		AddChild(_mmBuissonVide);
+		AddChild(_mmAloeVera);
 	}
 
 	public override void _Process(double delta)
@@ -531,7 +537,8 @@ public partial class Chunk_Client : Node3D
 		{
 			Gazon = new List<(Transform3D T, Color C, Vector3 PosMonde)>(),
 			BuissonPlein = new List<(Transform3D T, int CouleurIdx)>(),
-			BuissonVide = new List<Transform3D>()
+			BuissonVide = new List<Transform3D>(),
+			AloeVera = new List<Transform3D>()
 		};
 		Vector3 chunkOrigin = new Vector3(originX, 0, originZ);
 		foreach (var kv in inventaire)
@@ -569,6 +576,11 @@ public partial class Chunk_Client : Node3D
 				var tBuis = Transform3D.Identity;
 				tBuis.Origin = positionLocale + new Vector3(0f, -0.04f, 0f);
 				tBuis.Basis = Basis.Identity.Scaled(new Vector3(echelleBuis, echelleBuis, echelleBuis)).Rotated(Vector3.Up, angle);
+				if (Chunk_Serveur.EstTypeAloeVera(kv.Value))
+				{
+					payload.AloeVera.Add(tBuis);
+					continue;
+				}
 				if (Chunk_Serveur.EstBuissonPlein(kv.Value))
 				{
 					int idxCouleur = Joueur.IndexCouleurBaieDepuisVariante(Chunk_Serveur.ObtenirVarianteBuisson(kv.Value));
@@ -637,11 +649,12 @@ public partial class Chunk_Client : Node3D
 				if (_mmBuissonVide != null) _mmBuissonVide.Multimesh = null;
 				return;
 			}
-			if (payload == null || (payload.Gazon.Count == 0 && payload.BuissonPlein.Count == 0 && payload.BuissonVide.Count == 0))
+			if (payload == null || (payload.Gazon.Count == 0 && payload.BuissonPlein.Count == 0 && payload.BuissonVide.Count == 0 && payload.AloeVera.Count == 0))
 			{
 				if (_mmGazon != null) _mmGazon.Multimesh = null;
 				ViderMultimeshBuissonsPleinsClient();
 				if (_mmBuissonVide != null) _mmBuissonVide.Multimesh = null;
+				if (_mmAloeVera != null) _mmAloeVera.Multimesh = null;
 				return;
 			}
 			Vector3 posObs = (GetParent() as Monde_Client)?.ObtenirPositionObservation() ?? GlobalPosition;
@@ -655,7 +668,7 @@ public partial class Chunk_Client : Node3D
 					gazonFiltre.Add((item.T, item.C));
 			}
 			RemplirMultiMeshGazon(gazonFiltre);
-			RemplirMultiMeshBuissons(payload.BuissonPlein, payload.BuissonVide);
+			RemplirMultiMeshBuissons(payload.BuissonPlein, payload.BuissonVide, payload.AloeVera);
 		}
 		catch (ObjectDisposedException) { /* Chunk déjà supprimé */ }
 	}
@@ -840,9 +853,10 @@ public partial class Chunk_Client : Node3D
 		}
 	}
 
-	private void RemplirMultiMeshBuissons(List<(Transform3D T, int CouleurIdx)> pleinsColores, List<Transform3D> vides)
+	private void RemplirMultiMeshBuissons(List<(Transform3D T, int CouleurIdx)> pleinsColores, List<Transform3D> vides, List<Transform3D> aloes)
 	{
 		if (_cacheMeshVide == null) _cacheMeshVide = GenererMeshBuissonProcedural(false, 0);
+		if (_cacheMeshAloeVera == null) _cacheMeshAloeVera = GenererMeshAloeVeraProcedural();
 		Material matBuisson = ObtenirMaterielBuissonProcedural();
 		ViderMultimeshBuissonsPleinsClient();
 		if (_mmBuissonPleinParCouleur != null && pleinsColores != null && pleinsColores.Count > 0)
@@ -878,6 +892,20 @@ public partial class Chunk_Client : Node3D
 			_mmBuissonVide.Visible = true;
 		}
 		else _mmBuissonVide.Multimesh = null;
+
+		Mesh meshAloe = _cacheMeshAloeVera;
+		if (meshAloe != null && aloes != null && aloes.Count > 0)
+		{
+			_cacheMultiMeshAloeVera ??= new MultiMesh();
+			var mmAloe = _cacheMultiMeshAloeVera;
+			ConfigurerMultiMeshBuissonAvecTransforms(mmAloe, meshAloe, aloes);
+			mmAloe.CustomAabb = CalculerAabbFusionneMultimesh(meshAloe, aloes);
+			_mmAloeVera.Multimesh = mmAloe;
+			_mmAloeVera.MaterialOverride = matBuisson;
+			_mmAloeVera.Visible = true;
+		}
+		else if (_mmAloeVera != null)
+			_mmAloeVera.Multimesh = null;
 	}
 
 	/// <summary>Met à jour UNIQUEMENT les MultiMesh (buissons). N'appelle JAMAIS ConstruireMeshSection — isolement absolu du terrain.</summary>
@@ -929,11 +957,13 @@ public partial class Chunk_Client : Node3D
 				if (_mmGazon != null) _mmGazon.Multimesh = null;
 				ViderMultimeshBuissonsPleinsClient();
 				if (_mmBuissonVide != null) _mmBuissonVide.Multimesh = null;
+				if (_mmAloeVera != null) _mmAloeVera.Multimesh = null;
 				return;
 			}
 		Vector3 chunkOrigin = GlobalPosition;
 		_tamponPleins.Clear();
 		_tamponVides.Clear();
+		_tamponAloe.Clear();
 		_tamponGazon.Clear();
 		Vector3 posObs = (GetParent() as Monde_Client)?.ObtenirPositionObservation() ?? chunkOrigin;
 		// Utilise le rayon public configurable pour que l'herbe reste visible jusqu'à la distance paramétrée.
@@ -974,6 +1004,11 @@ public partial class Chunk_Client : Node3D
 				var tBuis = Transform3D.Identity;
 				tBuis.Origin = positionLocale + new Vector3(0f, -0.04f, 0f);
 				tBuis.Basis = Basis.Identity.Scaled(new Vector3(echelleBuis, echelleBuis, echelleBuis)).Rotated(Vector3.Up, angle);
+				if (Chunk_Serveur.EstTypeAloeVera(kv.Value))
+				{
+					_tamponAloe.Add(tBuis);
+					continue;
+				}
 				if (Chunk_Serveur.EstBuissonPlein(kv.Value))
 				{
 					int idxCouleur = Joueur.IndexCouleurBaieDepuisVariante(Chunk_Serveur.ObtenirVarianteBuisson(kv.Value));
@@ -983,7 +1018,7 @@ public partial class Chunk_Client : Node3D
 			}
 		}
 		RemplirMultiMeshGazon(_tamponGazon);
-		RemplirMultiMeshBuissons(_tamponPleins, _tamponVides);
+		RemplirMultiMeshBuissons(_tamponPleins, _tamponVides, _tamponAloe);
 		}
 		catch (ObjectDisposedException) { /* Chunk déjà supprimé */ }
 	}
@@ -994,6 +1029,7 @@ public partial class Chunk_Client : Node3D
 	private static Material _cacheMaterielGazonSymbiotique;
 	private static Material _cacheMaterielBuissonProcedural;
 private static Texture2D _cacheTextureFeuilleBuisson;
+	private static Mesh _cacheMeshAloeVera;
 	private const int MAX_CONTACTS_GAZON = 6;
 	private const int MAX_CONTACTS_RIGIDES_GAZON_SCAN = 24;
 	private const int MAX_TRACES_CONTACT_GAZON = 18;
@@ -1521,6 +1557,102 @@ private static bool EstCorpsAuSol(PhysicsBody3D body)
 				am.SurfaceSetMaterial(0, ObtenirMaterielBuissonProcedural());
 		}
 		return mesh;
+	}
+
+	/// <summary>Plante désertique type aloe vera générée en code (rosette de feuilles épaisses avec ponctuation claire).</summary>
+	private static Mesh GenererMeshAloeVeraProcedural()
+	{
+		var st = new SurfaceTool();
+		st.Begin(Mesh.PrimitiveType.Triangles);
+		var rng = new RandomNumberGenerator { Seed = 0xA10E0u };
+
+		Color colBas = new Color(0.22f, 0.55f, 0.31f, 1f);
+		Color colSommet = new Color(0.56f, 0.86f, 0.66f, 1f);
+		Color colTache = new Color(0.86f, 0.94f, 0.88f, 1f);
+
+		int feuilles = 15;
+		for (int i = 0; i < feuilles; i++)
+		{
+			float ring = i < 8 ? 0f : 1f;
+			float t = i / Mathf.Max(1f, feuilles - 1f);
+			float angle = (i / (float)feuilles) * Mathf.Tau + (ring > 0f ? 0.16f : 0f) + rng.RandfRange(-0.055f, 0.055f);
+			float longueur = ring > 0f ? rng.RandfRange(36f, 50f) : rng.RandfRange(24f, 34f);
+			float largeurBase = ring > 0f ? rng.RandfRange(10f, 13f) : rng.RandfRange(8f, 10f);
+			float epaisseur = rng.RandfRange(1.6f, 2.5f);
+			float inclinaison = ring > 0f ? rng.RandfRange(0.11f, 0.24f) : rng.RandfRange(0.05f, 0.16f);
+			float torsion = rng.RandfRange(-0.06f, 0.06f);
+			Vector3 centre = new Vector3(Mathf.Cos(angle) * (ring > 0f ? 2.7f : 1.15f), 0.5f + ring * 0.5f, Mathf.Sin(angle) * (ring > 0f ? 2.7f : 1.15f));
+			Color feuilleBase = colBas.Lerp(new Color(0.16f, 0.42f, 0.24f, 1f), t * 0.15f);
+			Color feuilleSommet = colSommet.Lerp(new Color(0.68f, 0.94f, 0.74f, 1f), t * 0.2f);
+			AjouterFeuilleAloeDoubleFace(st, centre, angle, longueur, largeurBase, epaisseur, inclinaison, torsion, feuilleBase, feuilleSommet);
+
+			// Petites ponctuations blanches façon aloe (sans texture externe).
+			int nbTaches = ring > 0f ? 7 : 4;
+			for (int k = 0; k < nbTaches; k++)
+			{
+				float tf = (k + 1) / (float)(nbTaches + 1);
+				float localL = longueur * tf * (0.72f + rng.RandfRange(-0.07f, 0.08f));
+				float decalLat = rng.RandfRange(-0.22f, 0.22f) * largeurBase * (1f - tf * 0.7f);
+				Vector3 axe = new Vector3(Mathf.Cos(angle + torsion * tf), inclinaison, Mathf.Sin(angle + torsion * tf)).Normalized();
+				Vector3 droite = new Vector3(-axe.Z, 0f, axe.X).Normalized();
+				Vector3 posTache = centre + axe * localL + droite * decalLat + Vector3.Up * (0.6f + tf * 0.25f);
+				AjouterBilleOctaedre(st, posTache, rng.RandfRange(0.55f, 0.95f), colTache);
+			}
+		}
+
+		// Coeur visuel : remplit le centre (évite trou/non-texturé) et donne l'effet de rosette compacte.
+		AjouterCylindreSegment(st, new Vector3(0f, -0.35f, 0f), new Vector3(0f, 3.3f, 0f), 4.6f, 2.2f, 10, new Color(0.18f, 0.43f, 0.24f, 1f), new Color(0.30f, 0.63f, 0.35f, 1f));
+		AjouterBilleOctaedre(st, new Vector3(0f, 2.7f, 0f), 1.7f, new Color(0.36f, 0.70f, 0.42f, 1f));
+		for (int c = 0; c < 5; c++)
+		{
+			float a = (c / 5f) * Mathf.Tau + 0.16f;
+			AjouterFeuilleAloeDoubleFace(
+				st,
+				new Vector3(Mathf.Cos(a) * 0.7f, 0.9f, Mathf.Sin(a) * 0.7f),
+				a,
+				16f + c * 1.2f,
+				5.2f,
+				1.25f,
+				0.20f,
+				0.015f,
+				new Color(0.24f, 0.58f, 0.34f, 1f),
+				new Color(0.62f, 0.92f, 0.72f, 1f));
+		}
+
+		st.GenerateNormals();
+		var mesh = st.Commit();
+		if (mesh is ArrayMesh am && am.GetSurfaceCount() > 0)
+			am.SurfaceSetMaterial(0, ObtenirMaterielBuissonProcedural());
+		return mesh;
+	}
+
+	private static void AjouterFeuilleAloeDoubleFace(SurfaceTool st, Vector3 baseCentre, float angleY, float longueur, float largeurBase, float epaisseur, float inclinaison, float torsion, Color colBase, Color colSommet)
+	{
+		Vector3 dir = new Vector3(Mathf.Cos(angleY), inclinaison, Mathf.Sin(angleY)).Normalized();
+		Vector3 droite = new Vector3(-dir.Z, 0f, dir.X).Normalized();
+		float largeurMilieu = largeurBase * 0.55f;
+		float largeurSommet = largeurBase * 0.16f;
+		Vector3 p0L = baseCentre - droite * largeurBase * 0.5f;
+		Vector3 p0R = baseCentre + droite * largeurBase * 0.5f;
+		Vector3 centreMilieu = baseCentre + dir * (longueur * 0.48f) + Vector3.Up * (epaisseur * 0.8f);
+		Vector3 droiteMilieu = new Vector3(-Mathf.Sin(angleY + torsion), 0f, Mathf.Cos(angleY + torsion)).Normalized();
+		Vector3 p1L = centreMilieu - droiteMilieu * largeurMilieu * 0.5f;
+		Vector3 p1R = centreMilieu + droiteMilieu * largeurMilieu * 0.5f;
+		Vector3 centreSommet = baseCentre + dir * longueur + Vector3.Up * (epaisseur * 1.4f);
+		Vector3 droiteSommet = new Vector3(-Mathf.Sin(angleY + torsion * 1.8f), 0f, Mathf.Cos(angleY + torsion * 1.8f)).Normalized();
+		Vector3 p2L = centreSommet - droiteSommet * largeurSommet * 0.5f;
+		Vector3 p2R = centreSommet + droiteSommet * largeurSommet * 0.5f;
+
+		AjouterTriangleCouleurParSommet(st, p0L, colBase, p0R, colBase, p1R, colBase.Lerp(colSommet, 0.45f));
+		AjouterTriangleCouleurParSommet(st, p0L, colBase, p1R, colBase.Lerp(colSommet, 0.45f), p1L, colBase.Lerp(colSommet, 0.45f));
+		AjouterTriangleCouleurParSommet(st, p1L, colBase.Lerp(colSommet, 0.45f), p1R, colBase.Lerp(colSommet, 0.45f), p2R, colSommet);
+		AjouterTriangleCouleurParSommet(st, p1L, colBase.Lerp(colSommet, 0.45f), p2R, colSommet, p2L, colSommet);
+
+		// Face arrière.
+		AjouterTriangleCouleurParSommet(st, p1R, colBase.Lerp(colSommet, 0.45f), p0R, colBase, p0L, colBase);
+		AjouterTriangleCouleurParSommet(st, p1L, colBase.Lerp(colSommet, 0.45f), p1R, colBase.Lerp(colSommet, 0.45f), p0L, colBase);
+		AjouterTriangleCouleurParSommet(st, p2R, colSommet, p1R, colBase.Lerp(colSommet, 0.45f), p1L, colBase.Lerp(colSommet, 0.45f));
+		AjouterTriangleCouleurParSommet(st, p2L, colSommet, p2R, colSommet, p1L, colBase.Lerp(colSommet, 0.45f));
 	}
 
 	private static Material ObtenirMaterielBuissonProcedural()
@@ -2198,10 +2330,11 @@ private static bool EstCorpsAuSol(PhysicsBody3D body)
 		return node;
 	}
 
-	private static void ConstruireListesTransformBuissonsDepuisChunkData(ChunkData data, Vector3 positionObservation, List<(Transform3D T, int CouleurIdx)> pleinsColores, List<Transform3D> vides)
+	private static void ConstruireListesTransformBuissonsDepuisChunkData(ChunkData data, Vector3 positionObservation, List<(Transform3D T, int CouleurIdx)> pleinsColores, List<Transform3D> vides, List<Transform3D> aloes)
 	{
 		pleinsColores.Clear();
 		vides.Clear();
+		aloes.Clear();
 		if (data?.InventaireFlore == null) return;
 		float originX = data.Coordonnees.X * (float)data.TailleChunk;
 		float originZ = data.Coordonnees.Y * (float)data.TailleChunk;
@@ -2221,6 +2354,11 @@ private static bool EstCorpsAuSol(PhysicsBody3D body)
 			var tBuis = Transform3D.Identity;
 			tBuis.Origin = positionLocale + new Vector3(0f, -0.04f, 0f);
 			tBuis.Basis = Basis.Identity.Scaled(new Vector3(echelleBuis, echelleBuis, echelleBuis)).Rotated(Vector3.Up, angle);
+			if (Chunk_Serveur.EstTypeAloeVera(kv.Value))
+			{
+				aloes.Add(tBuis);
+				continue;
+			}
 			if (Chunk_Serveur.EstBuissonPlein(kv.Value))
 			{
 				int idxCouleur = Joueur.IndexCouleurBaieDepuisVariante(Chunk_Serveur.ObtenirVarianteBuisson(kv.Value));
@@ -2306,7 +2444,8 @@ private static bool EstCorpsAuSol(PhysicsBody3D body)
 
 		var pleinsColores = new List<(Transform3D T, int CouleurIdx)>();
 		var vides = new List<Transform3D>();
-		ConstruireListesTransformBuissonsDepuisChunkData(data, positionObservation, pleinsColores, vides);
+		var aloes = new List<Transform3D>();
+		ConstruireListesTransformBuissonsDepuisChunkData(data, positionObservation, pleinsColores, vides, aloes);
 
 		if (_cacheMeshVide == null) _cacheMeshVide = GenererMeshBuissonProcedural(false, 0);
 		Material matBuisson = ObtenirMaterielBuissonProcedural();
@@ -2326,8 +2465,15 @@ private static bool EstCorpsAuSol(PhysicsBody3D body)
 			AppliquerMultiMeshBuissonsSurNoeud(mmi, vides, _cacheMeshVide, matBuisson);
 			root.AddChild(mmi);
 		}
+		if (aloes.Count > 0)
+		{
+			if (_cacheMeshAloeVera == null) _cacheMeshAloeVera = GenererMeshAloeVeraProcedural();
+			var mmiAloe = new MultiMeshInstance3D { Name = "AloeVera" };
+			AppliquerMultiMeshBuissonsSurNoeud(mmiAloe, aloes, _cacheMeshAloeVera, matBuisson);
+			root.AddChild(mmiAloe);
+		}
 
-		if (!aGazon && pleinsColores.Count == 0 && vides.Count == 0) return null;
+		if (!aGazon && pleinsColores.Count == 0 && vides.Count == 0 && aloes.Count == 0) return null;
 		return root;
 	}
 
@@ -2345,7 +2491,8 @@ private static bool EstCorpsAuSol(PhysicsBody3D body)
 
 		var pleinsColores = new List<(Transform3D T, int CouleurIdx)>();
 		var vides = new List<Transform3D>();
-		ConstruireListesTransformBuissonsDepuisChunkData(data, positionObservation, pleinsColores, vides);
+		var aloes = new List<Transform3D>();
+		ConstruireListesTransformBuissonsDepuisChunkData(data, positionObservation, pleinsColores, vides, aloes);
 
 		AppliquerBuissonsPleinsGroupesSurRacineFlore(nodeFlore, pleinsColores, matBuisson);
 
@@ -2363,6 +2510,23 @@ private static bool EstCorpsAuSol(PhysicsBody3D body)
 		{
 			mmiVide.Multimesh = null;
 			mmiVide.Visible = false;
+		}
+
+		var mmiAloe = nodeFlore.GetNodeOrNull<MultiMeshInstance3D>("AloeVera");
+		if (aloes.Count > 0)
+		{
+			if (_cacheMeshAloeVera == null) _cacheMeshAloeVera = GenererMeshAloeVeraProcedural();
+			if (mmiAloe == null)
+			{
+				mmiAloe = new MultiMeshInstance3D { Name = "AloeVera" };
+				nodeFlore.AddChild(mmiAloe);
+			}
+			AppliquerMultiMeshBuissonsSurNoeud(mmiAloe, aloes, _cacheMeshAloeVera, matBuisson);
+		}
+		else if (mmiAloe != null)
+		{
+			mmiAloe.Multimesh = null;
+			mmiAloe.Visible = false;
 		}
 	}
 

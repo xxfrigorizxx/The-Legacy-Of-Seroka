@@ -2144,9 +2144,12 @@ public partial class Monde_Serveur : Node
 		AssurerNoiseHumiditeArbres();
 		float humidite = _noiseHumiditeArbres?.GetNoise2D(gx, gz) ?? 0f;
 		float humiditeNorm = (humidite + 1f) * 0.5f;
-		// Arbres morts uniquement sur terre aride (ID 6), jamais sur herbe (ID 1).
-		if (matSurface == 6 && temp > 0.12f && humiditeNorm < 0.48f)
+		// Arbres morts uniquement en zones sèches (terre aride + désert sableux), jamais sur herbe.
+		if ((matSurface == 6 || matSurface == 3) && temp > 0.08f && humiditeNorm < 0.58f)
 			return (byte)(r < 0.50f ? LSystem_Botanique.IndexCheneMort : LSystem_Botanique.IndexBouleauMort);
+		// Sols froids explicites: forcer conifères même si la température bruitée locale est moins extrême.
+		if (matSurface == 5 || matSurface == 9)
+			return (byte)(r < 0.62f ? LSystem_Botanique.IndexSapin : LSystem_Botanique.IndexPin);
 		// Zone froide/neige: sapin majoritaire en froid modere, pin plus frequent en grand froid.
 		if (temp < -0.32f)
 			return (byte)(r < 0.72f ? LSystem_Botanique.IndexPin : LSystem_Botanique.IndexSapin);

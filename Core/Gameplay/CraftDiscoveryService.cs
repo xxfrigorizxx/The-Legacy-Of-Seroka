@@ -411,16 +411,35 @@ public partial class Joueur
 		{
 			CleCraft = "id_200",
 			IdResultat = 200,
-			Masque = CategorieAnalyse.DemiBuche | CategorieAnalyse.BuchePleine | CategorieAnalyse.RocheRonde | CategorieAnalyse.Corde,
+			Masque = CategorieAnalyse.Baton | CategorieAnalyse.RocheMatiere | CategorieAnalyse.Corde,
 			Titre = "Atelier primitif",
-			LegendeSymboles = new[] { "D = Demi-buche", "R = Petite roche ronde", "B = Buche pleine", "C = Corde" },
-			PatronCraft = new[] { "(D)(R)", "(B)(C)" }
-		}
+			LegendeSymboles = new[] { "D = Demi-buche standard", "B = Buche standard", "R = Petite roche", "C = Corde" },
+			PatronCraft = new[] { "(D)(R)(B)", "( )(C)( )" }
+		},
+		
 	};
 
 	// Table T1 : débloque ces recettes (+ RecettesAnalyseurTier0 en fusion). Pas l'analyseur manuel seul.
 	private static readonly RecetteAnalysable[] RecettesAnalyseurTier1 = new RecetteAnalysable[]
 	{
+		new RecetteAnalysable
+		{
+			CleCraft = "id_147",
+			IdResultat = IdObjetTableBoisDecorative,
+			Masque = CategorieAnalyse.Aucune,
+			Titre = "Table décorative bois",
+			LegendeSymboles = new[] { "Table T1 : 1 bâton + 1 demi-bûche fendue en 2 + 1 liage", "Craft atelier : (L)(BF)(L) / (B)( )(B)" },
+			PatronCraft = new[] { "(L)(BF)(L)", "(B)( )(B)" }
+		},
+		new RecetteAnalysable
+		{
+			CleCraft = "id_148",
+			IdResultat = IdObjetTableArtisanaTier1,
+			Masque = CategorieAnalyse.Aucune,
+			Titre = "Table artisanat structures T1",
+			LegendeSymboles = new[] { "Table analyse T1 : 1 hachette + 1 pioche + 1 atelier + 1 petite roche ronde + 1 demi-bûche fendue", "Craft atelier : (H)( )(P) / (R)(R)(DB) / ( )(T)( )" },
+			PatronCraft = new[] { "(H)( )(P)", "(R)(R)(DB)", "( )(T)( )" }
+		},
 		new RecetteAnalysable
 		{
 			CleCraft = "id_132",
@@ -833,6 +852,62 @@ public partial class Joueur
 		return false;
 	}
 
+	private static bool GrilleAnalyseContientBaton(SlotInventaire[] grille)
+	{
+		if (grille == null) return false;
+		for (int i = 0; i < grille.Length; i++)
+		{
+			if (!grille[i].EstVide && grille[i].ID == 32)
+				return true;
+		}
+		return false;
+	}
+
+	private static bool GrilleAnalyseContientHachettePrimitive(SlotInventaire[] grille)
+	{
+		if (grille == null) return false;
+		for (int i = 0; i < grille.Length; i++)
+		{
+			if (!grille[i].EstVide && grille[i].ID == 106)
+				return true;
+		}
+		return false;
+	}
+
+	private static bool GrilleAnalyseContientPiocheTier0(SlotInventaire[] grille)
+	{
+		if (grille == null) return false;
+		for (int i = 0; i < grille.Length; i++)
+		{
+			if (!grille[i].EstVide && grille[i].ID == IdObjetPiochePierreTier0)
+				return true;
+		}
+		return false;
+	}
+
+	private static bool GrilleAnalyseContientAtelierPrimitif(SlotInventaire[] grille)
+	{
+		if (grille == null) return false;
+		for (int i = 0; i < grille.Length; i++)
+		{
+			if (!grille[i].EstVide && grille[i].ID == 200)
+				return true;
+		}
+		return false;
+	}
+
+	private static bool GrilleAnalyseContientPetiteRocheRonde(SlotInventaire[] grille)
+	{
+		if (grille == null) return false;
+		for (int i = 0; i < grille.Length; i++)
+		{
+			SlotInventaire s = grille[i];
+			if (!s.EstVide && ItemPhysique.EstIdRocheMatiere(s.ID) && s.IndexMorphologique == 0 && (s.IndexTaille == 0 || s.IndexTaille == 1))
+				return true;
+		}
+		return false;
+	}
+
 	/// <summary>Déblocage table T1 : échantillons simples (1 matériau ou mix bois+roche), pas l'union bit à bit seule.</summary>
 	private static bool AnalyseurTableT1SatisfaitFondationPlancher(RecetteAnalysable r, SlotInventaire[] grille)
 	{
@@ -842,8 +917,15 @@ public partial class Joueur
 		bool aFenetreBois = GrilleAnalyseContientFenetreBois(grille);
 		bool aBrancheBrute = GrilleAnalyseContientBrancheBrute(grille);
 		bool aLigature = GrilleAnalyseContientLigature(grille);
+		bool aBaton = GrilleAnalyseContientBaton(grille);
+		bool aHachette = GrilleAnalyseContientHachettePrimitive(grille);
+		bool aPioche = GrilleAnalyseContientPiocheTier0(grille);
+		bool aAtelier = GrilleAnalyseContientAtelierPrimitif(grille);
+		bool aPetiteRocheRonde = GrilleAnalyseContientPetiteRocheRonde(grille);
 		return r.CleCraft switch
 		{
+			"id_148" => aHachette && aPioche && aAtelier && aPetiteRocheRonde && aBois,
+			"id_147" => aBaton && aBois && aLigature,
 			"id_124" => aBois && !aRoche,
 			"id_125" => aRoche && !aBois,
 			"id_126" or "id_127" => aBois && aRoche,
@@ -964,7 +1046,7 @@ public partial class Joueur
 			}
 			return nbIntestins >= 2;
 		}
-		if (r.CleCraft is "id_124" or "id_125" or "id_126" or "id_127" or "id_136" or "id_137" or "id_138" or "id_139" or "id_140" or "id_141" or "id_142" or "id_143" or "id_144")
+		if (r.CleCraft is "id_147" or "id_148" or "id_124" or "id_125" or "id_126" or "id_127" or "id_136" or "id_137" or "id_138" or "id_139" or "id_140" or "id_141" or "id_142" or "id_143" or "id_144")
 			return grilleAnalyse != null && AnalyseurTableT1SatisfaitFondationPlancher(r, grilleAnalyse);
 		return (union & r.Masque) == r.Masque;
 	}

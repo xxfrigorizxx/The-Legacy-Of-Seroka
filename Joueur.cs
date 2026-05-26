@@ -174,6 +174,10 @@ public partial class Joueur : CharacterBody3D
     public const int IdObjetTorche = 145;
     /// <summary>Fenêtre bois craftable (composant), base pour mur fenêtré.</summary>
     public const int IdObjetFenetreBois = 146;
+    /// <summary>Table en bois décorative (meuble posé, non-artisanal).</summary>
+    public const int IdObjetTableBoisDecorative = 147;
+    /// <summary>Table artisanat structures tier 1 (station dédiée structures).</summary>
+    public const int IdObjetTableArtisanaTier1 = 148;
     /// <summary>Emprise horizontale des planchers posés (carré X×Z, léger débord sur fondation 4 m).</summary>
     public const float PlancherEmpriseMetres = 4.1f;
     /// <summary>Épaisseur des planchers bois / roche.</summary>
@@ -239,6 +243,8 @@ public partial class Joueur : CharacterBody3D
     private static bool EstIdPorteBois(int id) => id == IdObjetPorteBois;
     private static bool EstIdToitChaume(int id) => id == IdObjetToitChaume;
     private static bool EstIdTorche(int id) => id == IdObjetTorche;
+    private static bool EstIdTableBoisDecorative(int id) => id == IdObjetTableBoisDecorative;
+    private static bool EstIdTableArtisanaTier1(int id) => id == IdObjetTableArtisanaTier1;
 
     /// <summary>Albedo procédural (main, sol, GLB teinté).</summary>
     public static Color ObtenirCouleurAlbedoBaie(int indexChimique)
@@ -382,6 +388,8 @@ public partial class Joueur : CharacterBody3D
 
     /// <summary>True si le menu a Ã©tÃ© ouvert depuis lâ€™atelier posÃ© : recettes et UI en 3Ã—3. False aprÃ¨s Q ou fermeture du menu.</summary>
     public bool CraftGrille3x3AuTable { get; set; }
+    /// <summary>ID de la station de craft 3×3 ouverte (0 = craft poche / aucune station).</summary>
+    public int IdStationCraftOuverte { get; set; }
     /// <summary>True si la grille 3Ã—3 sert de stockage rack bÃ¢tons (pas de recettes).</summary>
     public bool StockageRackBatonsOuvert { get; set; }
     /// <summary>True si le panneau stockage 10 slots du coffre en bois est actif.</summary>
@@ -664,6 +672,15 @@ public partial class Joueur : CharacterBody3D
     private const string SectionCorpsBrasDroit = "bras_droit";
     private const string SectionCorpsJambeGauche = "jambe_gauche";
     private const string SectionCorpsJambeDroite = "jambe_droite";
+    private static readonly string[] SectionsCorpsToutes =
+    {
+        SectionCorpsTete,
+        SectionCorpsTorse,
+        SectionCorpsBrasGauche,
+        SectionCorpsBrasDroit,
+        SectionCorpsJambeGauche,
+        SectionCorpsJambeDroite
+    };
     private float _pvTete;
     private float _pvTorse;
     private float _pvBrasGauche;
@@ -772,9 +789,26 @@ public partial class Joueur : CharacterBody3D
     private const float FacteurVitesseMouvementAuSol = 1.05f;
     private const float GainFaimClicDroitMainVide = 12f;
     private const float CooldownGainFaimClicDroitSec = 0.22f;
+    private const float DureeBuffVitesseBaieNoireSec = 5f;
+    private const float DureeBuffSautBaieOrangeSec = 5f;
+    private const float DureeBuffReductionDegatsBaieBleueSec = 3f;
+    private const float MultiplicateurVitesseBaieNoire = 1.25f;
+    private const float MultiplicateurSautBaieOrange = 2f;
+    private const float MultiplicateurDegatsBaieBleue = 0.5f;
+    private const float DegatsTotalPoisonBaieRose = 100f;
+    private const float DureePoisonBaieRoseSec = 24f * 60f * 60f;
+    private const float MultiplicateurPoisonMin = 0.0001f;
     private float _faimJoueur = FaimMaxJoueur;
     private float _enduranceJoueur = EnduranceMaxJoueur;
     private float _cooldownGainFaimClicDroit;
+    private float _timerBuffVitesseBaieNoireRestant;
+    private float _timerBuffSautBaieOrangeRestant;
+    private float _timerBuffReductionDegatsBaieBleueRestant;
+    private string _sectionPoisonBaieRose = SectionCorpsTorse;
+    private float _degatsPoisonBaieRoseRestants;
+    private float _dureePoisonBaieRoseRestanteSec;
+    private float _accumulateurDegatsPoisonBaieRose;
+    private float _multiplicateurPoisonBaieRose = 1f;
     private float _cooldownEnjambementObstacle;
     private bool _mortJoueurEnCours;
     private CanvasLayer _layerMortRecreation;
@@ -794,6 +828,7 @@ public partial class Joueur : CharacterBody3D
     {
         Input.MouseMode = Input.MouseModeEnum.Captured;
         InitialiserSanteCorps();
+        ReinitialiserEffetsConsommationBaies();
         _etatAuSolPrecedent = IsOnFloor();
         _sommetYChuteCourante = GlobalPosition.Y;
 
@@ -2015,6 +2050,9 @@ void fragment()
     {
         if (degats <= 0)
             return;
+        float multiplicateurDegats = ObtenirMultiplicateurDegatsConsommationBaies();
+        if (multiplicateurDegats < 0.9999f)
+            degats = Mathf.Max(1, Mathf.RoundToInt(degats * multiplicateurDegats));
 
         string section = NormaliserCleSectionCorps(cleSection);
         float pvAvant = section switch
@@ -2087,25 +2125,156 @@ void fragment()
             AjouterXpFutureState("Constitution", xpConstitution);
     }
 
-    private const float GainFaimConsommationBaieRouge = 10f;
-    private const float GainFaimConsommationBaieAutreCouleur = 1f;
     private const float GainFaimConsommationSteakCru = 5f;
     private const float GainFaimConsommationSteakCuit = 50f;
 
-    /// <summary>Effets d’une baie mangée : faim pour toutes les teintes ; soin PV **torse uniquement** pour la baie du trou APISARA (index 8). Les autres baies ne restaurent pas les PV.</summary>
+    private void AppliquerVariationFaim(float variation)
+    {
+        _faimJoueur = Mathf.Clamp(_faimJoueur + variation, 0f, FaimMaxJoueur);
+    }
+
+    private string ObtenirSectionCorpsAleatoire()
+    {
+        int idx = (int)GD.Randi() % SectionsCorpsToutes.Length;
+        if (idx < 0 || idx >= SectionsCorpsToutes.Length)
+            idx = 0;
+        return SectionsCorpsToutes[idx];
+    }
+
+    private string ObtenirSectionCorpsPlusEndommagee()
+    {
+        string sectionChoisie = SectionCorpsTorse;
+        float manqueMax = -1f;
+        for (int i = 0; i < SectionsCorpsToutes.Length; i++)
+        {
+            string section = SectionsCorpsToutes[i];
+            float manque = Mathf.Max(0f, ObtenirPvMaxSectionCorps(section) - ObtenirPvActuelSectionCorps(section));
+            if (manque > manqueMax)
+            {
+                manqueMax = manque;
+                sectionChoisie = section;
+            }
+        }
+        return sectionChoisie;
+    }
+
+    private void ActiverPoisonBaieRose()
+    {
+        _sectionPoisonBaieRose = ObtenirSectionCorpsAleatoire();
+        _dureePoisonBaieRoseRestanteSec = DureePoisonBaieRoseSec;
+        _accumulateurDegatsPoisonBaieRose = 0f;
+        _degatsPoisonBaieRoseRestants = DegatsTotalPoisonBaieRose * Mathf.Max(MultiplicateurPoisonMin, _multiplicateurPoisonBaieRose);
+    }
+
+    private void AffaiblirPoisonBaieRose()
+    {
+        _multiplicateurPoisonBaieRose = Mathf.Max(MultiplicateurPoisonMin, _multiplicateurPoisonBaieRose * 0.5f);
+        if (_dureePoisonBaieRoseRestanteSec > 0.0001f && _degatsPoisonBaieRoseRestants > 0f)
+            _degatsPoisonBaieRoseRestants *= 0.5f;
+    }
+
+    private void MettreAJourEffetsConsommationBaies(float dt)
+    {
+        _timerBuffVitesseBaieNoireRestant = Mathf.Max(0f, _timerBuffVitesseBaieNoireRestant - dt);
+        _timerBuffSautBaieOrangeRestant = Mathf.Max(0f, _timerBuffSautBaieOrangeRestant - dt);
+        _timerBuffReductionDegatsBaieBleueRestant = Mathf.Max(0f, _timerBuffReductionDegatsBaieBleueRestant - dt);
+
+        if (_dureePoisonBaieRoseRestanteSec <= 0.0001f || _degatsPoisonBaieRoseRestants <= 0.0001f)
+        {
+            _dureePoisonBaieRoseRestanteSec = 0f;
+            _degatsPoisonBaieRoseRestants = 0f;
+            _accumulateurDegatsPoisonBaieRose = 0f;
+            return;
+        }
+
+        float pas = Mathf.Min(dt, _dureePoisonBaieRoseRestanteSec);
+        if (pas <= 0f)
+            return;
+
+        float ratioParSeconde = _degatsPoisonBaieRoseRestants / Mathf.Max(0.0001f, _dureePoisonBaieRoseRestanteSec);
+        float degatsPas = Mathf.Min(_degatsPoisonBaieRoseRestants, ratioParSeconde * pas);
+        _dureePoisonBaieRoseRestanteSec = Mathf.Max(0f, _dureePoisonBaieRoseRestanteSec - pas);
+        _degatsPoisonBaieRoseRestants = Mathf.Max(0f, _degatsPoisonBaieRoseRestants - degatsPas);
+        _accumulateurDegatsPoisonBaieRose += degatsPas;
+
+        int degatsEntiers = Mathf.FloorToInt(_accumulateurDegatsPoisonBaieRose);
+        if (degatsEntiers > 0)
+        {
+            _accumulateurDegatsPoisonBaieRose -= degatsEntiers;
+            AppliquerDegatsSectionCorps(_sectionPoisonBaieRose, degatsEntiers, affecterOs: false);
+        }
+
+        if (_dureePoisonBaieRoseRestanteSec <= 0.0001f && _degatsPoisonBaieRoseRestants > 0.0001f)
+        {
+            int degatsRestants = Mathf.CeilToInt(_degatsPoisonBaieRoseRestants + _accumulateurDegatsPoisonBaieRose);
+            _degatsPoisonBaieRoseRestants = 0f;
+            _accumulateurDegatsPoisonBaieRose = 0f;
+            if (degatsRestants > 0)
+                AppliquerDegatsSectionCorps(_sectionPoisonBaieRose, degatsRestants, affecterOs: false);
+        }
+    }
+
+    private float ObtenirMultiplicateurVitesseConsommationBaies()
+        => _timerBuffVitesseBaieNoireRestant > 0f ? MultiplicateurVitesseBaieNoire : 1f;
+
+    private float ObtenirMultiplicateurSautConsommationBaies()
+        => _timerBuffSautBaieOrangeRestant > 0f ? MultiplicateurSautBaieOrange : 1f;
+
+    private float ObtenirMultiplicateurDegatsConsommationBaies()
+        => _timerBuffReductionDegatsBaieBleueRestant > 0f ? MultiplicateurDegatsBaieBleue : 1f;
+
+    private void ReinitialiserEffetsConsommationBaies()
+    {
+        _timerBuffVitesseBaieNoireRestant = 0f;
+        _timerBuffSautBaieOrangeRestant = 0f;
+        _timerBuffReductionDegatsBaieBleueRestant = 0f;
+        _sectionPoisonBaieRose = SectionCorpsTorse;
+        _degatsPoisonBaieRoseRestants = 0f;
+        _dureePoisonBaieRoseRestanteSec = 0f;
+        _accumulateurDegatsPoisonBaieRose = 0f;
+        _multiplicateurPoisonBaieRose = 1f;
+    }
+
+    /// <summary>Effets d’une baie mangée selon sa couleur (index chimique).</summary>
     public void AppliquerEffetsConsommationBaie(int indexCouleurBaie)
     {
         int idx = ClampIndexCouleurBaie(indexCouleurBaie);
-        if (idx == 8)
+        switch (idx)
         {
-            for (int i = 0; i < 5; i++)
-                SoignerSectionCorps(SectionCorpsTorse, 1);
-            _faimJoueur = Mathf.Min(FaimMaxJoueur, _faimJoueur + 5f);
-            MettreAJourHudStatsSurvie();
-            return;
+            case 0: // rouge
+                AppliquerDegatsSectionCorps(ObtenirSectionCorpsAleatoire(), 5, affecterOs: false);
+                AppliquerVariationFaim(+2f);
+                break;
+            case 1: // violette (mauve)
+                AppliquerVariationFaim(-10f);
+                AffaiblirPoisonBaieRose();
+                break;
+            case 2: // orange
+                AppliquerVariationFaim(-5f);
+                _timerBuffSautBaieOrangeRestant = Mathf.Max(_timerBuffSautBaieOrangeRestant, DureeBuffSautBaieOrangeSec);
+                break;
+            case 3: // bleue
+                AppliquerVariationFaim(+3f);
+                _timerBuffReductionDegatsBaieBleueRestant = Mathf.Max(_timerBuffReductionDegatsBaieBleueRestant, DureeBuffReductionDegatsBaieBleueSec);
+                break;
+            case 4: // jaune
+                AppliquerVariationFaim(+1f);
+                break;
+            case 5: // verte
+                AppliquerVariationFaim(+3f);
+                break;
+            case 6: // noire
+                AppliquerVariationFaim(+2f);
+                _timerBuffVitesseBaieNoireRestant = Mathf.Max(_timerBuffVitesseBaieNoireRestant, DureeBuffVitesseBaieNoireSec);
+                break;
+            case 7: // rose
+                ActiverPoisonBaieRose();
+                break;
+            case 8: // cyan fluorescente
+                SoignerSectionCorps(ObtenirSectionCorpsPlusEndommagee(), 5);
+                AppliquerVariationFaim(+5f);
+                break;
         }
-        float gain = idx == 0 ? GainFaimConsommationBaieRouge : GainFaimConsommationBaieAutreCouleur;
-        _faimJoueur = Mathf.Min(FaimMaxJoueur, _faimJoueur + gain);
         MettreAJourHudStatsSurvie();
     }
 
@@ -4456,6 +4625,8 @@ void fragment()
     private static bool EstStructureSupporteeModePlacement(int id)
     {
         return id == 200
+            || EstIdTableBoisDecorative(id)
+            || EstIdTableArtisanaTier1(id)
             || id == IdObjetTableAnalyseTier1
             || id == IdObjetRackBatons
             || id == IdObjetRackBuches
@@ -4557,6 +4728,10 @@ void fragment()
 
             if (mainActive.ID == 200)
                 InstancierModeleAtelierPrimitif(meshRoot, mainActive, 1.2f, true);
+            else if (mainActive.ID == IdObjetTableBoisDecorative)
+                InstancierModeleTableBoisDecorative(meshRoot, mainActive, 1.2f, true);
+            else if (mainActive.ID == IdObjetTableArtisanaTier1)
+                InstancierModeleTableArtisanaTier1(meshRoot, mainActive, 1.35f, true);
             else if (mainActive.ID == IdObjetTableAnalyseTier1)
                 InstancierModeleTableAnalyseTier1(meshRoot, mainActive, 1.53f, true);
             else if (mainActive.ID == IdObjetRackBatons)
@@ -4889,6 +5064,7 @@ void fragment()
             if (!_menuAnatomie.EstOuvert)
             {
                 CraftGrille3x3AuTable = false;
+                IdStationCraftOuverte = 0;
                 AtelierPlanTravailOuvert = null;
                 StockageRackBatonsOuvert = false;
                 RackBatonsOuvert = null;
@@ -5151,11 +5327,11 @@ void fragment()
 
                 // IDENTIFICATION DE LA MATIÃˆRE : Est-ce du terrain (Voxel) ?
                 bool estTerrainVoxel = mainActive.ID >= 1 && mainActive.ID <= 9;
-                bool estAtelierEnMain = mainActive.ID == 200;
+                bool estAtelierEnMain = mainActive.ID == 200 || mainActive.ID == IdObjetTableArtisanaTier1;
                 bool estTableAnalyseEnMain = mainActive.ID == IdObjetTableAnalyseTier1;
                 bool estRackBatonsEnMain = mainActive.ID == IdObjetRackBatons || mainActive.ID == IdObjetRackBuches;
                 bool estCoffreEnMain = mainActive.ID == IdObjetCoffreBoisTier0;
-        bool estPitFeuEnMain = EstIdPitFeu(mainActive.ID) || EstIdFondation(mainActive.ID) || EstIdPlancher(mainActive.ID) || EstIdMuret(mainActive.ID) || EstIdMurBois(mainActive.ID) || EstIdPorteBois(mainActive.ID) || EstIdToitChaume(mainActive.ID) || EstIdTorche(mainActive.ID);
+        bool estPitFeuEnMain = EstIdPitFeu(mainActive.ID) || EstIdFondation(mainActive.ID) || EstIdPlancher(mainActive.ID) || EstIdMuret(mainActive.ID) || EstIdMurBois(mainActive.ID) || EstIdPorteBois(mainActive.ID) || EstIdToitChaume(mainActive.ID) || EstIdTorche(mainActive.ID) || EstIdTableBoisDecorative(mainActive.ID);
                 bool estBuissonEnMain = mainActive.ID == 10 || mainActive.ID == 11;
                 if (shiftMaintenu && estObjetLancable)
                 {
@@ -5189,7 +5365,7 @@ void fragment()
                 }
                 else
                 {
-                    // Baie : maintien clic droit = manger une unité (+1 PV + faim selon la teinte).
+                    // Baie : maintien clic droit = manger une unité (effets variables selon la teinte).
                     if (mainActive.ID == IdObjetBaie)
                     {
                         int couleurBaie = mainActive.IndexChimique;
@@ -5611,6 +5787,7 @@ void fragment()
         if (_menuAnatomie != null && _menuAnatomie.EstOuvert)
         {
             CraftGrille3x3AuTable = false;
+            IdStationCraftOuverte = 0;
             AtelierPlanTravailOuvert = null;
             StockageRackBatonsOuvert = false;
             RackBatonsOuvert = null;
@@ -6088,6 +6265,7 @@ void fragment()
         34 => 0.04f,
         999 => 1.2f,
         200 => 12.0f,
+        IdObjetTableArtisanaTier1 => 18.0f,
         IdObjetTableAnalyseTier1 => 11.5f,
         IdObjetRackBatons => 8.0f,
         IdObjetRackBuches => 8.0f,
@@ -6110,6 +6288,7 @@ void fragment()
         IdObjetToitChaume => 14f,
         IdObjetTorche => 1.2f,
         IdObjetFenetreBois => 6.5f,
+        IdObjetTableBoisDecorative => 10.0f,
         IdObjetMailletBois => 0.72f,
         IdObjetBolBois => 0.28f,
         IdObjetMortierPilonBois => 0.98f,
@@ -6519,6 +6698,8 @@ void fragment()
         else if (EstIdFondation(id) || EstIdPlancher(id) || EstIdMuret(id) || EstIdMurBois(id) || EstIdToitChaume(id)) return null; // GLB via InstancierModeleFondation / InstancierModeleSol* / InstancierModeleMuretBois / InstancierModeleMurBois / InstancierModeleToitChaume
         else if (id == IdObjetTorche) return null; // GLB res://Modeles/Equipements/torch.glb via InstancierModeleTorche
         else if (id == IdObjetFenetreBois) return null; // GLB res://Modeles/materials/travailler/fenetre.glb via InstancierModeleFenetreBois
+        else if (id == IdObjetTableBoisDecorative) return null; // GLB res://Modeles/materials/moblier/table.glb via InstancierModeleTableBoisDecorative
+        else if (id == IdObjetTableArtisanaTier1) return null; // GLB res://Modeles/Ateliers/table_artisana_tiere1.glb via InstancierModeleTableArtisanaTier1
         else if (id == 30 || id == 32)
         {
             CalculerDimensionsBoisPose(id, indexMorpho, indexTaille, out float br, out float bl, out _, out _);
@@ -7770,6 +7951,98 @@ void fragment()
             }
             corps = item;
         }
+        else if (id == IdObjetTableBoisDecorative)
+        {
+            var item = new ItemPhysique
+            {
+                ID_Objet = id,
+                IndexBotanique = mainActive.IndexBotanique,
+                IndexChimique = mainActive.IndexChimique,
+                IndexCacheMemoire = mainActive.IndexMorphologique,
+                GenomeAssemblage = mainActive.GenomeAssemblage ?? "",
+                Name = "ItemPhysique",
+                ContinuousCd = true,
+                Freeze = true,
+                FreezeMode = RigidBody3D.FreezeModeEnum.Static
+            };
+            if (!string.IsNullOrEmpty(item.GenomeAssemblage))
+                item.SetMeta(MetaGenomeAssemblage, item.GenomeAssemblage);
+            var meshRoot = new Node3D { Name = "MeshInstance3D" };
+            InstancierModeleTableBoisDecorative(meshRoot, mainActive, 1.2f, true);
+            item.AddChild(meshRoot);
+
+            var pile = new List<Node> { meshRoot };
+            for (int i = 0; i < pile.Count; i++)
+            {
+                foreach (Node c in pile[i].GetChildren())
+                {
+                    if (c is MeshInstance3D mi && mi.Mesh != null)
+                    {
+                        Shape3D shape = mi.Mesh.CreateTrimeshShape();
+                        if (shape != null)
+                        {
+                            Transform3D t = mi.Transform;
+                            Node parentNode = mi.GetParent();
+                            while (parentNode != null && parentNode != item && parentNode is Node3D n3d)
+                            {
+                                t = n3d.Transform * t;
+                                parentNode = parentNode.GetParent();
+                            }
+                            var colNode = new CollisionShape3D { Shape = shape, Transform = t };
+                            item.AddChild(colNode);
+                        }
+                    }
+                    pile.Add(c);
+                }
+            }
+            corps = item;
+        }
+        else if (id == IdObjetTableArtisanaTier1)
+        {
+            var item = new ItemPhysique
+            {
+                ID_Objet = id,
+                IndexBotanique = mainActive.IndexBotanique,
+                IndexChimique = mainActive.IndexChimique,
+                IndexCacheMemoire = mainActive.IndexMorphologique,
+                GenomeAssemblage = mainActive.GenomeAssemblage ?? "",
+                Name = "ItemPhysique",
+                ContinuousCd = true,
+                Freeze = true,
+                FreezeMode = RigidBody3D.FreezeModeEnum.Static
+            };
+            if (!string.IsNullOrEmpty(item.GenomeAssemblage))
+                item.SetMeta(MetaGenomeAssemblage, item.GenomeAssemblage);
+            var meshRoot = new Node3D { Name = "MeshInstance3D" };
+            InstancierModeleTableArtisanaTier1(meshRoot, mainActive, 1.35f, true);
+            item.AddChild(meshRoot);
+
+            var pile = new List<Node> { meshRoot };
+            for (int i = 0; i < pile.Count; i++)
+            {
+                foreach (Node c in pile[i].GetChildren())
+                {
+                    if (c is MeshInstance3D mi && mi.Mesh != null)
+                    {
+                        Shape3D shape = mi.Mesh.CreateTrimeshShape();
+                        if (shape != null)
+                        {
+                            Transform3D t = mi.Transform;
+                            Node parentNode = mi.GetParent();
+                            while (parentNode != null && parentNode != item && parentNode is Node3D n3d)
+                            {
+                                t = n3d.Transform * t;
+                                parentNode = parentNode.GetParent();
+                            }
+                            var colNode = new CollisionShape3D { Shape = shape, Transform = t };
+                            item.AddChild(colNode);
+                        }
+                    }
+                    pile.Add(c);
+                }
+            }
+            corps = item;
+        }
         else if (id == IdObjetTableAnalyseTier1)
         {
             var item = new ItemPhysique
@@ -8255,7 +8528,7 @@ void fragment()
             AjouterXpMetier("Batisseur", 1UL);
         bool fondationSurSupportEleve = estFondationPose && !enChargementPersistant && !modeGhost
             && (FondationReposantSurFondationOuStructure(corps.GlobalPosition) || _offsetEtagesFondationManuel != 0);
-        if (!modeGhost && !EstIdPorteBois(id) && !EstIdToitChaume(id) && (id == IdObjetTableAnalyseTier1 || id == IdObjetRackBatons || id == IdObjetRackBuches || id == IdObjetCoffreBoisTier0 || EstIdPitFeu(id) || EstIdFondation(id) || EstIdMuret(id) || EstIdMurBois(id)))
+        if (!modeGhost && !EstIdPorteBois(id) && !EstIdToitChaume(id) && (id == IdObjetTableBoisDecorative || id == IdObjetTableArtisanaTier1 || id == IdObjetTableAnalyseTier1 || id == IdObjetRackBatons || id == IdObjetRackBuches || id == IdObjetCoffreBoisTier0 || EstIdPitFeu(id) || EstIdFondation(id) || EstIdMuret(id) || EstIdMurBois(id)))
         {
             // Snap sol robuste pour le rack: corrige les cas oÃ¹ le raycast vise une surface dÃ©calÃ©e.
             var espace = GetWorld3D()?.DirectSpaceState;
@@ -8350,7 +8623,7 @@ void fragment()
                     rbPose.AngularDamp = 0.88f;
                 }
             }
-            else if (id == 30 || id == 32 || id == 200 || id == IdObjetTableAnalyseTier1 || id == IdObjetRackBatons || id == IdObjetRackBuches || id == IdObjetCoffreBoisTier0 || EstIdPitFeu(id) || EstIdFondation(id) || EstIdPlancher(id) || EstIdMuret(id) || EstIdMurBois(id) || EstIdPorteBois(id) || EstIdToitChaume(id) || EstIdTorche(id) || id == IdObjetFenetreBois)
+            else if (id == 30 || id == 32 || id == 200 || id == IdObjetTableBoisDecorative || id == IdObjetTableArtisanaTier1 || id == IdObjetTableAnalyseTier1 || id == IdObjetRackBatons || id == IdObjetRackBuches || id == IdObjetCoffreBoisTier0 || EstIdPitFeu(id) || EstIdFondation(id) || EstIdPlancher(id) || EstIdMuret(id) || EstIdMurBois(id) || EstIdPorteBois(id) || EstIdToitChaume(id) || EstIdTorche(id) || id == IdObjetFenetreBois)
             {
                 rbPose.PhysicsMaterialOverride = _physMatBois;
                 rbPose.LinearDampMode = RigidBody3D.DampMode.Replace;
@@ -8361,6 +8634,18 @@ void fragment()
                 {
                     // TrÃ¨s lourd + pas de gravitÃ© : Ã©vite tout glissement / dÃ©rive si le moteur rÃ©veille le corps un instant.
                     rbPose.Mass = 2800f;
+                    rbPose.GravityScale = 0f;
+                    rbPose.Sleeping = true;
+                }
+                else if (id == IdObjetTableBoisDecorative)
+                {
+                    rbPose.Mass = 1800f;
+                    rbPose.GravityScale = 0f;
+                    rbPose.Sleeping = true;
+                }
+                else if (id == IdObjetTableArtisanaTier1)
+                {
+                    rbPose.Mass = 2200f;
                     rbPose.GravityScale = 0f;
                     rbPose.Sleeping = true;
                 }
@@ -8644,6 +8929,7 @@ void fragment()
         MettreAJourTimersAtellesJambes(dt);
         MettreAJourTimersAtellesBras(dt);
         MettreAJourEffetBandageTier1(dt);
+        MettreAJourEffetsConsommationBaies(dt);
         if (!_positionReferenceMetabolisteInitialisee)
             ReinitialiserReferencePositionMetaboliste();
         SlotInventaire mainActive = MainGaucheEstActive ? MainGauche : MainDroite;
@@ -8840,7 +9126,7 @@ void fragment()
             && _sautsAeriensEffectues < sautsAeriensMax;
         if (!uiBloquanteOuverte && (sautDepuisSolStable || sautAerienDisponible))
         {
-            velocity.Y = JumpVelocity;
+            velocity.Y = JumpVelocity * ObtenirMultiplicateurSautConsommationBaies();
             _tamponSautRestant = 0f;
             _bufferCoyoteSaut = 0f;
             if (sautAerienDisponible)
@@ -8867,6 +9153,7 @@ void fragment()
         vitesseMouvement *= ObtenirMultiplicateurVitesseMetaboliste();
         vitesseMouvement *= Mathf.Lerp(0.62f, 1f, RatioEnduranceJoueur());
         vitesseMouvement *= ObtenirFacteurVitesseSelonEtatOsJambes();
+        vitesseMouvement *= ObtenirMultiplicateurVitesseConsommationBaies();
 
         if (direction != Vector3.Zero)
         {

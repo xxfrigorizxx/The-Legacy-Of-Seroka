@@ -258,6 +258,7 @@ public partial class Joueur
         {
             AtelierPlanTravailOuvert = null;
             CraftGrille3x3AuTable = false;
+            IdStationCraftOuverte = 0;
         }
     }
 

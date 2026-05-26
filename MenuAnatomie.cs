@@ -3021,6 +3021,8 @@ public partial class MenuAnatomie : Control
 		foreach (byte essence in essencesBois)
 		{
 			Ajouter(new SlotInventaire { ID = 200, IndexBotanique = essence, Quantite = 1 }, CategorieCreatifAdmin.Structures, $"Atelier {NomEssence(essence)}");
+			Ajouter(new SlotInventaire { ID = Joueur.IdObjetTableBoisDecorative, IndexBotanique = essence, Quantite = 1 }, CategorieCreatifAdmin.Structures, $"Table déco {NomEssence(essence)}");
+			Ajouter(new SlotInventaire { ID = Joueur.IdObjetTableArtisanaTier1, IndexBotanique = essence, Quantite = 1 }, CategorieCreatifAdmin.Structures, $"Table artisana T1 {NomEssence(essence)}");
 			Ajouter(new SlotInventaire { ID = Joueur.IdObjetTableAnalyseTier1, IndexBotanique = essence, Quantite = 1 }, CategorieCreatifAdmin.Structures, $"Table analyse T1 {NomEssence(essence)}");
 			Ajouter(new SlotInventaire { ID = Joueur.IdObjetPitFeu, IndexBotanique = essence, Quantite = 1 }, CategorieCreatifAdmin.Structures, $"Essence: {NomEssence(essence)}");
 			Ajouter(new SlotInventaire { ID = Joueur.IdObjetPitFeuRoche, IndexBotanique = essence, Quantite = 1 }, CategorieCreatifAdmin.Structures, $"Essence: {NomEssence(essence)}");

@@ -93,12 +93,15 @@ public partial class Chunk_Serveur : RefCounted
 	public const byte FloreTypeBuissonRougePlein = 1;
 	public const byte FloreTypeBuissonRougeVide = 2;
 	public const byte VarianteCouleurBuissonRouge = 0;
+	public const byte VarianteBuissonAloeVera = 10;
 	private const byte FloreTypeBuissonDebut = FloreTypeBuissonRougePlein;
 
 	public static bool EstTypeBuisson(byte typeFlore) => typeFlore >= FloreTypeBuissonDebut;
 	public static bool EstBuissonPlein(byte typeFlore) => EstTypeBuisson(typeFlore) && (((typeFlore - FloreTypeBuissonDebut) & 1) == 0);
 	public static bool EstBuissonVide(byte typeFlore) => EstTypeBuisson(typeFlore) && (((typeFlore - FloreTypeBuissonDebut) & 1) == 1);
 	public static byte ObtenirVarianteBuisson(byte typeFlore) => EstTypeBuisson(typeFlore) ? (byte)((typeFlore - FloreTypeBuissonDebut) / 2) : (byte)255;
+	public static bool EstTypeAloeVera(byte typeFlore)
+		=> EstTypeBuisson(typeFlore) && ObtenirVarianteBuisson(typeFlore) == VarianteBuissonAloeVera;
 	public static byte ConstruireTypeBuisson(byte varianteCouleur, bool plein)
 	{
 		int v = varianteCouleur;
@@ -220,7 +223,8 @@ public partial class Chunk_Serveur : RefCounted
 		_noiseBiomeForet.Seed = seed + 77;
 		_noiseBiomeForet.FractalType = FastNoiseLite.FractalTypeEnum.Fbm;
 		_noiseBiomeForet.FractalOctaves = 3;
-		_noiseBiomeForet.Frequency = 0.00028f;
+		// Fréquence relevée: sur 1.5-2 km de marche, on rencontre plus souvent chaque macro-biome.
+		_noiseBiomeForet.Frequency = 0.00074f;
 
 		_noiseAbysseSpirale3D = new FastNoiseLite();
 		_noiseAbysseSpirale3D.NoiseType = FastNoiseLite.NoiseTypeEnum.Cellular;
@@ -387,6 +391,18 @@ public partial class Chunk_Serveur : RefCounted
 									EssayerPromouvoirGazonEnBuisson(posGlobale, xGlobal, zGlobal);
 								}
 							}
+							else if (!_generationAbysseActive
+								&& EstMateriauSupportAloeVera(mat)
+								&& TerrainAssezPlat((int)xGlobal, (int)zGlobal)
+								&& TerrainAvecMargeBord((int)xGlobal, (int)zGlobal))
+							{
+								float altitudeFlore = globalY;
+								if (altitudeFlore > NIVEAU_MIN_FLORE && altitudeFlore < NIVEAU_MAX_FLORE)
+								{
+									var posGlobale = new Vector3I((int)xGlobal, (int)globalY, (int)zGlobal);
+									EssayerPlacerAloeVera(posGlobale, xGlobal, zGlobal);
+								}
+							}
 						}
 						else if (globalY < hauteurSurface && globalY >= hauteurSurface - 4)
 						{
@@ -545,11 +561,12 @@ public partial class Chunk_Serveur : RefCounted
 				matSurface = _materials[x, hauteurSurface, z];
 			}
 
-			// Tempéré: herbe (1). Froid/enneigé: neige (5) et glace (9). Aride: terre aride (6).
+			// Tempéré: herbe (1). Froid/enneigé: neige (5) et glace (9). Sec: terre aride (6) et désert sableux (3).
 			bool solTempere = matSurface == 1;
 			bool solFroid = matSurface == 5 || matSurface == 9;
 			bool solAride = matSurface == 6;
-			if (!solTempere && !solFroid && !solAride) continue;
+			bool solDesert = matSurface == 3;
+			if (!solTempere && !solFroid && !solAride && !solDesert) continue;
 
 			float temperature = _noiseTemperature.GetNoise2D(xGlobal, zGlobal);
 			float humidite = CalculerHumiditeGlobale(xGlobal, zGlobal);
@@ -557,26 +574,38 @@ public partial class Chunk_Serveur : RefCounted
 			bool estJungle = temperature > 0.22f && humiditeNorm > 0.78f;
 
 			float chanceLocale = chanceArbre;
-			if (temperature < -0.15f)
+			if (solFroid || temperature < -0.15f)
 			{
 				if (!solFroid) continue;
-				if (humiditeNorm < 0.08f) continue;
+				if (humiditeNorm < 0.04f) continue;
 				// Zone neige/pin: sec -> peu d'arbres, et plus il fait froid plus la densité monte.
 				// Plafond conservé à 0.085 (comme avant la dernière modification).
-				float tHumideNeige = Mathf.Clamp((humiditeNorm - 0.08f) / 0.50f, 0f, 1f);
-				float tFroidNeige = Mathf.Clamp((-temperature - 0.15f) / 0.55f, 0f, 1f);
+				float tHumideNeige = Mathf.Clamp((humiditeNorm - 0.04f) / 0.56f, 0f, 1f);
+				float tFroidNeige = Mathf.Clamp((-temperature + 0.02f) / 0.72f, 0f, 1f);
 				float facteurNeige = tHumideNeige * Mathf.Lerp(0.45f, 1.0f, tFroidNeige);
 				chanceLocale = Mathf.Lerp(0.012f, 0.085f, facteurNeige);
 			}
 			else
 			{
-				if (solAride)
+				if (solAride || solDesert)
 				{
-					// Zone aride sans herbe: uniquement arbres morts feuillus (chêne/bouleau) très clairsemés.
-					if (temperature < 0.12f) continue;
-					if (humiditeNorm > 0.48f) continue;
-					float tSec = Mathf.Clamp((0.48f - humiditeNorm) / 0.40f, 0f, 1f);
-					chanceLocale = Mathf.Lerp(0.006f, 0.022f, tSec);
+					// Pas d'arbres morts en désert immergé.
+					if (hauteurSurface <= NiveauEau) continue;
+					// Zones sèches: arbres morts uniquement, plus visibles qu'avant.
+					if (solDesert)
+					{
+						if (temperature < 0.18f) continue;
+						if (humiditeNorm > 0.42f) continue;
+						float tSecDesert = Mathf.Clamp((0.42f - humiditeNorm) / 0.42f, 0f, 1f);
+						chanceLocale = Mathf.Lerp(0.004f, 0.015f, tSecDesert);
+					}
+					else
+					{
+						if (temperature < 0.10f) continue;
+						if (humiditeNorm > 0.56f) continue;
+						float tSecAride = Mathf.Clamp((0.56f - humiditeNorm) / 0.50f, 0f, 1f);
+						chanceLocale = Mathf.Lerp(0.012f, 0.040f, tSecAride);
+					}
 				}
 				else
 				{
@@ -636,20 +665,30 @@ public partial class Chunk_Serveur : RefCounted
 			bool solTempere = matSurface == 1;
 			bool solFroid = matSurface == 5 || matSurface == 9;
 			bool solAride = matSurface == 6;
-			if (!solTempere && !solFroid && !solAride) continue;
+			bool solDesert = matSurface == 3;
+			if (!solTempere && !solFroid && !solAride && !solDesert) continue;
 
 			float temperature = _noiseTemperature.GetNoise2D(xGlobal, zGlobal);
 			float humiditeNorm = (CalculerHumiditeGlobale(xGlobal, zGlobal) + 1f) * 0.5f;
 			bool estJungle = temperature > 0.22f && humiditeNorm > 0.78f;
-			if (temperature < -0.15f)
+			if (solFroid || temperature < -0.15f)
 			{
-				if (!solFroid || humiditeNorm < 0.08f) continue;
+				if (!solFroid || humiditeNorm < 0.04f) continue;
 			}
 			else
 			{
-				if (solAride)
+				if (solAride || solDesert)
 				{
-					if (temperature < 0.12f || humiditeNorm > 0.48f) continue;
+					// Pas d'arbres morts en désert immergé.
+					if (hauteurSurface <= NiveauEau) continue;
+					if (solDesert)
+					{
+						if (temperature < 0.18f || humiditeNorm > 0.42f) continue;
+					}
+					else
+					{
+						if (temperature < 0.10f || humiditeNorm > 0.56f) continue;
+					}
 				}
 				else
 				{
@@ -776,6 +815,31 @@ public partial class Chunk_Serveur : RefCounted
 		// Plus de buissons à baies qu’à vide pour remplir le monde de cueillettes.
 		bool plein = DeterministicRand(xGlobal + 17f, zGlobal) < 0.68f;
 		InventaireFlore[posGlobale] = ConstruireTypeBuisson(variante, plein);
+	}
+
+	private void EssayerPlacerAloeVera(Vector3I posGlobale, float xGlobal, float zGlobal)
+	{
+		byte matSurface = ObtenirMateriauSurfaceMonde(posGlobale.X, posGlobale.Y, posGlobale.Z);
+		if (!EstMateriauSupportAloeVera(matSurface))
+			return;
+		// Le sable/bio aride sous l'eau ne doit pas être traité comme désert exploitable.
+		if (posGlobale.Y - 1 <= NiveauEau)
+			return;
+		float temperature = _noiseTemperature.GetNoise2D(xGlobal, zGlobal);
+		float humiditeNorm = (CalculerHumiditeGlobale(xGlobal, zGlobal) + 1f) * 0.5f;
+		if (temperature < 0.04f || humiditeNorm > 0.62f)
+			return;
+		float baseChance = Mathf.Lerp(0.028f, 0.085f, Mathf.Clamp((temperature - 0.04f) / 0.60f, 0f, 1f));
+		float bonusSec = Mathf.Lerp(1.0f, 1.9f, Mathf.Clamp((0.62f - humiditeNorm) / 0.62f, 0f, 1f));
+		float chance = Mathf.Clamp(baseChance * bonusSec, 0f, 0.17f);
+		// Règle gameplay: sur terre aride (ID 6), l'aloe est deux fois moins fréquent que sur sable désert (ID 3).
+		if (matSurface == 6)
+			chance *= 0.5f;
+		if (DeterministicRand(xGlobal * 1.37f + 19f, zGlobal * 1.91f + 31f) >= chance)
+			return;
+		if (!PeutPlacerBuissonAvecEspacement(posGlobale, 2))
+			return;
+		InventaireFlore[posGlobale] = ConstruireTypeBuisson(VarianteBuissonAloeVera, plein: false);
 	}
 
 	/// <summary>Assure un minimum visuel : au moins un buisson s'il existe du gazon dans le chunk.</summary>
@@ -1407,7 +1471,6 @@ public partial class Chunk_Serveur : RefCounted
 
 		float bruitNeige = _noiseNeige.GetNoise2D(xGlobal, zGlobal);
 		float bruitRoche = _noiseNeige.GetNoise2D(xGlobal + 500f, zGlobal);
-		float bruitDesert = _noiseHumiditeDetail.GetNoise2D(xGlobal * 1.9f + 17000f, zGlobal * 1.9f + 17000f);
 		// Poches d'argile : uniquement en climat jungle, surtout en bord d'eau, très rare au fond.
 		float bruitArgileRive = _noiseHumiditeDetail.GetNoise2D(xGlobal * 2.15f + 3100f, zGlobal * 2.15f - 2700f);
 		float bruitArgileFond = _noiseHumiditeDetail.GetNoise2D(xGlobal * 3.6f - 9300f, zGlobal * 3.6f + 4800f);
@@ -1421,43 +1484,31 @@ public partial class Chunk_Serveur : RefCounted
 		if (climatJungleArgile && bordEau && bruitArgileRive > 0.83f) return 8;
 		if (climatJungleArgile && fondEau && bruitArgileFond > 0.965f) return 8;
 		if (globalY <= NiveauPlage) return (humidite > 0.2f) ? (byte)7 : (byte)3;  // Plage : seuil doux
-		// Sable UNIQUEMENT quand très sec ET très chaud (temp + humidité liés logiquement)
-		if (temperature > 0.5f && humidite < -0.5f) return 3;  // Désert : sable
-		bool desertSableFort = temperature > 0.36f && humidite < -0.28f && bruitDesert > -0.05f;
-		bool desertSableModere = temperature > 0.26f && humidite < -0.22f && bruitDesert > 0.26f;
-		if (desertSableFort || desertSableModere) return 3;
-		// Plusieurs stades temp/hum avec seuils progressifs (transitions lentes)
-		if (temperature > 0.4f)  // Très chaud
-		{
-			// Jungle: chaud + très humide => herbe dominante (boue conservée par taches).
-			if (humidite > 0.62f)
-				return _noiseHumiditeDetail.GetNoise2D(xGlobal * 1.7f + 400f, zGlobal * 1.7f + 400f) > 0.42f ? (byte)7 : (byte)1;
-			if (humidite > 0.4f)
-				return _noiseHumiditeDetail.GetNoise2D(xGlobal * 1.9f + 760f, zGlobal * 1.9f + 760f) > 0.64f ? (byte)7 : (byte)1;
-			if (humidite < -0.18f && bruitDesert > -0.18f) return 3; // Désert chaud: sable dominant.
-			if (humidite > 0.1f) return 1;   // Chaud humide : herbe tropicale (ID 1)
-			return 1;   // Sec mais pas assez pour sable → herbe jaunâtre (shader)
-		}
-		if (temperature > 0.15f)  // Chaud
-		{
-			if (humidite > 0.60f)
-				return _noiseHumiditeDetail.GetNoise2D(xGlobal * 1.6f + 900f, zGlobal * 1.6f + 900f) > 0.46f ? (byte)7 : (byte)1;
-			if (humidite > 0.35f)
-				return _noiseHumiditeDetail.GetNoise2D(xGlobal * 1.45f + 1280f, zGlobal * 1.45f + 1280f) > 0.70f ? (byte)7 : (byte)1;
-			if (humidite < -0.30f && bruitDesert > 0.08f) return 3; // Désert tempéré chaud (sable en nappes).
-			if (humidite > 0.0f) return 1;
-			return 1;   // Sec → herbe (shader jaunâtre)
-		}
-		if (temperature < -0.4f) return 5;  // Très froid = toujours neige
-		if (temperature < -0.15f)  // Froid
-			return (humidite > 0.2f) ? (byte)9 : (byte)5;  // Glace si humide, neige sinon
-		// Tempéré / Frais : humide → boue, sec → herbe (shader jaunâtre), entre-deux → herbe
-		if (humidite < -0.35f) return 1;   // Très sec : herbe jaunâtre (shader)
-		if (humidite < -0.15f) return 1;   // Sec : herbe
-		if (humidite > 0.4f) return 7;     // Très humide : boue
-		if (humidite > 0.2f) return 7;    // Humide : boue
-		if (humidite > 0.05f) return 1;   // Légèrement humide : herbe
-		return 1;  // Herbe par défaut
+		// Répartition demandée:
+		// - Herbe un peu plus présente
+		// - Sable/Neige/Argile/Glace/Boue/Aride à chance équivalente
+		// Poids: herbe 50%, chaque autre matériau ~8.33%.
+		float macroBiome = (_noiseBiomeForet.GetNoise2D(xGlobal * 1.18f + 9100f, zGlobal * 1.18f - 9100f) + 1f) * 0.5f;
+		float macroJitter = _noiseHumiditeDetail.GetNoise2D(xGlobal * 0.58f + 2700f, zGlobal * 0.58f - 2700f) * 0.11f;
+		float macro = Mathf.Clamp(macroBiome + macroJitter, 0f, 1f);
+		float detailHumide = _noiseHumiditeDetail.GetNoise2D(xGlobal * 1.55f + 1400f, zGlobal * 1.55f + 1400f);
+		float detailSec = _noiseHumiditeDetail.GetNoise2D(xGlobal * 1.9f + 17000f, zGlobal * 1.9f + 17000f);
+
+		if (macro < 0.083333f) // sable
+			return (temperature > -0.25f || detailSec > 0.35f) ? (byte)3 : (byte)6;
+		if (macro < 0.166666f) // neige
+			return (temperature < 0.38f || detailHumide > 0.4f) ? (byte)5 : (byte)1;
+		if (macro < 0.25f) // argile
+			return 8;
+		if (macro < 0.333333f) // glace
+			return (temperature < 0.30f || humidite > 0.20f) ? (byte)9 : (byte)5;
+		if (macro < 0.416666f) // boue
+			return (humidite > -0.45f || detailHumide > -0.15f) ? (byte)7 : (byte)1;
+		if (macro < 0.5f) // aride
+			return (humidite < 0.28f || detailSec > -0.05f) ? (byte)6 : (byte)1;
+
+		// Herbe (50%)
+		return 1;
 	}
 
 	/// <summary>Tableau C# byte[] pour sauvegarde binaire. Format: densities (4×N) + materials (1×N) + densitiesEau (4×N).</summary>
@@ -1680,14 +1731,23 @@ public partial class Chunk_Serveur : RefCounted
 					{ ySurface = y; break; }
 				if (ySurface < 0) continue;
 				byte mat = _materials[x, ySurface, z];
-				if (!EstMateriauSupportGazon(mat)) continue;
+				bool supportGazon = EstMateriauSupportGazon(mat);
+				bool supportAloe = !_generationAbysseActive && EstMateriauSupportAloeVera(mat);
+				if (!supportGazon && !supportAloe) continue;
 				if (!TerrainAssezPlatDepuisDonnees(x, z)) continue;
 				if (!TerrainAvecMargeBordDepuisDonnees(x, z)) continue;
 				int yMonde = ChunkOffsetY * HauteurMax + ySurface;
 				if (yMonde <= NIVEAU_MIN_FLORE || yMonde >= NIVEAU_MAX_FLORE) continue;
 				var posGlobale = new Vector3I((int)xGlobal, yMonde, (int)zGlobal);
-				InventaireFlore[posGlobale] = FloreTypeGazon;
-				EssayerPromouvoirGazonEnBuisson(posGlobale, xGlobal, zGlobal);
+				if (supportGazon)
+				{
+					InventaireFlore[posGlobale] = FloreTypeGazon;
+					EssayerPromouvoirGazonEnBuisson(posGlobale, xGlobal, zGlobal);
+				}
+				else
+				{
+					EssayerPlacerAloeVera(posGlobale, xGlobal, zGlobal);
+				}
 			}
 		AssurerBuissonMinimalDansChunk();
 	}
@@ -1696,6 +1756,23 @@ public partial class Chunk_Serveur : RefCounted
 	{
 		// Gazon uniquement sur voxel herbe (ID 1).
 		return mat == 1;
+	}
+
+	private static bool EstMateriauSupportAloeVera(byte mat)
+	{
+		// Aloe vera: désert/aride.
+		return mat == 3 || mat == 6;
+	}
+
+	private byte ObtenirMateriauSurfaceMonde(int xMonde, int yMonde, int zMonde)
+	{
+		int lx = xMonde - ChunkOffsetX * TailleChunk;
+		int ly = yMonde - ChunkOffsetY * HauteurMax;
+		int lz = zMonde - ChunkOffsetZ * TailleChunk;
+		if (!EstDansLimitesChunk(lx, ly, lz))
+			return 0;
+		lock (_verrouVoxel)
+			return _materials[lx, ly, lz];
 	}
 
 	/// <summary>Crible gravitationnel : purger les buissons dont le bloc support a été miné (évite lévitation).</summary>

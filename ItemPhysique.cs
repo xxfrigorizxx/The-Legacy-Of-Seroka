@@ -38,6 +38,8 @@ public partial class ItemPhysique : RigidBody3D
 	/// <summary>Atelier (200), racks, coffre : corps figé en mode statique au sol — ne pas les traiter comme des objets à « dégeler » après streaming du terrain.</summary>
 	public static bool EstMeublePoseStatique(int idObjet) =>
 		idObjet == 200
+		|| idObjet == Joueur.IdObjetTableBoisDecorative
+		|| idObjet == Joueur.IdObjetTableArtisanaTier1
 		|| idObjet == Joueur.IdObjetTableAnalyseTier1
 		|| idObjet == Joueur.IdObjetRackBatons
 		|| idObjet == Joueur.IdObjetRackBuches
@@ -1860,7 +1862,7 @@ public partial class ItemPhysique : RigidBody3D
 	{
 		if (EstMatiereSilexParIdObjet(ID_Objet)) return 80f;
 		if (EstIdRocheMatiere(ID_Objet)) return 50f;
-		if (ID_Objet == 30 || ID_Objet == 32 || ID_Objet == BlocChutant.ID_BRANCHE || ID_Objet == Joueur.IdObjetPitFeu || ID_Objet == Joueur.IdObjetPitFeuRoche || ID_Objet == Joueur.IdObjetTorche || ID_Objet == Joueur.IdObjetFenetreBois) return 40f; // Bois mort durci
+		if (ID_Objet == 30 || ID_Objet == 32 || ID_Objet == BlocChutant.ID_BRANCHE || ID_Objet == Joueur.IdObjetPitFeu || ID_Objet == Joueur.IdObjetPitFeuRoche || ID_Objet == Joueur.IdObjetTorche || ID_Objet == Joueur.IdObjetFenetreBois || ID_Objet == Joueur.IdObjetTableBoisDecorative || ID_Objet == Joueur.IdObjetTableArtisanaTier1) return 40f; // Bois mort durci
 		if (ID_Objet == Joueur.IdObjetAllumeFeu) return 44f;
 		return 10f; // Matières souples ou organiques
 	}
@@ -1880,7 +1882,7 @@ public partial class ItemPhysique : RigidBody3D
 			degats *= 0.060f;
 			capPourcent = 0.26f;
 		}
-		else if (ID_Objet == 30 || ID_Objet == 32 || ID_Objet == BlocChutant.ID_BRANCHE || ID_Objet == Joueur.IdObjetPitFeu || ID_Objet == Joueur.IdObjetPitFeuRoche || ID_Objet == Joueur.IdObjetTorche || ID_Objet == Joueur.IdObjetFenetreBois)
+		else if (ID_Objet == 30 || ID_Objet == 32 || ID_Objet == BlocChutant.ID_BRANCHE || ID_Objet == Joueur.IdObjetPitFeu || ID_Objet == Joueur.IdObjetPitFeuRoche || ID_Objet == Joueur.IdObjetTorche || ID_Objet == Joueur.IdObjetFenetreBois || ID_Objet == Joueur.IdObjetTableBoisDecorative || ID_Objet == Joueur.IdObjetTableArtisanaTier1)
 		{
 			degats *= 0.080f;
 			capPourcent = 0.34f;

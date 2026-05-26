@@ -47,7 +47,7 @@ public partial class Joueur
     private const float PasRotationSolBoisDegres = 90f;
     private const float ToleranceSolSurFondationMetres = 0.35f;
 
-    /// <summary>Ouvre le conteneur/station sous visée (atelier 200, table analyse 131, racks 109/110, coffre 113, pit roche 122).</summary>
+    /// <summary>Ouvre le conteneur/station sous visée (atelier 200, table structures 148, table analyse 131, racks 109/110, coffre 113, pit roche 122).</summary>
     private bool EssayerOuvrirAtelierSousVisee()
     {
         _rayon.ForceRaycastUpdate();
@@ -59,12 +59,13 @@ public partial class Joueur
         if (itemTouche == null || _menuAnatomie == null)
             return false;
         int idT = itemTouche.ID_Objet;
-        if (idT != 200 && idT != IdObjetTableAnalyseTier1 && idT != IdObjetRackBatons && idT != IdObjetRackBuches && idT != IdObjetCoffreBoisTier0 && idT != IdObjetPitFeuRoche)
+        if (idT != 200 && idT != IdObjetTableArtisanaTier1 && idT != IdObjetTableAnalyseTier1 && idT != IdObjetRackBatons && idT != IdObjetRackBuches && idT != IdObjetCoffreBoisTier0 && idT != IdObjetPitFeuRoche)
             return false;
 
         if (idT == IdObjetTableAnalyseTier1)
         {
             CraftGrille3x3AuTable = false;
+            IdStationCraftOuverte = 0;
             AtelierPlanTravailOuvert = null;
             StockageRackBatonsOuvert = false;
             RackBatonsOuvert = null;
@@ -77,10 +78,11 @@ public partial class Joueur
             return true;
         }
         OuvrirAnalyseurManuel();
-        if (idT == 200)
+        if (idT == 200 || idT == IdObjetTableArtisanaTier1)
         {
             AtelierPlanTravailOuvert = itemTouche;
             CraftGrille3x3AuTable = true;
+            IdStationCraftOuverte = idT;
             StockageRackBatonsOuvert = false;
             RackBatonsOuvert = null;
             StockageCoffreOuvert = false;
@@ -91,6 +93,7 @@ public partial class Joueur
             CoffreOuvert = itemTouche;
             StockageCoffreOuvert = true;
             CraftGrille3x3AuTable = true;
+            IdStationCraftOuverte = 0;
             AtelierPlanTravailOuvert = null;
             StockageRackBatonsOuvert = false;
             RackBatonsOuvert = null;
@@ -100,6 +103,7 @@ public partial class Joueur
             RackBatonsOuvert = itemTouche;
             StockageRackBatonsOuvert = true;
             CraftGrille3x3AuTable = true;
+            IdStationCraftOuverte = 0;
             AtelierPlanTravailOuvert = null;
             StockageCoffreOuvert = false;
             CoffreOuvert = null;
@@ -115,9 +119,11 @@ public partial class Joueur
         GetViewport().SetInputAsHandled();
         GD.Print(idT == 200
             ? "ZERO-K : Plan de travail 3x3 de l'Atelier ouvert."
+            : (idT == IdObjetTableArtisanaTier1
+                ? "ZERO-K : Table artisanat structures T1 ouverte."
             : (idT == IdObjetRackBatons ? "ZERO-K : Rack à bâtons ouvert."
                 : (idT == IdObjetRackBuches ? "ZERO-K : Rack à bûches ouvert."
-                    : (idT == IdObjetPitFeuRoche ? "ZERO-K : Pit à feu roche ouvert." : "ZERO-K : Coffre en bois ouvert."))));
+                    : (idT == IdObjetPitFeuRoche ? "ZERO-K : Pit à feu roche ouvert." : "ZERO-K : Coffre en bois ouvert.")))));
         return true;
     }
 
@@ -409,7 +415,7 @@ public partial class Joueur
     {
         if (s.EstVide || s.ID == 0) return false;
         if (EstIdTerrainVoxelPosable(s.ID)) return true;
-        return s.ID == 999 || s.ID == 10 || s.ID == 11 || s.ID == BlocChutant.ID_BRANCHE || s.ID == IdObjetBaie || ItemPhysique.EstIdRocheMatiere(s.ID) || s.ID == 30 || s.ID == 32 || s.ID == 34 || s.ID == 21 || s.ID == IdObjetCeinturePoches || s.ID == IdObjetCeintureSacoches || s.ID == IdObjetPochetteTier0 || s.ID == IdObjetSacTier0 || s.ID == IdObjetHachePierreTier1 || s.ID == IdObjetAtelleJambe || s.ID == IdObjetAtelleBras || s.ID == IdObjetBandageTier1 || s.ID == IdObjetPellePierreTier0 || s.ID == IdObjetPiochePierreTier0 || s.ID == IdObjetLancePierreTier0 || s.ID == IdObjetFauxPierreTier0 || s.ID == IdObjetAllumeFeu || s.ID == IdObjetFenetreBois || s.ID == 200 || s.ID == IdObjetTableAnalyseTier1 || s.ID == IdObjetRackBatons || s.ID == IdObjetRackBuches || s.ID == IdObjetCoffreBoisTier0 || s.ID == IdObjetPitFeuRoche || s.ID == IdObjetMortierPilonBois || EstIdFondation(s.ID) || EstIdMuret(s.ID) || EstIdMurBois(s.ID) || EstIdPorteBois(s.ID) || EstIdToitChaume(s.ID) || EstIdTorche(s.ID);
+        return s.ID == 999 || s.ID == 10 || s.ID == 11 || s.ID == BlocChutant.ID_BRANCHE || s.ID == IdObjetBaie || ItemPhysique.EstIdRocheMatiere(s.ID) || s.ID == 30 || s.ID == 32 || s.ID == 34 || s.ID == 21 || s.ID == IdObjetCeinturePoches || s.ID == IdObjetCeintureSacoches || s.ID == IdObjetPochetteTier0 || s.ID == IdObjetSacTier0 || s.ID == IdObjetHachePierreTier1 || s.ID == IdObjetAtelleJambe || s.ID == IdObjetAtelleBras || s.ID == IdObjetBandageTier1 || s.ID == IdObjetPellePierreTier0 || s.ID == IdObjetPiochePierreTier0 || s.ID == IdObjetLancePierreTier0 || s.ID == IdObjetFauxPierreTier0 || s.ID == IdObjetAllumeFeu || s.ID == IdObjetFenetreBois || s.ID == 200 || s.ID == IdObjetTableBoisDecorative || s.ID == IdObjetTableArtisanaTier1 || s.ID == IdObjetTableAnalyseTier1 || s.ID == IdObjetRackBatons || s.ID == IdObjetRackBuches || s.ID == IdObjetCoffreBoisTier0 || s.ID == IdObjetPitFeuRoche || s.ID == IdObjetMortierPilonBois || EstIdFondation(s.ID) || EstIdMuret(s.ID) || EstIdMurBois(s.ID) || EstIdPorteBois(s.ID) || EstIdToitChaume(s.ID) || EstIdTorche(s.ID);
     }
 
     /// <summary>Corde (20) : accrocher au point de visée si surface valide (sol, roche, arbre, bloc posé).</summary>
@@ -483,7 +489,7 @@ public partial class Joueur
         if (objetTouche.IsInGroup("BlocsPoses"))
         {
             int id = objetTouche.HasMeta("ID_Matiere") ? (int)objetTouche.GetMeta("ID_Matiere").AsInt32() : 1;
-            if (id == 200 || id == IdObjetTableAnalyseTier1 || id == IdObjetRackBatons || id == IdObjetRackBuches || EstIdPitFeu(id) || EstIdFondation(id))
+            if (id == 200 || id == IdObjetTableBoisDecorative || id == IdObjetTableArtisanaTier1 || id == IdObjetTableAnalyseTier1 || id == IdObjetRackBatons || id == IdObjetRackBuches || EstIdPitFeu(id) || EstIdFondation(id))
             {
                 GD.Print("ZERO-K : Structure fixée au monde. Récupération uniquement par minage.");
                 return;
@@ -765,9 +771,9 @@ public partial class Joueur
 			}
 			GD.Print("ZERO-K : Buisson replanté.");
 		}
-        else if (id == 999 || id == BlocChutant.ID_BRANCHE || id == IdObjetBaie || ItemPhysique.EstIdRocheMatiere(id) || id == 15 || id == 16 || id == 17 || id == 20 || id == 21 || id == IdObjetCeinturePoches || id == IdObjetCeintureSacoches || id == IdObjetPochetteTier0 || id == IdObjetSacTier0 || id == IdObjetCarnetSavoir || id == 30 || id == 32 || id == 34 || id == 105 || id == 106 || id == IdObjetHachePierreTier1 || id == IdObjetAtelleJambe || id == IdObjetAtelleBras || id == IdObjetBandageTier1 || id == IdObjetPellePierreTier0 || id == IdObjetPiochePierreTier0 || id == IdObjetLancePierreTier0 || id == IdObjetFauxPierreTier0 || id == IdObjetAllumeFeu || id == IdObjetFenetreBois || id == 200 || id == IdObjetTableAnalyseTier1 || id == IdObjetRackBatons || id == IdObjetRackBuches || id == IdObjetCoffreBoisTier0 || EstIdPitFeu(id) || EstIdFondation(id) || EstIdPlancher(id) || EstIdMuret(id) || EstIdMurBois(id) || EstIdPorteBois(id) || EstIdToitChaume(id) || EstIdTorche(id))
+        else if (id == 999 || id == BlocChutant.ID_BRANCHE || id == IdObjetBaie || ItemPhysique.EstIdRocheMatiere(id) || id == 15 || id == 16 || id == 17 || id == 20 || id == 21 || id == IdObjetCeinturePoches || id == IdObjetCeintureSacoches || id == IdObjetPochetteTier0 || id == IdObjetSacTier0 || id == IdObjetCarnetSavoir || id == 30 || id == 32 || id == 34 || id == 105 || id == 106 || id == IdObjetHachePierreTier1 || id == IdObjetAtelleJambe || id == IdObjetAtelleBras || id == IdObjetBandageTier1 || id == IdObjetPellePierreTier0 || id == IdObjetPiochePierreTier0 || id == IdObjetLancePierreTier0 || id == IdObjetFauxPierreTier0 || id == IdObjetAllumeFeu || id == IdObjetFenetreBois || id == 200 || id == IdObjetTableBoisDecorative || id == IdObjetTableArtisanaTier1 || id == IdObjetTableAnalyseTier1 || id == IdObjetRackBatons || id == IdObjetRackBuches || id == IdObjetCoffreBoisTier0 || EstIdPitFeu(id) || EstIdFondation(id) || EstIdPlancher(id) || EstIdMuret(id) || EstIdMurBois(id) || EstIdPorteBois(id) || EstIdToitChaume(id) || EstIdTorche(id))
         {
-            Vector3 pointSpawn = (structureFixe && (EstIdFondation(mainActive.ID) || EstIdPlancher(mainActive.ID) || EstIdMuret(mainActive.ID) || EstIdMurBois(mainActive.ID) || EstIdPorteBois(mainActive.ID) || EstIdToitChaume(mainActive.ID) || EstIdTorche(mainActive.ID)))
+            Vector3 pointSpawn = (structureFixe && (mainActive.ID == IdObjetTableBoisDecorative || mainActive.ID == IdObjetTableArtisanaTier1 || EstIdFondation(mainActive.ID) || EstIdPlancher(mainActive.ID) || EstIdMuret(mainActive.ID) || EstIdMurBois(mainActive.ID) || EstIdPorteBois(mainActive.ID) || EstIdToitChaume(mainActive.ID) || EstIdTorche(mainActive.ID)))
                 ? pointAligneStructure
                 : pointDeChute;
             Node3D nePose = CreerBlocPose(pointSpawn, mainActive);
@@ -899,6 +905,8 @@ public partial class Joueur
     private bool EstStructureFixePose(int idObjet)
     {
         return idObjet == 200
+            || idObjet == IdObjetTableBoisDecorative
+            || idObjet == IdObjetTableArtisanaTier1
             || idObjet == IdObjetTableAnalyseTier1
             || idObjet == IdObjetRackBatons
             || idObjet == IdObjetRackBuches
@@ -2078,6 +2086,10 @@ public partial class Joueur
             return new Vector3(TorcheRayonMetres * 2f, TorcheHauteurMetres, TorcheRayonMetres * 2f);
         if (idObjet == 200)
             return new Vector3(1.2f, 1.0f, 0.9f);
+        if (idObjet == IdObjetTableBoisDecorative)
+            return new Vector3(1.2f, 1.0f, 0.9f);
+        if (idObjet == IdObjetTableArtisanaTier1)
+            return new Vector3(1.35f, 1.05f, 1.0f);
         if (idObjet == IdObjetTableAnalyseTier1)
             return new Vector3(1.53f, 1.20f, 1.20f);
         if (idObjet == IdObjetRackBatons || idObjet == IdObjetRackBuches)

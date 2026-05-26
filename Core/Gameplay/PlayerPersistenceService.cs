@@ -6,7 +6,7 @@ using System.Text.Json;
 
 public partial class Joueur
 {
-    private const int VersionPersistenceJoueur = 7;
+    private const int VersionPersistenceJoueur = 8;
     private const int VersionPersistenceObjetsPoses = 5;
     private const int VersionPersistenceProgression = 3;
     private bool _persistantPhaseJoueurChargee;
@@ -537,6 +537,7 @@ public partial class Joueur
         _timerAtelleJambeDroiteRestant = 0f;
         _timerAtelleBrasGaucheRestant = 0f;
         _timerAtelleBrasDroitRestant = 0f;
+        ReinitialiserEffetsConsommationBaies();
         ReinitialiserEffetBandageTier1();
         RafraichirHUD();
         SauvegarderEtatPersistantJoueurSeulement();
@@ -599,6 +600,14 @@ public partial class Joueur
             w.Write(_timerAtelleJambeDroiteRestant);
             w.Write(_timerAtelleBrasGaucheRestant);
             w.Write(_timerAtelleBrasDroitRestant);
+            w.Write(_timerBuffVitesseBaieNoireRestant);
+            w.Write(_timerBuffSautBaieOrangeRestant);
+            w.Write(_timerBuffReductionDegatsBaieBleueRestant);
+            w.Write(_sectionPoisonBaieRose ?? SectionCorpsTorse);
+            w.Write(_degatsPoisonBaieRoseRestants);
+            w.Write(_dureePoisonBaieRoseRestanteSec);
+            w.Write(_accumulateurDegatsPoisonBaieRose);
+            w.Write(_multiplicateurPoisonBaieRose);
         }
         catch (Exception ex)
         {
@@ -666,6 +675,7 @@ public partial class Joueur
             {
                 ImporterCraftsDecouverts(Array.Empty<string>());
             }
+            ReinitialiserEffetsConsommationBaies();
             if (version >= 6)
             {
                 _pvTete = Mathf.Clamp(r.ReadSingle(), 0f, ObtenirPvMaxSectionCorps(SectionCorpsTete));
@@ -693,6 +703,21 @@ public partial class Joueur
                 {
                     _timerAtelleBrasGaucheRestant = 0f;
                     _timerAtelleBrasDroitRestant = 0f;
+                }
+                if (version >= 8)
+                {
+                    _timerBuffVitesseBaieNoireRestant = Mathf.Max(0f, r.ReadSingle());
+                    _timerBuffSautBaieOrangeRestant = Mathf.Max(0f, r.ReadSingle());
+                    _timerBuffReductionDegatsBaieBleueRestant = Mathf.Max(0f, r.ReadSingle());
+                    _sectionPoisonBaieRose = NormaliserCleSectionCorps(r.ReadString());
+                    _degatsPoisonBaieRoseRestants = Mathf.Max(0f, r.ReadSingle());
+                    _dureePoisonBaieRoseRestanteSec = Mathf.Max(0f, r.ReadSingle());
+                    _accumulateurDegatsPoisonBaieRose = Mathf.Max(0f, r.ReadSingle());
+                    _multiplicateurPoisonBaieRose = Mathf.Max(MultiplicateurPoisonMin, r.ReadSingle());
+                }
+                else
+                {
+                    ReinitialiserEffetsConsommationBaies();
                 }
             }
             ChargerStockageDepuisSacEquipe();

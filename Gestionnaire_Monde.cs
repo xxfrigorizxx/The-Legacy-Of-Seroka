@@ -91,6 +91,7 @@ public partial class Gestionnaire_Monde : Node3D
 	/// <summary>Position joueur mémorisée par dimension (clé = id de dimension). Permet de revenir « exactement où j'étais » dans chaque monde.</summary>
 	private readonly Dictionary<int, Vector3> _positionsSauvegardeesParDimension = new Dictionary<int, Vector3>();
 	private Label _labelCoords;
+	private Label _labelHeureDimension;
 	private CanvasLayer _repereCentreLayer;
 	/// <summary>Overlay "Chargement du monde..." affiché tant que la collision du chunk de spawn n'est pas prête.</summary>
 	private CanvasLayer _overlayChargement;
@@ -182,6 +183,7 @@ public partial class Gestionnaire_Monde : Node3D
 	private int _indexDormanceBlocsPoses;
 	private int _indexDormanceObjetsDyn;
 	private Vector3 _dernieresCoordsAffichees = new Vector3(float.NaN, float.NaN, float.NaN);
+	private string _dernierTexteHeureDimension = "";
 	private float _cooldownDrainProfilage = 0f;
 	private float _cooldownLogAutosaveDiag = 0f;
 	private readonly Dictionary<string, List<RigidBody3D>> _cacheRigidBodiesDormance = new Dictionary<string, List<RigidBody3D>>();
@@ -1162,8 +1164,26 @@ public partial class Gestionnaire_Monde : Node3D
 		_labelCoords.AddThemeFontSizeOverride("font_size", 14);
 		_labelCoords.HorizontalAlignment = HorizontalAlignment.Center;
 		panel.AddChild(_labelCoords);
+
+		// Horloge dimension active en haut à droite (diagnostic temps 1:1 / fuseaux).
+		var panelHeure = new PanelContainer();
+		panelHeure.SetAnchorsPreset(Control.LayoutPreset.TopRight, false);
+		panelHeure.OffsetLeft = -240f;
+		panelHeure.OffsetTop = 8f;
+		panelHeure.OffsetRight = -12f;
+		panelHeure.OffsetBottom = 36f;
+		var styleHeure = new StyleBoxFlat();
+		styleHeure.BgColor = new Color(0f, 0f, 0f, 0.6f);
+		styleHeure.SetCornerRadiusAll(4);
+		styleHeure.SetContentMarginAll(6);
+		panelHeure.AddThemeStyleboxOverride("panel", styleHeure);
+		_labelHeureDimension = new Label();
+		_labelHeureDimension.AddThemeFontSizeOverride("font_size", 14);
+		_labelHeureDimension.HorizontalAlignment = HorizontalAlignment.Right;
+		panelHeure.AddChild(_labelHeureDimension);
 		AddChild(canvas);
 		canvas.AddChild(panel);
+		canvas.AddChild(panelHeure);
 		CreerRepereCentreEcran();
 
 		// Position : chargée si monde existant, sinon spawn par défaut (terrain généré → joueur déposé)
@@ -4198,6 +4218,28 @@ FinBlocOverlay:
 			{
 				_dernieresCoordsAffichees = pArrondi;
 				_labelCoords.Text = $"X: {pArrondi.X:F1}  Y: {pArrondi.Y:F1}  Z: {pArrondi.Z:F1}";
+			}
+		}
+		if (_labelHeureDimension != null)
+		{
+			var infoDimension = ConstantesDimensions.ObtenirInfoOuAlpha(_dimensionLocaleActive);
+			string heureAffichee;
+			if (infoDimension.HeureFiguree)
+			{
+				// APISARA: même valeur que celle forcée via Cycle_Solaire.ConfigurerHeureFixeDimension(..., 13.5).
+				heureAffichee = "13:30:00";
+			}
+			else
+			{
+				double offset = ObtenirServeurDimension(_dimensionLocaleActive)?.FuseauHoraireHeures
+					?? (FuseauHoraireHeures + infoDimension.FuseauOffsetHeures);
+				heureAffichee = DateTime.UtcNow.AddHours(offset).ToString("HH:mm:ss");
+			}
+			string texteHeure = $"{infoDimension.NomCanonique}  {heureAffichee}";
+			if (!string.Equals(texteHeure, _dernierTexteHeureDimension, StringComparison.Ordinal))
+			{
+				_dernierTexteHeureDimension = texteHeure;
+				_labelHeureDimension.Text = texteHeure;
 			}
 		}
 
