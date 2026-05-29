@@ -657,6 +657,33 @@ public partial class Joueur
 		return $"Vous avez decouvert: {titre}\n{schema}";
 	}
 
+	private static string[] ObtenirEffetsAnalyseBaie(int indexCouleur)
+	{
+		switch (ClampIndexCouleurBaie(indexCouleur))
+		{
+			case 0: // rouge
+				return new[] { "-5 PV sur une partie du corps aleatoire", "+2 faim" };
+			case 1: // violette
+				return new[] { "-10 faim", "Affaiblit de moitie le poison de la baie rose en cours" };
+			case 2: // orange
+				return new[] { "-5 faim", "Saut x2 pendant 5 secondes" };
+			case 3: // bleue
+				return new[] { "+3 faim", "Degats recus reduits de moitie pendant 3 secondes" };
+			case 4: // jaune
+				return new[] { "+1 faim" };
+			case 5: // verte
+				return new[] { "+3 faim" };
+			case 6: // noire
+				return new[] { "+2 faim", "Vitesse augmentee pendant 5 secondes" };
+			case 7: // rose
+				return new[] { "Poison: 100 PV sur 24h sur une partie du corps aleatoire" };
+			case 8: // cyan fluorescente
+				return new[] { "Soigne 5 PV sur la partie du corps la plus endommagee", "+5 faim" };
+			default:
+				return new[] { "Effet inconnu" };
+		}
+	}
+
 	/// <summary>Corde 20 issue de deux fibres distinctes (15/16/17), sans intestin.</summary>
 	private static bool EstCordeMixteFibresCraft(in SlotInventaire s) =>
 		!s.EstVide && s.ID == 20
@@ -1077,6 +1104,42 @@ public partial class Joueur
 		{
 			for (int i = 0; i < grilleAnalyse.Length; i++)
 				grilleAnalyse[i] = new SlotInventaire();
+		}
+
+		// Analyse mono-baie: ne debloque pas de craft, mais revele un effet de la baie.
+		int nbSlotsOccupes = 0;
+		SlotInventaire slotUnique = new SlotInventaire();
+		for (int i = 0; i < grilleAnalyse.Length; i++)
+		{
+			if (grilleAnalyse[i].EstVide) continue;
+			nbSlotsOccupes++;
+			slotUnique = grilleAnalyse[i];
+			if (nbSlotsOccupes > 1) break;
+		}
+		if (nbSlotsOccupes == 1 && slotUnique.ID == IdObjetBaie)
+		{
+			float pReussiteBaie = ObtenirChanceReussiteAnalyseManuelle();
+			if (GD.Randf() >= pReussiteBaie)
+			{
+				ConsommerAnalyseur();
+				ulong xpIntelligenceRecueEchecBaie = AjouterXpFutureStateEtRetourEffectif("Intelligence", 2UL);
+				message = $"Echec de l'analyse de baie : echantillon consomme (+{xpIntelligenceRecueEchecBaie} XP Intelligence).";
+				DefinirMessageAnalyseurActif(message);
+				AlerteSqueletteBoiteNoire("Analyseur : " + message);
+				return false;
+			}
+
+			int idxBaie = ClampIndexCouleurBaie(slotUnique.IndexChimique);
+			string couleur = ObtenirLexemeCouleurBaiePourNomInventaire(idxBaie);
+			string[] effetsPossibles = ObtenirEffetsAnalyseBaie(idxBaie);
+			int pickEffet = effetsPossibles.Length <= 1 ? 0 : GD.RandRange(0, effetsPossibles.Length - 1);
+			string effetRevele = effetsPossibles[pickEffet];
+			ConsommerAnalyseur();
+			ulong xpIntelligenceRecueSuccesBaie = AjouterXpFutureStateEtRetourEffectif("Intelligence", 1UL);
+			message = $"Analyse reussie : baie {couleur} -> {effetRevele} (+{xpIntelligenceRecueSuccesBaie} XP Intelligence).";
+			DefinirMessageAnalyseurActif(message);
+			AlerteSqueletteBoiteNoire("Analyseur : " + message);
+			return true;
 		}
 
 		var candidates = new List<RecetteAnalysable>();

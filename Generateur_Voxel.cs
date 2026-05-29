@@ -799,6 +799,23 @@ public partial class Generateur_Voxel : Node3D
 		return Mathf.RoundToInt(profondeurCible);
 	}
 
+	private static float UniformiserSelectionMacroBiome(float macroBrut)
+	{
+		float z = (macroBrut - 0.5f) / 0.23f;
+		float uniforme = 0.5f * (1f + ApproxErf(z * 0.70710677f));
+		return Mathf.Clamp(uniforme, 0f, 1f);
+	}
+
+	private static float ApproxErf(float x)
+	{
+		float signe = x < 0f ? -1f : 1f;
+		float ax = Mathf.Abs(x);
+		float t = 1f / (1f + 0.3275911f * ax);
+		float poly = (((((1.061405429f * t - 1.453152027f) * t) + 1.421413741f) * t - 0.284496736f) * t + 0.254829592f) * t;
+		float y = 1f - poly * MathF.Exp(-ax * ax);
+		return signe * y;
+	}
+
 	private byte DeterminerMateriauCroûte(float globalX, float globalZ, int globalY, int hauteurSurface, float temperature, float humidite)
 	{
 		float bruitNeige = _noiseNeige.GetNoise2D(globalX, globalZ);
@@ -831,22 +848,23 @@ public partial class Generateur_Voxel : Node3D
 		// Poids: herbe 50%, chaque autre matériau ~8.33%.
 		float macroBiome = (_noiseErosion.GetNoise2D(globalX * 0.60f + 9100f, globalZ * 0.60f - 9100f) + 1f) * 0.5f;
 		float macroJitter = _noiseHumidite.GetNoise2D(globalX * 0.58f + 2700f, globalZ * 0.58f - 2700f) * 0.11f;
-		float macro = Mathf.Clamp(macroBiome + macroJitter, 0f, 1f);
+		float macroBrut = Mathf.Clamp(macroBiome + macroJitter, 0f, 1f);
+		float macro = UniformiserSelectionMacroBiome(macroBrut);
 		float detailHumide = _noiseHumidite.GetNoise2D(globalX * 1.55f + 1400f, globalZ * 1.55f + 1400f);
 		float detailSec = _noiseHumidite.GetNoise2D(globalX * 1.9f + 17000f, globalZ * 1.9f + 17000f);
 
 		if (macro < 0.083333f) // sable
-			return (temperature > -0.25f || detailSec > 0.35f) ? (byte)3 : (byte)6;
+			return (temperature > 0.04f && (humidite < 0.20f || detailSec > 0.12f)) ? (byte)3 : (byte)6;
 		if (macro < 0.166666f) // neige
-			return (temperature < 0.38f || detailHumide > 0.4f) ? (byte)5 : (byte)1;
+			return (temperature < 0.20f || detailHumide > 0.52f) ? (byte)5 : (byte)1;
 		if (macro < 0.25f) // argile
-			return 8;
+			return (temperature > 0.05f && humidite > -0.05f) ? (byte)8 : (humidite > 0.22f ? (byte)7 : (byte)1);
 		if (macro < 0.333333f) // glace
-			return (temperature < 0.30f || humidite > 0.20f) ? (byte)9 : (byte)5;
+			return (temperature < -0.04f || (temperature < 0.08f && humidite > 0.08f)) ? (byte)9 : (byte)5;
 		if (macro < 0.416666f) // boue
-			return (humidite > -0.45f || detailHumide > -0.15f) ? (byte)7 : (byte)1;
+			return (humidite > -0.18f || detailHumide > 0.04f) ? (byte)7 : (byte)1;
 		if (macro < 0.5f) // aride
-			return (humidite < 0.28f || detailSec > -0.05f) ? (byte)6 : (byte)1;
+			return (humidite < 0.08f || detailSec > 0.08f) ? (byte)6 : (byte)1;
 		return 1; // herbe (50%)
 	}
 
@@ -1120,22 +1138,23 @@ public partial class Generateur_Voxel : Node3D
 		}
 		float macroBiome = (noiseErosion.GetNoise2D(globalX * 0.60f + 9100f, globalZ * 0.60f - 9100f) + 1f) * 0.5f;
 		float macroJitter = noiseNeige.GetNoise2D(globalX * 0.58f + 2700f, globalZ * 0.58f - 2700f) * 0.11f;
-		float macro = Mathf.Clamp(macroBiome + macroJitter, 0f, 1f);
+		float macroBrut = Mathf.Clamp(macroBiome + macroJitter, 0f, 1f);
+		float macro = UniformiserSelectionMacroBiome(macroBrut);
 		float detailHumide = noiseNeige.GetNoise2D(globalX * 1.55f + 1400f, globalZ * 1.55f + 1400f);
 		float detailSec = noiseNeige.GetNoise2D(globalX * 1.9f + 17000f, globalZ * 1.9f + 17000f);
 
 		if (macro < 0.083333f) // sable
-			return (temperature > -0.25f || detailSec > 0.35f) ? (byte)3 : (byte)6;
+			return (temperature > 0.04f && (humidite < 0.20f || detailSec > 0.12f)) ? (byte)3 : (byte)6;
 		if (macro < 0.166666f) // neige
-			return (temperature < 0.38f || detailHumide > 0.4f) ? (byte)5 : (byte)1;
+			return (temperature < 0.20f || detailHumide > 0.52f) ? (byte)5 : (byte)1;
 		if (macro < 0.25f) // argile
-			return 8;
+			return (temperature > 0.05f && humidite > -0.05f) ? (byte)8 : (humidite > 0.22f ? (byte)7 : (byte)1);
 		if (macro < 0.333333f) // glace
-			return (temperature < 0.30f || humidite > 0.20f) ? (byte)9 : (byte)5;
+			return (temperature < -0.04f || (temperature < 0.08f && humidite > 0.08f)) ? (byte)9 : (byte)5;
 		if (macro < 0.416666f) // boue
-			return (humidite > -0.45f || detailHumide > -0.15f) ? (byte)7 : (byte)1;
+			return (humidite > -0.18f || detailHumide > 0.04f) ? (byte)7 : (byte)1;
 		if (macro < 0.5f) // aride
-			return (humidite < 0.28f || detailSec > -0.05f) ? (byte)6 : (byte)1;
+			return (humidite < 0.08f || detailSec > 0.08f) ? (byte)6 : (byte)1;
 		return 1; // herbe (50%)
 	}
 

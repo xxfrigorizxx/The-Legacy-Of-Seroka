@@ -833,7 +833,7 @@ public partial class Joueur
 
     private static bool EstBlocChutantPersistable(int id)
     {
-        return id == 10 || id == 11 || id == 15 || id == Joueur.IdObjetBaie
+        return id == 10 || id == 11 || id == Joueur.IdObjetAloeVera || id == 15 || id == Joueur.IdObjetBaie
             || id == BlocChutant.ID_BRANCHE
             || id == BlocChutant.ID_BOIS
             || id == BlocChutant.ID_FEUILLE_ARRACHEE

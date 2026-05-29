@@ -285,17 +285,30 @@ public partial class Monde_Client : Node3D
 	{
 		ulong frame = Engine.GetProcessFrames();
 		if (_frameCameraObservationCache == frame)
-			return _cameraObservationCache;
+		{
+			if (_cameraObservationCache != null
+				&& GodotObject.IsInstanceValid(_cameraObservationCache)
+				&& _cameraObservationCache.IsInsideTree())
+				return _cameraObservationCache;
+			_cameraObservationCache = null;
+			return null;
+		}
 		_frameCameraObservationCache = frame;
 		Viewport viewport = GetViewport();
 		Camera3D camera = viewport?.GetCamera3D();
-		if (camera != null && GodotObject.IsInstanceValid(camera))
+		if (camera != null && GodotObject.IsInstanceValid(camera) && camera.IsInsideTree())
 		{
 			_cameraObservationCache = camera;
 			return _cameraObservationCache;
 		}
 		_cameraObservationCache = null;
 		return null;
+	}
+
+	private bool EssayerObtenirJoueurDansArbre(out CharacterBody3D joueur)
+	{
+		joueur = _joueur;
+		return joueur != null && GodotObject.IsInstanceValid(joueur) && joueur.IsInsideTree();
 	}
 
 	private bool JoueurEnModeVolCreatif()
@@ -308,17 +321,19 @@ public partial class Monde_Client : Node3D
 	private int ObtenirRayonSecuriteSolActif()
 	{
 		int rayon = Mathf.Max(1, RayonDormancePhysique);
+		bool joueurValide = EssayerObtenirJoueurDansArbre(out CharacterBody3D joueurRef);
+		Vector3 posJoueur = joueurValide ? joueurRef.GlobalPosition : Vector3.Zero;
 		if (_dimensionReseauActive == (int)DimensionJeu.Abysse)
 		{
 			if (JoueurEnModeVolCreatif())
 				return 2;
-			if (_joueur != null && ConstantesDimensionAbysse.EstDansTrouNoirXZ(_joueur.GlobalPosition.X, _joueur.GlobalPosition.Z))
+			if (joueurValide && ConstantesDimensionAbysse.EstDansTrouNoirXZ(posJoueur.X, posJoueur.Z))
 				return Mathf.Clamp(rayon, 2, 3);
-			if (_joueur != null)
+			if (joueurValide)
 			{
-				Vector3 v = _joueur.Velocity;
+				Vector3 v = joueurRef.Velocity;
 				float vitesseXZ = Mathf.Sqrt(v.X * v.X + v.Z * v.Z);
-				bool localPret = AbysseCollisionLocaleActive(_joueur.GlobalPosition);
+				bool localPret = AbysseCollisionLocaleActive(posJoueur);
 				if (!localPret || vitesseXZ >= 4.0f || v.Y < -0.4f)
 					rayon = Mathf.Max(5, rayon);
 				else
@@ -335,17 +350,19 @@ public partial class Monde_Client : Node3D
 	private int ObtenirRayonUrgenceCollisionActif()
 	{
 		int rayon = Mathf.Max(1, RayonPrioriteCollisionJoueur);
+		bool joueurValide = EssayerObtenirJoueurDansArbre(out CharacterBody3D joueurRef);
+		Vector3 posJoueur = joueurValide ? joueurRef.GlobalPosition : Vector3.Zero;
 		if (_dimensionReseauActive == (int)DimensionJeu.Abysse)
 		{
 			if (JoueurEnModeVolCreatif())
 				return 2;
-			if (_joueur != null && ConstantesDimensionAbysse.EstDansTrouNoirXZ(_joueur.GlobalPosition.X, _joueur.GlobalPosition.Z))
+			if (joueurValide && ConstantesDimensionAbysse.EstDansTrouNoirXZ(posJoueur.X, posJoueur.Z))
 				return Mathf.Clamp(rayon, 2, 3);
-			if (_joueur != null)
+			if (joueurValide)
 			{
-				Vector3 v = _joueur.Velocity;
+				Vector3 v = joueurRef.Velocity;
 				float vitesseXZ = Mathf.Sqrt(v.X * v.X + v.Z * v.Z);
-				bool localPret = AbysseCollisionLocaleActive(_joueur.GlobalPosition);
+				bool localPret = AbysseCollisionLocaleActive(posJoueur);
 				if (!localPret || vitesseXZ >= 4.0f || v.Y < -0.4f)
 					rayon = Mathf.Max(5, rayon);
 				else
@@ -613,7 +630,8 @@ public partial class Monde_Client : Node3D
 	{
 		if (_dimensionReseauActive == (int)DimensionJeu.Abysse)
 		{
-			bool dansGoufre = _joueur != null && ConstantesDimensionAbysse.EstDansTrouNoirXZ(_joueur.GlobalPosition.X, _joueur.GlobalPosition.Z);
+			bool dansGoufre = EssayerObtenirJoueurDansArbre(out CharacterBody3D joueurRef)
+				&& ConstantesDimensionAbysse.EstDansTrouNoirXZ(joueurRef.GlobalPosition.X, joueurRef.GlobalPosition.Z);
 			int maxGazon = dansGoufre ? 9 : 6;
 			Chunk_Client.RayonVisibiliteGazonChunks = Mathf.Clamp(RayonGazonVisibleChunks, 1, maxGazon);
 			Chunk_Client.RayonVisibiliteBuissonsChunks = Mathf.Clamp(RayonBuissonsVisibleChunks, 2, dansGoufre ? 12 : 10);
@@ -790,9 +808,9 @@ public partial class Monde_Client : Node3D
 		}
 
 		float vitesseXZ = 0f;
-		if (_joueur != null)
+		if (EssayerObtenirJoueurDansArbre(out CharacterBody3D joueurRef))
 		{
-			Vector3 vel = _joueur.Velocity;
+			Vector3 vel = joueurRef.Velocity;
 			vitesseXZ = Mathf.Sqrt(vel.X * vel.X + vel.Z * vel.Z);
 		}
 		float tMouvement = Mathf.Clamp((vitesseXZ - 0.6f) / 5.0f, 0f, 1f);
@@ -1012,7 +1030,7 @@ public partial class Monde_Client : Node3D
 		// jamais « tout d'un coup ». Seul le chunk sous les pieds (risque visuel de sol nu immédiat)
 		// est construit immédiatement.
 		Vector3 posObsFlore = ObtenirPositionObservation();
-		if (_joueur != null)
+		if (EssayerObtenirJoueurDansArbre(out CharacterBody3D _))
 		{
 			Vector2I cJoueurFlore = Gestionnaire_Monde.WorldToChunkCoord(posObsFlore, TailleChunk);
 			int ddx = Mathf.Abs(data.Coordonnees.X - cJoueurFlore.X);
@@ -1032,7 +1050,7 @@ public partial class Monde_Client : Node3D
 
 		// Physique lazy stricte : collision montée en file pour amortir le coût.
 		// Seule la zone ultra proche joueur passe par la file urgente.
-		if (_joueur != null)
+		if (EssayerObtenirJoueurDansArbre(out CharacterBody3D _))
 		{
 			Vector2I cJoueur = Gestionnaire_Monde.WorldToChunkCoord(ObtenirPositionObservation(), TailleChunk);
 			int dx = Mathf.Abs(data.Coordonnees.X - cJoueur.X);
@@ -1230,10 +1248,27 @@ public partial class Monde_Client : Node3D
 		_cooldownDrainProfilage += dt;
 		TraiterAnimationsEmergence(dt);
 		Camera3D cameraActive = ObtenirCameraObservation();
-		Vector3 positionObservation = cameraActive != null ? cameraActive.GlobalPosition : (_joueur?.GlobalPosition ?? Vector3.Zero);
-		Vector3 positionJoueur = _joueur?.GlobalPosition ?? positionObservation;
-		Vector3 directionObservation = cameraActive != null ? (-cameraActive.GlobalTransform.Basis.Z).Normalized() :
-			(_joueur != null ? (-_joueur.GlobalTransform.Basis.Z).Normalized() : Vector3.Forward);
+		bool joueurValide = EssayerObtenirJoueurDansArbre(out CharacterBody3D joueurRef);
+		Vector3 positionJoueurSecurisee = joueurValide ? joueurRef.GlobalPosition : Vector3.Zero;
+		Vector3 directionJoueurSecurisee = joueurValide ? (-joueurRef.GlobalTransform.Basis.Z).Normalized() : Vector3.Forward;
+		Vector3 positionObservation = joueurValide ? positionJoueurSecurisee : Vector3.Zero;
+		Vector3 positionJoueur = joueurValide ? positionJoueurSecurisee : positionObservation;
+		Vector3 directionObservation = directionJoueurSecurisee;
+		if (cameraActive != null)
+		{
+			try
+			{
+				if (cameraActive.IsInsideTree())
+				{
+					positionObservation = cameraActive.GlobalPosition;
+					directionObservation = (-cameraActive.GlobalTransform.Basis.Z).Normalized();
+				}
+			}
+			catch (ObjectDisposedException)
+			{
+				// Caméra détruite pendant la frame: fallback sur joueur/zero.
+			}
+		}
 		Vector2I chunkObservationActuel = Gestionnaire_Monde.WorldToChunkCoord(positionObservation, TailleChunk);
 		if (_dimensionReseauActive == (int)DimensionJeu.Abysse)
 		{
@@ -1243,7 +1278,7 @@ public partial class Monde_Client : Node3D
 				_timerTrimAbysse = IntervalleTrimAbysseSec;
 				PurgerChunksAbysseHorsFenetre(positionObservation, positionJoueur);
 			}
-			if (ActiverDiagnosticCollisionAbysse && _joueur != null && _cooldownLogDiagnosticCollisionAbysse <= 0f)
+			if (ActiverDiagnosticCollisionAbysse && joueurValide && _cooldownLogDiagnosticCollisionAbysse <= 0f)
 			{
 				JournaliserDiagnosticCollisionAbysse(positionObservation);
 				_cooldownLogDiagnosticCollisionAbysse = IntervalleDiagnosticCollisionAbysseSec;
@@ -1258,23 +1293,23 @@ public partial class Monde_Client : Node3D
 		ulong budgetFrameUs = (ulong)Mathf.Max(1000f, budgetFrameMs * 1000f);
 		bool BudgetFrameDepasse() => PerfBudgetMonitor.Begin() - debutFramePerfUs >= budgetFrameUs;
 		float vitesseJoueurXZ = 0f;
-		if (_joueur != null)
+		if (joueurValide)
 		{
-			Vector3 vv = _joueur.Velocity;
+			Vector3 vv = joueurRef.Velocity;
 			vitesseJoueurXZ = Mathf.Sqrt(vv.X * vv.X + vv.Z * vv.Z);
 		}
 		bool prioriteJoueur = vitesseJoueurXZ >= SeuilVitessePrioriteJoueur;
-		if (_joueur != null)
+		if (joueurValide)
 		{
 			int rayonUrgenceCollision = ObtenirRayonUrgenceCollisionActif();
-			EnfilerSolidificationUrgenteAutour(_joueur.GlobalPosition, rayonUrgenceCollision);
+			EnfilerSolidificationUrgenteAutour(positionJoueurSecurisee, rayonUrgenceCollision);
 			if (prioriteJoueur)
 			{
-				Vector3 vel = _joueur.Velocity;
+				Vector3 vel = joueurRef.Velocity;
 				Vector3 velXZ = new Vector3(vel.X, 0f, vel.Z);
 				if (velXZ.LengthSquared() > 0.25f)
 				{
-					Vector3 pointAnticipe = _joueur.GlobalPosition + velXZ * Mathf.Max(0.35f, SecondesAnticipationCollision);
+					Vector3 pointAnticipe = positionJoueurSecurisee + velXZ * Mathf.Max(0.35f, SecondesAnticipationCollision);
 					EnfilerSolidificationUrgenteAutour(pointAnticipe, rayonUrgenceCollision);
 				}
 			}
@@ -1324,16 +1359,16 @@ public partial class Monde_Client : Node3D
 		// 2) Intégrations : chargement initial agressif ; exploration : plusieurs par frame pour suivre un monde infini.
 		bool enChargement = !ChunkSousPiedsAPret();
 		// GARANTIE SOL JOUEUR : dès que le sol proche manque ou que le joueur est en l'air, on refuse toute restriction sous les pieds.
-		bool joueurEnChute = _joueur != null && _joueur.Velocity.Y < -0.5f;
+		bool joueurEnChute = joueurValide && joueurRef.Velocity.Y < -0.5f;
 		bool enVideAttenduAbysse = _dimensionReseauActive == (int)DimensionJeu.Abysse
-			&& _joueur != null
-			&& EstVideAbysseAttendu(_joueur.GlobalPosition);
+			&& joueurValide
+			&& EstVideAbysseAttendu(positionJoueurSecurisee);
 		if (enVideAttenduAbysse)
 			enChargement = false; // Dans le vide attendu, l'absence de sol local est normale.
 		bool doitGarantirProcheJoueur = enChargement || joueurEnChute || prioriteJoueur;
 		if (enVideAttenduAbysse)
 		{
-			float distanceCentre = Mathf.Sqrt((_joueur.GlobalPosition.X * _joueur.GlobalPosition.X) + (_joueur.GlobalPosition.Z * _joueur.GlobalPosition.Z));
+			float distanceCentre = Mathf.Sqrt((positionJoueurSecurisee.X * positionJoueurSecurisee.X) + (positionJoueurSecurisee.Z * positionJoueurSecurisee.Z));
 			// Marge élargie pour éviter les décrochages de solidification en descente proche paroi.
 			bool procheParoiTrou = Mathf.Abs(distanceCentre - ConstantesDimensionAbysse.RayonTrouNoir) <= 220f;
 			doitGarantirProcheJoueur = procheParoiTrou && (joueurEnChute || prioriteJoueur);
@@ -1442,8 +1477,8 @@ public partial class Monde_Client : Node3D
 		if (_fileAttenteSolidificationUrgente.Count > 0 || _fileAttenteSolidification.Count > 0)
 		{
 			Vector2I coordObsSolidif = chunkObservationActuel;
-			if (_dimensionReseauActive == (int)DimensionJeu.Abysse && _joueur != null)
-				coordObsSolidif = Gestionnaire_Monde.WorldToChunkCoord(_joueur.GlobalPosition, TailleChunk);
+			if (_dimensionReseauActive == (int)DimensionJeu.Abysse && joueurValide)
+				coordObsSolidif = Gestionnaire_Monde.WorldToChunkCoord(positionJoueurSecurisee, TailleChunk);
 			int baseSolidifications = enChargement ? 3 : Mathf.Max(1, MaxSolidificationsParFrameExploration);
 			int maxSolidifications = Mathf.Clamp(Mathf.RoundToInt(baseSolidifications * Mathf.Lerp(0.60f, 1.12f, _ratioChargeAuto) * facteurAntiSpikeBacklog), 1, Mathf.Max(1, baseSolidifications + 2));
 			if (prioriteJoueur)
@@ -1652,11 +1687,11 @@ public partial class Monde_Client : Node3D
 
 		// En Abysse, on force les requêtes proches du joueur seulement en zone critique
 		// (collision locale pas prête ou déplacement rapide) pour éviter les bursts permanents.
-		if (_dimensionReseauActive == (int)DimensionJeu.Abysse && _joueur != null)
+		if (_dimensionReseauActive == (int)DimensionJeu.Abysse && joueurValide)
 		{
-			Vector3 posJoueur = _joueur.GlobalPosition;
+			Vector3 posJoueur = positionJoueurSecurisee;
 			bool enVideAttendu = EstVideAbysseAttendu(posJoueur);
-			Vector3 v = _joueur.Velocity;
+			Vector3 v = joueurRef.Velocity;
 			float vitesseXZ = Mathf.Sqrt(v.X * v.X + v.Z * v.Z);
 			bool localPret = AbysseCollisionLocaleActive(posJoueur);
 			if ((!localPret && !enVideAttendu) || vitesseXZ >= 2.5f || v.Y < -0.5f)
@@ -1852,9 +1887,9 @@ public partial class Monde_Client : Node3D
 		AjouterAnneauManquant(chunkPieds, rayonPriorite);
 		// Anticipation de trajectoire : même en urgence extrême on demande les chunks devant le joueur
 		// (rayon réduit mais jamais nul) pour éviter les chutes quand le joueur avance vite.
-		if (_joueur != null && SecondesAnticipationChargement > 0.01f)
+		if (EssayerObtenirJoueurDansArbre(out CharacterBody3D joueurRefAnticipation) && SecondesAnticipationChargement > 0.01f)
 		{
-			Vector3 vel = _joueur.Velocity;
+			Vector3 vel = joueurRefAnticipation.Velocity;
 			Vector3 decalAnticipation = new Vector3(vel.X, 0f, vel.Z) * SecondesAnticipationChargement;
 			if (decalAnticipation.LengthSquared() > 1f)
 			{
@@ -2761,9 +2796,9 @@ public partial class Monde_Client : Node3D
 
 	private void JournaliserDiagnosticCollisionAbysse(Vector3 positionObservation)
 	{
-		if (_joueur == null)
+		if (!EssayerObtenirJoueurDansArbre(out CharacterBody3D joueurRef))
 			return;
-		Vector3 pos = _joueur.GlobalPosition;
+		Vector3 pos = joueurRef.GlobalPosition;
 		Vector2I chunk = Gestionnaire_Monde.WorldToChunkCoord(pos, TailleChunk);
 		bool chunkSousPiedsPret = ChunkSousPiedsAPret();
 		bool collisionCroixPrete = AbyssePretPourDeplacement(pos);
@@ -2801,9 +2836,9 @@ public partial class Monde_Client : Node3D
 		float rayonNear = Mathf.Max(3, RayonDormancePhysique + 1);
 		float rayonNearCarre = rayonNear * rayonNear;
 		float vitesseXZ = 0f;
-		if (_joueur != null)
+		if (EssayerObtenirJoueurDansArbre(out CharacterBody3D joueurRef))
 		{
-			Vector3 v = _joueur.Velocity;
+			Vector3 v = joueurRef.Velocity;
 			vitesseXZ = Mathf.Sqrt(v.X * v.X + v.Z * v.Z);
 		}
 		float facteurMouvement = Mathf.Clamp(vitesseXZ / 6f, 0f, 1f);
@@ -3175,13 +3210,15 @@ public partial class Monde_Client : Node3D
 	public Vector3 ObtenirPositionObservation()
 	{
 		Camera3D cam = ObtenirCameraObservation();
-		return cam != null ? cam.GlobalPosition : (_joueur?.GlobalPosition ?? Vector3.Zero);
+		if (cam != null)
+			return cam.GlobalPosition;
+		return EssayerObtenirJoueurDansArbre(out CharacterBody3D joueurRef) ? joueurRef.GlobalPosition : Vector3.Zero;
 	}
 
 	/// <summary>Position d'interaction flore : privilégie le corps joueur (contact sol), sinon fallback observation.</summary>
 	public Vector3 ObtenirPositionInteractionFlore()
 	{
-		return _joueur?.GlobalPosition ?? ObtenirPositionObservation();
+		return EssayerObtenirJoueurDansArbre(out CharacterBody3D joueurRef) ? joueurRef.GlobalPosition : ObtenirPositionObservation();
 	}
 
 	/// <summary>Position utilisée par le radar (chunk le plus proche). Utilise la caméra active si disponible (caméra libre), sinon le corps du joueur.</summary>
@@ -3342,9 +3379,9 @@ public partial class Monde_Client : Node3D
 		}
 
 		// La dormance suit la caméra (obsChunk) : garder le sol actif autour du corps joueur même si on regarde ailleurs.
-		if (_joueur != null)
+		if (EssayerObtenirJoueurDansArbre(out CharacterBody3D joueurRef))
 		{
-			Vector2I cp = Gestionnaire_Monde.WorldToChunkCoord(_joueur.GlobalPosition, TailleChunk);
+			Vector2I cp = Gestionnaire_Monde.WorldToChunkCoord(joueurRef.GlobalPosition, TailleChunk);
 			for (int dx = -rayonReveil; dx <= rayonReveil; dx++)
 			{
 				for (int dz = -rayonReveil; dz <= rayonReveil; dz++)
@@ -3795,14 +3832,14 @@ public partial class Monde_Client : Node3D
 		bool modeAbysse = _dimensionReseauActive == (int)DimensionJeu.Abysse;
 		bool zoneCritiqueAbysse = false;
 		float vitesseXZ = 0f;
-		if (_joueur != null)
+		if (EssayerObtenirJoueurDansArbre(out CharacterBody3D joueurRef))
 		{
-			Vector3 v = _joueur.Velocity;
+			Vector3 v = joueurRef.Velocity;
 			vitesseXZ = Mathf.Sqrt(v.X * v.X + v.Z * v.Z);
 			if (modeAbysse)
 			{
-				bool enVideAttendu = EstVideAbysseAttendu(_joueur.GlobalPosition);
-				bool localeOk = AbysseCollisionLocaleActive(_joueur.GlobalPosition);
+				bool enVideAttendu = EstVideAbysseAttendu(joueurRef.GlobalPosition);
+				bool localeOk = AbysseCollisionLocaleActive(joueurRef.GlobalPosition);
 				// Pas d’urgence max dès qu’on chute : évite rafales de requêtes/solidifications (micro-freezes).
 				zoneCritiqueAbysse = !localeOk && !enVideAttendu;
 			}
@@ -3827,9 +3864,9 @@ public partial class Monde_Client : Node3D
 			}
 		}
 		// Anticipation chute : si le joueur se déplace vite, pousser aussi le chunk sous sa trajectoire.
-		if (_joueur != null && _joueur.Velocity.LengthSquared() > 1f && emises < budgetRequetesForce)
+		if (EssayerObtenirJoueurDansArbre(out CharacterBody3D joueurRefAnticipation) && joueurRefAnticipation.Velocity.LengthSquared() > 1f && emises < budgetRequetesForce)
 		{
-			Vector3 cibleAnticipee = positionObservation + _joueur.Velocity.Normalized() * TailleChunk;
+			Vector3 cibleAnticipee = positionObservation + joueurRefAnticipation.Velocity.Normalized() * TailleChunk;
 			Vector2I chunkAnticipe = Gestionnaire_Monde.WorldToChunkCoord(cibleAnticipee, TailleChunk);
 			if (!ChunkDisponiblePourObservation(chunkAnticipe, positionObservation))
 			{
@@ -3880,8 +3917,8 @@ public partial class Monde_Client : Node3D
 	/// <summary>Vrai si une grille réduite sous les pieds a ses collisions actives (le rayon complet de dormance se remplit ensuite en jeu).</summary>
 	public bool ChunkSousPiedsAPret()
 	{
-		if (_joueur == null) return false;
-		Vector3 pos = _joueur.GlobalPosition;
+		if (!EssayerObtenirJoueurDansArbre(out CharacterBody3D joueurRef)) return false;
+		Vector3 pos = joueurRef.GlobalPosition;
 		Vector2I c = Gestionnaire_Monde.WorldToChunkCoord(pos, TailleChunk);
 		int rg = Mathf.Clamp(RayonGrilleMinSpawnPret, 0, RayonDormancePhysique);
 		for (int dx = -rg; dx <= rg; dx++)
@@ -3932,8 +3969,8 @@ public partial class Monde_Client : Node3D
 	/// <summary>Vrai si le chunk sous les pieds et ses 4 voisins cardinaux ont une collision active (évite fissures de bord au démarrage).</summary>
 	public bool ChunkSousPiedsEtVoisinsCardinauxPrets()
 	{
-		if (_joueur == null) return false;
-		Vector3 pos = _joueur.GlobalPosition;
+		if (!EssayerObtenirJoueurDansArbre(out CharacterBody3D joueurRef)) return false;
+		Vector3 pos = joueurRef.GlobalPosition;
 		Vector2I c = Gestionnaire_Monde.WorldToChunkCoord(pos, TailleChunk);
 		if (_dimensionReseauActive == (int)DimensionJeu.Abysse)
 		{

@@ -28,6 +28,7 @@ public partial class Joueur
     private float _cooldownMessageEtatBrasAction;
     private ItemPhysique _atelierCibleRecuperation;
     private const float DureeRecolteBuissonOutilSecondes = 3.0f;
+    private const float DureeRecolteAloeDagueSecondes = 1.0f;
     private const float DureeRecolteLianeDagueSecondes = 2.0f;
     private const float RayonDetectionBuisson = 1.25f;
     private const float DistanceMaxViseeDirecteBuisson = 0.55f;
@@ -296,7 +297,7 @@ public partial class Joueur
         return true;
     }
 
-    /// <summary>Dague/Pelle : minage maintenu 3s sur buisson (dague coupe, pelle déracine replantable).</summary>
+    /// <summary>Dague/Pelle : minage maintenu sur buisson (3s standard, 1s pour aloe vera a la dague).</summary>
     private bool MettreAJourRecolteBuissonOutil(float dt, SlotInventaire mainActive)
     {
         bool dague = mainActive.ID == 105 || mainActive.ID == IdObjetFauxPierreTier0;
@@ -317,6 +318,25 @@ public partial class Joueur
             _progressionRecolteBuisson = 0f;
             _cooldownParticulesMinageBuisson = 0f;
         }
+        bool cibleAloe = Chunk_Serveur.EstTypeAloeVera(typeBuisson);
+        if (dague && cibleAloe)
+        {
+            var slotAloe = new SlotInventaire
+            {
+                ID = IdObjetAloeVera,
+                IndexChimique = Chunk_Serveur.VarianteBuissonAloeVera,
+                Quantite = 1,
+                IndexMorphologique = 0,
+                IndexTaille = 0,
+                IndexBotanique = LSystem_Botanique.IndexChene
+            };
+            if (!ADeLaPlacePourSlotInventaire(slotAloe))
+            {
+                AfficherMessageRecuperationFondation("ZERO-K : Inventaire plein, impossible de recuperer l'aloe vera.");
+                _progressionRecolteBuisson = 0f;
+                return true;
+            }
+        }
         _pointRecolteBuisson = pointBuissonMonde;
         _progressionRecolteBuisson += dt;
         _cooldownParticulesMinageBuisson -= dt;
@@ -327,22 +347,51 @@ public partial class Joueur
             // Retour visuel permanent pendant minage maintenu du buisson.
             EmmettreParticulesMinageMainNue(pointImpact, normale, 8);
         }
-        if (_progressionRecolteBuisson < DureeRecolteBuissonOutilSecondes)
+        float dureeRecolte = (dague && cibleAloe) ? DureeRecolteAloeDagueSecondes : DureeRecolteBuissonOutilSecondes;
+        if (_progressionRecolteBuisson < dureeRecolte)
             return true;
 
-        byte mode = dague ? (byte)1 : (byte)2;
+        byte mode = dague
+            ? (cibleAloe ? (byte)3 : (byte)1)
+            : (byte)2;
         bool succes = _gestionnaireMonde?.RecolterBuissonGlobal(_pointRecolteBuisson, RayonDetectionBuisson, mode) ?? false;
         if (succes)
         {
             if (dague)
             {
+                if (cibleAloe)
+                {
+                    var slotAloe = new SlotInventaire
+                    {
+                        ID = IdObjetAloeVera,
+                        IndexChimique = Chunk_Serveur.VarianteBuissonAloeVera,
+                        Quantite = 1,
+                        IndexMorphologique = 0,
+                        IndexTaille = 0,
+                        IndexBotanique = LSystem_Botanique.IndexChene
+                    };
+                    if (EssayerAjouterDansInventaire(slotAloe))
+                    {
+                        RafraichirHUD();
+                    }
+                    else
+                    {
+                        Vector3 directionFrappe = _camera != null ? -_camera.GlobalTransform.Basis.Z.Normalized() : -GlobalTransform.Basis.Z.Normalized();
+                        Node3D aloeAuSol = CreerBlocPose(_pointRecolteBuisson + Vector3.Up * 0.08f, slotAloe);
+                        if (aloeAuSol is RigidBody3D rbAloe)
+                            rbAloe.ApplyCentralImpulse(directionFrappe * 1.1f + Vector3.Up * 0.8f);
+                        GD.Print("ZERO-K : Inventaire plein, aloe vera depose au sol.");
+                    }
+                }
                 AppliquerUsureOutilMainActive(1.6f);
-                GD.Print("ZERO-K : Dague: branche de buisson récoltée.");
+                GD.Print(cibleAloe
+                    ? "ZERO-K : Aloe vera recolte (1s) et ajoute a l'inventaire."
+                    : "ZERO-K : Dague: branche de buisson recoltee.");
             }
             else
             {
                 AppliquerUsureOutilMainActive(2.1f);
-                GD.Print("ZERO-K : Buisson déraciné (plante replantable récupérée).");
+                GD.Print("ZERO-K : Buisson deracine (plante replantable recuperee).");
             }
             _bloquerActionClicGaucheApresMinageBuisson = true;
         }
@@ -1541,13 +1590,13 @@ public partial class Joueur
         SlotInventaire mainActive = MainGaucheEstActive ? MainGauche : MainDroite;
         float multiplicateurForce = ObtenirMultiplicateurDegatsForce();
 
-        // Dague sur buisson: interdit en coup instantané, uniquement minage maintenu 3s.
+        // Dague/faux sur buisson: interdit en coup instantane, uniquement en maintien.
         if ((mainActive.ID == 105 || mainActive.ID == IdObjetFauxPierreTier0) && (_gestionnaireMonde?.EssayerDetecterBuissonSousPoint(pointImpact, RayonDetectionBuisson, out Vector3 posBuisson, out _)) == true
             && pointImpact.DistanceTo(posBuisson) <= DistanceMaxViseeDirecteBuisson)
         {
             GD.Print(mainActive.ID == IdObjetFauxPierreTier0
-                ? "ZERO-K : Maintenez 3s avec la faux pour couper le buisson."
-                : "ZERO-K : Maintenez 3s avec la dague pour couper le buisson.");
+                ? "ZERO-K : Maintenez avec la faux pour couper le buisson."
+                : "ZERO-K : Maintenez avec la dague (aloe: 1s) pour recolter le buisson.");
             return;
         }
 

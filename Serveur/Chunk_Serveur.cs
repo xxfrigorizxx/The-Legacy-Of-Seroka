@@ -261,6 +261,21 @@ public partial class Chunk_Serveur : RefCounted
 			_densities = new float[TailleChunk + 1, HauteurMax + 1, TailleChunk + 1];
 			_materials = new byte[TailleChunk + 1, HauteurMax + 1, TailleChunk + 1];
 			_densitiesEau = new float[TailleChunk + 1, HauteurMax + 1, TailleChunk + 1];
+			// IMPORTANT APISARA: certaines colonnes Y sont volontairement "skippées" pour la perf.
+			// Si on laisse la densité par défaut à 0 (isolevel), on peut créer des fentes/artefacts de mesh.
+			// On initialise tout en AIR explicite, puis les passes remplissent les zones solides/eau utiles.
+			for (int x = 0; x <= TailleChunk; x++)
+			{
+				for (int y = 0; y <= HauteurMax; y++)
+				{
+					for (int z = 0; z <= TailleChunk; z++)
+					{
+						_densities[x, y, z] = -10.0f;
+						_materials[x, y, z] = 0;
+						_densitiesEau[x, y, z] = -1.0f;
+					}
+				}
+			}
 			int taille = TailleChunk + 1;
 			int[,] sommetSolide = new int[taille, taille];
 			bool activerGrottes = !_generationAbysseActive;
@@ -334,10 +349,12 @@ public partial class Chunk_Serveur : RefCounted
 						bool extrusionParoiAbysse = false;
 						bool extrusionAnneauAbysse = false;
 						bool picSupplementSpiraleAbysse = false;
+						bool noyauMurailleAbysse = false;
 						if (colonneExtrusionTrou
 							&& globalY >= yMinBandeExtrusionAbysse
 							&& globalY <= yMaxBandeExtrusionAbysse)
 						{
+							noyauMurailleAbysse = EvaluerNoyauMurailleContinueAbysse(xGlobal, globalY, zGlobal, out _);
 							extrusionParoiAbysse = EvaluerExtrusionParoiAbysse(xGlobal, globalY, zGlobal, out _);
 							if (!extrusionParoiAbysse)
 								extrusionAnneauAbysse = EvaluerExtrusionAnneauAbysse(xGlobal, globalY, zGlobal, out _);
@@ -345,7 +362,7 @@ public partial class Chunk_Serveur : RefCounted
 								picSupplementSpiraleAbysse = EvaluerPicSupplementSpiraleAbysse(xGlobal, globalY, zGlobal, out _);
 						}
 
-						if (extrusionParoiAbysse || extrusionAnneauAbysse || picSupplementSpiraleAbysse)
+						if (noyauMurailleAbysse || extrusionParoiAbysse || extrusionAnneauAbysse || picSupplementSpiraleAbysse)
 						{
 							_densities[x, y, z] = 10.0f;
 							_materials[x, y, z] = 2;
@@ -1017,6 +1034,32 @@ public partial class Chunk_Serveur : RefCounted
 	}
 
 	/// <summary>
+	/// Muraille porteuse continue du gouffre APISARA.
+	/// Sert de "coeur plein" pour éviter les fentes entre extrusions décoratives.
+	/// </summary>
+	private bool EvaluerNoyauMurailleContinueAbysse(float xGlobal, float yGlobal, float zGlobal, out float profondeurInward)
+	{
+		profondeurInward = 0f;
+		if (!_generationAbysseActive) return false;
+		if (yGlobal < AbyssYAnneauTransitionBottom || yGlobal > AbyssYSpiraleTop) return false;
+
+		float distance = Mathf.Sqrt((xGlobal * xGlobal) + (zGlobal * zGlobal));
+		if (distance > AbyssRayonTrouNoir) return false;
+
+		float tVertical = Mathf.Clamp((yGlobal - AbyssYAnneauTransitionBottom) / Mathf.Max(1e-3f, AbyssYSpiraleTop - AbyssYAnneauTransitionBottom), 0f, 1f);
+		tVertical = tVertical * tVertical * (3f - 2f * tVertical);
+		float bruitContinuite = Mathf.Clamp((_noiseAbysseChaosDetail3D.GetNoise3D(
+			xGlobal * 0.004f + 1300f,
+			yGlobal * 0.006f - 900f,
+			zGlobal * 0.004f - 1300f) + 1f) * 0.5f, 0f, 1f);
+		float profondeurBase = Mathf.Lerp(48f, 30f, tVertical) * Mathf.Lerp(0.88f, 1.12f, bruitContinuite);
+		profondeurInward = Mathf.Clamp(profondeurBase, 24f, 58f);
+
+		float seuilInterieur = AbyssRayonTrouNoir - profondeurInward;
+		return distance >= seuilInterieur && distance <= AbyssRayonTrouNoir;
+	}
+
+	/// <summary>
 	/// Anneau [-510,-450[ : pics pierre triangulaires (vue de côté) ancrés au mur, herbe en passe séparée.
 	/// Profondeur maximale vers Y=-450 (base du pic côté mur), pointe vers Y=-510.
 	/// </summary>
@@ -1140,11 +1183,19 @@ public partial class Chunk_Serveur : RefCounted
 					bool appartientSpirale = EvaluerExtrusionParoiAbysse(xGlobal, globalY, zGlobal, out _);
 					bool appartientAnneau = !appartientSpirale && EvaluerExtrusionAnneauAbysse(xGlobal, globalY, zGlobal, out _);
 					bool appartientPicSupplement = !appartientSpirale && !appartientAnneau && EvaluerPicSupplementSpiraleAbysse(xGlobal, globalY, zGlobal, out _);
-					if (!appartientSpirale && !appartientAnneau && !appartientPicSupplement) continue;
+					bool appartientNoyau = EvaluerNoyauMurailleContinueAbysse(xGlobal, globalY, zGlobal, out _);
+					if (!appartientSpirale && !appartientAnneau && !appartientPicSupplement && !appartientNoyau) continue;
 
 					bool airAuDessus = y >= HauteurMax
 						|| (_densities[x, y + 1, z] <= Isolevel && (_densitiesEau == null || _densitiesEau[x, y + 1, z] <= Isolevel));
 					if (!airAuDessus)
+					{
+						_materials[x, y, z] = 2;
+						continue;
+					}
+
+					// Le noyau structurel reste roche brute; seuls les reliefs extrudés peuvent devenir praticables/herbe.
+					if (appartientNoyau && !appartientSpirale && !appartientAnneau && !appartientPicSupplement)
 					{
 						_materials[x, y, z] = 2;
 						continue;
@@ -1456,6 +1507,26 @@ public partial class Chunk_Serveur : RefCounted
 			&& Mathf.Abs(hz2 - h0) <= MARGE_BORD_FLORE_METRES;
 	}
 
+	private static float UniformiserSelectionMacroBiome(float macroBrut)
+	{
+		// Les bruits Perlin/Fbm sont centrés vers 0.5, ce qui rend les extrêmes rares.
+		// On applique une CDF gaussienne approximative pour rétablir des tranches plus équitables.
+		float z = (macroBrut - 0.5f) / 0.23f;
+		float uniforme = 0.5f * (1f + ApproxErf(z * 0.70710677f));
+		return Mathf.Clamp(uniforme, 0f, 1f);
+	}
+
+	private static float ApproxErf(float x)
+	{
+		// Abramowitz & Stegun 7.1.26 (erreur max ~1.5e-7).
+		float signe = x < 0f ? -1f : 1f;
+		float ax = Mathf.Abs(x);
+		float t = 1f / (1f + 0.3275911f * ax);
+		float poly = (((((1.061405429f * t - 1.453152027f) * t) + 1.421413741f) * t - 0.284496736f) * t + 0.254829592f) * t;
+		float y = 1f - poly * MathF.Exp(-ax * ax);
+		return signe * y;
+	}
+
 	private byte DeterminerMateriauCroûte(int xGlobal, int zGlobal, int globalY, int hauteurSurface, float temperature, float humidite)
 	{
 		if (_generationAbysseActive)
@@ -1490,22 +1561,23 @@ public partial class Chunk_Serveur : RefCounted
 		// Poids: herbe 50%, chaque autre matériau ~8.33%.
 		float macroBiome = (_noiseBiomeForet.GetNoise2D(xGlobal * 1.18f + 9100f, zGlobal * 1.18f - 9100f) + 1f) * 0.5f;
 		float macroJitter = _noiseHumiditeDetail.GetNoise2D(xGlobal * 0.58f + 2700f, zGlobal * 0.58f - 2700f) * 0.11f;
-		float macro = Mathf.Clamp(macroBiome + macroJitter, 0f, 1f);
+		float macroBrut = Mathf.Clamp(macroBiome + macroJitter, 0f, 1f);
+		float macro = UniformiserSelectionMacroBiome(macroBrut);
 		float detailHumide = _noiseHumiditeDetail.GetNoise2D(xGlobal * 1.55f + 1400f, zGlobal * 1.55f + 1400f);
 		float detailSec = _noiseHumiditeDetail.GetNoise2D(xGlobal * 1.9f + 17000f, zGlobal * 1.9f + 17000f);
 
 		if (macro < 0.083333f) // sable
-			return (temperature > -0.25f || detailSec > 0.35f) ? (byte)3 : (byte)6;
+			return (temperature > 0.04f && (humidite < 0.20f || detailSec > 0.12f)) ? (byte)3 : (byte)6;
 		if (macro < 0.166666f) // neige
-			return (temperature < 0.38f || detailHumide > 0.4f) ? (byte)5 : (byte)1;
+			return (temperature < 0.20f || detailHumide > 0.52f) ? (byte)5 : (byte)1;
 		if (macro < 0.25f) // argile
-			return 8;
+			return (temperature > 0.05f && humidite > -0.05f) ? (byte)8 : (humidite > 0.22f ? (byte)7 : (byte)1);
 		if (macro < 0.333333f) // glace
-			return (temperature < 0.30f || humidite > 0.20f) ? (byte)9 : (byte)5;
+			return (temperature < -0.04f || (temperature < 0.08f && humidite > 0.08f)) ? (byte)9 : (byte)5;
 		if (macro < 0.416666f) // boue
-			return (humidite > -0.45f || detailHumide > -0.15f) ? (byte)7 : (byte)1;
+			return (humidite > -0.18f || detailHumide > 0.04f) ? (byte)7 : (byte)1;
 		if (macro < 0.5f) // aride
-			return (humidite < 0.28f || detailSec > -0.05f) ? (byte)6 : (byte)1;
+			return (humidite < 0.08f || detailSec > 0.08f) ? (byte)6 : (byte)1;
 
 		// Herbe (50%)
 		return 1;
@@ -1621,10 +1693,11 @@ public partial class Chunk_Serveur : RefCounted
 					float globalY = ChunkOffsetY * HauteurMax + y;
 					if (globalY < yMinBande || globalY > yMaxBande) continue;
 
+					bool noyauMuraille = EvaluerNoyauMurailleContinueAbysse(xGlobal, globalY, zGlobal, out _);
 					bool extrusionParoi = EvaluerExtrusionParoiAbysse(xGlobal, globalY, zGlobal, out _);
 					bool extrusionAnneau = !extrusionParoi && EvaluerExtrusionAnneauAbysse(xGlobal, globalY, zGlobal, out _);
 					bool extrusionPic = !extrusionParoi && !extrusionAnneau && EvaluerPicSupplementSpiraleAbysse(xGlobal, globalY, zGlobal, out _);
-					if (!extrusionParoi && !extrusionAnneau && !extrusionPic) continue;
+					if (!noyauMuraille && !extrusionParoi && !extrusionAnneau && !extrusionPic) continue;
 
 					if (_densities[x, y, z] > Isolevel && _materials[x, y, z] > 0)
 						continue;
@@ -1910,7 +1983,7 @@ public bool EssayerDetecterBuisson(Vector3 pointImpactGlobal, float rayon, out V
 	return true;
 }
 
-/// <summary>Récolte ciblée buisson: 0=hachette (branche), 1=dague (coupe), 2=pelle (plante replantable).</summary>
+/// <summary>Récolte ciblée buisson: 0=hachette (branche), 1=dague (coupe), 2=pelle (plante replantable), 3=dague aloe (sans branche).</summary>
 public bool RecolterBuisson(Vector3 pointImpactGlobal, float rayon, byte modeRecolte)
 {
 	if (!EssayerTrouverBuissonLePlusProche(pointImpactGlobal, rayon, out Vector3I posFlore, out byte typeFlore))
@@ -1937,6 +2010,10 @@ public bool RecolterBuisson(Vector3 pointImpactGlobal, float rayon, byte modeRec
 			InventaireFlore.Remove(posFlore);
 			// Pelle: on récupère la plante "sans baies"; les baies d'un buisson plein tombent déjà au sol juste au-dessus.
 			_callbackBlocChutant?.Invoke(posSpawn + new Vector3(0f, 0.06f, 0f), ID_ITEM_BUISSON_VIDE, false, 0);
+			break;
+
+		case 3: // Dague + aloe: récolte dédiée, sans branche ni drop buisson vide au sol.
+			InventaireFlore.Remove(posFlore);
 			break;
 
 		default:

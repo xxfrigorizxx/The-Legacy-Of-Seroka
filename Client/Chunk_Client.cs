@@ -1030,6 +1030,7 @@ public partial class Chunk_Client : Node3D
 	private static Material _cacheMaterielBuissonProcedural;
 private static Texture2D _cacheTextureFeuilleBuisson;
 	private static Mesh _cacheMeshAloeVera;
+	private static Mesh _cacheMeshLamelleAloeObjet;
 	private const int MAX_CONTACTS_GAZON = 6;
 	private const int MAX_CONTACTS_RIGIDES_GAZON_SCAN = 24;
 	private const int MAX_TRACES_CONTACT_GAZON = 18;
@@ -1483,6 +1484,24 @@ private static bool EstCorpsAuSol(PhysicsBody3D body)
 		return _cacheMeshPleinParCouleurCache[c];
 	}
 
+	/// <summary>Expose le mesh procédural d'aloe vera pour les items inventaire/monde.</summary>
+	public static Mesh ObtenirMeshAloeVeraProcedural()
+	{
+		if (_cacheMeshAloeVera == null) _cacheMeshAloeVera = GenererMeshAloeVeraProcedural();
+		return _cacheMeshAloeVera;
+	}
+
+	/// <summary>Expose un petit segment d'aloe (objet inventaire), pas la plante complète.</summary>
+	public static Mesh ObtenirMeshLamelleAloeObjetProcedural()
+	{
+		if (_cacheMeshLamelleAloeObjet == null)
+		{
+			// Objet récolté: priorité au modèle utilisateur.
+			_cacheMeshLamelleAloeObjet = ChargerMeshAloeVeraDepuisModeleUtilisateur() ?? GenererMeshLamelleAloeObjetProcedural();
+		}
+		return _cacheMeshLamelleAloeObjet;
+	}
+
 	/// <summary>Buisson procédural unifié : "vide" = feuillage seul, "plein" = feuillage + baies teintées (<paramref name="indexCouleurBaie"/>).</summary>
 	private static Mesh GenererMeshBuissonProcedural(bool avecBaies, int indexCouleurBaie = 0)
 	{
@@ -1623,6 +1642,186 @@ private static bool EstCorpsAuSol(PhysicsBody3D body)
 		var mesh = st.Commit();
 		if (mesh is ArrayMesh am && am.GetSurfaceCount() > 0)
 			am.SurfaceSetMaterial(0, ObtenirMaterielBuissonProcedural());
+		return mesh;
+	}
+
+	private static StandardMaterial3D ConstruireMaterielAloeFallback(int indexPartie)
+	{
+		// Fallback simple si le GLB n'embarque pas de matériaux.
+		if (indexPartie % 3 == 0)
+			return new StandardMaterial3D { AlbedoColor = new Color(0.22f, 0.58f, 0.34f, 1f), Roughness = 0.78f, Metallic = 0f, VertexColorUseAsAlbedo = true };
+		if (indexPartie % 3 == 1)
+			return new StandardMaterial3D { AlbedoColor = new Color(0.80f, 0.95f, 0.86f, 1f), Roughness = 0.42f, Metallic = 0f, CullMode = BaseMaterial3D.CullModeEnum.Disabled, VertexColorUseAsAlbedo = true };
+		return new StandardMaterial3D { AlbedoColor = new Color(0.17f, 0.30f, 0.18f, 1f), Roughness = 0.88f, Metallic = 0f, VertexColorUseAsAlbedo = true };
+	}
+
+	private static Material ConstruireMaterielAloePartie(int indexPartie, Material materiauSource)
+	{
+		// On force des teintes lisibles même si le GLB n'a pas de texture exploitable en runtime.
+		StandardMaterial3D baseMat = materiauSource as StandardMaterial3D;
+		StandardMaterial3D mat = baseMat != null
+			? (StandardMaterial3D)baseMat.Duplicate()
+			: ConstruireMaterielAloeFallback(indexPartie);
+
+		if (indexPartie % 3 == 0)
+		{
+			mat.AlbedoColor = new Color(0.26f, 0.66f, 0.38f, 1f);
+			mat.Roughness = 0.74f;
+		}
+		else if (indexPartie % 3 == 1)
+		{
+			mat.AlbedoColor = new Color(0.86f, 0.96f, 0.90f, 1f);
+			mat.Roughness = 0.36f;
+			mat.CullMode = BaseMaterial3D.CullModeEnum.Disabled;
+		}
+		else
+		{
+			mat.AlbedoColor = new Color(0.15f, 0.26f, 0.16f, 1f);
+			mat.Roughness = 0.84f;
+		}
+
+		mat.Metallic = 0f;
+		mat.VertexColorUseAsAlbedo = true;
+		return mat;
+	}
+
+	private static Mesh NormaliserMeshAloeObjet(Mesh mesh)
+	{
+		if (mesh == null || mesh.GetSurfaceCount() <= 0)
+			return mesh;
+
+		Aabb box = mesh.GetAabb();
+		if (box.Size.Y <= 0.0001f)
+			return mesh;
+
+		// Cible: item compact (~26 cm) centré sur l'origine pour éviter le "gros modèle" au lancer.
+		const float hauteurCible = 0.26f;
+		float facteur = hauteurCible / box.Size.Y;
+		Vector3 centre = box.Position + box.Size * 0.5f;
+		Transform3D xf = Transform3D.Identity.ScaledLocal(Vector3.One * facteur);
+		xf.Origin = -centre * facteur;
+
+		var resultat = new ArrayMesh();
+		for (int s = 0; s < mesh.GetSurfaceCount(); s++)
+		{
+			var st = new SurfaceTool();
+			st.Begin(Mesh.PrimitiveType.Triangles);
+			st.AppendFrom(mesh, s, xf);
+			Godot.Collections.Array arrays = st.CommitToArrays();
+			resultat.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
+			resultat.SurfaceSetMaterial(s, mesh.SurfaceGetMaterial(s));
+		}
+		return resultat;
+	}
+
+	private static Mesh ChargerMeshAloeVeraDepuisModeleUtilisateur()
+	{
+		const string cheminGlb = "res://Modeles/materials/naturelle/aloe_verra.glb";
+		PackedScene scene = GD.Load<PackedScene>(cheminGlb);
+		if (scene == null)
+			return null;
+
+		Node inst = scene.Instantiate();
+		if (inst == null)
+			return null;
+
+		try
+		{
+			var parties = new List<(Mesh mesh, MeshInstance3D mi, Transform3D xf)>(4);
+			void Collecter(Node n, Transform3D xfParent)
+			{
+				Transform3D xfCourant = xfParent;
+				if (n is Node3D n3)
+					xfCourant = xfParent * n3.Transform;
+				if (n is MeshInstance3D mi && mi.Mesh != null)
+					parties.Add((mi.Mesh, mi, xfCourant));
+				for (int i = 0; i < n.GetChildCount(); i++)
+					Collecter(n.GetChild(i), xfCourant);
+			}
+			Collecter(inst, Transform3D.Identity);
+			if (parties.Count == 0)
+				return null;
+
+			var fusion = new ArrayMesh();
+			int surfaceAjoutee = 0;
+			for (int p = 0; p < parties.Count; p++)
+			{
+				(Mesh meshPartie, MeshInstance3D miPartie, Transform3D xfPartie) = parties[p];
+				int surfaces = meshPartie.GetSurfaceCount();
+				for (int s = 0; s < surfaces; s++)
+				{
+					var st = new SurfaceTool();
+					st.Begin(Mesh.PrimitiveType.Triangles);
+					st.AppendFrom(meshPartie, s, xfPartie);
+					st.GenerateNormals();
+					Godot.Collections.Array arrays = st.CommitToArrays();
+					fusion.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
+					Material matSource = miPartie.GetActiveMaterial(s) ?? meshPartie.SurfaceGetMaterial(s);
+					fusion.SurfaceSetMaterial(surfaceAjoutee, ConstruireMaterielAloePartie(p, matSource));
+					surfaceAjoutee++;
+				}
+			}
+			return NormaliserMeshAloeObjet(fusion);
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr("ZERO-K : Chargement aloe_verra.glb échoué, fallback procédural. ", ex.Message);
+			return null;
+		}
+		finally
+		{
+			inst.QueueFree();
+		}
+	}
+
+	/// <summary>Petite lamelle d'aloe (gel) utilisée comme item récoltable en inventaire.</summary>
+	private static Mesh GenererMeshLamelleAloeObjetProcedural()
+	{
+		var st = new SurfaceTool();
+		st.Begin(Mesh.PrimitiveType.Triangles);
+		Color colBase = new Color(0.23f, 0.62f, 0.37f, 1f);
+		Color colSommet = new Color(0.62f, 0.90f, 0.70f, 1f);
+		Color colGel = new Color(0.83f, 0.97f, 0.88f, 1f);
+
+		// Lamelle unique: une seule pointe (pas deux), avec ouverture centrale légère.
+		Vector3 baseL = new Vector3(-0.040f, 0.000f, -0.055f);
+		Vector3 baseR = new Vector3(0.040f, 0.000f, -0.055f);
+		Vector3 midL = new Vector3(-0.030f, 0.012f, 0.000f);
+		Vector3 midR = new Vector3(0.030f, 0.012f, 0.000f);
+		Vector3 innerL = new Vector3(-0.008f, 0.008f, 0.006f);
+		Vector3 innerR = new Vector3(0.008f, 0.008f, 0.006f);
+		Vector3 tip = new Vector3(0.000f, 0.020f, 0.105f);
+
+		// Face avant.
+		AjouterTriangleCouleurParSommet(st, baseL, colBase, midL, colBase.Lerp(colSommet, 0.55f), innerL, colSommet);
+		AjouterTriangleCouleurParSommet(st, baseR, colBase, innerR, colSommet, midR, colBase.Lerp(colSommet, 0.55f));
+		AjouterTriangleCouleurParSommet(st, midL, colBase.Lerp(colSommet, 0.55f), tip, colSommet, innerL, colSommet);
+		AjouterTriangleCouleurParSommet(st, innerR, colSommet, tip, colSommet, midR, colBase.Lerp(colSommet, 0.55f));
+		// Bande de gel au centre.
+		AjouterTriangleCouleurParSommet(st, innerL, colGel, innerR, colGel, tip, colGel);
+
+		// Face arrière.
+		AjouterTriangleCouleurParSommet(st, innerL, colSommet, midL, colBase.Lerp(colSommet, 0.55f), baseL, colBase);
+		AjouterTriangleCouleurParSommet(st, midR, colBase.Lerp(colSommet, 0.55f), innerR, colSommet, baseR, colBase);
+		AjouterTriangleCouleurParSommet(st, innerL, colSommet, tip, colSommet, midL, colBase.Lerp(colSommet, 0.55f));
+		AjouterTriangleCouleurParSommet(st, midR, colBase.Lerp(colSommet, 0.55f), tip, colSommet, innerR, colSommet);
+		AjouterTriangleCouleurParSommet(st, tip, colGel, innerR, colGel, innerL, colGel);
+
+		// Petit volume de base pour éviter l'aspect "papier plat".
+		AjouterBilleOctaedre(st, new Vector3(0f, 0.004f, -0.018f), 0.008f, colBase.Lerp(colGel, 0.35f));
+		st.GenerateNormals();
+		var mesh = st.Commit();
+		if (mesh is ArrayMesh am && am.GetSurfaceCount() > 0)
+		{
+			var mat = new StandardMaterial3D
+			{
+				AlbedoColor = new Color(0.58f, 0.88f, 0.69f, 1f),
+				Roughness = 0.56f,
+				Metallic = 0f,
+				CullMode = BaseMaterial3D.CullModeEnum.Disabled
+			};
+			am.SurfaceSetMaterial(0, mat);
+		}
 		return mesh;
 	}
 

@@ -9,3 +9,4 @@ artifacts/*.log
 artifacts/release_payload_alpha/SEROKAFrozenLegacy.pck
 SEROKAFrozenLegacy.pck
 SEROKAFrozenLegacy.exe
+Distribution/Installer/Output/

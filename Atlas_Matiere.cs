@@ -715,6 +715,8 @@ public static class Atlas_Matiere
             int q = Joueur.ObtenirQuantiteSlot(slot);
             return q > 1 ? $"Petites baies {couleur}s x{q}" : $"Petite baie {couleur}";
         }
+        if (id == Joueur.IdObjetAloeVera)
+            return "Aloe vera";
         if (id == Joueur.IdObjetRackBatons)
             return "Rack à bâtons";
         if (id == Joueur.IdObjetRackBuches)

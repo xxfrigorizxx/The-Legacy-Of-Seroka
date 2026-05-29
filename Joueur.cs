@@ -178,6 +178,8 @@ public partial class Joueur : CharacterBody3D
     public const int IdObjetTableBoisDecorative = 147;
     /// <summary>Table artisanat structures tier 1 (station dédiée structures).</summary>
     public const int IdObjetTableArtisanaTier1 = 148;
+    /// <summary>Aloe vera récoltable/replantable (objet dédié, mesh procédural spécifique).</summary>
+    public const int IdObjetAloeVera = 149;
     /// <summary>Emprise horizontale des planchers posés (carré X×Z, léger débord sur fondation 4 m).</summary>
     public const float PlancherEmpriseMetres = 4.1f;
     /// <summary>Épaisseur des planchers bois / roche.</summary>
@@ -6659,6 +6661,7 @@ void fragment()
         }
         else if (id == 10) return Chunk_Client.ObtenirMeshBuissonProcedural(true);
         else if (id == 11) return Chunk_Client.ObtenirMeshBuissonProcedural(false);
+        else if (id == IdObjetAloeVera) return Chunk_Client.ObtenirMeshLamelleAloeObjetProcedural();
         else if (id == BlocChutant.ID_BRANCHE)
         {
             if (indexMorpho == 1)
@@ -6778,6 +6781,11 @@ void fragment()
         if (idObjet == 10 || idObjet == 11)
         {
             visuel.MaterialOverride = null; // Le mesh buisson porte dÃ©jÃ  son matÃ©riau procÃ©dural.
+            return;
+        }
+        if (idObjet == IdObjetAloeVera)
+        {
+            visuel.MaterialOverride = null; // Le mesh aloe porte dÃ©jÃ  son matÃ©riau procÃ©dural.
             return;
         }
         if (idObjet == BlocChutant.ID_BRANCHE)
@@ -8355,6 +8363,26 @@ void fragment()
                 var matFeuilles = new StandardMaterial3D { AlbedoColor = new Color(0.2f, 0.55f, 0.15f), Roughness = 0.95f, Metallic = 0f };
                 corps = BlocChutant.CreerFeuillageArrache(pointDeChute, matFeuilles, null, essenceFeuille);
             }
+        }
+        else if (id == IdObjetAloeVera)
+        {
+            var item = new ItemPhysique
+            {
+                ID_Objet = id,
+                IndexChimique = mainActive.IndexChimique,
+                IndexCacheMemoire = 0,
+                Name = "ItemPhysique",
+                ContinuousCd = true
+            };
+            Mesh meshAloe = ObtenirMeshDepuisCache(id, 0, 0);
+            var meshNode = new MeshInstance3D { Name = "MeshInstance3D", Mesh = meshAloe };
+            AppliquerMaterielObjet(meshNode, id, mainActive.IndexChimique, 0, 0, mainActive.IndexBotanique);
+            item.AddChild(meshNode);
+            Shape3D shapeAloe = meshAloe?.CreateConvexShape(true, true);
+            if (shapeAloe == null)
+                shapeAloe = new BoxShape3D { Size = new Vector3(0.18f, 0.28f, 0.18f) };
+            item.AddChild(new CollisionShape3D { Shape = shapeAloe });
+            corps = item;
         }
         else if (id == 10 || id == 11 || id == BlocChutant.ID_BRANCHE)
         {

@@ -753,7 +753,7 @@ public partial class Joueur
         {
             _gestionnaireMonde?.AppliquerCreationGlobale(pointImpact, normaleImpact, RAYON_SCULPTURE, id);
         }
-		else if (id == 10 || id == 11)
+		else if (id == 10 || id == 11 || id == IdObjetAloeVera)
 		{
 			Node noeudCol = NoeudDepuisColliderRaycast(_rayon.GetCollider());
 			if (!EstSolViseParRayon(_rayon, noeudCol))
@@ -761,8 +761,14 @@ public partial class Joueur
 				GD.Print("ZERO-K : Replantation buisson impossible hors sol.");
 				return;
 			}
-			byte varianteCouleur = (byte)Mathf.Clamp(mainActive.IndexChimique, 0, 120);
-			byte typeBuisson = Chunk_Serveur.ConstruireTypeBuisson(varianteCouleur, plein: id == 10);
+			byte typeBuisson;
+			if (id == IdObjetAloeVera)
+				typeBuisson = Chunk_Serveur.ConstruireTypeBuisson(Chunk_Serveur.VarianteBuissonAloeVera, plein: false);
+			else
+			{
+				byte varianteCouleur = (byte)Mathf.Clamp(mainActive.IndexChimique, 0, 120);
+				typeBuisson = Chunk_Serveur.ConstruireTypeBuisson(varianteCouleur, plein: id == 10);
+			}
 			bool plante = _gestionnaireMonde?.PlanterBuissonGlobal(pointImpact, normaleImpact, typeBuisson) ?? false;
 			if (!plante)
 			{

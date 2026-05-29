@@ -2534,7 +2534,7 @@ public partial class Monde_Serveur : Node
 		return false;
 	}
 
-	/// <summary>Récolte ciblée de buisson : 0=hachette (branche), 1=dague, 2=pelle (replantable).</summary>
+	/// <summary>Récolte ciblée de buisson : 0=hachette (branche), 1=dague, 2=pelle (replantable), 3=dague aloe (sans branche).</summary>
 	public bool RecolterBuissonGlobal(Vector3 pointImpact, float rayon, byte modeRecolte)
 	{
 		int cxMin = Gestionnaire_Monde.WorldToChunkCoord(pointImpact.X - rayon, pointImpact.Z, TailleChunk).X;

@@ -4639,7 +4639,7 @@ FinBlocOverlay:
 		return false;
 	}
 
-	/// <summary>Récolte ciblée d’un buisson : 0=hachette (branche), 1=dague (coupe), 2=pelle (déracinage replantable).</summary>
+	/// <summary>Récolte ciblée d’un buisson : 0=hachette (branche), 1=dague (coupe), 2=pelle (déracinage replantable), 3=dague aloe (sans branche).</summary>
 	public bool RecolterBuissonGlobal(Vector3 pointImpact, float rayon, byte modeRecolte)
 	{
 		if (UseArchitectureReseau && _mondeServeur != null)

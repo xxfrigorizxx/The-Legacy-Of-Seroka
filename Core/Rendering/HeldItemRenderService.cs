@@ -791,6 +791,12 @@ public partial class Joueur
             _objetEnMain.Scale = sf * 0.5f;
             _objetEnMain.RotationDegrees = new Vector3(-15 + _rotationManuelleX, 10 + _rotationManuelleY, 5 + _rotationManuelleZ);
         }
+        else if (main.ID == IdObjetAloeVera)
+        {
+            // Aloe en main: x2 par rapport au scale générique.
+            _objetEnMain.Scale = Vector3.One * 1.0f;
+            _objetEnMain.RotationDegrees = new Vector3(-15 + _rotationManuelleX, 10 + _rotationManuelleY, 5 + _rotationManuelleZ);
+        }
         else
         {
             _objetEnMain.Scale = Vector3.One * 0.5f;
