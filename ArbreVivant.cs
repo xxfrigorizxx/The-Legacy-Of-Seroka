@@ -679,7 +679,7 @@ public partial class ArbreVivant : StaticBody3D
 		// Secours : si la méta du RigidBody est perdue (sérialisation, edge cases), l’ébranchage lit encore l’essence sur « Bois ».
 		boisCopy.SetMeta("IndexBotanique", (int)IndexBotanique);
 		cadavre.AddChild(boisCopy);
-		if (meshFeuCad != null)
+		if (!EssenceMorte && meshFeuCad != null)
 		{
 			var feuillesCopy = new MeshInstance3D { Name = "Feuillage", Mesh = meshFeuCad, MaterialOverride = matFeuCad };
 			feuillesCopy.SetMeta("IndexBotanique", (int)IndexBotanique);

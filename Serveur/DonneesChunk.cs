@@ -2,7 +2,10 @@ using Godot;
 using System;
 using System.Collections.Generic;
 
-/// <summary>Structure pour transfert RPC. Données quantifiées (byte[]) pour éviter la saturation du Main Thread.</summary>
+/// <summary>
+/// Structure pour transfert RPC. Données quantifiées (byte[]) pour éviter la saturation du Main Thread.
+/// CONTRAT DE COMPATIBILITE: conserver les mêmes champs publics pour ne pas casser le protocole réseau.
+/// </summary>
 public partial class DonneesChunk : RefCounted
 {
 	public Vector2I CoordChunk;
@@ -24,7 +27,10 @@ public partial class DonneesChunk : RefCounted
 	public float[] DensitiesFlat;
 	public float[] DensitiesEauFlat;
 
-	/// <summary>Chemin binaire pour sauvegarde/chargement. TOUJOURS user://saves/{NomMondeActuel}/chunks/.</summary>
+	/// <summary>
+	/// Chemin binaire pour sauvegarde/chargement. TOUJOURS user://saves/{NomMondeActuel}/chunks/.
+	/// CONTRAT DE COMPATIBILITE: ne pas changer le motif de nommage sans migration explicite.
+	/// </summary>
 	public static string ObtenirCheminChunk(Vector2I coord, int coordY = 0)
 	{
 		string nom = GameState.Instance?.NomMondeActuel ?? "MonMonde";

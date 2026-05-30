@@ -6,7 +6,7 @@ using System.Text.Json;
 
 public partial class Joueur
 {
-    private const int VersionPersistenceJoueur = 8;
+    private const int VersionPersistenceJoueur = 9;
     private const int VersionPersistenceObjetsPoses = 5;
     private const int VersionPersistenceProgression = 3;
     private bool _persistantPhaseJoueurChargee;
@@ -538,6 +538,7 @@ public partial class Joueur
         _timerAtelleBrasGaucheRestant = 0f;
         _timerAtelleBrasDroitRestant = 0f;
         ReinitialiserEffetsConsommationBaies();
+        ReinitialiserBruluresFeu();
         ReinitialiserEffetBandageTier1();
         RafraichirHUD();
         SauvegarderEtatPersistantJoueurSeulement();
@@ -608,6 +609,12 @@ public partial class Joueur
             w.Write(_dureePoisonBaieRoseRestanteSec);
             w.Write(_accumulateurDegatsPoisonBaieRose);
             w.Write(_multiplicateurPoisonBaieRose);
+            w.Write(_malusPvMaxBrulureTete);
+            w.Write(_malusPvMaxBrulureTorse);
+            w.Write(_malusPvMaxBrulureBrasGauche);
+            w.Write(_malusPvMaxBrulureBrasDroit);
+            w.Write(_malusPvMaxBrulureJambeGauche);
+            w.Write(_malusPvMaxBrulureJambeDroite);
         }
         catch (Exception ex)
         {
@@ -719,6 +726,20 @@ public partial class Joueur
                 {
                     ReinitialiserEffetsConsommationBaies();
                 }
+                if (version >= 9)
+                {
+                    _malusPvMaxBrulureTete = Mathf.Max(0f, r.ReadSingle());
+                    _malusPvMaxBrulureTorse = Mathf.Max(0f, r.ReadSingle());
+                    _malusPvMaxBrulureBrasGauche = Mathf.Max(0f, r.ReadSingle());
+                    _malusPvMaxBrulureBrasDroit = Mathf.Max(0f, r.ReadSingle());
+                    _malusPvMaxBrulureJambeGauche = Mathf.Max(0f, r.ReadSingle());
+                    _malusPvMaxBrulureJambeDroite = Mathf.Max(0f, r.ReadSingle());
+                }
+                else
+                {
+                    ReinitialiserBruluresFeu();
+                }
+                ClamperToutesSectionsPvAuMaximum();
             }
             ChargerStockageDepuisSacEquipe();
             ChargerStockageDepuisCeintureSacochesEquipe();

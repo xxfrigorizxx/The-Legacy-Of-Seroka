@@ -411,10 +411,10 @@ public partial class Joueur
 		{
 			CleCraft = "id_200",
 			IdResultat = 200,
-			Masque = CategorieAnalyse.Baton | CategorieAnalyse.RocheMatiere | CategorieAnalyse.Corde,
+			Masque = CategorieAnalyse.DemiBuche | CategorieAnalyse.BuchePleine | CategorieAnalyse.RocheRonde | CategorieAnalyse.Ligature,
 			Titre = "Atelier primitif",
-			LegendeSymboles = new[] { "D = Demi-buche standard", "B = Buche standard", "R = Petite roche", "C = Corde" },
-			PatronCraft = new[] { "(D)(R)(B)", "( )(C)( )" }
+			LegendeSymboles = new[] { "D = Demi-buche courte", "d = Demi-buche courte fendue en 2", "R = Petite roche ronde", "L = Liage" },
+			PatronCraft = new[] { "(d)(R)", "(D)(L)" }
 		},
 		
 	};
@@ -890,6 +890,66 @@ public partial class Joueur
 		return false;
 	}
 
+	/// <summary>Demi-bûche courte non fendue valide pour l'atelier primitif : ID 30, morpho 0, taille 2.</summary>
+	private static bool GrilleAnalyseContientDemiBucheCourteAtelier(SlotInventaire[] grille)
+	{
+		if (grille == null) return false;
+		for (int i = 0; i < grille.Length; i++)
+		{
+			SlotInventaire s = grille[i];
+			if (!s.EstVide && s.ID == 30 && s.IndexMorphologique == 0 && s.IndexTaille == 2)
+				return true;
+		}
+		return false;
+	}
+
+	/// <summary>Demi-bûche fendue en 2 valide pour l'atelier primitif : ID 30, morpho 1, taille 2.</summary>
+	private static bool GrilleAnalyseContientDemiBucheFendueEn2Atelier(SlotInventaire[] grille)
+	{
+		if (grille == null) return false;
+		for (int i = 0; i < grille.Length; i++)
+		{
+			SlotInventaire s = grille[i];
+			if (!s.EstVide && s.ID == 30 && s.IndexMorphologique == 1 && s.IndexTaille == 2)
+				return true;
+		}
+		return false;
+	}
+
+	/// <summary>Présence d'une paire demi-bûche courte + demi-bûche courte fendue en 2, de même essence.</summary>
+	private static bool GrilleAnalyseContientPaireDemiBuchesAtelierMemeEssence(SlotInventaire[] grille)
+	{
+		if (grille == null) return false;
+		for (int i = 0; i < grille.Length; i++)
+		{
+			SlotInventaire a = grille[i];
+			if (a.EstVide || a.ID != 30 || a.IndexMorphologique != 0 || a.IndexTaille != 2)
+				continue;
+			for (int j = 0; j < grille.Length; j++)
+			{
+				if (i == j) continue;
+				SlotInventaire b = grille[j];
+				if (b.EstVide || b.ID != 30 || b.IndexMorphologique != 1 || b.IndexTaille != 2)
+					continue;
+				if (a.IndexBotanique == b.IndexBotanique)
+					return true;
+			}
+		}
+		return false;
+	}
+
+	/// <summary>Liage/corde (ID 16 ou 20) utilisé par la recette atelier primitif.</summary>
+	private static bool GrilleAnalyseContientLiageAtelier(SlotInventaire[] grille)
+	{
+		if (grille == null) return false;
+		for (int i = 0; i < grille.Length; i++)
+		{
+			if (!grille[i].EstVide && (grille[i].ID == 16 || grille[i].ID == 20))
+				return true;
+		}
+		return false;
+	}
+
 	private static bool GrilleAnalyseContientHachettePrimitive(SlotInventaire[] grille)
 	{
 		if (grille == null) return false;
@@ -1062,6 +1122,16 @@ public partial class Joueur
 				else if (s.ID is 15 or 16 or 17) fibre = true;
 			}
 			return intestin && fibre;
+		}
+		// Atelier primitif (200) : demi-bûche standard + demi-bûche fendue en 2 + petite roche ronde + liage.
+		// IMPORTANT : aligne strictement l'analyseur sur la vraie recette de craft (Atlas_Matiere).
+		if (r.CleCraft == "id_200")
+		{
+			if (grilleAnalyse == null) return false;
+			bool aPaireBoisMemeEssence = GrilleAnalyseContientPaireDemiBuchesAtelierMemeEssence(grilleAnalyse);
+			bool aRocheRonde = GrilleAnalyseContientPetiteRocheRonde(grilleAnalyse);
+			bool aLiage = GrilleAnalyseContientLiageAtelier(grilleAnalyse);
+			return aPaireBoisMemeEssence && aRocheRonde && aLiage;
 		}
 		if (r.CleCraft == "corde_intestin" && grilleAnalyse != null)
 		{

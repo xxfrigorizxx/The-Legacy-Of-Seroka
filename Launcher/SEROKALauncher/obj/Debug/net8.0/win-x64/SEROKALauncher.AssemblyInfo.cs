@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("SEROKALauncher")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+85276896d8051e0e1a348649abd54cfc98e48e9f")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+40808ecc31a31e9888e57c6ae0e37ccc6a516c5f")]
 [assembly: System.Reflection.AssemblyProductAttribute("SEROKALauncher")]
 [assembly: System.Reflection.AssemblyTitleAttribute("SEROKALauncher")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
