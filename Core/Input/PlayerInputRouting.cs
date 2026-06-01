@@ -1,4 +1,4 @@
-﻿using Godot;
+using Godot;
 using System;
 using System.Collections.Generic;
 
@@ -27,7 +27,9 @@ public partial class Joueur
             }
         }
 
-        if (EstToggleFutureState(@event) && _menuFutureState != null)
+        // IMPORTANT: si le chat est en édition (LineEdit actif), ne jamais intercepter "K"
+        // pour ouvrir le FutureState; la frappe doit rester dans le champ texte.
+        if (!ChatInGameOuvert() && EstToggleFutureState(@event) && _menuFutureState != null)
         {
             if (_menuFutureState.EstOuvert)
                 _menuFutureState.BasculerVisibilite();
@@ -337,7 +339,7 @@ public partial class Joueur
                 }
 
                 // IDENTIFICATION DE LA MATIÃˆRE : Est-ce du terrain (Voxel) ?
-                bool estTerrainVoxel = mainActive.ID >= 1 && mainActive.ID <= 9;
+                bool estTerrainVoxel = EstSlotTerrainVoxelPosable(mainActive);
                 bool estAtelierEnMain = mainActive.ID == 200 || mainActive.ID == IdObjetTableArtisanaTier1;
                 bool estTableAnalyseEnMain = mainActive.ID == IdObjetTableAnalyseTier1;
                 bool estRackBatonsEnMain = mainActive.ID == IdObjetRackBatons || mainActive.ID == IdObjetRackBuches;

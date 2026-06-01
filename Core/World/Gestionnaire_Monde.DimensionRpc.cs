@@ -308,7 +308,19 @@ public partial class Gestionnaire_Monde : Node3D
 			Joueur.AlerteSqueletteBoiteNoire(messageServeur);
 	}
 
-	private void SurInjectionItemCreatifDemandee(int id, int indexMorphologique, int indexChimique, int indexTaille, int indexBotanique, long peerId)
+	private static bool EstGenomeVoxelTerrainValide(string genome)
+	{
+		if (string.IsNullOrWhiteSpace(genome)) return false;
+		string g = genome.Trim();
+		if (!g.StartsWith("VOXEL_TERRAIN:", StringComparison.OrdinalIgnoreCase))
+			return false;
+		string brut = g.Substring("VOXEL_TERRAIN:".Length).Trim();
+		if (!int.TryParse(brut, out int idVoxel))
+			return false;
+		return (idVoxel >= 10 && idVoxel <= 29) || (idVoxel >= 32 && idVoxel <= 48);
+	}
+
+	private void SurInjectionItemCreatifDemandee(int id, int indexMorphologique, int indexChimique, int indexTaille, int indexBotanique, string genomeAssemblage, long peerId)
 	{
 		if (!UseArchitectureReseau || !Multiplayer.IsServer()) return;
 		Monde_Serveur serveurCourant = ObtenirServeurDimension(ObtenirDimensionPeer(peerId)) ?? _mondeServeur;
@@ -320,18 +332,23 @@ public partial class Gestionnaire_Monde : Node3D
 			return;
 		}
 
+		// Préserve le tag voxel terrain pour les entrées créatives "proxy ID 2".
+		// Sans ce champ, le client reçoit une pierre standard et la pose de minerais devient impossible.
+		if (EstGenomeVoxelTerrainValide(genomeAssemblage))
+			slot.GenomeAssemblage = genomeAssemblage.Trim();
+
 		if (peerId == Multiplayer.GetUniqueId())
 			AppliquerInjectionItemCreatifLocale(slot, messageServeur);
 		else
 		{
 			RpcId((int)peerId, nameof(RecevoirInjectionItemCreatifRPC),
 				slot.ID, slot.IndexMorphologique, slot.IndexChimique, slot.IndexTaille, (int)slot.IndexBotanique,
-				slot.IndexTailleLameRoche, slot.Quantite, messageServeur ?? "");
+				slot.IndexTailleLameRoche, slot.Quantite, slot.GenomeAssemblage ?? "", messageServeur ?? "");
 		}
 	}
 
 	[Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = false)]
-	private void RecevoirInjectionItemCreatifRPC(int id, int indexMorphologique, int indexChimique, int indexTaille, int indexBotanique, int indexTailleLameRoche, int quantite, string messageServeur)
+	private void RecevoirInjectionItemCreatifRPC(int id, int indexMorphologique, int indexChimique, int indexTaille, int indexBotanique, int indexTailleLameRoche, int quantite, string genomeAssemblage, string messageServeur)
 	{
 		SlotInventaire slot = new SlotInventaire
 		{
@@ -341,6 +358,7 @@ public partial class Gestionnaire_Monde : Node3D
 			IndexTaille = indexTaille,
 			IndexBotanique = (byte)Mathf.Clamp(indexBotanique, 0, 255),
 			IndexTailleLameRoche = indexTailleLameRoche,
+			GenomeAssemblage = EstGenomeVoxelTerrainValide(genomeAssemblage) ? genomeAssemblage.Trim() : "",
 			Quantite = quantite
 		};
 		AppliquerInjectionItemCreatifLocale(slot, messageServeur);

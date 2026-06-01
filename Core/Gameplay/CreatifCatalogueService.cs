@@ -5,7 +5,7 @@ using System.Reflection;
 /// <summary>Construction du catalogue inventaire créatif/admin (variantes + IDs objets manquants).</summary>
 public static class CreatifCatalogueService
 {
-    public const int VersionCatalogue = 16;
+    public const int VersionCatalogue = 18;
 
     public enum CategorieCreatif
     {

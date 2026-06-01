@@ -41,6 +41,8 @@ public partial class Gestionnaire_Monde : Node3D
 			{
 				NomDimension = info.NomCanonique,
 				ActiverGenerationAbysse = false,
+				ActiverProfondeurEtendue = ActiverProfondeurEtendue,
+				ProfondeurMaxMetres = ProfondeurMaxMetres,
 				TailleChunk = TailleChunk,
 				HauteurMax = HauteurMax,
 				SeedTerrain = seedAlpha,

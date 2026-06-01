@@ -32,6 +32,23 @@ public partial class Monde_Serveur : Node
 			return;
 		}
 
+		if (ModeProfondeurActive)
+		{
+			var coordYImpactes = new HashSet<int>();
+			RemplirCoordYImpactesProfond(pointImpact.Y, rayon, coordYImpactes);
+			for (int cx = cxMin; cx <= cxMax; cx++)
+				for (int cz = czMin; cz <= czMax; cz++)
+				{
+					Vector2I coord = new Vector2I(cx, cz);
+					foreach (int coordY in coordYImpactes)
+					{
+						var chunk = ObtenirOuCreerChunk(coord, coordY);
+						chunk.DetruireVoxel(pointImpact, rayon, forceDegats);
+					}
+				}
+			return;
+		}
+
 		for (int cx = cxMin; cx <= cxMax; cx++)
 			for (int cz = czMin; cz <= czMax; cz++)
 			{
@@ -322,6 +339,25 @@ public partial class Monde_Serveur : Node
 		{
 			var coordYImpactes = new HashSet<int>();
 			RemplirCoordYImpactesParRayonAbysse(pointCible.Y, rayon, coordYImpactes);
+			for (int cx = cxMin; cx <= cxMax; cx++)
+			{
+				for (int cz = czMin; cz <= czMax; cz++)
+				{
+					Vector2I coord = new Vector2I(cx, cz);
+					foreach (int coordY in coordYImpactes)
+					{
+						var chunk = ObtenirOuCreerChunk(coord, coordY);
+						chunk.CreerMatiere(pointCible, rayon, matiere);
+					}
+				}
+			}
+			return;
+		}
+
+		if (ModeProfondeurActive)
+		{
+			var coordYImpactes = new HashSet<int>();
+			RemplirCoordYImpactesProfond(pointCible.Y, rayon, coordYImpactes);
 			for (int cx = cxMin; cx <= cxMax; cx++)
 			{
 				for (int cz = czMin; cz <= czMax; cz++)

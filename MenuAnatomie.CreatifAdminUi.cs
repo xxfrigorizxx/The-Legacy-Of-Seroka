@@ -1,4 +1,4 @@
-﻿using Godot;
+using Godot;
 using System;
 using System.Collections.Generic;
 
@@ -182,6 +182,35 @@ public partial class MenuAnatomie : Control
 		for (int taille = 0; taille <= 4; taille++)
 		for (int morph = 0; morph <= 3; morph++)
 			Ajouter(new SlotInventaire { ID = idRoche, IndexTaille = taille, IndexMorphologique = morph, Quantite = 1 }, CategorieCreatifAdmin.Pierre);
+
+		// Voxels minerais de terrain (pose directe): tag GenomeAssemblage pour éviter les collisions d'IDs gameplay.
+		static SlotInventaire CreerSlotVoxelMinerai(int idVoxel)
+		{
+			return new SlotInventaire
+			{
+				// ID proxy "roche terrain" pour éviter toute collision inventaire avec des IDs gameplay existants
+				// (buissons, corde/tissu, roches matière 40..51, etc.). L'ID voxel réel est porté par le genome tag.
+				ID = 2,
+				GenomeAssemblage = $"VOXEL_TERRAIN:{idVoxel}",
+				Quantite = 1
+			};
+		}
+		(string nom, int idVoxel)[] mineraisVoxel =
+		{
+			("Charbon", 10), ("Jade", 11), ("Opale", 12), ("Diamant", 13), ("Topaze", 14),
+			("Rubis", 15), ("Saphir", 16), ("Émeraude", 17), ("Améthyste", 18), ("Quartz", 19),
+			("Palladium", 20), ("Platine", 21), ("Argent", 22), ("Or", 23), ("Bismuth", 24),
+			("Manganèse", 25), ("Titane", 26), ("Tungstène", 27), ("Cobalt", 28), ("Chrome", 29),
+			("Nickel", 32), ("Aluminium", 33), ("Fer", 34), ("Plomb", 35), ("Zinc", 36),
+			("Étain", 37), ("Cuivre", 38), ("Soufre", 39), ("Salpêtre", 40), ("Uranium", 41),
+			("Thorium", 42), ("Plutonium", 43), ("Sel", 44), ("Graphite", 45), ("Calcaire", 46),
+			("Gypse", 47), ("Obsidienne", 48)
+		};
+		for (int i = 0; i < mineraisVoxel.Length; i++)
+		{
+			var m = mineraisVoxel[i];
+			Ajouter(CreerSlotVoxelMinerai(m.idVoxel), CategorieCreatifAdmin.Pierre, $"Voxel minerai: {m.nom} (ID {m.idVoxel})");
+		}
 
 		int[] idsConsommables = {
 			1,2,3,4,5,6,7,8,9,

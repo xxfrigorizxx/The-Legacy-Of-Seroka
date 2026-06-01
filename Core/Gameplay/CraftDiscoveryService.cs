@@ -1033,6 +1033,8 @@ public partial class Joueur
 	{
 		if (s.EstVide) return CategorieAnalyse.Aucune;
 		CategorieAnalyse c = CategorieAnalyse.Aucune;
+		bool estVoxelTerrainMinerai = Atlas_Matiere.EssayerLireIdVoxelTerrain(s, out int idVoxelTerrain)
+			&& Atlas_Matiere.EstIdVoxelTerrainMinerai(idVoxelTerrain);
 		if (s.ID is 15 or 16 or 17) c |= CategorieAnalyse.Fibre;
 		if (s.ID == Joueur.IdObjetIntestinBoeufNettoye || s.ID == Joueur.IdObjetIntestinBoeuf)
 			c |= CategorieAnalyse.Fibre;
@@ -1062,7 +1064,8 @@ public partial class Joueur
 		if (s.ID == IdObjetCuirBoeuf) c |= CategorieAnalyse.CuirBoeuf;
 		if (s.ID == IdObjetPochetteTier0) c |= CategorieAnalyse.Pochette;
 		if (s.ID == IdObjetCeinturePoches) c |= CategorieAnalyse.CeinturePoches;
-		if (s.ID == 2) c |= CategorieAnalyse.RocheVoxelBrute;
+		// Les voxels minerais utilisent l'ID proxy 2 en inventaire; on évite donc de les classer "roche brute".
+		if (s.ID == 2 && !estVoxelTerrainMinerai) c |= CategorieAnalyse.RocheVoxelBrute;
 		if (ItemPhysique.EstMatiereSilexParIdObjet(s.ID))
 			c |= CategorieAnalyse.Silex;
 		if (ItemPhysique.EstIdRocheMatiere(s.ID))

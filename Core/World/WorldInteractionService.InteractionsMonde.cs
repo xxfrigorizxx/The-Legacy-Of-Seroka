@@ -1,6 +1,7 @@
-﻿using Godot;
+using Godot;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 
 public partial class Joueur
 {
@@ -366,12 +367,44 @@ public partial class Joueur
     /// <summary>Fibres + corde : manipulation fine sur le plan de l’établi (rayon réduit).</summary>
     public static bool EstFlexibleOuCordePourPlanCAO(int idObjet) => idObjet is 15 or 16 or 17 or 20 or 21;
 
+    private const string PrefixeGenomeVoxelTerrain = "VOXEL_TERRAIN:";
+
     private static bool EstIdTerrainVoxelPosable(int id) => id >= 1 && id <= 9 && id != 4;
+
+    private static bool EstIdMineraiVoxelTerrain(int id) =>
+        (id >= 10 && id <= 29) || (id >= 32 && id <= 48);
+
+    private static bool EssayerLireIdVoxelTerrainForce(in SlotInventaire slot, out int idVoxel)
+    {
+        idVoxel = 0;
+        if (slot.EstVide || string.IsNullOrWhiteSpace(slot.GenomeAssemblage))
+            return false;
+
+        string genome = slot.GenomeAssemblage.Trim();
+        if (!genome.StartsWith(PrefixeGenomeVoxelTerrain, StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        string brut = genome.Substring(PrefixeGenomeVoxelTerrain.Length).Trim();
+        if (!int.TryParse(brut, NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed))
+            return false;
+
+        if (!EstIdTerrainVoxelPosable(parsed) && !EstIdMineraiVoxelTerrain(parsed))
+            return false;
+
+        idVoxel = parsed;
+        return true;
+    }
+
+    private static bool EstSlotTerrainVoxelPosable(in SlotInventaire slot) =>
+        EstIdTerrainVoxelPosable(slot.ID) || EssayerLireIdVoxelTerrainForce(slot, out _);
+
+    private static int ResoudreIdVoxelPose(in SlotInventaire slot) =>
+        EssayerLireIdVoxelTerrainForce(slot, out int idVoxel) ? idVoxel : slot.ID;
 
     private static bool EstObjetPosableAuSol(SlotInventaire s)
     {
         if (s.EstVide || s.ID == 0) return false;
-        if (EstIdTerrainVoxelPosable(s.ID)) return true;
+        if (EstSlotTerrainVoxelPosable(s)) return true;
         return s.ID == 999 || s.ID == 10 || s.ID == 11 || s.ID == BlocChutant.ID_BRANCHE || s.ID == IdObjetBaie || ItemPhysique.EstIdRocheMatiere(s.ID) || s.ID == 30 || s.ID == 32 || s.ID == 34 || s.ID == 21 || s.ID == IdObjetCeinturePoches || s.ID == IdObjetCeintureSacoches || s.ID == IdObjetPochetteTier0 || s.ID == IdObjetSacTier0 || s.ID == IdObjetHachePierreTier1 || s.ID == IdObjetAtelleJambe || s.ID == IdObjetAtelleBras || s.ID == IdObjetBandageTier1 || s.ID == IdObjetPellePierreTier0 || s.ID == IdObjetPiochePierreTier0 || s.ID == IdObjetLancePierreTier0 || s.ID == IdObjetFauxPierreTier0 || s.ID == IdObjetAllumeFeu || s.ID == IdObjetFenetreBois || s.ID == 200 || s.ID == IdObjetTableBoisDecorative || s.ID == IdObjetTableArtisanaTier1 || s.ID == IdObjetTableAnalyseTier1 || s.ID == IdObjetRackBatons || s.ID == IdObjetRackBuches || s.ID == IdObjetCoffreBoisTier0 || s.ID == IdObjetPitFeuRoche || s.ID == IdObjetMortierPilonBois || EstIdFondation(s.ID) || EstIdMuret(s.ID) || EstIdMurBois(s.ID) || EstIdPorteBois(s.ID) || EstIdToitChaume(s.ID) || EstIdTorche(s.ID);
     }
 

@@ -20,6 +20,10 @@ public partial class Chunk_Serveur : RefCounted
 	private readonly object _verrouVoxel = new object();
 	private readonly bool _generationAbysseActive;
 	private readonly string _dossierChunksSauvegarde;
+	/// <summary>Mode profondeur étendue (alpha-like) : le sol descend jusqu'à <see cref="_fondMondeY"/> au lieu de s'arrêter au socle Y=0.</summary>
+	private readonly bool _profondeurEtendueActive;
+	/// <summary>Y monde du socle dur (bedrock) en mode profondeur étendue (ex. -1000). Inutilisé si le mode est inactif.</summary>
+	private readonly int _fondMondeY;
 
 	private FastNoiseLite _noiseSurface;
 	private FastNoiseLite _noiseErosion;
@@ -143,7 +147,8 @@ public partial class Chunk_Serveur : RefCounted
 
 	public Chunk_Serveur(int chunkOffsetX, int chunkOffsetY, int chunkOffsetZ, int tailleChunk, int hauteurMax, int seed,
 		Action<Vector3, byte, bool, byte> callbackBlocChutant, Func<Vector2I, bool> chunkEstCharge, Action<Vector3> reveillerEau,
-		bool generationAbysse = false, string dossierChunksSauvegarde = "")
+		bool generationAbysse = false, string dossierChunksSauvegarde = "",
+		bool profondeurEtendueActive = false, int fondMondeY = 0)
 	{
 		ChunkOffsetX = chunkOffsetX;
 		ChunkOffsetY = chunkOffsetY;
@@ -156,6 +161,8 @@ public partial class Chunk_Serveur : RefCounted
 		_reveillerEau = reveillerEau;
 		_generationAbysseActive = generationAbysse;
 		_dossierChunksSauvegarde = dossierChunksSauvegarde ?? "";
+		_profondeurEtendueActive = profondeurEtendueActive && !generationAbysse;
+		_fondMondeY = fondMondeY;
 
 		ConfigurerBruit(seed);
 	}
@@ -373,10 +380,23 @@ public partial class Chunk_Serveur : RefCounted
 
 						_densitiesEau[x, y, z] = -1.0f;
 
-						bool socleZeroMonde = globalY >= 0f
+						// Mode profondeur étendue : socle dur (bedrock) descendu au fond du monde, rien dessous,
+						// et plus de socle artificiel à Y=0 (la roche/les grottes descendent en continu jusqu'au fond).
+						bool sousFondMondeProfond = _profondeurEtendueActive && globalY < _fondMondeY - 2f;
+						bool socleFondMondeProfond = _profondeurEtendueActive
+							&& globalY <= _fondMondeY
+							&& globalY >= _fondMondeY - 2f
+							&& !dansTrouNoirCol;
+						bool socleZeroMonde = !_profondeurEtendueActive
+							&& globalY >= 0f
 							&& globalY <= 2f
 							&& !dansTrouNoirCol;
-						if (socleZeroMonde)
+						if (sousFondMondeProfond)
+						{
+							_densities[x, y, z] = -10.0f;
+							_materials[x, y, z] = 0;
+						}
+						else if (socleFondMondeProfond || socleZeroMonde)
 						{
 							_densities[x, y, z] = 1000.0f;
 							_materials[x, y, z] = 2;
@@ -388,14 +408,17 @@ public partial class Chunk_Serveur : RefCounted
 							_materials[x, y, z] = mat;
 							_densities[x, y, z] = 10.0f;
 							sommetSolide[x, z] = y;
+							float temperatureNormSurface = (temperature + 1f) * 0.5f;
+							float humiditeNormSurface = (humidite + 1f) * 0.5f;
+							bool boueTropicaleFlorable = mat == 7 && temperatureNormSurface > 0.78f && humiditeNormSurface > 0.70f;
 							// Gazon sur voxel herbe (ID 1), terrain plat — Alpha classique ou deux plaines APISARA (jungle).
 							bool floreAlpha = !_generationAbysseActive
-								&& EstMateriauSupportGazon(mat)
+								&& (EstMateriauSupportGazon(mat) || boueTropicaleFlorable)
 								&& TerrainAssezPlat((int)xGlobal, (int)zGlobal)
 								&& TerrainAvecMargeBord((int)xGlobal, (int)zGlobal);
 							bool florePlaineJungleAbysse = _generationAbysseActive
 								&& EstPlaineJungleAbysse(xGlobal, zGlobal)
-								&& EstMateriauSupportGazon(mat)
+								&& (EstMateriauSupportGazon(mat) || boueTropicaleFlorable)
 								&& TerrainAssezPlat((int)xGlobal, (int)zGlobal)
 								&& TerrainAvecMargeBord((int)xGlobal, (int)zGlobal);
 							if (floreAlpha || florePlaineJungleAbysse)
@@ -442,7 +465,8 @@ public partial class Chunk_Serveur : RefCounted
 						else if (globalY < hauteurSurface - 4)
 						{
 							float valeurGrotte = activerGrottes ? _noiseCavernes.GetNoise3D(xGlobal, globalY, zGlobal) : -1f;
-							if (activerGrottes && valeurGrotte > 0.55f)
+							// Seuil abaissé (0.55 -> 0.50) : les grottes naturelles étaient quasi absentes auparavant.
+							if (activerGrottes && valeurGrotte > 0.50f)
 							{
 								_densities[x, y, z] = -10.0f;
 								_materials[x, y, z] = 0;
@@ -462,12 +486,18 @@ public partial class Chunk_Serveur : RefCounted
 					}
 				}
 			}
+			// Veines de minerais: système pré-intégré, désactivé tant que les switches restent à false.
+			AppliquerVeinesMinerais(hauteurColonne);
 			AppliquerBiomeParasiteCornichesAbysse();
 			AppliquerEnsemencementFloreTrouAbysse(notifierClient: false);
-			InitialiserEauVolumetrique(sommetSolide);
+			// Couches profondes (sous Y=0) : pas d'eau de mer (aucun océan sous terre) ni d'arbres de surface.
+			bool coucheProfondeSousSurface = _profondeurEtendueActive && ChunkOffsetY < 0;
+			if (!coucheProfondeSousSurface)
+				InitialiserEauVolumetrique(sommetSolide);
 
 			// Pass L-System : injection des Chênes (voxels bois ID 30, feuilles ID 31)
-			InjecterArbresLSystem();
+			if (!coucheProfondeSousSurface)
+				InjecterArbresLSystem();
 			// Garantie de lisibilité gameplay: au moins un buisson si le chunk contient du gazon.
 			AssurerBuissonMinimalDansChunk();
 			// RÈGLE : Chunk procédural non touché par le joueur → jamais sauvegardé (régénération à la demande).
@@ -917,31 +947,49 @@ public partial class Chunk_Serveur : RefCounted
 		if (climatJungleArgile && bordEau && bruitArgileRive > 0.83f) return 8;
 		if (climatJungleArgile && fondEau && bruitArgileFond > 0.965f) return 8;
 		if (globalY <= NiveauPlage) return (humidite > 0.2f) ? (byte)7 : (byte)3;  // Plage : seuil doux
-		// Répartition demandée:
-		// - Herbe un peu plus présente
-		// - Sable/Neige/Argile/Glace/Boue/Aride à chance équivalente
-		// Poids: herbe 50%, chaque autre matériau ~8.33%.
-		float macroBiome = (_noiseBiomeForet.GetNoise2D(xGlobal * 1.18f + 9100f, zGlobal * 1.18f - 9100f) + 1f) * 0.5f;
-		float macroJitter = _noiseHumiditeDetail.GetNoise2D(xGlobal * 0.58f + 2700f, zGlobal * 0.58f - 2700f) * 0.11f;
-		float macroBrut = Mathf.Clamp(macroBiome + macroJitter, 0f, 1f);
-		float macro = UniformiserSelectionMacroBiome(macroBrut);
+		// Pilotage climat demandé (température × humidité), avec une légère variation organique locale.
 		float detailHumide = _noiseHumiditeDetail.GetNoise2D(xGlobal * 1.55f + 1400f, zGlobal * 1.55f + 1400f);
 		float detailSec = _noiseHumiditeDetail.GetNoise2D(xGlobal * 1.9f + 17000f, zGlobal * 1.9f + 17000f);
+		float bruitOrganique = (_noiseBiomeForet.GetNoise2D(xGlobal * 0.83f - 4200f, zGlobal * 0.83f + 4200f) + 1f) * 0.5f;
+		float humiditeNorm = (humidite + 1f) * 0.5f;
+		float temperatureNorm = (temperature + 1f) * 0.5f;
+		float detailHumideNorm = (detailHumide + 1f) * 0.5f;
+		float detailSecNorm = (detailSec + 1f) * 0.5f;
 
-		if (macro < 0.083333f) // sable
-			return (temperature > 0.04f && (humidite < 0.20f || detailSec > 0.12f)) ? (byte)3 : (byte)6;
-		if (macro < 0.166666f) // neige
-			return (temperature < 0.20f || detailHumide > 0.52f) ? (byte)5 : (byte)1;
-		if (macro < 0.25f) // argile
-			return (temperature > 0.05f && humidite > -0.05f) ? (byte)8 : (humidite > 0.22f ? (byte)7 : (byte)1);
-		if (macro < 0.333333f) // glace
-			return (temperature < -0.04f || (temperature < 0.08f && humidite > 0.08f)) ? (byte)9 : (byte)5;
-		if (macro < 0.416666f) // boue
-			return (humidite > -0.18f || detailHumide > 0.04f) ? (byte)7 : (byte)1;
-		if (macro < 0.5f) // aride
-			return (humidite < 0.08f || detailSec > 0.08f) ? (byte)6 : (byte)1;
+		// Très froid + très humide => gelé ; très froid + peu/pas humide => neige.
+		if (temperatureNorm < 0.22f)
+		{
+			if (humiditeNorm > 0.74f && (bruitOrganique > 0.42f || detailHumideNorm > 0.58f))
+				return 9; // Terre gelée
+			return 5;    // Neige
+		}
 
-		// Herbe (50%)
+		// Froid (peu importe humidité) => neige.
+		if (temperatureNorm < 0.42f) return 5;
+
+		// Très chaud :
+		// - très humide => boue (avec flore possible ensuite),
+		// - peu humide => boue,
+		// - sec => sable.
+		if (temperatureNorm > 0.78f)
+		{
+			if (humiditeNorm > 0.70f) return 7; // Boue
+			if (humiditeNorm > 0.36f) return 7; // Boue (peu humide)
+			return 3; // Sable (sec)
+		}
+
+		// Chaud :
+		// - très humide => argile,
+		// - peu humide => aride,
+		// - sec => aride + sable (poches).
+		if (temperatureNorm > 0.62f)
+		{
+			if (humiditeNorm > 0.70f) return 8; // Argile
+			if (humiditeNorm > 0.36f) return 6; // Aride
+			return (detailSecNorm > 0.52f || bruitOrganique > 0.63f) ? (byte)3 : (byte)6; // Aride+sable
+		}
+
+		// Tempéré (humide / très humide / sec) => herbe.
 		return 1;
 	}
 

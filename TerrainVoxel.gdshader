@@ -91,13 +91,14 @@ void fragment() {
 	// On crée un chaos de +/- 0.4 sur l'ID aux frontières des matériaux
 	float edge_noise = (noise(world_pos.xz * 4.0) - 0.5) * 0.8 * detail_t;
 	float material_id = round(raw_id + edge_noise);
-	// Limite 31 pour inclure Tronc (30) et Feuille (31) — éviter que le bois devienne Glace (9)
-	material_id = clamp(material_id, 0.0, 31.0);
+	// Étendu à 48 pour supporter les minerais (10..29, 32..48) sans recâblage shader.
+	material_id = clamp(material_id, 0.0, 48.0);
 
-	// Tronc Chêne (ID 30) et Feuilles (ID 31) : couleurs fixes (évite dépassement texture_array limitée à 0-9)
-	bool is_bois = (material_id >= 29.5 && material_id < 30.5);
-	bool is_feuilles = (material_id >= 30.5);
-	float tex_layer = clamp(material_id, 0.0, 9.0);
+	// Tronc (30) et Feuilles (31) : couleurs fixes.
+	// Important: test exact pour éviter que les IDs minerais >= 32 soient pris comme feuillage.
+	bool is_bois = abs(material_id - 30.0) < 0.5;
+	bool is_feuilles = abs(material_id - 31.0) < 0.5;
+	float tex_layer = clamp(material_id, 0.0, 48.0);
 
 	// Projection Triplanaire standard
 	vec2 uv_x = uv1_triplanar_pos.zy;

@@ -1,4 +1,4 @@
-﻿using Godot;
+using Godot;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -106,45 +106,21 @@ public partial class Monde_Client : Node3D
 		if (!TryGetChunkDataPourCoordY(new Vector2I(cx, cz), coordY, out var data)) return;
 		data.SetVoxelLocal(localX, localVoxelY, localZ, id);
 
+		// Côté client, même règle que serveur: ne répliquer que les frontières partagées (local == 0).
 		if (localX == 0 && TryGetChunkDataPourCoordY(new Vector2I(cx - 1, cz), coordY, out var vx))
 		{
 			vx.SetVoxelLocal(TailleChunk, localVoxelY, localZ, id);
 			_sectionsAReconstruire.Add((cx - 1, vx.CoordChunkY, cz, sec));
-		}
-		if (localX == TailleChunk - 1 && TryGetChunkDataPourCoordY(new Vector2I(cx + 1, cz), coordY, out var vxp))
-		{
-			vxp.SetVoxelLocal(0, localVoxelY, localZ, id);
-			_sectionsAReconstruire.Add((cx + 1, vxp.CoordChunkY, cz, sec));
 		}
 		if (localZ == 0 && TryGetChunkDataPourCoordY(new Vector2I(cx, cz - 1), coordY, out var vz))
 		{
 			vz.SetVoxelLocal(localX, localVoxelY, TailleChunk, id);
 			_sectionsAReconstruire.Add((cx, vz.CoordChunkY, cz - 1, sec));
 		}
-		if (localZ == TailleChunk - 1 && TryGetChunkDataPourCoordY(new Vector2I(cx, cz + 1), coordY, out var vzp))
-		{
-			vzp.SetVoxelLocal(localX, localVoxelY, 0, id);
-			_sectionsAReconstruire.Add((cx, vzp.CoordChunkY, cz + 1, sec));
-		}
 		if (localX == 0 && localZ == 0 && TryGetChunkDataPourCoordY(new Vector2I(cx - 1, cz - 1), coordY, out var vxz))
 		{
 			vxz.SetVoxelLocal(TailleChunk, localVoxelY, TailleChunk, id);
 			_sectionsAReconstruire.Add((cx - 1, vxz.CoordChunkY, cz - 1, sec));
-		}
-		if (localX == TailleChunk - 1 && localZ == 0 && TryGetChunkDataPourCoordY(new Vector2I(cx + 1, cz - 1), coordY, out var vxpz))
-		{
-			vxpz.SetVoxelLocal(0, localVoxelY, TailleChunk, id);
-			_sectionsAReconstruire.Add((cx + 1, vxpz.CoordChunkY, cz - 1, sec));
-		}
-		if (localX == 0 && localZ == TailleChunk - 1 && TryGetChunkDataPourCoordY(new Vector2I(cx - 1, cz + 1), coordY, out var vxzp))
-		{
-			vxzp.SetVoxelLocal(TailleChunk, localVoxelY, 0, id);
-			_sectionsAReconstruire.Add((cx - 1, vxzp.CoordChunkY, cz + 1, sec));
-		}
-		if (localX == TailleChunk - 1 && localZ == TailleChunk - 1 && TryGetChunkDataPourCoordY(new Vector2I(cx + 1, cz + 1), coordY, out var vxpzp))
-		{
-			vxpzp.SetVoxelLocal(0, localVoxelY, 0, id);
-			_sectionsAReconstruire.Add((cx + 1, vxpzp.CoordChunkY, cz + 1, sec));
 		}
 
 		void MarquerSectionsChunkSiPresent(int chunkX, int chunkZ)
@@ -161,13 +137,8 @@ public partial class Monde_Client : Node3D
 
 		MarquerSectionsChunkSiPresent(cx, cz);
 		if (localX == 0) MarquerSectionsChunkSiPresent(cx - 1, cz);
-		if (localX == TailleChunk - 1) MarquerSectionsChunkSiPresent(cx + 1, cz);
 		if (localZ == 0) MarquerSectionsChunkSiPresent(cx, cz - 1);
-		if (localZ == TailleChunk - 1) MarquerSectionsChunkSiPresent(cx, cz + 1);
 		if (localX == 0 && localZ == 0) MarquerSectionsChunkSiPresent(cx - 1, cz - 1);
-		if (localX == TailleChunk - 1 && localZ == 0) MarquerSectionsChunkSiPresent(cx + 1, cz - 1);
-		if (localX == 0 && localZ == TailleChunk - 1) MarquerSectionsChunkSiPresent(cx - 1, cz + 1);
-		if (localX == TailleChunk - 1 && localZ == TailleChunk - 1) MarquerSectionsChunkSiPresent(cx + 1, cz + 1);
 	}
 
 	[Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = false)]
@@ -270,6 +241,16 @@ public partial class Monde_Client : Node3D
 		}
 		if (!modeAbysse && _chunksData.TryGetValue(coordChunk, out var existing))
 		{
+			// Profondeur étendue : si la couche verticale change (descente/remontée), on repart propre.
+			// Sans libérer les RIDs, le mesh/la collision resteraient figés à l'altitude de l'ancienne couche.
+			if (existing.CoordChunkY != coordY)
+			{
+				existing.LibérerRids();
+				existing.EmpreinteDonneesServeur = 0;
+				existing.CoordChunkY = coordY;
+				EnqueueChunkGeneration(existing, donnees);
+				return;
+			}
 			existing.CoordChunkY = coordY;
 			if (existing.VisualInstanceRID.IsValid && existing.EmpreinteDonneesServeur == empreinte && empreinte != 0)
 				return;

@@ -808,8 +808,8 @@ public partial class Joueur
                 AppliquerMaterielObjet(_objetEnMain, main.ID, main.IndexChimique, 0, 0, main.IndexBotanique);
             else if (main.ID == 30 || main.ID == 32 || main.ID == BlocChutant.ID_BRANCHE)
                 AppliquerMaterielObjet(_objetEnMain, main.ID, main.IndexChimique, main.IndexMorphologique, 0, main.IndexBotanique);
-            else if (main.ID >= 1 && main.ID <= 9)
-                AppliquerMaterielObjet(_objetEnMain, main.ID, main.IndexChimique, 0, 0, main.IndexBotanique);
+            else if (EstSlotTerrainVoxelPosable(main))
+                AppliquerMaterielObjet(_objetEnMain, ResoudreIdVoxelPose(main), main.IndexChimique, 0, 0, main.IndexBotanique);
             else
                 _objetEnMain.MaterialOverride = null;
         }
@@ -1525,8 +1525,8 @@ public partial class Joueur
                 AppliquerMaterielObjet(meshNode, slot.ID, slot.IndexChimique, 0, 0, slot.IndexBotanique);
             else if (slot.ID == 30 || slot.ID == 32 || slot.ID == BlocChutant.ID_BRANCHE)
                 AppliquerMaterielObjet(meshNode, slot.ID, slot.IndexChimique, slot.IndexMorphologique, 0, slot.IndexBotanique);
-            else if (slot.ID >= 1 && slot.ID <= 9)
-                AppliquerMaterielObjet(meshNode, slot.ID, slot.IndexChimique, 0, 0, slot.IndexBotanique);
+            else if (EstSlotTerrainVoxelPosable(slot))
+                AppliquerMaterielObjet(meshNode, ResoudreIdVoxelPose(slot), slot.IndexChimique, 0, 0, slot.IndexBotanique);
             else
                 meshNode.MaterialOverride = null;
         }

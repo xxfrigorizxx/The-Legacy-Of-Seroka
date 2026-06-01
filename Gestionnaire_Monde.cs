@@ -10,6 +10,9 @@ public partial class Gestionnaire_Monde : Node3D
 	[Export] public int TailleChunk = 16;
 	[Export] public int HauteurMax = 720;  // Montagnes jusqu'à 700
 	[Export] public int SeedTerrain = 19847;
+	/// <summary>Profondeur étendue des dimensions alpha-like (Alpha/Beta/Omega/Delta) : le sous-sol descend jusqu'à -<see cref="ProfondeurMaxMetres"/> sans changer la surface. Mettre à false pour revenir au socle Y=0.</summary>
+	[Export] public bool ActiverProfondeurEtendue = true;
+	[Export] public int ProfondeurMaxMetres = 1000;
 	[Export] public int RenderDistance = 14;
 	[Export] public int RenderDistanceDetailChunks = 10;
 	[Export] public int RayonQualiteProcheChunks = 5;

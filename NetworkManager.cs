@@ -131,10 +131,10 @@ public partial class NetworkManager : Node
 
 	/// <summary>Client -> serveur : demande d'injection d'objet créatif (validée côté autorité).</summary>
 	[Rpc(MultiplayerApi.RpcMode.AnyPeer, CallLocal = true)]
-	public void DemanderInjectionItemCreatif(int id, int indexMorphologique, int indexChimique, int indexTaille, int indexBotanique)
+	public void DemanderInjectionItemCreatif(int id, int indexMorphologique, int indexChimique, int indexTaille, int indexBotanique, string genomeAssemblage = "")
 	{
 		long idAppelant = Multiplayer.GetRemoteSenderId();
-		EmitSignal(SignalName.InjectionItemCreatifDemandee, id, indexMorphologique, indexChimique, indexTaille, indexBotanique, idAppelant);
+		EmitSignal(SignalName.InjectionItemCreatifDemandee, id, indexMorphologique, indexChimique, indexTaille, indexBotanique, genomeAssemblage ?? "", idAppelant);
 	}
 
 	/// <summary>Client -> serveur : demande explicite de chunk dans une dimension donnée.</summary>
@@ -148,7 +148,7 @@ public partial class NetworkManager : Node
 	public void EnvoyerDemandeInjectionItemCreatif(SlotInventaire slot)
 	{
 		if (slot.EstVide) return;
-		RpcId(1, nameof(DemanderInjectionItemCreatif), slot.ID, slot.IndexMorphologique, slot.IndexChimique, slot.IndexTaille, (int)slot.IndexBotanique);
+		RpcId(1, nameof(DemanderInjectionItemCreatif), slot.ID, slot.IndexMorphologique, slot.IndexChimique, slot.IndexTaille, (int)slot.IndexBotanique, slot.GenomeAssemblage ?? "");
 	}
 
 	public void EnvoyerDemandeChunkDimensionAuServeur(Vector2I coord, int coordY, int dimensionId, Vector3 positionObservation)
@@ -166,7 +166,7 @@ public partial class NetworkManager : Node
 	public delegate void CommandeAdminDemandeeEventHandler(string commande, long peerId);
 
 	[Signal]
-	public delegate void InjectionItemCreatifDemandeeEventHandler(int id, int indexMorphologique, int indexChimique, int indexTaille, int indexBotanique, long peerId);
+	public delegate void InjectionItemCreatifDemandeeEventHandler(int id, int indexMorphologique, int indexChimique, int indexTaille, int indexBotanique, string genomeAssemblage, long peerId);
 
 	[Signal]
 	public delegate void DemandeChunkDimensionDemandeeEventHandler(int coordX, int coordY, int coordZ, int dimensionId, float obsX, float obsY, float obsZ, long peerId);

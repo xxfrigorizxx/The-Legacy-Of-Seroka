@@ -292,7 +292,7 @@ public partial class Monde_Client : Node3D
 			if (_cameraObservationCache != null
 				&& GodotObject.IsInstanceValid(_cameraObservationCache)
 				&& _cameraObservationCache.IsInsideTree())
-				return _cameraObservationCache;
+			return _cameraObservationCache;
 			_cameraObservationCache = null;
 			return null;
 		}

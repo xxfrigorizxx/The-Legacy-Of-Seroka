@@ -1,4 +1,4 @@
-﻿using Godot;
+using Godot;
 using System;
 using System.Collections.Generic;
 
@@ -94,9 +94,10 @@ public partial class Joueur
 
         int id = mainActive.ID;
         if (id == 0) return;
-        if (EstIdTerrainVoxelPosable(id))
+        if (EstSlotTerrainVoxelPosable(mainActive))
         {
-            _gestionnaireMonde?.AppliquerCreationGlobale(pointImpact, normaleImpact, RAYON_SCULPTURE, id);
+            int idVoxel = ResoudreIdVoxelPose(mainActive);
+            _gestionnaireMonde?.AppliquerCreationGlobale(pointImpact, normaleImpact, RAYON_SCULPTURE, idVoxel);
         }
 		else if (id == 10 || id == 11 || id == IdObjetAloeVera)
 		{

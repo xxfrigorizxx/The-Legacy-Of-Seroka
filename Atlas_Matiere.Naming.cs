@@ -1,13 +1,83 @@
-﻿using Godot;
+using Godot;
 using System;
 using System.Collections.Generic;
 
 public static partial class Atlas_Matiere
 {
+    private const string PrefixeGenomeVoxelTerrain = "VOXEL_TERRAIN:";
+
+    public static bool EstIdVoxelTerrainMinerai(int idVoxel) =>
+        (idVoxel >= 10 && idVoxel <= 29) || (idVoxel >= 32 && idVoxel <= 48);
+
+    public static bool EssayerLireIdVoxelTerrain(in SlotInventaire slot, out int idVoxel)
+    {
+        idVoxel = 0;
+        string genome = slot.GenomeAssemblage ?? string.Empty;
+        if (!genome.StartsWith(PrefixeGenomeVoxelTerrain, StringComparison.OrdinalIgnoreCase))
+            return false;
+        string brut = genome.Substring(PrefixeGenomeVoxelTerrain.Length).Trim();
+        return int.TryParse(brut, out idVoxel);
+    }
+
+    public static string ObtenirNomVoxelTerrain(int idVoxel) => idVoxel switch
+    {
+        1 => "Voxel terrain: Terre",
+        2 => "Voxel terrain: Roche",
+        3 => "Voxel terrain: Sable",
+        4 => "Voxel terrain: Neige",
+        5 => "Voxel terrain: Neige glacée",
+        6 => "Voxel terrain: Terre aride",
+        7 => "Voxel terrain: Boue",
+        8 => "Voxel terrain: Herbe",
+        9 => "Voxel terrain: Terre gelée",
+        10 => "Voxel minerai: Charbon",
+        11 => "Voxel minerai: Jade",
+        12 => "Voxel minerai: Opale",
+        13 => "Voxel minerai: Diamant",
+        14 => "Voxel minerai: Topaze",
+        15 => "Voxel minerai: Rubis",
+        16 => "Voxel minerai: Saphir",
+        17 => "Voxel minerai: Émeraude",
+        18 => "Voxel minerai: Améthyste",
+        19 => "Voxel minerai: Quartz",
+        20 => "Voxel minerai: Palladium",
+        21 => "Voxel minerai: Platine",
+        22 => "Voxel minerai: Argent",
+        23 => "Voxel minerai: Or",
+        24 => "Voxel minerai: Bismuth",
+        25 => "Voxel minerai: Manganèse",
+        26 => "Voxel minerai: Titane",
+        27 => "Voxel minerai: Tungstène",
+        28 => "Voxel minerai: Cobalt",
+        29 => "Voxel minerai: Chrome",
+        30 => "Voxel terrain: Tronc",
+        31 => "Voxel terrain: Feuillage",
+        32 => "Voxel minerai: Nickel",
+        33 => "Voxel minerai: Aluminium",
+        34 => "Voxel minerai: Fer",
+        35 => "Voxel minerai: Plomb",
+        36 => "Voxel minerai: Zinc",
+        37 => "Voxel minerai: Étain",
+        38 => "Voxel minerai: Cuivre",
+        39 => "Voxel minerai: Soufre",
+        40 => "Voxel minerai: Salpêtre",
+        41 => "Voxel minerai: Uranium",
+        42 => "Voxel minerai: Thorium",
+        43 => "Voxel minerai: Plutonium",
+        44 => "Voxel minerai: Sel",
+        45 => "Voxel minerai: Graphite",
+        46 => "Voxel minerai: Calcaire",
+        47 => "Voxel minerai: Gypse",
+        48 => "Voxel minerai: Obsidienne",
+        _ => $"Voxel terrain #{idVoxel}"
+    };
+
     public static string ObtenirNomObjet(SlotInventaire slot)
     {
         if (slot.EstVide)
             return "";
+        if (EssayerLireIdVoxelTerrain(slot, out int idVoxelTerrain))
+            return ObtenirNomVoxelTerrain(idVoxelTerrain);
         int id = slot.ID;
         if (ItemPhysique.EstIdRocheMatiere(id))
         {

@@ -1,4 +1,4 @@
-﻿using Godot;
+using Godot;
 using System;
 using System.Collections.Generic;
 
@@ -729,7 +729,7 @@ public partial class Joueur
     private bool EstObjetLancableAuMaintien(SlotInventaire slot)
     {
         if (slot.EstVide) return false;
-        bool estTerrainVoxel = slot.ID >= 1 && slot.ID <= 9;
+        bool estTerrainVoxel = EstSlotTerrainVoxelPosable(slot);
         bool estAtelier = slot.ID == 200;
         bool estTableAnalyse = slot.ID == IdObjetTableAnalyseTier1;
         bool estRackBatons = slot.ID == IdObjetRackBatons || slot.ID == IdObjetRackBuches;

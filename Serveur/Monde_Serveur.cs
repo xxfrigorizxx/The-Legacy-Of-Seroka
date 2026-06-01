@@ -17,6 +17,10 @@ public partial class Monde_Serveur : Node
 	[Export] public int RenderDistance = 200;
 	[Export] public string NomDimension = "ARAPA";
 	[Export] public bool ActiverGenerationAbysse = false;
+	/// <summary>Profondeur étendue (alpha-like) : le sol descend en couches verticales jusqu'à <see cref="ProfondeurMaxMetres"/> sous Y=0. N'affecte jamais la surface ni l'Abysse.</summary>
+	[Export] public bool ActiverProfondeurEtendue = false;
+	/// <summary>Profondeur maximale (m) sous Y=0 atteignable en mode profondeur étendue. Le socle dur (bedrock) est posé à Y = -ProfondeurMaxMetres.</summary>
+	[Export] public int ProfondeurMaxMetres = 1000;
 
 	/// <summary>Matériel du terrain pour les débris (BlocChutant). Assigné par Gestionnaire_Monde.</summary>
 	public Material MaterielTerrain;
@@ -26,6 +30,8 @@ public partial class Monde_Serveur : Node
 
 	private Dictionary<Vector2I, Chunk_Serveur> _chunks = new Dictionary<Vector2I, Chunk_Serveur>();
 	private readonly Dictionary<int, Dictionary<Vector2I, Chunk_Serveur>> _chunksAbysseParStage2D = new Dictionary<int, Dictionary<Vector2I, Chunk_Serveur>>();
+	/// <summary>Couches verticales (x, coordY, z) en mode profondeur étendue (non-Abysse). coordY=0 reste aussi proxy dans <see cref="_chunks"/> pour les systèmes 2D.</summary>
+	private readonly Dictionary<Vector3I, Chunk_Serveur> _chunksProfonds = new Dictionary<Vector3I, Chunk_Serveur>();
 	private Queue<Vector3I> _fileEau = new Queue<Vector3I>();
 	private HashSet<Vector3I> _eauActive = new HashSet<Vector3I>();
 	private readonly Dictionary<Vector3I, (Vector3I retourInterdit, int tickExpiration)> _antiRetourEau = new Dictionary<Vector3I, (Vector3I, int)>();
@@ -631,6 +637,18 @@ public partial class Monde_Serveur : Node
 				}
 			}
 		}
+		else if (ModeProfondeurActive)
+		{
+			// Profondeur étendue : toutes les couches verticales (x, coordY, z), pas seulement la surface.
+			foreach (var kvp in _chunksProfonds)
+			{
+				Chunk_Serveur chunk = kvp.Value;
+				if (chunk == null) continue;
+				Vector2I coord = new Vector2I(kvp.Key.X, kvp.Key.Z);
+				if (SauvegarderChunkCoordEtCouche(coord, chunk.ChunkOffsetY, chunk, uniquementSiModifie: false))
+					chunksSauves++;
+			}
+		}
 		else
 		{
 			foreach (var kvp in _chunks)
@@ -776,7 +794,7 @@ public partial class Monde_Serveur : Node
 	{
 		if (!_chunks.TryGetValue(coord, out var chunk) || chunk == null)
 			return false;
-		int coordYSauvegarde = ActiverGenerationAbysse ? chunk.ChunkOffsetY : 0;
+		int coordYSauvegarde = (ActiverGenerationAbysse || ModeProfondeurActive) ? chunk.ChunkOffsetY : 0;
 		return SauvegarderChunkCoordEtCouche(coord, coordYSauvegarde, chunk, uniquementSiModifie);
 	}
 
@@ -852,6 +870,32 @@ public partial class Monde_Serveur : Node
 	{
 		int h = Mathf.Max(1, hauteurMax);
 		return Mathf.FloorToInt(yMonde / h);
+	}
+
+	/// <summary>True si la profondeur étendue (couches verticales sous Y=0) est active pour cette dimension non-Abysse.</summary>
+	private bool ModeProfondeurActive => ActiverProfondeurEtendue && !ActiverGenerationAbysse;
+
+	/// <summary>Y monde du socle dur en mode profondeur étendue (ex. -1000).</summary>
+	private int FondMondeYProfond => -Mathf.Max(0, ProfondeurMaxMetres);
+
+	/// <summary>coordY le plus bas accessible en mode profondeur étendue (couche contenant le socle dur).</summary>
+	private int CoordYMinProfond => CoordYDepuisMondeY(FondMondeYProfond, HauteurMax);
+
+	/// <summary>Borne une demande de couche verticale dans la plage valide [CoordYMinProfond, 0] (jamais au-dessus de la surface).</summary>
+	private int ClampCoordYProfond(int coordY) => Mathf.Clamp(coordY, CoordYMinProfond, 0);
+
+	/// <summary>Remplit l'ensemble des couches coordY impactées par un rayon autour d'un Y monde (profondeur étendue, coordY bruts).</summary>
+	private void RemplirCoordYImpactesProfond(float yCentreMonde, float rayon, HashSet<int> sortie)
+	{
+		if (sortie == null) return;
+		sortie.Clear();
+		int cyMin = ClampCoordYProfond(CoordYDepuisMondeY(yCentreMonde - rayon, HauteurMax));
+		int cyMax = ClampCoordYProfond(CoordYDepuisMondeY(yCentreMonde + rayon, HauteurMax));
+		if (cyMax < cyMin) { int t = cyMin; cyMin = cyMax; cyMax = t; }
+		for (int cy = cyMin; cy <= cyMax; cy++)
+			sortie.Add(cy);
+		if (sortie.Count == 0)
+			sortie.Add(ClampCoordYProfond(CoordYDepuisMondeY(yCentreMonde, HauteurMax)));
 	}
 
 	private int ObtenirIndexPalierAbysse(float yMonde)
@@ -931,6 +975,8 @@ public partial class Monde_Serveur : Node
 			chunk = null;
 			return false;
 		}
+		if (ModeProfondeurActive)
+			return _chunksProfonds.TryGetValue(new Vector3I(coord.X, ClampCoordYProfond(coordY), coord.Y), out chunk);
 		return _chunks.TryGetValue(coord, out chunk);
 	}
 
@@ -946,6 +992,15 @@ public partial class Monde_Serveur : Node
 				_chunks[coord] = chunk; // proxy colonne pour les systèmes 2D existants (décharge/radar)
 			return;
 		}
+		if (ModeProfondeurActive)
+		{
+			int coordYClamp = ClampCoordYProfond(coordY);
+			_chunksProfonds[new Vector3I(coord.X, coordYClamp, coord.Y)] = chunk;
+			// La couche de surface (coordY=0) reste le proxy 2D pour eau/décharge/radar/arbres/pierres.
+			if (coordYClamp == 0)
+				_chunks[coord] = chunk;
+			return;
+		}
 		_chunks[coord] = chunk;
 	}
 
@@ -955,7 +1010,9 @@ public partial class Monde_Serveur : Node
 		if (_simulationSuspendue)
 			return;
 		bool estAbysse = ActiverGenerationAbysse;
-		int cibleY = estAbysse ? NormaliserCoordYAbysse(coordY) : 0;
+		int cibleY = estAbysse
+			? NormaliserCoordYAbysse(coordY)
+			: (ModeProfondeurActive ? ClampCoordYProfond(coordY) : 0);
 		Vector3 obs = observation ?? InvokerPositionJoueurStreaming();
 		if (estAbysse && !EstCoordYDansFenetrePaliersAbysse(cibleY, obs))
 			return;
@@ -1000,7 +1057,9 @@ public partial class Monde_Serveur : Node
 
 	public Chunk_Serveur ObtenirOuCreerChunk(Vector2I coord, int coordY)
 	{
-		int coordYLocal = ActiverGenerationAbysse ? NormaliserCoordYAbysse(coordY) : 0;
+		int coordYLocal = ActiverGenerationAbysse
+			? NormaliserCoordYAbysse(coordY)
+			: (ModeProfondeurActive ? ClampCoordYProfond(coordY) : 0);
 		if (TryGetChunkRuntime(coord, coordYLocal, out var c)) return c;
 
 		Chunk_Serveur chunkActuel = null;
@@ -1027,8 +1086,8 @@ public partial class Monde_Serveur : Node
 	private void SynchroniserFrontieresAvecVoisinsCharges(Vector2I coord, Chunk_Serveur chunk)
 	{
 		if (chunk == null) return;
-		if (ActiverGenerationAbysse)
-			return; // En Abysse multi-couches, cette synchro 2D peut recoller des tranches Y incohérentes.
+		if (ActiverGenerationAbysse || ModeProfondeurActive)
+			return; // Multi-couches (Abysse / profondeur étendue) : cette synchro 2D recolle des tranches Y incohérentes.
 
 		void SynchroniserBordureDepuisVoisin(Vector2I coordVoisin, int voisinX, int chunkX, int voisinZ, int chunkZ, bool axeX)
 		{
@@ -1085,7 +1144,7 @@ public partial class Monde_Serveur : Node
 	private void RepousserBorduresChunkDisqueVersVoisinsProceduraux(Vector2I coord, Chunk_Serveur chunk)
 	{
 		if (chunk == null || !chunk.EstChargeDepuisDisque) return;
-		if (ActiverGenerationAbysse)
+		if (ActiverGenerationAbysse || ModeProfondeurActive)
 			return; // Évite de pousser des bordures 2D sur des couches verticales différentes.
 
 		void PousserBordureVersVoisin(Vector2I coordVoisin, int chunkX, int voisinX, int chunkZ, int voisinZ, bool axeX)
@@ -1161,7 +1220,9 @@ public partial class Monde_Serveur : Node
 			ChunkEstCharge,
 			ReveillerEauAdjacente,
 			ActiverGenerationAbysse,
-			ObtenirDossierChunksRelatif()
+			ObtenirDossierChunksRelatif(),
+			ModeProfondeurActive,
+			FondMondeYProfond
 		);
 		chunk.SetOnVoxelModifie((pos, id) => _onVoxelModifie?.Invoke(pos, id));
 		chunk.SetOnFlorePurgée((c, coordChunkY, inventaire) =>
@@ -1454,22 +1515,15 @@ public partial class Monde_Serveur : Node
 			return ObtenirOuCreerChunk(coordVoisine, chunkY);
 		}
 
+		// Réplique uniquement les frontières partagées réelles (local == 0).
+		// local == TailleChunk-1 n'est PAS une frontière partagée: le recopier dans le voisin
+		// décale la matière d'un voxel et crée des déchirures visuelles en bord de chunk.
 		if (localX == 0)
 			ObtenirVoisinPadding(cx - 1, cz)?.SetVoxelLocal(TailleChunk, localY, localZ, id);
-		if (localX == TailleChunk - 1)
-			ObtenirVoisinPadding(cx + 1, cz)?.SetVoxelLocal(0, localY, localZ, id);
 		if (localZ == 0)
 			ObtenirVoisinPadding(cx, cz - 1)?.SetVoxelLocal(localX, localY, TailleChunk, id);
-		if (localZ == TailleChunk - 1)
-			ObtenirVoisinPadding(cx, cz + 1)?.SetVoxelLocal(localX, localY, 0, id);
 		if (localX == 0 && localZ == 0)
 			ObtenirVoisinPadding(cx - 1, cz - 1)?.SetVoxelLocal(TailleChunk, localY, TailleChunk, id);
-		if (localX == TailleChunk - 1 && localZ == 0)
-			ObtenirVoisinPadding(cx + 1, cz - 1)?.SetVoxelLocal(0, localY, TailleChunk, id);
-		if (localX == 0 && localZ == TailleChunk - 1)
-			ObtenirVoisinPadding(cx - 1, cz + 1)?.SetVoxelLocal(TailleChunk, localY, 0, id);
-		if (localX == TailleChunk - 1 && localZ == TailleChunk - 1)
-			ObtenirVoisinPadding(cx + 1, cz + 1)?.SetVoxelLocal(0, localY, 0, id);
 	}
 
 	private void DemanderMiseAJourMesh(Vector3I pos)
@@ -1483,9 +1537,7 @@ public partial class Monde_Serveur : Node
 		int sec = Mathf.Clamp(Mathf.FloorToInt(localY / 16f), 0, 44);  // section locale dans la tranche verticale active
 		_onChunkModifie?.Invoke(new Vector2I(cx, cz), new List<int> { sec });
 		if (lx == 0) _onChunkModifie?.Invoke(new Vector2I(cx - 1, cz), new List<int> { sec });
-		if (lx == TailleChunk - 1) _onChunkModifie?.Invoke(new Vector2I(cx + 1, cz), new List<int> { sec });
 		if (lz == 0) _onChunkModifie?.Invoke(new Vector2I(cx, cz - 1), new List<int> { sec });
-		if (lz == TailleChunk - 1) _onChunkModifie?.Invoke(new Vector2I(cx, cz + 1), new List<int> { sec });
 	}
 
 	public static int ObtenirHauteurTerrainMonde(int worldX, int worldZ, int seed)
