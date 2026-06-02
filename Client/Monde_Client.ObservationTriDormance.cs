@@ -49,23 +49,29 @@ public partial class Monde_Client : Node3D
 			foreach (var c in chunksCharges) dejaVu.Add(c);
 			int rayonInterieur = Mathf.Max(0, rayonRadar - EpaisseurAnneauRadar);
 			int ajoutes = 0;
-			for (int dx = -rayonRadar; dx <= rayonRadar && ajoutes < _maxAjoutsRadarParPasseDyn; dx++)
-				for (int dz = -rayonRadar; dz <= rayonRadar && ajoutes < _maxAjoutsRadarParPasseDyn; dz++)
+			// Anneaux du centre vers l'extérieur : si le budget d'ajouts est saturé, on garde les cases proches en file.
+			for (int r = 0; r <= rayonRadar && ajoutes < _maxAjoutsRadarParPasseDyn; r++)
+			{
+				for (int dx = -r; dx <= r && ajoutes < _maxAjoutsRadarParPasseDyn; dx++)
 				{
-					int adx = Mathf.Abs(dx);
-					int adz = Mathf.Abs(dz);
-					Vector2I coord = new Vector2I(cjX + dx, cjZ + dz);
-					// Anneau : on ne saute le « cœur » que pour les chunks déjà chargés ou déjà en file (évite de re-trier l’intérieur).
-					// Sinon les cases intérieures manquantes n’étaient jamais ajoutées → halo vide / montagnes qui ne chargent pas.
-					bool dansCoeur = adx < rayonInterieur && adz < rayonInterieur;
-					if (dansCoeur && dejaVu.Contains(coord))
-						continue;
-					if (dejaVu.Add(coord))
+					for (int dz = -r; dz <= r && ajoutes < _maxAjoutsRadarParPasseDyn; dz++)
 					{
-						copieChunksACharger.Add(coord);
-						ajoutes++;
+						if (Mathf.Max(Mathf.Abs(dx), Mathf.Abs(dz)) != r)
+							continue;
+						int adx = Mathf.Abs(dx);
+						int adz = Mathf.Abs(dz);
+						Vector2I coord = new Vector2I(cjX + dx, cjZ + dz);
+						bool dansCoeur = adx < rayonInterieur && adz < rayonInterieur;
+						if (dansCoeur && dejaVu.Contains(coord))
+							continue;
+						if (dejaVu.Add(coord))
+						{
+							copieChunksACharger.Add(coord);
+							ajoutes++;
+						}
 					}
 				}
+			}
 
 			// Tri radial strict : distance au carré (pas de new Vector2 par comparaison — évite des milliers d'allocations).
 			float ox = posObsV2.X, oy = posObsV2.Y;
@@ -97,7 +103,9 @@ public partial class Monde_Client : Node3D
 			return;
 		}
 		int rayonRadar = RayonRadarPreparationActif();
-		int cap = Mathf.Clamp((2 * rayonRadar + 1) * (2 * rayonRadar + 1), 256, 65536);
+		int cap = ModeProfondeurTranchesActif()
+			? Mathf.Clamp((2 * rayonRadar + 1) * (2 * rayonRadar + 1), 64, 2048)
+			: Mathf.Clamp((2 * rayonRadar + 1) * (2 * rayonRadar + 1), 256, 65536);
 		int n = Mathf.Min(cap, nouvelleListeTriee.Count);
 		_chunksACharger.Clear();
 		if (_chunksACharger.Capacity < n)
@@ -116,6 +124,66 @@ public partial class Monde_Client : Node3D
 		World3D world = GetWorld3D();
 		if (world == null) return;
 		Rid space = world.Space;
+		if (ModeProfondeurTranchesActif())
+		{
+			Vector3 obsMonde = _joueur?.GlobalPosition ?? ObtenirPositionObservation();
+			Vector2I cp = Gestionnaire_Monde.WorldToChunkCoord(obsMonde, TailleChunk);
+			int coordYJoueur = CoordYDepuisMondeY((int)Mathf.Floor(obsMonde.Y));
+			int demiYPhysique = ConstantesProfondeurVerticale.DemiFenetreTranches;
+			int rayon = Mathf.Min(RayonDormancePhysique, 4);
+			int transitionsProf = 0;
+			int limiteProf = Mathf.Max(1, maxTransitions);
+			for (int dx = -rayon; dx <= rayon; dx++)
+			{
+				for (int dz = -rayon; dz <= rayon; dz++)
+				{
+					for (int dy = -demiYPhysique; dy <= demiYPhysique; dy++)
+					{
+						Vector3I cle = new Vector3I(cp.X + dx, coordYJoueur + dy, cp.Y + dz);
+						if (!_chunksDataProfondeur3D.TryGetValue(cle, out var d) || d == null)
+							continue;
+						if (d.PhysicsBodyRID.IsValid)
+						{
+							if (d.Dormant)
+							{
+								d.Dormant = false;
+								PhysicsServer3D.Singleton.BodySetSpace(d.PhysicsBodyRID, space);
+								if (d.EstEnFileSolidification)
+									RetirerDeFileSolidification(d);
+								SynchroniserFloreDesQueCollisionChunkActive(d);
+							}
+						}
+						else if (!d.EstEnFileSolidification)
+						{
+							RetirerDeFileSolidification(d);
+							EnfilerSolidificationUrgenteUnique(d);
+							d.EstEnFileSolidification = true;
+						}
+					}
+				}
+			}
+			// Endort les tranches lointaines (visuel seulement) — scan borné pour ne pas parcourir des milliers d'entrées/frame.
+			int scanned = 0;
+			foreach (var kv in _chunksDataProfondeur3D)
+			{
+				if (transitionsProf >= limiteProf || scanned++ > 64)
+					break;
+				ChunkData d = kv.Value;
+				if (d == null || !d.PhysicsBodyRID.IsValid || d.Dormant)
+					continue;
+				int dx = kv.Key.X - cp.X;
+				int dz = kv.Key.Z - cp.Y;
+				int dy = Mathf.Abs(kv.Key.Y - coordYJoueur);
+				if (dx * dx + dz * dz <= rayon * rayon && dy <= demiYPhysique)
+					continue;
+				d.Dormant = true;
+				PhysicsServer3D.Singleton.BodySetSpace(d.PhysicsBodyRID, default(Rid));
+				if (d.EstEnFileSolidification)
+					RetirerDeFileSolidification(d);
+				transitionsProf++;
+			}
+			return;
+		}
 		if (_dimensionReseauActive == (int)DimensionJeu.Abysse)
 		{
 			// En Abysse multi-couches, on évite d'endormir agressivement par vue 2D:

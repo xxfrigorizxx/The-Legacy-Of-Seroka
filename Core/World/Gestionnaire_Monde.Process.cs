@@ -34,6 +34,14 @@ public partial class Gestionnaire_Monde : Node3D
 			_joueur.Velocity = Vector3.Zero;
 			_joueur.Visible = false;
 		}
+		// Anti-traversée : mesh visible sans collision sous les pieds → pas de chute libre en attendant la solidification.
+		else if (_joueur != null && _joueur.Visible && UseArchitectureReseau && _mondeClient != null
+			&& _dimensionLocaleActive != (int)DimensionJeu.Abysse && _joueur.Velocity.Y < -0.2f)
+		{
+			Vector2I chunkPieds = WorldToChunkCoord(_joueur.GlobalPosition, TailleChunk);
+			if (!_mondeClient.ChunkCollisionActive(chunkPieds))
+				_joueur.Velocity = new Vector3(_joueur.Velocity.X, 0f, _joueur.Velocity.Z);
+		}
 
 		// Garde-fou profondeur extrême Abysse : stabilise l'état physique au fond absolu.
 		if (_joueur != null && _dimensionLocaleActive == (int)DimensionJeu.Abysse)
@@ -53,8 +61,6 @@ public partial class Gestionnaire_Monde : Node3D
 
 		bool spawnPretActuel = EstSpawnPret();
 		bool spawnPretEtAligneActuel = spawnPretActuel && (!_spawnDoitEtreAligneAuSol || _spawnAligneAuSol);
-		Vector3 pointRefSpawn = ObtenirPointReferenceSpawn();
-		bool cardinauxPrets = ChunkEtVoisinsCardinauxPretsAuPoint(pointRefSpawn);
 		if (_dimensionLocaleActive == (int)DimensionJeu.Abysse && _cooldownDiagnosticCollisionAbysse <= 0.0)
 		{
 			JournaliserDiagnosticCollisionAbysse();
@@ -135,31 +141,31 @@ public partial class Gestionnaire_Monde : Node3D
 		{
 			if (_labelChargementPrincipal != null && _labelChargementPrincipal.Text != "Chargement du monde...")
 				_labelChargementPrincipal.Text = "Chargement du monde...";
-			if (_gateTpDimensionActif)
+			_secondesOverlayChargement += delta;
+			if (_gateTpDimensionActif && _secondesGateTpDimension < DureeMaxGateTpDimensionSec)
 			{
-				_secondesOverlayChargement += delta;
+				// Gate TP : ne bloque le masquage que le temps du transfert dimensionnel (~8 s max).
 				goto FinBlocOverlay;
 			}
-			_secondesOverlayChargement += delta;
 			bool spawnPret = spawnPretActuel;
-			// Nouveau monde: on attend que la zone soit réellement prête avant raycast de pose au sol.
-			if (spawnPret && cardinauxPrets && _spawnDoitEtreAligneAuSol && !_spawnAligneAuSol)
+			// Nouveau monde : raycast dès que le chunk central a collision (les cardinaux arrivent ensuite).
+			if (spawnPret && _spawnDoitEtreAligneAuSol && !_spawnAligneAuSol)
 				FinaliserSpawnInitialAuSol();
 			bool spawnPretEtAligne = spawnPret && (!_spawnDoitEtreAligneAuSol || _spawnAligneAuSol);
-			// Fallback UX: si le critère strict reste bloqué mais que le chunk local est bien actif,
-			// on masque l'overlay pour ne pas laisser un "chargement infini" à l'écran.
-			if (!spawnPretEtAligne && _joueur != null && _secondesOverlayChargement >= 6.0 && (!_spawnDoitEtreAligneAuSol || _spawnAligneAuSol))
+			// Fallback UX : chunk local prêt → alignement + masquage overlay (nouveau monde inclus).
+			if (!spawnPretEtAligne && _joueur != null && _secondesOverlayChargement >= 4.0)
 			{
 				Vector2I chunkJoueur = WorldToChunkCoord(_joueur.GlobalPosition, TailleChunk);
 				bool chunkLocalPret = !UseArchitectureReseau || (_mondeClient?.ChunkCollisionActive(chunkJoueur) ?? false);
 				if (chunkLocalPret)
 				{
 					if (_spawnDoitEtreAligneAuSol && !_spawnAligneAuSol)
-						FinaliserSpawnInitialAuSol();
-					spawnPretEtAligne = true;
+						FinaliserSpawnInitialAuSol(autoriserFallbackSansRaycast: _secondesOverlayChargement >= 12.0);
+					spawnPretEtAligne = spawnPret || _spawnAligneAuSol;
 				}
 			}
-			if (spawnPretEtAligne || _secondesOverlayChargement >= 90.0)
+			const double timeoutOverlaySec = 45.0;
+			if (spawnPretEtAligne || _secondesOverlayChargement >= timeoutOverlaySec)
 			{
 				bool bootstrapClientStable = !UseArchitectureReseau
 					|| _mondeClient == null
@@ -171,10 +177,10 @@ public partial class Gestionnaire_Monde : Node3D
 					// On garde l’overlay un peu plus longtemps pour préchauffer collision/files et lisser les premières secondes de déplacement.
 					goto FinBlocOverlay;
 				}
-				if (!spawnPretEtAligne && _secondesOverlayChargement >= 90.0)
-					GD.PrintErr("ZERO-K : Timeout chargement monde (>90 s) — overlay masqué. Vérifiez réseau / Monde_Client si le sol manque.");
+				if (!spawnPretEtAligne && _secondesOverlayChargement >= timeoutOverlaySec)
+					GD.PrintErr($"ZERO-K : Timeout chargement monde (>{timeoutOverlaySec:0} s) — overlay masqué. Vérifiez réseau / Monde_Client si le sol manque.");
 				if (_spawnDoitEtreAligneAuSol && !_spawnAligneAuSol)
-					FinaliserSpawnInitialAuSol(autoriserFallbackSansRaycast: _secondesOverlayChargement >= 90.0);
+					FinaliserSpawnInitialAuSol(autoriserFallbackSansRaycast: _secondesOverlayChargement >= timeoutOverlaySec);
 				_overlayChargement.Visible = false;
 				if (_ajusterPiedsJoueurSurSurfaceApresRestauration)
 				{

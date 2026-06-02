@@ -17,6 +17,6 @@ public sealed class SpawnPipelineService
     public void DeclencherEnsemencement(Vector2I chunkCoord, Chunk_Serveur chunk, float tailleChunk, Action<Vector2I, Chunk_Serveur> onStasePrete = null)
         => _owner.DeclencherEnsemencement(chunkCoord, chunk, tailleChunk, onStasePrete);
 
-    public void LibererRochesChunk(Vector2I coordChunk)
-        => _owner.LibererRochesChunk(coordChunk);
+    public void LibererRochesChunk(Vector2I coordChunk, int coordY)
+        => _owner.LibererRochesChunk(coordChunk, coordY);
 }

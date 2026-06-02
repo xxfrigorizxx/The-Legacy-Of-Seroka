@@ -27,18 +27,26 @@ public partial class Monde_Client : Node3D
 	}
 
 	/// <summary>Architecture AAA : fusionne les 45 SectionPayload en un mesh + shape, crée les RIDs RenderingServer/PhysicsServer3D, attache au monde. À appeler sur le Main Thread.</summary>
-	internal void IntegrerChunkDataRIDs(ChunkData data, List<SectionPayload> payloads)
+	internal void IntegrerChunkDataRIDs(ChunkData data, List<SectionPayload> payloads, bool recoudreVoisinsVertical = true)
 	{
 		if (data == null || payloads == null || payloads.Count == 0 || !IsInsideTree()) return;
 		World3D world = GetWorld3D();
 		if (world == null) return;
+		bool remplacerVisuelExistant = data.VisualInstanceRID.IsValid;
+		if (remplacerVisuelExistant)
+			LibererPhysiqueChunk(data);
 
 		// 1. Fusion des payloads en un seul ArrayMesh (terrain) sans SurfaceTool/GenerateNormals.
 		int totalTerrainVertices = 0;
 		foreach (var p in payloads)
 			if (p?.SommetsVisuels != null)
 				totalTerrainVertices += p.SommetsVisuels.Length;
-		if (totalTerrainVertices <= 0) return;
+		if (totalTerrainVertices <= 0)
+		{
+			if (remplacerVisuelExistant)
+				data.LibérerRids();
+			return;
+		}
 
 		var terrainVertices = new Vector3[totalTerrainVertices];
 		var terrainNormals = new Vector3[totalTerrainVertices];
@@ -102,22 +110,39 @@ public partial class Monde_Client : Node3D
 		// RÈGLE CAS B (espace local) : les sommets du mesh sont en [0, TailleChunk] x [0, HauteurMax] x [0, TailleChunk].
 		// Une SEULE application du décalage chunk : position monde = origine parent + (coordChunk * TailleChunk).
 		// Pas de double translation (ne pas ajouter d'offset si les vertices étaient déjà en monde).
-		float offsetYMonde = data.CoordChunkY * HauteurMax;
-		Vector3 positionVraie = GlobalPosition + new Vector3(data.Coordonnees.X * TailleChunk, offsetYMonde, data.Coordonnees.Y * TailleChunk);
+		Vector3 positionVraie = GlobalPosition + data.ObtenirOrigineMonde(TailleChunk);
 		Transform3D transformChunk = new Transform3D(Basis.Identity, positionVraie);
 
-		// 2. RenderingServer : instance visuelle sans Node
+		// 2. RenderingServer : remplacement in-place après minage (évite le « vide » d’une frame) ou nouvelle instance.
 		Rid meshRid = mergedMesh.GetRid();
-		Rid instanceRid = RenderingServer.Singleton.InstanceCreate();
-		RenderingServer.Singleton.InstanceSetBase(instanceRid, meshRid);
-		RenderingServer.Singleton.InstanceSetScenario(instanceRid, world.Scenario);
-		RenderingServer.Singleton.InstanceSetTransform(instanceRid, transformChunk);
-
-		data.VisualInstanceRID = instanceRid;
-		data._meshRef = mergedMesh;
+		if (remplacerVisuelExistant)
+		{
+			RenderingServer.Singleton.InstanceSetBase(data.VisualInstanceRID, meshRid);
+			RenderingServer.Singleton.InstanceSetTransform(data.VisualInstanceRID, transformChunk);
+			if (data._meshRef != null && !ReferenceEquals(data._meshRef, mergedMesh))
+				data._meshRef.Dispose();
+			data._meshRef = mergedMesh;
+		}
+		else
+		{
+			Rid instanceRid = RenderingServer.Singleton.InstanceCreate();
+			RenderingServer.Singleton.InstanceSetBase(instanceRid, meshRid);
+			RenderingServer.Singleton.InstanceSetScenario(instanceRid, world.Scenario);
+			RenderingServer.Singleton.InstanceSetTransform(instanceRid, transformChunk);
+			data.VisualInstanceRID = instanceRid;
+			data._meshRef = mergedMesh;
+		}
 		data.PhysicsBodyRID = default;
 		data.PhysicsShapeRID = default;
 		data._shapeRef = null;
+
+		bool solidifieCorridor = false;
+		if (EssayerObtenirJoueurDansArbre(out CharacterBody3D joueurCorridor))
+		{
+			Vector3 posC = joueurCorridor.GlobalPosition;
+			Vector3 velC = new Vector3(joueurCorridor.Velocity.X, 0f, joueurCorridor.Velocity.Z);
+			solidifieCorridor = EssayerSolidifierCorridorAIntegration(data, posC, velC);
+		}
 
 		// Flore (gazon + buissons) : retirer l'ancien nœud si réintégration.
 		if (data._nodeFlore != null)
@@ -136,8 +161,13 @@ public partial class Monde_Client : Node3D
 			int ddx = Mathf.Abs(data.Coordonnees.X - cJoueurFlore.X);
 			int ddz = Mathf.Abs(data.Coordonnees.Y - cJoueurFlore.Y);
 			bool chunkSousPiedsXZ = ddx == 0 && ddz == 0;
-			if (_dimensionReseauActive == (int)DimensionJeu.Abysse && chunkSousPiedsXZ)
-				chunkSousPiedsXZ = data.CoordChunkY == CoordYStageAbysseDepuisYMonde(posObsFlore.Y);
+			if (chunkSousPiedsXZ)
+			{
+				if (_dimensionReseauActive == (int)DimensionJeu.Abysse)
+					chunkSousPiedsXZ = data.CoordChunkY == CoordYStageAbysseDepuisYMonde(posObsFlore.Y);
+				else if (ModeProfondeurTranchesActif())
+					chunkSousPiedsXZ = data.CoordChunkY == CoordYDepuisMondeY((int)Mathf.Floor(posObsFlore.Y));
+			}
 			if (chunkSousPiedsXZ)
 				ConstruireFloreChunk(data, posObsFlore);
 			else
@@ -148,27 +178,45 @@ public partial class Monde_Client : Node3D
 			EnfilerFloreChunk(data, posObsFlore);
 		}
 
-		// Physique lazy stricte : collision montée en file pour amortir le coût.
-		// Seule la zone ultra proche joueur passe par la file urgente.
-		if (EssayerObtenirJoueurDansArbre(out CharacterBody3D _))
+		// Physique lazy : seulement les tranches Y proches du joueur (±1) ; le reste reste visuel sans Jolt.
+		if (EssayerObtenirJoueurDansArbre(out CharacterBody3D joueurSolidif))
 		{
-			Vector2I cJoueur = Gestionnaire_Monde.WorldToChunkCoord(ObtenirPositionObservation(), TailleChunk);
+			Vector2I cJoueur = Gestionnaire_Monde.WorldToChunkCoord(joueurSolidif.GlobalPosition, TailleChunk);
 			int dx = Mathf.Abs(data.Coordonnees.X - cJoueur.X);
 			int dz = Mathf.Abs(data.Coordonnees.Y - cJoueur.Y);
-			if (dx <= 1 && dz <= 1)
+			bool solidifier = true;
+			if (ModeProfondeurTranchesActif())
 			{
-				if (!data.EstEnFileSolidification)
+				int cyJoueur = CoordYDepuisMondeY((int)Mathf.Floor(joueurSolidif.GlobalPosition.Y));
+				solidifier = Mathf.Abs(data.CoordChunkY - cyJoueur) <= ConstantesProfondeurVerticale.DemiFenetreTranches;
+			}
+			if (solidifier && !solidifieCorridor)
+			{
+				if (dx <= 1 && dz <= 1)
 				{
-					RetirerDeFileSolidification(data);
-					EnfilerSolidificationUrgenteUnique(data);
-					data.EstEnFileSolidification = true;
+					if (!data.EstEnFileSolidification)
+					{
+						RetirerDeFileSolidification(data);
+						EnfilerSolidificationUrgenteUnique(data);
+						data.EstEnFileSolidification = true;
+					}
+				}
+				else if (!data.EstEnFileSolidification)
+				{
+					AjouterEnFileSolidification(data);
 				}
 			}
-			else if (!data.EstEnFileSolidification)
+			else if (data.PhysicsBodyRID.IsValid)
 			{
-				AjouterEnFileSolidification(data);
+				RetirerDeFileSolidification(data);
+				data.Dormant = true;
+				PhysicsServer3D.Singleton.BodySetSpace(data.PhysicsBodyRID, default(Rid));
+				data.EstEnFileSolidification = false;
 			}
 		}
+		SolidifierCollisionPrioritaireSiProcheJoueur(data);
+		if (ModeProfondeurTranchesActif() && recoudreVoisinsVertical)
+			MarquerRemeshVoisinsVerticalDejaMailes(data);
 
 		// 4. Eau : on conserve SurfaceTool ici (chemin robuste visuellement avec le matériau eau existant).
 		var stEau = new SurfaceTool();
@@ -184,24 +232,43 @@ public partial class Monde_Client : Node3D
 		}
 		stEau.GenerateNormals();
 		ArrayMesh meshEau = stEau.Commit();
-		if (meshEau != null && meshEau.GetSurfaceCount() > 0)
+		bool eauPresente = meshEau != null && meshEau.GetSurfaceCount() > 0;
+		if (eauPresente)
 		{
-			Rid waterRid = RenderingServer.Singleton.InstanceCreate();
-			RenderingServer.Singleton.InstanceSetBase(waterRid, meshEau.GetRid());
-			RenderingServer.Singleton.InstanceSetScenario(waterRid, world.Scenario);
-			RenderingServer.Singleton.InstanceSetTransform(waterRid, transformChunk);
+			Rid meshEauRid = meshEau.GetRid();
 			var gestionnaire = GetParent() as Gestionnaire_Monde;
+			if (data.WaterInstanceRID.IsValid)
+			{
+				RenderingServer.Singleton.InstanceSetBase(data.WaterInstanceRID, meshEauRid);
+				RenderingServer.Singleton.InstanceSetTransform(data.WaterInstanceRID, transformChunk);
+				if (data._meshEauRef != null && !ReferenceEquals(data._meshEauRef, meshEau))
+					data._meshEauRef.Dispose();
+			}
+			else
+			{
+				Rid waterRid = RenderingServer.Singleton.InstanceCreate();
+				RenderingServer.Singleton.InstanceSetBase(waterRid, meshEauRid);
+				RenderingServer.Singleton.InstanceSetScenario(waterRid, world.Scenario);
+				RenderingServer.Singleton.InstanceSetTransform(waterRid, transformChunk);
+				data.WaterInstanceRID = waterRid;
+			}
 			if (gestionnaire != null && gestionnaire.MaterielEau != null)
-				RenderingServer.Singleton.InstanceGeometrySetMaterialOverride(waterRid, gestionnaire.MaterielEau.GetRid());
+				RenderingServer.Singleton.InstanceGeometrySetMaterialOverride(data.WaterInstanceRID, gestionnaire.MaterielEau.GetRid());
 			else
 				GD.PrintErr("CRITIQUE: MaterielEau non assigné (Gestionnaire_Monde._Ready n'a pas créé le matériau ou parent absent).");
-			data.WaterInstanceRID = waterRid;
 			data._meshEauRef = meshEau;
+		}
+		else if (data.WaterInstanceRID.IsValid)
+		{
+			RenderingServer.Singleton.FreeRid(data.WaterInstanceRID);
+			data.WaterInstanceRID = default;
+			data._meshEauRef?.Dispose();
+			data._meshEauRef = null;
 		}
 
 		// Fade-in d'émergence (anti pop-in) : on démarre le chunk en transparence totale
 		// et on l'anime vers opaque en DureeFonduEmergenceChunk secondes. Purement visuel.
-		if (DureeFonduEmergenceChunk > 0.01f && data.VisualInstanceRID.IsValid)
+		if (!remplacerVisuelExistant && DureeFonduEmergenceChunk > 0.01f && data.VisualInstanceRID.IsValid)
 		{
 			try
 			{
@@ -219,6 +286,9 @@ public partial class Monde_Client : Node3D
 			}
 			catch { /* InstanceGeometrySetTransparency requiert un material supportant la transparence ; si ça échoue, on laisse le chunk opaque direct (pas de pop-in au moins lissé par le streaming). */ }
 		}
+
+		SynchroniserProxyChunkProfondeur(data.Coordonnees);
+		RestaurerCollisionImmediateSiSousJoueur(data);
 	}
 
 	/// <summary>Avance les fondus d'émergence. Appelé 1×/frame depuis _PhysicsProcess. Retire les anims terminées.</summary>
@@ -261,7 +331,9 @@ public partial class Monde_Client : Node3D
 	public void ReserverChunkSpawnPrioritaire(Vector2I coordSpawn)
 	{
 		// Cap strict : au plus ce qu’il faut pour la dormance + marge ; le radar remplira le reste progressivement.
-		int rayonSpawn = Mathf.Min(RayonChargementChunksActif(), Mathf.Max(RayonDormancePhysique + MargePreloadChunks + 8, 12));
+		int rayonSpawn = ModeProfondeurTranchesActif()
+			? Mathf.Min(RayonChargementChunksActif(), RayonDormancePhysique + MargePreloadChunks + 2)
+			: Mathf.Min(RayonChargementChunksActif(), Mathf.Max(RayonDormancePhysique + MargePreloadChunks + 8, 12));
 		var prioritaire = new List<Vector2I>();
 		for (int dx = -rayonSpawn; dx <= rayonSpawn; dx++)
 			for (int dz = -rayonSpawn; dz <= rayonSpawn; dz++)
@@ -275,6 +347,32 @@ public partial class Monde_Client : Node3D
 		});
 		_chunksACharger.InsertRange(0, prioritaire);
 		_ancienChunkJoueur = coordSpawn;
+		if (ModeProfondeurTranchesActif())
+		{
+			Vector3 posUrgence = EssayerObtenirJoueurDansArbre(out CharacterBody3D joueurSpawn)
+				? joueurSpawn.GlobalPosition
+				: ObtenirPositionObservation();
+			DemanderFenetreVerticaleUrgenteAutourPosition(posUrgence, rayonXZ: 1, demiFenetreY: ConstantesProfondeurVerticale.DemiFenetreTranches);
+		}
+	}
+
+	/// <summary>Au spawn : force les tranches verticales autour du point (fenêtre réduite au boot pour limiter le pic FPS).</summary>
+	private void DemanderFenetreVerticaleUrgenteAutourPosition(Vector3 posMonde, int rayonXZ, int demiFenetreY = -1)
+	{
+		if (_networkManager == null || !ModeProfondeurTranchesActif())
+			return;
+		int demiY = demiFenetreY >= 0 ? demiFenetreY : DemiFenetreTranchesStreamingActif();
+		Vector2I centre = Gestionnaire_Monde.WorldToChunkCoord(posMonde, TailleChunk);
+		ConstantesProfondeurVerticale.RemplirFenetreCoordYAutourJoueur(posMonde.Y, ProfondeurMaxMetres, _coordYActifsProfondeurTravail, demiY);
+		for (int dx = -rayonXZ; dx <= rayonXZ; dx++)
+		{
+			for (int dz = -rayonXZ; dz <= rayonXZ; dz++)
+			{
+				Vector2I cc = new Vector2I(centre.X + dx, centre.Y + dz);
+				foreach (int coordY in _coordYActifsProfondeurTravail)
+					DemanderChunkCouche(cc, coordY, urgent: true);
+			}
+		}
 	}
 
 	private const int MaxMeshesParFrameVisuelles = 2;
@@ -322,6 +420,21 @@ public partial class Monde_Client : Node3D
 						EnfilerSolidificationUrgenteUnique(data);
 					}
 				}
+				else if (ModeProfondeurTranchesActif())
+				{
+					ConstantesProfondeurVerticale.RemplirFenetreCoordYAutourJoueur(pointMonde.Y, ProfondeurMaxMetres, _coordYActifsProfondeurTravail, DemiFenetreTranchesStreamingActif());
+					foreach (int coordY in _coordYActifsProfondeurTravail)
+					{
+						if (!TryGetChunkDataPourCoordY(cc, coordY, out var data) || data == null)
+							continue;
+						if (data.PhysicsBodyRID.IsValid && !data.Dormant && !data.EstEnFileSolidification) continue;
+						if (data.EstEnFileSolidification)
+							RetirerDeFileSolidification(data);
+						else
+							data.EstEnFileSolidification = true;
+						EnfilerSolidificationUrgenteUnique(data);
+					}
+				}
 				else
 				{
 					if (!_chunksData.TryGetValue(cc, out var data)) continue;
@@ -334,5 +447,24 @@ public partial class Monde_Client : Node3D
 				}
 			}
 		}
+	}
+
+	/// <summary>Retire la collision sans détruire le mesh (remesh minage / couture verticale).</summary>
+	private static void LibererPhysiqueChunk(ChunkData data)
+	{
+		if (data == null) return;
+		if (data.PhysicsBodyRID.IsValid)
+		{
+			PhysicsServer3D.Singleton.BodyRemoveShape(data.PhysicsBodyRID, 0);
+			PhysicsServer3D.Singleton.FreeRid(data.PhysicsBodyRID);
+			data.PhysicsBodyRID = default;
+		}
+		if (data._shapeRef != null)
+		{
+			data._shapeRef.Dispose();
+			data._shapeRef = null;
+		}
+		data.PhysicsShapeRID = default;
+		data.EstEnFileSolidification = false;
 	}
 }

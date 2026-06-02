@@ -44,7 +44,7 @@ public partial class Monde_Serveur : Node
 
 	private Node _parentPourBlocsChutants;
 	private Node _parentPourArbres;
-	private Action<Vector2I, List<int>> _onChunkModifie;
+	private Action<Vector2I, int, List<int>> _onChunkModifie;
 	private Action<Vector2I, DonneesChunk> _onEnvoyerChunk;
 	private Action<Vector2I, int, Dictionary<Vector3I, byte>> _onFloreModifie;
 	private Action<Vector3I, byte> _onVoxelModifie;
@@ -139,8 +139,8 @@ public partial class Monde_Serveur : Node
 
 	/// <summary>Pierres chargées depuis disque → instanciation goutte-à-goutte (quand chunk dessiné à l'écran).</summary>
 	private Queue<(Vector3 pos, int id, int indexCache, int indexChimique)> _filePierresAInstancier = new Queue<(Vector3, int, int, int)>();
-	/// <summary>Chambre de stase : roches par coord de chunk. Aucune poussière avant que la croûte (chunk) soit scellée — libérées seulement à l'envoi du chunk.</summary>
-	private Dictionary<Vector2I, List<(Vector3 pos, int id, int indexCache, int indexChimique)>> _rochesEnStase = new Dictionary<Vector2I, List<(Vector3, int, int, int)>>();
+	/// <summary>Chambre de stase : roches par tranche 3D (XZ + coordY). Évite collisions entre tranches verticales.</summary>
+	private Dictionary<Vector3I, List<(Vector3 pos, int id, int indexCache, int indexChimique)>> _rochesEnStase = new Dictionary<Vector3I, List<(Vector3, int, int, int)>>();
 	/// <summary>Micro-dosage : au plus 3 cailloux par frame pour éviter pics CPU / sync BVH Jolt (AddChild lourd).</summary>
 	private const int MaxPierresParFrame = 3;
 
@@ -210,7 +210,7 @@ public partial class Monde_Serveur : Node
 	private readonly uint[,,] _poolSeedsArbres = new uint[PoolEspecesArbre, PoolAgesPregenArbre, PoolVariantesArbreParAge];
 	private int _seedPoolArbres = int.MinValue;
 
-	public void Initialiser(Node parentPourBlocsChutants, Node parentPourArbres, Action<Vector2I, List<int>> onChunkModifie, Action<Vector2I, DonneesChunk> onEnvoyerChunk = null, Action<Vector2I, int, Dictionary<Vector3I, byte>> onFloreModifie = null, Action<Vector3I, byte> onVoxelModifie = null, Action<Vector2I> onOrdonnerDestructionChunk = null, Func<Vector3> obtenirPositionJoueur = null, Func<int> obtenirDimensionActive = null, int dimensionServeurId = (int)DimensionJeu.Alpha)
+	public void Initialiser(Node parentPourBlocsChutants, Node parentPourArbres, Action<Vector2I, int, List<int>> onChunkModifie, Action<Vector2I, DonneesChunk> onEnvoyerChunk = null, Action<Vector2I, int, Dictionary<Vector3I, byte>> onFloreModifie = null, Action<Vector3I, byte> onVoxelModifie = null, Action<Vector2I> onOrdonnerDestructionChunk = null, Func<Vector3> obtenirPositionJoueur = null, Func<int> obtenirDimensionActive = null, int dimensionServeurId = (int)DimensionJeu.Alpha)
 	{
 		_parentPourBlocsChutants = parentPourBlocsChutants;
 		_parentPourArbres = parentPourArbres;
@@ -838,6 +838,22 @@ public partial class Monde_Serveur : Node
 		return false;
 	}
 
+	/// <summary>Au moins une tranche de la colonne XZ est en mémoire (legacy, profondeur 3D ou Abysse).</summary>
+	internal bool ColonneChunkRuntimeChargee(Vector2I coord)
+	{
+		if (_chunks.ContainsKey(coord)) return true;
+		if (ActiverGenerationAbysse && ColonneAbysseExiste(coord)) return true;
+		if (ModeProfondeurActive)
+		{
+			foreach (var kv in _chunksProfonds)
+			{
+				if (kv.Key.X == coord.X && kv.Key.Z == coord.Y)
+					return true;
+			}
+		}
+		return false;
+	}
+
 	private int SauvegarderColonneAbysse(Vector2I coord, bool uniquementSiModifie)
 	{
 		int sauves = 0;
@@ -875,27 +891,50 @@ public partial class Monde_Serveur : Node
 	/// <summary>True si la profondeur étendue (couches verticales sous Y=0) est active pour cette dimension non-Abysse.</summary>
 	private bool ModeProfondeurActive => ActiverProfondeurEtendue && !ActiverGenerationAbysse;
 
+	/// <summary>Hauteur d'une tranche verticale en profondeur (100 m) ; Abysse / legacy utilisent <see cref="HauteurMax"/>.</summary>
+	private int HauteurTrancheProfondeur => ConstantesProfondeurVerticale.HauteurTrancheMetres;
+
+	private int ObtenirHauteurTranchePourChunk(int coordY)
+		=> ModeProfondeurActive ? HauteurTrancheProfondeur : HauteurMax;
+
+	private int CoordYDepuisMondeYProfond(float yMonde)
+		=> ModeProfondeurActive
+			? ConstantesProfondeurVerticale.CoordYDepuisMondeY(yMonde)
+			: CoordYDepuisMondeY(yMonde, HauteurMax);
+
+	private int LocalYDepuisMondeYProfond(int yMonde)
+		=> ModeProfondeurActive
+			? ConstantesProfondeurVerticale.LocalYDepuisMondeY(yMonde)
+			: LocalYDepuisMondeY(yMonde, HauteurMax);
+
 	/// <summary>Y monde du socle dur en mode profondeur étendue (ex. -1000).</summary>
 	private int FondMondeYProfond => -Mathf.Max(0, ProfondeurMaxMetres);
 
 	/// <summary>coordY le plus bas accessible en mode profondeur étendue (couche contenant le socle dur).</summary>
-	private int CoordYMinProfond => CoordYDepuisMondeY(FondMondeYProfond, HauteurMax);
+	private int CoordYMinProfond => ModeProfondeurActive
+		? ConstantesProfondeurVerticale.ClampCoordYProfond(
+			ConstantesProfondeurVerticale.CoordYDepuisMondeY(FondMondeYProfond), ProfondeurMaxMetres)
+		: CoordYDepuisMondeY(FondMondeYProfond, HauteurMax);
 
-	/// <summary>Borne une demande de couche verticale dans la plage valide [CoordYMinProfond, 0] (jamais au-dessus de la surface).</summary>
-	private int ClampCoordYProfond(int coordY) => Mathf.Clamp(coordY, CoordYMinProfond, 0);
+	private int CoordYMaxProfond => ModeProfondeurActive
+		? ConstantesProfondeurVerticale.CoordYMaxSurface()
+		: 0;
+
+	/// <summary>Borne une couche verticale : socle profond → sommet des montagnes (tranches 100 m, surface souvent coordY≥1).</summary>
+	private int ClampCoordYProfond(int coordY) => Mathf.Clamp(coordY, CoordYMinProfond, CoordYMaxProfond);
 
 	/// <summary>Remplit l'ensemble des couches coordY impactées par un rayon autour d'un Y monde (profondeur étendue, coordY bruts).</summary>
 	private void RemplirCoordYImpactesProfond(float yCentreMonde, float rayon, HashSet<int> sortie)
 	{
 		if (sortie == null) return;
 		sortie.Clear();
-		int cyMin = ClampCoordYProfond(CoordYDepuisMondeY(yCentreMonde - rayon, HauteurMax));
-		int cyMax = ClampCoordYProfond(CoordYDepuisMondeY(yCentreMonde + rayon, HauteurMax));
+		int cyMin = ClampCoordYProfond(CoordYDepuisMondeYProfond(yCentreMonde - rayon));
+		int cyMax = ClampCoordYProfond(CoordYDepuisMondeYProfond(yCentreMonde + rayon));
 		if (cyMax < cyMin) { int t = cyMin; cyMin = cyMax; cyMax = t; }
 		for (int cy = cyMin; cy <= cyMax; cy++)
 			sortie.Add(cy);
 		if (sortie.Count == 0)
-			sortie.Add(ClampCoordYProfond(CoordYDepuisMondeY(yCentreMonde, HauteurMax)));
+			sortie.Add(ClampCoordYProfond(CoordYDepuisMondeYProfond(yCentreMonde)));
 	}
 
 	private int ObtenirIndexPalierAbysse(float yMonde)
@@ -922,9 +961,8 @@ public partial class Monde_Serveur : Node
 	private static int LocalYDepuisMondeY(int yMonde, int hauteurMax)
 	{
 		int h = Mathf.Max(1, hauteurMax);
-		int local = yMonde % h;
-		if (local < 0) local += h;
-		return local;
+		int coordY = CoordYDepuisMondeY(yMonde, hauteurMax);
+		return yMonde - coordY * h;
 	}
 
 	private static Vector3I ConstruireCleChunk3D(Vector2I coord, int coordY) => new Vector3I(coord.X, coordY, coord.Y);
@@ -996,9 +1034,11 @@ public partial class Monde_Serveur : Node
 		{
 			int coordYClamp = ClampCoordYProfond(coordY);
 			_chunksProfonds[new Vector3I(coord.X, coordYClamp, coord.Y)] = chunk;
-			// La couche de surface (coordY=0) reste le proxy 2D pour eau/décharge/radar/arbres/pierres.
-			if (coordYClamp == 0)
+			int coordYJoueur = CoordYDepuisMondeYProfond(_obtenirPositionJoueur?.Invoke().Y ?? 0f);
+			if (Mathf.Abs(coordYClamp - coordYJoueur) <= ConstantesProfondeurVerticale.DemiFenetreTranches)
 				_chunks[coord] = chunk;
+			SynchroniserFrontieresVerticalesProfond(coord, chunk);
+			HarmoniserEauVerticaleProfondeur(coord, chunk);
 			return;
 		}
 		_chunks[coord] = chunk;
@@ -1077,6 +1117,8 @@ public partial class Monde_Serveur : Node
 		}
 		DefinirChunkRuntime(coord, coordYLocal, chunkActuel);
 		SynchroniserFrontieresAvecVoisinsCharges(coord, chunkActuel);
+		if (ModeProfondeurActive)
+			SynchroniserFrontieresVerticalesProfond(coord, chunkActuel);
 		RepousserBorduresChunkDisqueVersVoisinsProceduraux(coord, chunkActuel);
 		return chunkActuel;
 	}
@@ -1138,6 +1180,168 @@ public partial class Monde_Serveur : Node
 		if (_chunks.TryGetValue(new Vector2I(coord.X + 1, coord.Y + 1), out var sudEst) && !(chunk.EstChargeDepuisDisque && !sudEst.EstChargeDepuisDisque))
 			for (int y = 0; y <= HauteurMax; y++)
 				chunk.SetVoxelLocal(TailleChunk, y, TailleChunk, sudEst.LireVoxelLocalBrut(0, y, 0), false);
+	}
+
+	/// <summary>Couture Y entre tranches de 100 m : aligne le bas/haut avec coordY±1 (grottes continues).</summary>
+	private void SynchroniserFrontieresVerticalesProfond(Vector2I coord, Chunk_Serveur chunk)
+	{
+		if (chunk == null || !ModeProfondeurActive) return;
+		int h = chunk.HauteurMax;
+		int cy = chunk.ChunkOffsetY;
+
+		void CopierFaceDepuisVoisinVertical(Chunk_Serveur voisin, int sourceLy, int destLy)
+		{
+			if (voisin == null) return;
+			if (chunk.EstChargeDepuisDisque && !voisin.EstChargeDepuisDisque) return;
+			for (int x = 0; x <= TailleChunk; x++)
+				for (int z = 0; z <= TailleChunk; z++)
+					chunk.SetVoxelLocal(x, destLy, z, voisin.LireVoxelLocalBrut(x, sourceLy, z), false);
+		}
+
+		if (TryGetChunkRuntime(coord, cy - 1, out var dessous) && dessous != null)
+		{
+			CopierFaceDepuisVoisinVertical(dessous, h, 0);
+			RepousserFaceVersVoisinVertical(dessous, 0, h, chunk);
+		}
+		if (TryGetChunkRuntime(coord, cy + 1, out var dessus) && dessus != null)
+		{
+			CopierFaceDepuisVoisinVertical(dessus, 0, h);
+			RepousserFaceVersVoisinVertical(dessus, h, 0, chunk);
+		}
+
+		void RepousserFaceVersVoisinVertical(Chunk_Serveur voisin, int sourceLy, int destLy, Chunk_Serveur sourceChunk)
+		{
+			if (voisin == null || sourceChunk == null) return;
+			if (voisin.EstChargeDepuisDisque && !sourceChunk.EstChargeDepuisDisque) return;
+			for (int x = 0; x <= TailleChunk; x++)
+				for (int z = 0; z <= TailleChunk; z++)
+					voisin.SetVoxelLocal(x, destLy, z, sourceChunk.LireVoxelLocalBrut(x, sourceLy, z), false);
+		}
+	}
+
+	/// <summary>Propage l'eau à travers les jonctions Y=100, 200… (évite une « surface » d'eau au milieu d'une colonne immergée).</summary>
+	private void HarmoniserEauVerticaleProfondeur(Vector2I coord, Chunk_Serveur chunk)
+	{
+		if (!ModeProfondeurActive || chunk == null) return;
+		int cy = chunk.ChunkOffsetY;
+		int h = chunk.HauteurMax;
+		int yBaseMonde = cy * h;
+		const int niveauEauMonde = ConstantesProfondeurVerticale.NiveauEauMondeAlpha;
+
+		NettoyerEauAuDessusNiveauMer(chunk);
+
+		int yMaxEauLocal = ConstantesProfondeurVerticale.ObtenirYMaxEauLocalTranche(cy, h, niveauEauMonde);
+		if (yMaxEauLocal > 0 && TryGetChunkRuntime(coord, cy - 1, out var dessous) && dessous != null)
+		{
+			for (int x = 0; x <= TailleChunk; x++)
+			{
+				for (int z = 0; z <= TailleChunk; z++)
+				{
+					int lySource = h;
+					if (dessous.LireVoxelLocalBrut(x, lySource, z) != 4 && lySource > 0
+						&& dessous.LireVoxelLocalBrut(x, lySource - 1, z) == 4)
+						lySource = lySource - 1;
+					if (dessous.LireVoxelLocalBrut(x, lySource, z) != 4)
+						continue;
+					for (int y = 0; y <= yMaxEauLocal; y++)
+					{
+						if (chunk.LireVoxelLocalBrut(x, y, z) != 0) break;
+						chunk.DefinirVoxelEau(x, y, z);
+					}
+				}
+			}
+		}
+
+		var role = ConstantesProfondeurVerticale.ObtenirRoleTrancheEauMer(cy, h, niveauEauMonde);
+		if (yMaxEauLocal > 0 && (role == ConstantesProfondeurVerticale.RoleTrancheEauMer.Chapeau
+			|| role == ConstantesProfondeurVerticale.RoleTrancheEauMer.Corps))
+			RemplirEauVolumeMer3DServeur(chunk, yBaseMonde, yMaxEauLocal, niveauEauMonde);
+
+		if (TryGetChunkRuntime(coord, cy + 1, out var dessus) && dessus != null && !dessus.EstChargeDepuisDisque)
+			HarmoniserEauVerticaleProfondeur(coord, dessus);
+		FusionnerJonctionEauMerVerticaleServeur(chunk);
+	}
+
+	private void RemplirEauVolumeMer3DServeur(Chunk_Serveur chunk, int yBaseMonde, int yMaxEauLocal, int niveauEauMonde)
+	{
+		int h = chunk.HauteurMax;
+		for (int x = 0; x <= TailleChunk; x++)
+		{
+			for (int z = 0; z <= TailleChunk; z++)
+			{
+				int sommetSolide = -1;
+				for (int ly = h; ly >= 0; ly--)
+				{
+					byte v = chunk.LireVoxelLocalBrut(x, ly, z);
+					if (v != 0 && v != 4)
+					{
+						sommetSolide = ly;
+						break;
+					}
+				}
+				int yDebut = Mathf.Clamp(sommetSolide + 1, 0, yMaxEauLocal);
+				for (int y = yDebut; y <= yMaxEauLocal; y++)
+				{
+					if (yBaseMonde + y > niveauEauMonde) continue;
+					if (chunk.LireVoxelLocalBrut(x, y, z) != 0) continue;
+					chunk.DefinirVoxelEau(x, y, z);
+				}
+			}
+		}
+	}
+
+	private void FusionnerJonctionEauMerVerticaleServeur(Chunk_Serveur chunk)
+	{
+		if (!ModeProfondeurActive || chunk == null) return;
+		int h = chunk.HauteurMax;
+		int cy = chunk.ChunkOffsetY;
+		const int niveauEauMonde = ConstantesProfondeurVerticale.NiveauEauMondeAlpha;
+		int yJonction = ConstantesProfondeurVerticale.MondeYJonctionTrancheSup(cy, h);
+		if (niveauEauMonde < yJonction)
+			return;
+		if (ConstantesProfondeurVerticale.ObtenirRoleTrancheEauMer(cy, h, niveauEauMonde)
+			!= ConstantesProfondeurVerticale.RoleTrancheEauMer.Corps)
+			return;
+		Vector2I coord = new Vector2I(chunk.ChunkOffsetX, chunk.ChunkOffsetZ);
+		bool dessusCharge = TryGetChunkRuntime(coord, cy + 1, out var dessus) && dessus != null;
+		for (int x = 0; x <= TailleChunk; x++)
+		{
+			for (int z = 0; z <= TailleChunk; z++)
+			{
+				if (yJonction > niveauEauMonde)
+					continue;
+				byte vJonction = chunk.LireVoxelLocalBrut(x, h, z);
+				if (vJonction != 0 && vJonction != 4)
+					continue;
+				if (h > 0)
+				{
+					byte vSous = chunk.LireVoxelLocalBrut(x, h - 1, z);
+					if (vSous != 0 && vSous != 4)
+						continue;
+				}
+				bool eauJusteEnDessous = h > 0 && chunk.LireVoxelLocalBrut(x, h - 1, z) == 4;
+				if (dessusCharge && dessus.LireVoxelLocalBrut(x, 0, z) == 4)
+					chunk.DefinirVoxelEau(x, h, z);
+				else if (eauJusteEnDessous)
+					chunk.DefinirVoxelEau(x, h, z);
+			}
+		}
+	}
+
+	private void NettoyerEauAuDessusNiveauMer(Chunk_Serveur chunk)
+	{
+		if (!ModeProfondeurActive || chunk == null) return;
+		int h = chunk.HauteurMax;
+		int yBaseMonde = chunk.ChunkOffsetY * h;
+		const int niveauEauMonde = ConstantesProfondeurVerticale.NiveauEauMondeAlpha;
+		for (int x = 0; x <= TailleChunk; x++)
+			for (int z = 0; z <= TailleChunk; z++)
+				for (int y = 0; y <= h; y++)
+				{
+					if (yBaseMonde + y <= niveauEauMonde) continue;
+					if (chunk.LireVoxelLocalBrut(x, y, z) == 4)
+						chunk.DefinirVoxelAir(x, y, z);
+				}
 	}
 
 	/// <summary>Après résurrection disque : recopie la bordure sauvegardée vers les voisins procéduraux déjà en RAM, puis ré-enfile leur envoi client.</summary>
@@ -1212,10 +1416,17 @@ public partial class Monde_Serveur : Node
 		_fileEnvoiReseau.Enqueue(new ColisChunk { Coord = coord, Donnees = ch.ObtenirDonneesPourClient() });
 	}
 
+	private void EnfileEnvoiCompletChunkProfondAuClient(Vector2I coord, int coordY)
+	{
+		if (!ModeProfondeurActive || !TryGetChunkRuntime(coord, coordY, out var ch) || ch == null) return;
+		_fileEnvoiReseau.Enqueue(new ColisChunk { Coord = coord, Donnees = ch.ObtenirDonneesPourClient() });
+	}
+
 	private Chunk_Serveur CreerChunkServeur(Vector2I coord, int coordY = 0)
 	{
+		int hauteurTranche = ObtenirHauteurTranchePourChunk(coordY);
 		var chunk = new Chunk_Serveur(
-			coord.X, coordY, coord.Y, TailleChunk, HauteurMax, SeedTerrain,
+			coord.X, coordY, coord.Y, TailleChunk, hauteurTranche, SeedTerrain,
 			(pos, mat, brancheTailléeBuisson, indexCouleurBaie) => { SpawnBlocChutant(pos, mat, brancheTailléeBuisson, indexCouleurBaie); },
 			ChunkEstCharge,
 			ReveillerEauAdjacente,
@@ -1317,7 +1528,7 @@ public partial class Monde_Serveur : Node
 						pierres.Add((new Vector3(x, y, z), id, indexCache, indexChimique));
 				}
 			}
-			MettreRochesEnStase(coord, pierres);
+			MettreRochesEnStase(coord, coordY, pierres);
 			return true;
 		}
 		catch (Exception ex) { GD.PrintErr($"ZERO-K : Erreur chargement pierres chunk {coord} : {ex.Message}"); return false; }
@@ -1414,31 +1625,31 @@ public partial class Monde_Serveur : Node
 		if (lx < 0 || lx >= TailleChunk || lz < 0 || lz >= TailleChunk)
 			return false;
 
-		ObtenirOuCreerChunk(coordChunk, 0);
-
 		const int yMondeMin = 3;
 		int hProc = Generateur_Voxel.ObtenirHauteurTerrainMonde(gx, gz, SeedTerrain);
-		// Fenêtre autour de la hauteur « carte » : évite de prendre un plafon de grotte / surplomb très au-dessus du sol jouable.
-		int yHaut = Mathf.Min(HauteurMax - 1, hProc + 72);
-		int yBas = Mathf.Max(yMondeMin, hProc - 160);
+		int coordYSurface = ModeProfondeurActive ? CoordYDepuisMondeYProfond(hProc) : 0;
+		ObtenirOuCreerChunk(coordChunk, coordYSurface);
+		if (ModeProfondeurActive && coordYSurface > CoordYMinProfond)
+			ObtenirOuCreerChunk(coordChunk, coordYSurface - 1);
+
+		int yHaut = hProc + 24;
+		int yBas = Mathf.Max(yMondeMin, hProc - 48);
+		if (ModeProfondeurActive)
+		{
+			yHaut = Mathf.Min(hProc + 24, (coordYSurface + 2) * HauteurTrancheProfondeur - 1);
+			yBas = Mathf.Max(yMondeMin, (coordYSurface - 2) * HauteurTrancheProfondeur);
+		}
+		else
+		{
+			yHaut = Mathf.Min(HauteurMax - 1, hProc + 72);
+			yBas = Mathf.Max(yMondeMin, hProc - 160);
+		}
 		for (int gy = yHaut; gy >= yBas; gy--)
 		{
 			var pos = new Vector3I(gx, gy, gz);
 			if (EstVoxelAir(pos))
 				continue;
-			bool videAuDessus = gy + 1 >= HauteurMax || EstVoxelAir(new Vector3I(gx, gy + 1, gz));
-			if (!videAuDessus)
-				continue;
-			ySurface = gy + 1f;
-			return true;
-		}
-
-		for (int gy = HauteurMax - 1; gy >= yMondeMin; gy--)
-		{
-			var pos = new Vector3I(gx, gy, gz);
-			if (EstVoxelAir(pos))
-				continue;
-			bool videAuDessus = gy + 1 >= HauteurMax || EstVoxelAir(new Vector3I(gx, gy + 1, gz));
+			bool videAuDessus = EstVoxelAir(new Vector3I(gx, gy + 1, gz));
 			if (!videAuDessus)
 				continue;
 			ySurface = gy + 1f;
@@ -1452,11 +1663,11 @@ public partial class Monde_Serveur : Node
 	{
 		Gestionnaire_Monde.WorldToChunkAndLocal(pos.X, pos.Z, TailleChunk, out Vector2I c, out int lx, out int lz);
 		if (lx < 0 || lx > TailleChunk || lz < 0 || lz > TailleChunk) return null;
-		int coordYLocal = CoordYDepuisMondeY(pos.Y, HauteurMax);
+		int coordYLocal = CoordYDepuisMondeYProfond(pos.Y);
 		Vector2I coord = new Vector2I(c.X, c.Y);
 		if (!TryGetChunkRuntime(coord, coordYLocal, out var ch))
 			return null;
-		int localY = LocalYDepuisMondeY(pos.Y, HauteurMax);
+		int localY = LocalYDepuisMondeYProfond(pos.Y);
 		return (ch, new Vector3I(lx, localY, lz));
 	}
 
@@ -1502,8 +1713,8 @@ public partial class Monde_Serveur : Node
 		int cx = c.X;
 		int cz = c.Y;
 
-		int chunkY = CoordYDepuisMondeY(posGlobal.Y, HauteurMax);
-		int localY = LocalYDepuisMondeY(posGlobal.Y, HauteurMax);
+		int chunkY = CoordYDepuisMondeYProfond(posGlobal.Y);
+		int localY = LocalYDepuisMondeYProfond(posGlobal.Y);
 
 		Chunk_Serveur ObtenirVoisinPadding(int chunkX, int chunkZ)
 		{
@@ -1524,6 +1735,25 @@ public partial class Monde_Serveur : Node
 			ObtenirVoisinPadding(cx, cz - 1)?.SetVoxelLocal(localX, localY, TailleChunk, id);
 		if (localX == 0 && localZ == 0)
 			ObtenirVoisinPadding(cx - 1, cz - 1)?.SetVoxelLocal(TailleChunk, localY, TailleChunk, id);
+
+		if (!ModeProfondeurActive) return;
+		int hauteurTranche = HauteurTrancheProfondeur;
+		Chunk_Serveur ObtenirVoisinVertical(int targetCoordY)
+		{
+			if (TryGetChunkRuntime(new Vector2I(cx, cz), targetCoordY, out var voisin) && voisin != null)
+				return voisin;
+			return ObtenirOuCreerChunk(new Vector2I(cx, cz), targetCoordY);
+		}
+		Chunk_Serveur chunkCourant = ObtenirVoisinVertical(chunkY);
+		// Frontière basse de tranche (ly=0) ↔ padding ly=h de la tranche du dessous.
+		if (localY == 0 && chunkY > CoordYMinProfond)
+			ObtenirVoisinVertical(chunkY - 1)?.SetVoxelLocal(localX, hauteurTranche, localZ, id);
+		// Dernière rangée modifiable (ly=h-1) : met à jour le padding haut local + ly=0 de la tranche au-dessus.
+		if (localY == hauteurTranche - 1)
+		{
+			chunkCourant?.SetVoxelLocal(localX, hauteurTranche, localZ, id);
+			ObtenirVoisinVertical(chunkY + 1)?.SetVoxelLocal(localX, 0, localZ, id);
+		}
 	}
 
 	private void DemanderMiseAJourMesh(Vector3I pos)
@@ -1533,11 +1763,41 @@ public partial class Monde_Serveur : Node
 		Gestionnaire_Monde.WorldToChunkAndLocal(pos.X, pos.Z, TailleChunk, out Vector2I c, out int lx, out int lz);
 		int cx = c.X;
 		int cz = c.Y;
-		int localY = LocalYDepuisMondeY(pos.Y, HauteurMax);
-		int sec = Mathf.Clamp(Mathf.FloorToInt(localY / 16f), 0, 44);  // section locale dans la tranche verticale active
-		_onChunkModifie?.Invoke(new Vector2I(cx, cz), new List<int> { sec });
-		if (lx == 0) _onChunkModifie?.Invoke(new Vector2I(cx - 1, cz), new List<int> { sec });
-		if (lz == 0) _onChunkModifie?.Invoke(new Vector2I(cx, cz - 1), new List<int> { sec });
+		int coordYChunk = CoordYDepuisMondeYProfond(pos.Y);
+		int localY = LocalYDepuisMondeYProfond(pos.Y);
+		int nbSec = ConstantesProfondeurVerticale.ObtenirNbSections(
+			ModeProfondeurActive ? HauteurTrancheProfondeur : HauteurMax);
+		int sec = Mathf.Clamp(Mathf.FloorToInt(localY / (float)ConstantesProfondeurVerticale.HauteurSectionMetres), 0, nbSec - 1);
+		var sections = new List<int> { sec };
+		if (sec > 0) sections.Add(sec - 1);
+		if (sec < nbSec - 1) sections.Add(sec + 1);
+		if (ModeProfondeurActive)
+		{
+			if (localY <= 2 && TryGetChunkRuntime(new Vector2I(cx, cz), coordYChunk - 1, out _))
+			{
+				int nbBas = ConstantesProfondeurVerticale.ObtenirNbSections(HauteurTrancheProfondeur);
+				sections.Add(nbBas - 1);
+				sections.Add(nbBas - 2);
+			}
+			if (localY >= HauteurTrancheProfondeur - 3 && TryGetChunkRuntime(new Vector2I(cx, cz), coordYChunk + 1, out _))
+			{
+				sections.Add(0);
+				sections.Add(1);
+			}
+		}
+		_onChunkModifie?.Invoke(new Vector2I(cx, cz), coordYChunk, sections);
+		if (lx == 0) _onChunkModifie?.Invoke(new Vector2I(cx - 1, cz), coordYChunk, new List<int>(sections));
+		if (lz == 0) _onChunkModifie?.Invoke(new Vector2I(cx, cz - 1), coordYChunk, new List<int>(sections));
+		if (ModeProfondeurActive)
+		{
+			int nbBas = ConstantesProfondeurVerticale.ObtenirNbSections(HauteurTrancheProfondeur);
+			var sectionsBas = new List<int> { nbBas - 1, nbBas - 2 };
+			var sectionsHaut = new List<int> { 0, 1 };
+			if (localY <= 2 && coordYChunk > CoordYMinProfond)
+				_onChunkModifie?.Invoke(new Vector2I(cx, cz), coordYChunk - 1, sectionsBas);
+			if (localY >= HauteurTrancheProfondeur - 3 && coordYChunk < ConstantesProfondeurVerticale.CoordYMaxSurface())
+				_onChunkModifie?.Invoke(new Vector2I(cx, cz), coordYChunk + 1, sectionsHaut);
+		}
 	}
 
 	public static int ObtenirHauteurTerrainMonde(int worldX, int worldZ, int seed)
@@ -1584,9 +1844,18 @@ public partial class Monde_Serveur : Node
 		int dx = chunk.Coord.X - obs.X;
 		int dz = chunk.Coord.Y - obs.Y;
 		if (!chunk.EstAbysse)
+		{
+			// En profondeur étendue (non-Abysse), intégrer l'écart vertical évite de traiter
+			// en retard les couches immédiatement au-dessus/au-dessous du joueur.
+			if (ModeProfondeurActive)
+			{
+				int dy = chunk.CoordY - CoordYDepuisMondeY(posObservation.Y, HauteurMax);
+				return dx * dx + dz * dz + (dy * dy);
+			}
 			return dx * dx + dz * dz;
-		int dy = chunk.CoordY - CoordYDepuisMondeY(posObservation.Y, HauteurMax);
-		return dx * dx + dz * dz + (dy * dy);
+		}
+		int dyAbysse = chunk.CoordY - CoordYDepuisMondeY(posObservation.Y, HauteurMax);
+		return dx * dx + dz * dz + (dyAbysse * dyAbysse);
 	}
 
 	/// <summary>Extraction radiale : le chunk à distance minimale de l'épicentre. DistanceSquaredTo évite la racine carrée.</summary>
@@ -1602,10 +1871,13 @@ public partial class Monde_Serveur : Node
 			DemandeChunk entree = liste[i];
 			Vector2 posChunk = new Vector2(entree.Coord.X, entree.Coord.Y);
 			float dist = posObsV2.DistanceSquaredTo(posChunk);
-			if (entree.EstAbysse)
+			if (entree.EstAbysse || ModeProfondeurActive)
 			{
-				int dy = entree.CoordY - CoordYDepuisMondeY(positionObservation.Y, HauteurMax);
+				int coordYObs = CoordYDepuisMondeY(positionObservation.Y, HauteurMax);
+				int dy = entree.CoordY - coordYObs;
 				dist += dy * dy;
+				if (ModeProfondeurActive && positionObservation.Y <= 0f && entree.CoordY < coordYObs)
+					dist -= 2f;
 			}
 			if (dist < distanceMin)
 			{

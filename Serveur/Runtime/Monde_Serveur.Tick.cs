@@ -56,7 +56,7 @@ public partial class Monde_Serveur : Node
 			if (ActiverGenerationAbysse)
 			{
 				_fileEnvoiReseau.Enqueue(new ColisChunk { Coord = result.coord, Donnees = result.chunk.ObtenirDonneesPourClient() });
-				_spawnPipelineService.DeclencherEnsemencement(result.coord, result.chunk, TailleChunk, (coord, ch) => _spawnPipelineService.LibererRochesChunk(coord));
+				_spawnPipelineService.DeclencherEnsemencement(result.coord, result.chunk, TailleChunk, (coord, ch) => _spawnPipelineService.LibererRochesChunk(coord, ch.ChunkOffsetY));
 			}
 			else
 			{
@@ -89,10 +89,12 @@ public partial class Monde_Serveur : Node
 		});
 
 		Vector3 posObservation = posObs;
-		int budgetChargesDisque = ActiverGenerationAbysse ? Mathf.Max(4, MaxChargesDisqueParTick * 5) : MaxChargesDisqueParTick;
+		int budgetChargesDisque = ActiverGenerationAbysse
+			? Mathf.Max(4, MaxChargesDisqueParTick * 5)
+			: (ModeProfondeurActive ? Mathf.Max(3, MaxChargesDisqueParTick * 3) : MaxChargesDisqueParTick);
 		int budgetDemandes = ActiverGenerationAbysse
 			? Mathf.Max(2, MaxDemandesChunksAbysseParTick + 2)
-			: Mathf.Max(1, MaxDemandesChunksParTick);
+			: (ModeProfondeurActive ? Mathf.Max(8, MaxDemandesChunksParTick * 4) : Mathf.Max(1, MaxDemandesChunksParTick));
 		while (_chunksEnAttenteEnvoi.Count > 0 && _chunksEnGenerationActive < LancerMaxTaches && demandesTraitees < budgetDemandes)
 		{
 			demandesTraitees++;
@@ -143,7 +145,7 @@ public partial class Monde_Serveur : Node
 				if (ActiverGenerationAbysse)
 				{
 					_fileEnvoiReseau.Enqueue(new ColisChunk { Coord = chunkCible, Donnees = chunkActuel.ObtenirDonneesPourClient() });
-					_spawnPipelineService.DeclencherEnsemencement(chunkCible, chunkActuel, TailleChunk, (coord, ch) => _spawnPipelineService.LibererRochesChunk(coord));
+					_spawnPipelineService.DeclencherEnsemencement(chunkCible, chunkActuel, TailleChunk, (coord, ch) => _spawnPipelineService.LibererRochesChunk(coord, ch.ChunkOffsetY));
 				}
 				else
 				{
@@ -165,7 +167,7 @@ public partial class Monde_Serveur : Node
 		{
 			ColisChunk colis = _fileEnvoiReseau.Dequeue();
 			_onEnvoyerChunk?.Invoke(colis.Coord, colis.Donnees);
-			_spawnPipelineService.LibererRochesChunk(colis.Coord);
+			_spawnPipelineService.LibererRochesChunk(colis.Coord, colis.Donnees?.CoordChunkY ?? 0);
 			envoisCeTick++;
 		}
 		return envoisCeTick;
@@ -183,7 +185,7 @@ public partial class Monde_Serveur : Node
 		{
 			if (Time.GetTicksUsec() - t0Arbres >= budgetUsArbres) break;
 			var a = _fileSpawnArbres.Dequeue();
-			if (!_chunks.ContainsKey(a.coord)) continue;
+			if (!ColonneChunkRuntimeChargee(a.coord)) continue;
 			InstancierArbreVivant(a.pos, a.age, a.seed, a.indexBotanique, a.joursRattrapage);
 			nArbres++;
 		}

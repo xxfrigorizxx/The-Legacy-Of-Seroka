@@ -419,9 +419,9 @@ public partial class Monde_Serveur : Node
 				int? ySolideSousPied = null;
 				for (int gy = yTop; gy >= yScanMin; gy--)
 				{
-					int coordYSlice = CoordYDepuisMondeY(gy, HauteurMax);
+					int coordYSlice = ModeProfondeurActive ? CoordYDepuisMondeYProfond(gy) : CoordYDepuisMondeY(gy, HauteurMax);
 					Chunk_Serveur chunkScan = ObtenirOuCreerChunk(coordChunk, coordYSlice);
-					int lyScan = LocalYDepuisMondeY(gy, HauteurMax);
+					int lyScan = ModeProfondeurActive ? LocalYDepuisMondeYProfond(gy) : LocalYDepuisMondeY(gy, HauteurMax);
 					if (!chunkScan.EstVoxelAir(lx, lyScan, lz))
 					{
 						ySolideSousPied = gy;
@@ -434,9 +434,9 @@ public partial class Monde_Serveur : Node
 
 				for (int gy = ySolideSousPied.Value + 1; gy <= yTop; gy++)
 				{
-					int coordYSlice = CoordYDepuisMondeY(gy, HauteurMax);
+					int coordYSlice = ModeProfondeurActive ? CoordYDepuisMondeYProfond(gy) : CoordYDepuisMondeY(gy, HauteurMax);
 					Chunk_Serveur chunk = ObtenirOuCreerChunk(coordChunk, coordYSlice);
-					int ly = LocalYDepuisMondeY(gy, HauteurMax);
+					int ly = ModeProfondeurActive ? LocalYDepuisMondeYProfond(gy) : LocalYDepuisMondeY(gy, HauteurMax);
 					if (!chunk.EstVoxelAir(lx, ly, lz))
 						continue;
 					byte id = gy == yTop ? idHerbe : idTerre;

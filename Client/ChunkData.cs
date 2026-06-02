@@ -13,6 +13,16 @@ public class ChunkData
 	public int TailleChunk { get; set; }
 	public int HauteurMax { get; set; }
 
+	/// <summary>Origine Y monde de cette tranche (profondeur 100 m : coordY×100 ; Abysse/legacy : coordY×720).</summary>
+	public float ObtenirOffsetYMonde()
+	{
+		int h = HauteurMax > 0 ? HauteurMax : ConstantesProfondeurVerticale.HauteurTrancheMetres;
+		return CoordChunkY * h;
+	}
+
+	public Vector3 ObtenirOrigineMonde(int tailleChunk)
+		=> new Vector3(Coordonnees.X * tailleChunk, ObtenirOffsetYMonde(), Coordonnees.Y * tailleChunk);
+
 	/// <summary>Identifiant GPU de l'instance de rendu (RenderingServer).</summary>
 	public Rid VisualInstanceRID { get; set; }
 	/// <summary>Identifiant GPU de l'instance de rendu pour l'eau (RenderingServer).</summary>

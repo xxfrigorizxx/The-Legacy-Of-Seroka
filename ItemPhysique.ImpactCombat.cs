@@ -140,13 +140,22 @@ public partial class ItemPhysique : RigidBody3D
 		if (EstIdRocheMatiere(ID_Objet) && body is CharacterBody3D && energieCinetique < 220f)
 			return;
 
+		// Choc roche↔roche en chute libre (grottes / sol pas encore solidifié) : pas de fracture en cascade.
+		if (EstIdRocheMatiere(ID_Objet) && body is ItemPhysique autreRoche && !frappeLeSol)
+		{
+			if (EstEclatFracture || autreRoche.EstEclatFracture)
+				return;
+			if (energieCinetique < 180f)
+				return;
+		}
+
 		// 3. Dureté adverse
 		float dureteAdverse = 50f;
 		if (frappeLeSol)
 			dureteAdverse = 80f;
-		else if (body is ItemPhysique autreRoche)
+		else if (body is ItemPhysique autreRocheContact)
 		{
-			int idxAutre = Mathf.Clamp(autreRoche.IndexChimique, 0, TableGeologique.Length - 1);
+			int idxAutre = Mathf.Clamp(autreRocheContact.IndexChimique, 0, TableGeologique.Length - 1);
 			dureteAdverse = TableGeologique[idxAutre].ResistanceFuture;
 		}
 

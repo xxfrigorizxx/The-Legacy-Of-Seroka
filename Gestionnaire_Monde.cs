@@ -13,6 +13,8 @@ public partial class Gestionnaire_Monde : Node3D
 	/// <summary>Profondeur étendue des dimensions alpha-like (Alpha/Beta/Omega/Delta) : le sous-sol descend jusqu'à -<see cref="ProfondeurMaxMetres"/> sans changer la surface. Mettre à false pour revenir au socle Y=0.</summary>
 	[Export] public bool ActiverProfondeurEtendue = true;
 	[Export] public int ProfondeurMaxMetres = 1000;
+	/// <summary>Hauteur d'une tranche verticale en profondeur étendue (100 m, 7 sections MC).</summary>
+	public int HauteurTrancheProfondeurMetres => ConstantesProfondeurVerticale.HauteurTrancheMetres;
 	[Export] public int RenderDistance = 14;
 	[Export] public int RenderDistanceDetailChunks = 10;
 	[Export] public int RayonQualiteProcheChunks = 5;
@@ -39,7 +41,7 @@ public partial class Gestionnaire_Monde : Node3D
 	[Export] public float IntervalleAutosauvegardeSecondes = 25f;
 	[Export] public int MaxChunksAutosauvegardeParCycle = 4;
 	[Export] public bool ExigerBootstrapClientStableAvantMasquerOverlay = true;
-	[Export(PropertyHint.Range, "0,120,1")] public float DureeMaxAttenteBootstrapClientSec = 18f;
+	[Export(PropertyHint.Range, "0,120,1")] public float DureeMaxAttenteBootstrapClientSec = 10f;
 	[ExportGroup("Profil matériel auto")]
 	[Export] public bool ActiverProfilMaterielAuto = true;
 	[Export] public bool ForcerProfilGTX1060i710700F = false;
@@ -614,8 +616,21 @@ public partial class Gestionnaire_Monde : Node3D
 		Vector3 posJoueur = _joueur.GlobalPosition;
 		if (_dimensionLocaleActive == (int)DimensionJeu.Abysse)
 			return _mondeClient.AbysseCollisionLocaleActive(posJoueur);
+		if (_mondeClient.EstModeProfondeurTranchesActif())
+			return _mondeClient.ChunkSousPiedsAPret();
 		Vector2I c = WorldToChunkCoord(posJoueur, TailleChunk);
 		return _mondeClient.ChunkCollisionActive(c);
+	}
+
+	/// <summary>Mesh visible devant le joueur en course sans collision (frein horizontal uniquement).</summary>
+	public bool EstFreinCorridorMeshSansCollisionActif()
+	{
+		if (!UseArchitectureReseau || _mondeClient == null || !JoueurReferenceValide())
+			return false;
+		if (!_mondeClient.EstModeProfondeurTranchesActif())
+			return false;
+		Vector3 v = _joueur.Velocity;
+		return _mondeClient.CorridorMarcheBloque(_joueur.GlobalPosition, new Vector3(v.X, 0f, v.Z));
 	}
 
 	private void JournaliserDiagnosticCollisionAbysse()
@@ -736,9 +751,8 @@ public partial class Gestionnaire_Monde : Node3D
 		}
 
 		int hauteurTerrain = Generateur_Voxel.ObtenirHauteurTerrainMonde(meilleurX, meilleurZ, SeedTerrain);
-		// Quelques mètres au-dessus du relief : le raycast final pose les pieds. +40 laissait le corps dans le ciel si le sol tardait ou si le raycast échouait.
-		float ySpawn = hauteurTerrain + 10f;
-		if (hauteurTerrain < 103) ySpawn = Mathf.Max(ySpawn, 142f);
+		// Surface procédurale + marge : le raycast / collision client finalise les pieds une fois la tranche surface (coordY≈1) chargée.
+		float ySpawn = hauteurTerrain + 3f;
 		return new Vector3(meilleurX + 0.5f, ySpawn, meilleurZ + 0.5f);
 	}
 
@@ -800,7 +814,9 @@ public partial class Gestionnaire_Monde : Node3D
 		float yMinSecurise = _joueur is Joueur jo2
 			? jo2.CalculerYOriginePourPiedsSurSurface(hauteurTerrain + 0.25f)
 			: hauteurTerrain + 2.2f;
-		if (pos.Y < yMinSecurise)
+		// Respawn post-mort en grotte: on conserve la hauteur sauvegardée et on évite
+		// de remonter artificiellement le joueur en surface.
+		if (!conserverHauteurSauvegardee && pos.Y < yMinSecurise)
 		{
 			GD.Print($"ZERO-K : Spawn corrigé (anti sous-map) {pos.Y:0.00} -> {yMinSecurise:0.00}");
 			pos.Y = yMinSecurise;
@@ -987,9 +1003,14 @@ public partial class Gestionnaire_Monde : Node3D
 		}
 
 		if (!autoriserFallbackSansRaycast)
+		{
+			// Pas encore de collision : pose procédurale (surface ~h+1) pour éviter chute dans le vide.
+			Vector3 posProc = AssurerSpawnAuDessusDuSol(_spawnInitialEnAttente);
+			_joueur.GlobalPosition = posProc;
+			_joueur.Velocity = Vector3.Zero;
 			return false;
+		}
 
-		// Fallback ultime (timeout long uniquement).
 		Vector3 posFallback = AssurerSpawnAuDessusDuSol(_spawnInitialEnAttente);
 		_joueur.GlobalPosition = posFallback;
 		_joueur.Velocity = Vector3.Zero;

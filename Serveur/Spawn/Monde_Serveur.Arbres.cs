@@ -118,10 +118,8 @@ public partial class Monde_Serveur : Node
 	{
 		if (ChargerArbresChunk(coord, chunk))
 			return;
-		// Migration : un chunk APISARA chargé du disque AVANT que les arbres soient persistés (ancien build) a un
-		// InventaireArbres vide. On rejoue UNE fois la passe procédurale arbres (rules déterministes) pour récupérer
-		// la canopée. Le drapeau EstModifie force l'écriture du fichier *_arbres.bin à la prochaine sauvegarde.
-		if (ActiverGenerationAbysse && chunk != null && chunk.EstChargeDepuisDisque && chunk.InventaireArbres.Count == 0)
+		// Migration : chunk disque sans fichier arbres → rejouer la passe procédurale (APISARA ou profondeur 3D).
+		if ((ActiverGenerationAbysse || ModeProfondeurActive) && chunk != null && chunk.EstChargeDepuisDisque && chunk.InventaireArbres.Count == 0)
 		{
 			chunk.RegenererInventaireArbresProcedural();
 			if (chunk.InventaireArbres.Count > 0)
@@ -245,7 +243,7 @@ public partial class Monde_Serveur : Node
 				restant.Enqueue(a);
 				continue;
 			}
-			if (!_chunks.ContainsKey(a.coord)) continue;
+			if (!ColonneChunkRuntimeChargee(a.coord)) continue;
 			InstancierArbreVivant(a.pos, a.age, a.seed, a.indexBotanique, a.joursRattrapage);
 		}
 		while (restant.Count > 0)

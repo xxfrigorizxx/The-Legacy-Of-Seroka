@@ -53,7 +53,11 @@ public partial class Chunk_Client : Node3D
 	public int HauteurMax { get; set; }
 
 	private const int HAUTEUR_SECTION = 16;
-	private const int NB_SECTIONS = 45;  // 45×16 = 720 (HauteurMax) — avant: 16 = 256 uniquement
+	/// <summary>Plafond sections (Abysse 720 m). Profondeur 100 m n'utilise que 7 sections.</summary>
+	private const int NB_SECTIONS_MAX = 45;
+
+	public static int ObtenirNbSectionsEffectif(int hauteurMax)
+		=> ConstantesProfondeurVerticale.ObtenirNbSections(Mathf.Max(HAUTEUR_SECTION, hauteurMax));
 	private const float Isolevel = 0.0f;
 
 	private MeshInstance3D[] _sectionsTerrain;
@@ -116,16 +120,16 @@ public partial class Chunk_Client : Node3D
 		for (int i = 0; i < _tamponBuissonsParCouleur.Length; i++)
 			_tamponBuissonsParCouleur[i] = new List<Transform3D>(32);
 
-		_sectionsTerrain = new MeshInstance3D[NB_SECTIONS];
-		_sectionsEau = new MeshInstance3D[NB_SECTIONS];
-		_sectionsPhysiques = new CollisionShape3D[NB_SECTIONS];
+		_sectionsTerrain = new MeshInstance3D[NB_SECTIONS_MAX];
+		_sectionsEau = new MeshInstance3D[NB_SECTIONS_MAX];
+		_sectionsPhysiques = new CollisionShape3D[NB_SECTIONS_MAX];
 
 		var shaderEau = GD.Load<Shader>("res://EauTriplanar.gdshader");
 		var matEau = new ShaderMaterial();
 		matEau.Shader = shaderEau;
 		matEau.SetShaderParameter("albedo_color", new Color(0.1f, 0.3f, 0.6f, 0.6f));
 
-		for (int i = 0; i < NB_SECTIONS; i++)
+		for (int i = 0; i < NB_SECTIONS_MAX; i++)
 		{
 			var miTerrain = new MeshInstance3D { Name = $"TerrainSection_{i}" };
 			AddChild(miTerrain);
@@ -236,8 +240,9 @@ public partial class Chunk_Client : Node3D
 				chunkRef.AppliquerPayloadFlore(null);
 			});
 
-		// 45 sections en séquence dans ce worker (pas de Task.Run par section) — sections vides ignorées (muraille / ciel).
-		for (int idxSec = 0; idxSec < NB_SECTIONS; idxSec++)
+		HauteurMax = donnees.HauteurMax;
+		int nbSections = ObtenirNbSectionsEffectif(donnees.HauteurMax);
+		for (int idxSec = 0; idxSec < nbSections; idxSec++)
 		{
 			SectionPayload payload = ConstruireSectionPayloadEnBackground(idxSec, baseX, baseZ);
 			if (payload.EstGeometrieVide()) continue;
@@ -366,7 +371,7 @@ public partial class Chunk_Client : Node3D
 	/// <summary>Section prête si son CollisionShape3D est construit. Utilisé pour suspendre la gravité au spawn.</summary>
 	public bool SectionAPret(int section)
 	{
-		if (_sectionsPhysiques == null || section < 0 || section >= NB_SECTIONS) return false;
+		if (_sectionsPhysiques == null || section < 0 || section >= ObtenirNbSectionsEffectif(HauteurMax)) return false;
 		return _sectionsPhysiques[section]?.Shape != null;
 	}
 

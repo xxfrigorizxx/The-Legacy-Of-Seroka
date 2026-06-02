@@ -20,7 +20,7 @@ public partial class Monde_Client : Node3D
 
 		Transform3D transformChunk = new Transform3D(
 			Basis.Identity,
-			GlobalPosition + new Vector3(data.Coordonnees.X * TailleChunk, data.CoordChunkY * HauteurMax, data.Coordonnees.Y * TailleChunk));
+			GlobalPosition + data.ObtenirOrigineMonde(TailleChunk));
 
 		Rid shapeRid = shape.GetRid();
 		Rid bodyRid = PhysicsServer3D.Singleton.BodyCreate();

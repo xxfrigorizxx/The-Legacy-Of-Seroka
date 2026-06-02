@@ -18,10 +18,10 @@ public partial class Gestionnaire_Monde : Node3D
 		serveur.Initialiser(
 			this,
 			nodeArbres,
-			(coord, sections) =>
+			(coord, coordChunkY, sections) =>
 			{
 				if (_dimensionLocaleActive == dimensionId)
-					_mondeClient.RecevoirChunkModifie(coord, sections);
+					_mondeClient.RecevoirChunkModifie(coord, coordChunkY, sections);
 			},
 			(coord, donnees) => DistribuerChunkDimensionAuxPeers(dimensionId, coord, donnees),
 			(coord, coordChunkY, inventaireFlore) =>

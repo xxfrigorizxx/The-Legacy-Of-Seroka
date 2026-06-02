@@ -20,7 +20,15 @@ public partial class Monde_Client : Node3D
 		int rendu = Mathf.Max(RayonDormancePhysique + 1, RenderDistance);
 		if (_dimensionReseauActive == (int)DimensionJeu.Abysse)
 			rendu = Mathf.Min(rendu, 10);
+		else if (ModeProfondeurTranchesActif())
+			rendu = Mathf.Min(rendu, Mathf.Max(RayonDormancePhysique + MargePreloadChunks + 2, PlafondRayonChargementProfondeurChunks));
 		return Mathf.Max(rendu, RayonDetailChunksActif());
+	}
+
+	private int DemiFenetreTranchesStreamingActif()
+	{
+		float vy = _joueur?.Velocity.Y ?? 0f;
+		return ConstantesProfondeurVerticale.DemiFenetreTranchesStreaming(vy);
 	}
 
 	/// <summary>Demi-côté (chunks) du disque « toujours visible » pour le culling caméra. Hors mode FPS : suit entièrement <see cref="RenderDistance"/> (panneau graphismes).</summary>
@@ -157,6 +165,23 @@ public partial class Monde_Client : Node3D
 	}
 
 	/// <summary>À appeler quand le joueur valide explicitement les graphismes (bouton Appliquer) : laisse converger vers RenderDistance sans plafonds d’urgence immédiats.</summary>
+	/// <summary>Nouveau monde / reconnexion : « Sauver les FPS » reste actif mais les chunks continuent de se charger.</summary>
+	public void DemarrerGraceStreamingBootstrapNouveauMonde()
+	{
+		_timerGraceStreamingBootstrap = Mathf.Max(_timerGraceStreamingBootstrap, DureeGraceStreamingBootstrapNouveauMondeSec);
+		_gateStreamingGele = false;
+		_tempsDepuisDegel = DureeRampUpPostDegel + 1f;
+		_tempsEtatGate = DureeMinEtatOuvertSec + 1f;
+		_timerGraceStreamingReglageUtilisateur = Mathf.Max(
+			_timerGraceStreamingReglageUtilisateur,
+			Mathf.Min(DureeGraceStreamingReglageUtilisateurSec, DureeGraceStreamingBootstrapNouveauMondeSec * 0.65f));
+		int minRayon = Mathf.Max(RayonDormancePhysique + 1, RayonInitialRequetesChunks);
+		int cible = Mathf.Max(minRayon, RayonChargementChunksActif());
+		_rayonRequetesActuel = Mathf.Clamp(Mathf.Max(_rayonRequetesActuel, minRayon + 6), minRayon, cible);
+		_timerExpansionRequetes = 0f;
+		_timerProgressionForceeRayon = 0f;
+	}
+
 	public void SignalerGraceStreamingApresReglageManuel()
 	{
 		_timerGraceStreamingReglageUtilisateur = DureeGraceStreamingReglageUtilisateurSec;
@@ -221,6 +246,8 @@ public partial class Monde_Client : Node3D
 		Chunk_Client.RayonQualiteMaxChunks = Mathf.Max(1, RayonQualiteMaxChunks);
 		AppliquerLimitesVisibiliteFloreDimension();
 		_rayonRequetesActuel = Mathf.Max(RayonDormancePhysique + 1, RayonInitialRequetesChunks);
+		if (ModeSurvieFpsAgressif)
+			DemarrerGraceStreamingBootstrapNouveauMonde();
 		_timerExpansionRequetes = IntervalleExpansionRequetesSec;
 		_timerProgressionForceeRayon = IntervalleProgressionForceeRayonSec;
 		_intervalleRadarImmobileDyn = IntervalleRafraichissementRadarImmobile;

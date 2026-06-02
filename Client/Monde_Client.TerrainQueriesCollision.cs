@@ -13,8 +13,25 @@ public partial class Monde_Client : Node3D
 		ySurfaceMonde = 0f;
 		if (_dimensionReseauActive == (int)DimensionJeu.Abysse) return false;
 		Gestionnaire_Monde.WorldToChunkAndLocal(worldX, worldZ, TailleChunk, out Vector2I c, out int lx, out int lz);
-		if (!_chunksData.TryGetValue(c, out ChunkData data) || data.DensitiesFlat == null || data.MaterialsFlat == null)
-			return false;
+		int hEstime = Generateur_Voxel.ObtenirHauteurTerrainMonde((int)worldX, (int)worldZ, _seedTerrain);
+		ChunkData data = null;
+		if (ModeProfondeurTranchesActif())
+		{
+			int coordY = CoordYDepuisMondeY(hEstime);
+			for (int d = -ConstantesProfondeurVerticale.DemiFenetreTranches; d <= ConstantesProfondeurVerticale.DemiFenetreTranches; d++)
+			{
+				if (TryGetChunkDataPourCoordY(c, coordY + d, out data) && data?.DensitiesFlat != null)
+					break;
+			}
+		}
+		else if (!_chunksData.TryGetValue(c, out data) || data.DensitiesFlat == null)
+			data = null;
+
+		if (data == null || data.MaterialsFlat == null)
+		{
+			ySurfaceMonde = hEstime + 1f;
+			return true;
+		}
 		if (lx < 0 || lx > data.TailleChunk || lz < 0 || lz > data.TailleChunk) return false;
 		const float isolevel = 0f;
 		int ySurface = -1;
@@ -30,9 +47,12 @@ public partial class Monde_Client : Node3D
 			}
 		}
 
-		if (ySurface < 0) return false;
-		// Même convention que <see cref="Gestionnaire_Monde.EstimerAltitudeTerrainPortail"/> (h + 1).
-		ySurfaceMonde = ySurface + 1f;
+		if (ySurface < 0)
+		{
+			ySurfaceMonde = hEstime + 1f;
+			return true;
+		}
+		ySurfaceMonde = data.ObtenirOffsetYMonde() + ySurface + 1f;
 		return true;
 	}
 
@@ -57,15 +77,8 @@ public partial class Monde_Client : Node3D
 			for (int dz = -rg; dz <= rg; dz++)
 			{
 				var v = new Vector2I(c.X + dx, c.Y + dz);
-				if (_dimensionReseauActive == (int)DimensionJeu.Abysse)
-				{
-					if (!ChunkCollisionActiveAbyssePourObservation(v, pos)) return false;
-				}
-				else
-				{
-					if (!_chunksData.TryGetValue(v, out var data)) return false;
-					if (!data.PhysicsBodyRID.IsValid || data.Dormant || data.EstEnFileSolidification) return false;
-				}
+				if (!ChunkCollisionActivePourObservation(v, pos))
+					return false;
 			}
 		return true;
 	}
@@ -73,13 +86,35 @@ public partial class Monde_Client : Node3D
 	/// <summary>Vrai si le chunk a une collision active (body valide, non dormant, hors file de solidification).</summary>
 	public bool ChunkCollisionActive(Vector2I coord)
 	{
+		Vector3 obs = _joueur?.GlobalPosition ?? ObtenirPositionObservation();
+		return ChunkCollisionActivePourObservation(coord, obs);
+	}
+
+	private bool ChunkCollisionActivePourObservation(Vector2I coord, Vector3 observation)
+	{
 		if (_dimensionReseauActive == (int)DimensionJeu.Abysse)
+			return ChunkCollisionActiveAbyssePourObservation(coord, observation);
+		if (ModeProfondeurTranchesActif())
 		{
-			Vector3 obs = _joueur?.GlobalPosition ?? ObtenirPositionObservation();
-			return ChunkCollisionActiveAbyssePourObservation(coord, obs);
+			int coordY = CoordYDepuisMondeY((int)Mathf.Floor(observation.Y));
+			int localY = ConstantesProfondeurVerticale.LocalYDepuisMondeY((int)Mathf.Floor(observation.Y));
+			if (CoucheCollisionActive(coord, coordY))
+				return true;
+			if (localY < 4 && CoucheCollisionActive(coord, coordY - 1))
+				return true;
+			return false;
 		}
-		if (!_chunksData.TryGetValue(coord, out var data)) return false;
-		return data.PhysicsBodyRID.IsValid && !data.Dormant && !data.EstEnFileSolidification;
+		int coordYSimple = CoordYDepuisMondeY((int)Mathf.Floor(observation.Y));
+		return CoucheCollisionActive(coord, coordYSimple);
+	}
+
+	private bool CoucheCollisionActive(Vector2I coord, int coordY)
+	{
+		if (TryGetChunkDataPourCoordY(coord, coordY, out var data) && data != null)
+			return data.PhysicsBodyRID.IsValid && !data.Dormant && !data.EstEnFileSolidification;
+		if (_chunksData.TryGetValue(coord, out data) && data != null && data.CoordChunkY == coordY)
+			return data.PhysicsBodyRID.IsValid && !data.Dormant && !data.EstEnFileSolidification;
+		return false;
 	}
 
 	/// <summary>
@@ -93,6 +128,14 @@ public partial class Monde_Client : Node3D
 		Vector2I c = Gestionnaire_Monde.WorldToChunkCoord(worldX, worldZ, TailleChunk);
 		if (!ChunkCollisionActive(c))
 			return false;
+		if (ModeProfondeurTranchesActif())
+		{
+			Vector3 obs = ObtenirPositionObservation();
+			int coordY = CoordYDepuisMondeY((int)Mathf.Floor(obs.Y));
+			if (!TryGetChunkDataPourCoordY(c, coordY, out ChunkData dataProf))
+				return false;
+			return dataProf.DensitiesFlat != null && dataProf.MaterialsFlat != null;
+		}
 		if (!_chunksData.TryGetValue(c, out ChunkData data))
 			return false;
 		return data.DensitiesFlat != null && data.MaterialsFlat != null;
@@ -113,11 +156,11 @@ public partial class Monde_Client : Node3D
 			if (!ChunkCollisionActiveAbyssePourObservation(new Vector2I(c.X, c.Y + 1), pos)) return false;
 			return true;
 		}
-		if (!ChunkCollisionActive(c)) return false;
-		if (!ChunkCollisionActive(new Vector2I(c.X - 1, c.Y))) return false;
-		if (!ChunkCollisionActive(new Vector2I(c.X + 1, c.Y))) return false;
-		if (!ChunkCollisionActive(new Vector2I(c.X, c.Y - 1))) return false;
-		if (!ChunkCollisionActive(new Vector2I(c.X, c.Y + 1))) return false;
+		if (!ChunkCollisionActivePourObservation(c, pos)) return false;
+		if (!ChunkCollisionActivePourObservation(new Vector2I(c.X - 1, c.Y), pos)) return false;
+		if (!ChunkCollisionActivePourObservation(new Vector2I(c.X + 1, c.Y), pos)) return false;
+		if (!ChunkCollisionActivePourObservation(new Vector2I(c.X, c.Y - 1), pos)) return false;
+		if (!ChunkCollisionActivePourObservation(new Vector2I(c.X, c.Y + 1), pos)) return false;
 		return true;
 	}
 
@@ -127,17 +170,9 @@ public partial class Monde_Client : Node3D
 		Vector2I c = Gestionnaire_Monde.WorldToChunkCoord(pointMonde, TailleChunk);
 		int rayonMax = _dimensionReseauActive == (int)DimensionJeu.Abysse ? 5 : 2;
 		int rayon = Mathf.Clamp(rayonChunks, 0, rayonMax);
-		if (_dimensionReseauActive == (int)DimensionJeu.Abysse)
-		{
-			for (int dx = -rayon; dx <= rayon; dx++)
-				for (int dz = -rayon; dz <= rayon; dz++)
-					if (!ChunkCollisionActiveAbyssePourObservation(new Vector2I(c.X + dx, c.Y + dz), pointMonde))
-						return false;
-			return true;
-		}
 		for (int dx = -rayon; dx <= rayon; dx++)
 			for (int dz = -rayon; dz <= rayon; dz++)
-				if (!ChunkCollisionActive(new Vector2I(c.X + dx, c.Y + dz)))
+				if (!ChunkCollisionActivePourObservation(new Vector2I(c.X + dx, c.Y + dz), pointMonde))
 					return false;
 		return true;
 	}
@@ -182,8 +217,6 @@ public partial class Monde_Client : Node3D
 	public bool AbysseCollisionLocaleActive(Vector3 pointMonde)
 	{
 		Vector2I c = Gestionnaire_Monde.WorldToChunkCoord(pointMonde, TailleChunk);
-		if (_dimensionReseauActive != (int)DimensionJeu.Abysse)
-			return ChunkCollisionActive(c);
-		return ChunkCollisionActiveAbyssePourObservation(c, pointMonde);
+		return ChunkCollisionActivePourObservation(c, pointMonde);
 	}
 }

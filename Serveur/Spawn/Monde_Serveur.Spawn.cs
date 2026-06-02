@@ -59,7 +59,7 @@ public partial class Monde_Serveur : Node
 		var aEnfiler = new List<(Vector3 pos, int id, int indexCache, int indexChimique)>();
 		foreach (var p in positionsFiltrees)
 			aEnfiler.Add((p.pos, p.idMat, p.idxMorph, p.taille));
-		MettreRochesEnStase(chunkCoord, aEnfiler);
+		MettreRochesEnStase(chunkCoord, chunk.ChunkOffsetY, aEnfiler);
 		onStasePrete?.Invoke(chunkCoord, chunk);
 	}
 
@@ -95,12 +95,17 @@ public partial class Monde_Serveur : Node
 				if (rng.Randf() > 0.02f) continue;
 				int lx = Mathf.Clamp(Mathf.FloorToInt(x), 0, (int)tailleChunk);
 				int lz = Mathf.Clamp(Mathf.FloorToInt(z), 0, (int)tailleChunk);
-				var (ySurface, idMatiere) = chunk.ObtenirSurfaceEtMateriau(lx, lz);
+				var (ySurface, idMatiere) = ModeProfondeurActive
+					? chunk.ObtenirSolGrotteEtMateriau(lx, lz)
+					: chunk.ObtenirSurfaceEtMateriau(lx, lz);
 				if (ySurface < 0) continue;
 
+				float yMonde = chunk.ChunkOffsetY * chunk.HauteurMax + ySurface + 0.5f;
+				if (ModeProfondeurActive && yMonde < 8f)
+					continue;
 				Vector3 pointImpact = new Vector3(
 					chunkCoord.X * tailleChunk + x + 0.5f,
-					ySurface + 0.5f,
+					yMonde,
 					chunkCoord.Y * tailleChunk + z + 0.5f
 				);
 				Vector3 pointDeSpawnSecurise = pointImpact + new Vector3(0, DECALAGE_SPAWN_VERTICAL, 0);
@@ -135,7 +140,7 @@ public partial class Monde_Serveur : Node
 	}
 
 	/// <summary>Chambre de stase : les roches attendent leur sol. Pas de spawn tant que le chunk n'est pas scellé (envoyé).</summary>
-	private void MettreRochesEnStase(Vector2I coordChunk, List<(Vector3 pos, int id, int indexCache, int indexChimique)> pierres)
+	private void MettreRochesEnStase(Vector2I coordChunk, int coordY, List<(Vector3 pos, int id, int indexCache, int indexChimique)> pierres)
 	{
 		if (pierres.Count == 0) return;
 		pierres.Sort((a, b) =>
@@ -146,16 +151,17 @@ public partial class Monde_Serveur : Node
 			if (cmpZ != 0) return cmpZ;
 			return a.pos.Y.CompareTo(b.pos.Y);
 		});
-		_rochesEnStase[coordChunk] = pierres;
+		_rochesEnStase[new Vector3I(coordChunk.X, coordY, coordChunk.Y)] = pierres;
 	}
 
 	/// <summary>Signal de fondation : chunk scellé (envoyé au client) → on transfère ses roches vers la file de micro-dosage (3 par frame).</summary>
-	internal void LibererRochesChunk(Vector2I coordChunk)
+	internal void LibererRochesChunk(Vector2I coordChunk, int coordY)
 	{
-		if (!_rochesEnStase.TryGetValue(coordChunk, out var liste)) return;
+		Vector3I cle = new Vector3I(coordChunk.X, coordY, coordChunk.Y);
+		if (!_rochesEnStase.TryGetValue(cle, out var liste)) return;
 		foreach (var p in liste)
 			_filePierresAInstancier.Enqueue(p);
-		_rochesEnStase.Remove(coordChunk);
+		_rochesEnStase.Remove(cle);
 	}
 
 	/// <summary>Enfile cailloux et silex sur le tapis roulant en ordre spatial logique (X, Z, Y) : terrain cohérent.</summary>
@@ -249,11 +255,24 @@ public partial class Monde_Serveur : Node
 	private bool TerrainChargeAutourPosition(Vector3 posMonde)
 	{
 		Vector2I c = Gestionnaire_Monde.WorldToChunkCoord(posMonde, TailleChunk);
+		int coordY = ModeProfondeurActive
+			? ConstantesProfondeurVerticale.CoordYDepuisMondeY(posMonde.Y)
+			: 0;
 		int rayon = Mathf.Clamp(RayonSecuriteTerrainReveilPierres, 0, 2);
 		for (int dx = -rayon; dx <= rayon; dx++)
+		{
 			for (int dz = -rayon; dz <= rayon; dz++)
-				if (!_chunks.ContainsKey(new Vector2I(c.X + dx, c.Y + dz)))
+			{
+				Vector2I cc = new Vector2I(c.X + dx, c.Y + dz);
+				if (ModeProfondeurActive)
+				{
+					if (!_chunksProfonds.ContainsKey(new Vector3I(cc.X, coordY, cc.Y)))
+						return false;
+				}
+				else if (!_chunks.ContainsKey(cc))
 					return false;
+			}
+		}
 		return true;
 	}
 

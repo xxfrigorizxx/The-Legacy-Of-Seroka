@@ -6,6 +6,14 @@ using System.IO;
 
 public partial class Chunk_Serveur : RefCounted
 {
+	private bool EstSocleIntouchableLocal(int yLocal)
+	{
+		int yMonde = ChunkOffsetY * HauteurMax + yLocal;
+		if (_profondeurEtendueActive)
+			return yMonde <= _fondMondeY && yMonde >= _fondMondeY - 2;
+		return yMonde >= 0 && yMonde <= 2;
+	}
+
 	public void DetruireVoxel(Vector3 pointImpactGlobal, float rayonExplosion, float forceDegats = 5.0f, Action<List<int>> onSectionsAffectees = null)
 	{
 		Vector3 pointLocal = pointImpactGlobal - PositionMonde;
@@ -42,7 +50,7 @@ public partial class Chunk_Serveur : RefCounted
 				for (int y = 0; y < HauteurMax; y++)
 					for (int z = 0; z < TailleChunk; z++)
 					{
-						if (y <= 2) continue;
+						if (EstSocleIntouchableLocal(y)) continue;
 						float dx = pointLocal.X - x, dy = pointLocal.Y - y, dz = pointLocal.Z - z;
 						if (dx * dx + dy * dy + dz * dz <= rayon2)
 						{
@@ -87,7 +95,7 @@ public partial class Chunk_Serveur : RefCounted
 				for (int y = 0; y < HauteurMax; y++)
 					for (int z = 0; z < TailleChunk; z++)
 					{
-						if (y <= 2) continue;
+						if (EstSocleIntouchableLocal(y)) continue;
 						float dx = pointLocal.X - x, dy = pointLocal.Y - y, dz = pointLocal.Z - z;
 						if (dx * dx + dy * dy + dz * dz <= rayon2)
 						{
@@ -115,12 +123,13 @@ public partial class Chunk_Serveur : RefCounted
 
 	private List<int> ObtenirSectionsAffectees(List<Vector3I> positions)
 	{
-		const int HAUTEUR_SECTION = 16, NB_SECTIONS = 45;  // 45×16 = 720 (HauteurMax)
+		const int HAUTEUR_SECTION = 16;
+		int nbSections = ConstantesProfondeurVerticale.ObtenirNbSections(HauteurMax);
 		var sections = new HashSet<int>();
 		foreach (var pos in positions)
 		{
 			int idx = Mathf.FloorToInt(pos.Y / (float)HAUTEUR_SECTION);
-			if (idx >= 0 && idx < NB_SECTIONS) sections.Add(idx);
+			if (idx >= 0 && idx < nbSections) sections.Add(idx);
 			// Frontière section : pas de modulo (en C# pos.Y % 16 peut être négatif). Même logique par soustraction.
 			if (pos.Y > 0 && idx > 0 && pos.Y == idx * HAUTEUR_SECTION) sections.Add(idx - 1);
 		}
@@ -247,7 +256,7 @@ public partial class Chunk_Serveur : RefCounted
 
 	public void DefinirVoxelEau(int x, int y, int z)
 	{
-		if (!EstDansLimitesChunk(x, y, z) || y <= 2) return;
+		if (!EstDansLimitesChunk(x, y, z) || EstSocleIntouchableLocal(y)) return;
 		bool modifie = false;
 		lock (_verrouVoxel)
 		{

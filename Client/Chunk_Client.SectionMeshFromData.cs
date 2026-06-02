@@ -6,15 +6,19 @@ using System.Threading.Tasks;
 
 public partial class Chunk_Client : Node3D
 {
+	/// <summary>Échantillon voxel avec extension verticale (tranche voisine coordY±1).</summary>
+	public delegate bool EchantillonnerVoxelChunkDelegate(ChunkData owner, int lx, int ly, int lz, out float densite, out float eau, out byte mat);
+
 	/// <summary>Reconstruit les 45 SectionPayload à partir d'un ChunkData déjà rempli (minage/pose). Pour mise à jour visuelle après AppliquerVoxel.</summary>
-	public static List<SectionPayload> ReconstruirePayloadsDepuisData(ChunkData data)
+	public static List<SectionPayload> ReconstruirePayloadsDepuisData(ChunkData data, EchantillonnerVoxelChunkDelegate echantillonner = null)
 	{
 		if (data?.DensitiesFlat == null || data.MaterialsFlat == null) return null;
 		float baseX = data.Coordonnees.X * (float)data.TailleChunk;
 		float baseZ = data.Coordonnees.Y * (float)data.TailleChunk;
-		var payloads = new List<SectionPayload>(NB_SECTIONS);
-		for (int i = 0; i < NB_SECTIONS; i++)
-			payloads.Add(ConstruireSectionPayloadEnBackgroundFromData(data, i, baseX, baseZ));
+		int nbSections = ObtenirNbSectionsEffectif(data.HauteurMax);
+		var payloads = new List<SectionPayload>(nbSections);
+		for (int i = 0; i < nbSections; i++)
+			payloads.Add(ConstruireSectionPayloadEnBackgroundFromData(data, i, baseX, baseZ, echantillonner));
 		return payloads;
 	}
 
@@ -22,7 +26,8 @@ public partial class Chunk_Client : Node3D
 	private const float IsolevelData = 0.0f;
 
 	/// <summary>Construit un SectionPayload à partir de ChunkData (sans Node). Utilise les tableaux plats et le bruit du data.</summary>
-	private static SectionPayload ConstruireSectionPayloadEnBackgroundFromData(ChunkData data, int indexSection, float baseX, float baseZ)
+	private static SectionPayload ConstruireSectionPayloadEnBackgroundFromData(
+		ChunkData data, int indexSection, float baseX, float baseZ, EchantillonnerVoxelChunkDelegate echantillonner = null)
 	{
 		// CAS B : tous les sommets sont en ESPACE LOCAL (x,z dans [0, TailleChunk]). Le placement
 		// de l'instance (Monde_Client.IntegrerChunkDataRIDs) applique UNE SEULE FOIS (cx*TailleChunk, 0, cz*TailleChunk).
@@ -30,14 +35,37 @@ public partial class Chunk_Client : Node3D
 		int yDebut = indexSection * hauteurSection;
 		int yFin = Math.Min(yDebut + hauteurSection, data.HauteurMax);
 		int tailleY = yFin - yDebut + 1;
+		bool padHautMc = echantillonner != null && yFin >= data.HauteurMax;
+		int tailleYBuffer = tailleY + (padHautMc ? 1 : 0);
 		int tc = data.TailleChunk;
 		int tx = tc + 1, tz = tc + 1;
-
-		float DensitePourMesh(int x, int y, int z) => data.DensitiesFlat[data.Idx(x, yDebut + y, z)];
 
 		var bufferDensities = ArrayPool<float>.Shared.Rent(TAILLE_MAX_SECTION_DATA);
 		var bufferMaterials = ArrayPool<byte>.Shared.Rent(TAILLE_MAX_SECTION_DATA);
 		float[] bufferEau = data.DensitiesEauFlat != null ? ArrayPool<float>.Shared.Rent(TAILLE_MAX_SECTION_DATA) : null;
+
+		void RemplirCelluleBuffer(int x, int yBuf, int z, int lyGlobale)
+		{
+			int idx = x * (tailleYBuffer * tz) + yBuf * tz + z;
+			if (echantillonner != null && (lyGlobale < 0 || lyGlobale > data.HauteurMax))
+			{
+				echantillonner(data, x, lyGlobale, z, out float d, out float e, out byte m);
+				bufferDensities[idx] = d;
+				bufferMaterials[idx] = m;
+				if (bufferEau != null) bufferEau[idx] = e;
+				return;
+			}
+			if (lyGlobale < 0 || lyGlobale > data.HauteurMax)
+			{
+				bufferDensities[idx] = -10f;
+				bufferMaterials[idx] = 0;
+				if (bufferEau != null) bufferEau[idx] = -1f;
+				return;
+			}
+			bufferDensities[idx] = data.DensitiesFlat[data.Idx(x, lyGlobale, z)];
+			bufferMaterials[idx] = data.MaterialsFlat[data.Idx(x, lyGlobale, z)];
+			if (bufferEau != null) bufferEau[idx] = data.DensitiesEauFlat[data.Idx(x, lyGlobale, z)];
+		}
 		var vertsT = new List<Vector3>(8192);
 		var normsT = new List<Vector3>(8192);
 		var colsT = new List<Color>(8192);
@@ -53,17 +81,12 @@ public partial class Chunk_Client : Node3D
 
 		try
 		{
-			int stride = tailleY * tz;
+			int stride = tailleYBuffer * tz;
 			int nbVoxels = stride * tx;
 			for (int x = 0; x < tx; x++)
-				for (int y = 0; y < tailleY; y++)
+				for (int y = 0; y < tailleYBuffer; y++)
 					for (int z = 0; z < tz; z++)
-					{
-						int idx = x * stride + y * tz + z;
-						bufferDensities[idx] = DensitePourMesh(x, y, z);
-						bufferMaterials[idx] = data.MaterialsFlat[data.Idx(x, yDebut + y, z)];
-						if (bufferEau != null) bufferEau[idx] = data.DensitiesEauFlat[data.Idx(x, yDebut + y, z)];
-					}
+						RemplirCelluleBuffer(x, y, z, yDebut + y);
 
 			bool sectionVide = true;
 			for (int i = 0; i < nbVoxels; i++)
@@ -161,6 +184,10 @@ public partial class Chunk_Client : Node3D
 					for (int y = 0; y < yFin - yDebut; y++)
 					{
 						int yG = yDebut + y;
+						if (echantillonner != null
+							&& ConstantesProfondeurVerticale.CorpsOmetMaillageEauALaJonction(
+								data.CoordChunkY, data.HauteurMax, yG))
+							continue;
 						for (int z = 0; z < tc; z++)
 						{
 							vertsEau[0] = new Vector3(x, yG, z);

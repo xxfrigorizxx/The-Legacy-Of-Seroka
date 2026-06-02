@@ -40,10 +40,39 @@ public partial class Chunk_Client : Node3D
 		else if (data.InventaireFlore == null)
 			data.InventaireFlore = GenererInventaireFloreDepuisSurface(data); // Fallback legacy uniquement.
 
-		var payloads = new List<SectionPayload>(NB_SECTIONS);
-		for (int i = 0; i < NB_SECTIONS; i++)
+		int nbSections = ObtenirNbSectionsEffectif(data.HauteurMax);
+		var payloads = new List<SectionPayload>(nbSections);
+		for (int i = 0; i < nbSections; i++)
 			payloads.Add(ConstruireSectionPayloadEnBackgroundFromData(data, i, baseX, baseZ));
 		return payloads;
+	}
+
+	/// <summary>Copie densités/matériaux serveur en RAM sans lancer Marching Cubes (couche profonde en attente de maillage).</summary>
+	public static void RemplirDonneesVoxelDepuisServeur(ChunkData data, DonneesChunk donnees)
+	{
+		if (data == null || donnees?.MaterialsFlat == null) return;
+		bool formatQuantifie = donnees.DensitiesQuantifiees != null;
+		int tx = donnees.TailleChunk + 1, ty = donnees.HauteurMax + 1, tz = donnees.TailleChunk + 1;
+		if (formatQuantifie)
+		{
+			data.DensitiesFlat = DonneesChunk.DecompresserDensitesFlat(donnees.DensitiesQuantifiees, tx, ty, tz);
+			data.DensitiesEauFlat = donnees.DensitiesEauQuantifiees != null
+				? DonneesChunk.DecompresserDensitesFlat(donnees.DensitiesEauQuantifiees, tx, ty, tz)
+				: null;
+		}
+		else
+		{
+			data.DensitiesFlat = (float[])donnees.DensitiesFlat.Clone();
+			data.DensitiesEauFlat = donnees.DensitiesEauFlat != null ? (float[])donnees.DensitiesEauFlat.Clone() : null;
+		}
+		data.Tx = tx;
+		data.Ty = ty;
+		data.Tz = tz;
+		data.MaterialsFlat = (byte[])donnees.MaterialsFlat.Clone();
+		data.TailleChunk = donnees.TailleChunk;
+		data.HauteurMax = donnees.HauteurMax;
+		if (donnees.InventaireFlore != null)
+			data.InventaireFlore = new Dictionary<Vector3I, byte>(donnees.InventaireFlore);
 	}
 
 	/// <summary>Crée le nœud MultiMeshInstance3D de gazon pour un ChunkData (architecture AAA). À ajouter au monde et à libérer dans data.LibérerRids.</summary>
@@ -58,7 +87,7 @@ public partial class Chunk_Client : Node3D
 		var node = new MultiMeshInstance3D { Name = "Gazon" };
 		node.Multimesh = mm;
 		node.MaterialOverride = ObtenirMaterielGazonSymbiotique();
-		node.Position = new Vector3(data.Coordonnees.X * tailleChunk, 0, data.Coordonnees.Y * tailleChunk);
+		node.Position = new Vector3(data.Coordonnees.X * tailleChunk, data.ObtenirOffsetYMonde(), data.Coordonnees.Y * tailleChunk);
 		node.Visible = true;
 		return node;
 	}
@@ -71,7 +100,8 @@ public partial class Chunk_Client : Node3D
 		if (data?.InventaireFlore == null) return;
 		float originX = data.Coordonnees.X * (float)data.TailleChunk;
 		float originZ = data.Coordonnees.Y * (float)data.TailleChunk;
-		Vector3 chunkOrigin = new Vector3(originX, 0, originZ);
+		float originY = data.ObtenirOffsetYMonde();
+		Vector3 chunkOrigin = new Vector3(originX, originY, originZ);
 		float rayonBuissons = Mathf.Max(2, RayonVisibiliteBuissonsChunks) * data.TailleChunk;
 		float rayonBuissonsCarre = rayonBuissons * rayonBuissons;
 		foreach (var kv in data.InventaireFlore)
@@ -172,7 +202,7 @@ public partial class Chunk_Client : Node3D
 	public static Node3D CreerNoeudFlorePourChunkData(ChunkData data, Vector3 positionObservation, int tailleChunk)
 	{
 		if (data?.InventaireFlore == null || data.InventaireFlore.Count == 0) return null;
-		Vector3 chunkPos = new Vector3(data.Coordonnees.X * tailleChunk, 0, data.Coordonnees.Y * tailleChunk);
+		Vector3 chunkPos = data.ObtenirOrigineMonde(tailleChunk);
 		var root = new Node3D { Name = "Flore", Position = chunkPos };
 
 		var pleinsColores = new List<(Transform3D T, int CouleurIdx)>();
@@ -299,7 +329,8 @@ public partial class Chunk_Client : Node3D
 		float rayonQualiteCarre = rayonQualite * rayonQualite;
 		float originX = data.Coordonnees.X * (float)data.TailleChunk;
 		float originZ = data.Coordonnees.Y * (float)data.TailleChunk;
-		Vector3 chunkOrigin = new Vector3(originX, 0, originZ);
+		float originY = data.ObtenirOffsetYMonde();
+		Vector3 chunkOrigin = new Vector3(originX, originY, originZ);
 		foreach (var kv in data.InventaireFlore)
 		{
 			if (kv.Value != 0) continue; // gazon uniquement
@@ -352,7 +383,8 @@ public partial class Chunk_Client : Node3D
 		if (data?.MaterialsFlat == null || data.NoiseTemperature == null || data.NoiseHumidite == null) return new Color(0.5f, 0.6f, 0.5f);
 		int lx = xGlobal - data.Coordonnees.X * data.TailleChunk;
 		int lz = zGlobal - data.Coordonnees.Y * data.TailleChunk;
-		if (!EssayerLireMateriauDepuisChunkData(data, lx, yGlobal, lz, out byte idMat))
+		int ly = yGlobal - (int)data.ObtenirOffsetYMonde();
+		if (!EssayerLireMateriauDepuisChunkData(data, lx, ly, lz, out byte idMat))
 			return new Color(0.5f, 0.6f, 0.5f);
 		float temp = data.NoiseTemperature.GetNoise2D(xGlobal, zGlobal);
 		float hum = CalculerHumiditeGlobaleDepuisChunkData(data, xGlobal, zGlobal);
@@ -412,7 +444,7 @@ public partial class Chunk_Client : Node3D
 				if (grad.LengthSquared() < 0.0001f) continue;
 				Vector3 normal = (-grad).Normalized();
 				if (normal.Y < 0.82f) continue; // bloque la flore sur fortes pentes/côtés
-				var posGlobale = new Vector3I(ox + lx, ySurface, oz + lz);
+				var posGlobale = new Vector3I(ox + lx, (int)data.ObtenirOffsetYMonde() + ySurface, oz + lz);
 				inv[posGlobale] = 0; // gazon
 			}
 		return inv;

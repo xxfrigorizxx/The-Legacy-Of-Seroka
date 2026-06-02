@@ -8,7 +8,6 @@ public partial class Joueur
     private bool _verrouSpawnActif = true;
     private bool _verrouAntiChuteAbysseActif;
     private float _cooldownSortieVerrouAbysse;
-    private float _graceCollisionLocaleRestante;
     private bool _positionSolideAbysseValide;
     private Vector3 _dernierePositionSolideAbysse;
     private float _cooldownRetourSolAbysse;
@@ -372,10 +371,7 @@ public partial class Joueur
         }
 
         bool zoneLocalePrete = _gestionnaireMonde == null || _gestionnaireMonde.EstDeplacementLocalPret();
-        if (zoneLocalePrete)
-            _graceCollisionLocaleRestante = 0.22f;
-        else
-            _graceCollisionLocaleRestante = Mathf.Max(0f, _graceCollisionLocaleRestante - dt);
+        bool freinCorridorMesh = _gestionnaireMonde != null && _gestionnaireMonde.EstFreinCorridorMeshSansCollisionActif();
         if (enAbysseLocal)
         {
             _cooldownRetourSolAbysse = Mathf.Max(0f, _cooldownRetourSolAbysse - dt);
@@ -385,20 +381,13 @@ public partial class Joueur
                 _dernierePositionSolideAbysse = GlobalPosition;
             }
         }
-        if (!zoneLocalePrete)
+        // Frein horizontal seulement si mesh visible sans collision devant (course) — pas de chute lente :
+        // le terrain doit se solidifier ; dans le vide la gravité reste normale.
+        if (freinCorridorMesh)
         {
-            // Uniformise le ressenti inter-dimensions: même garde-fou que l'Abysse
-            // quand la collision locale n'est pas encore prête.
-            bool auSolStable = IsOnFloor() || _bufferSolCoyoteAnim > 0f;
-            bool graceFrontiereActive = auSolStable && _graceCollisionLocaleRestante > 0f;
-            if (!graceFrontiereActive)
-            {
-                float freinHoriz = Mathf.Max(10f, vitesseMouvement * 4.0f);
-                velocity.X = Mathf.MoveToward(velocity.X, 0f, freinHoriz * dt);
-                velocity.Z = Mathf.MoveToward(velocity.Z, 0f, freinHoriz * dt);
-            }
-            if (velocity.Y < -1.2f)
-                velocity.Y = -1.2f;
+            float freinHoriz = Mathf.Max(10f, vitesseMouvement * 4.0f);
+            velocity.X = Mathf.MoveToward(velocity.X, 0f, freinHoriz * dt);
+            velocity.Z = Mathf.MoveToward(velocity.Z, 0f, freinHoriz * dt);
         }
 
         MettreAJourAnimationHumain(dt, velocity, inputDir, auSolPourAnim, sprintActif, estDansEau);

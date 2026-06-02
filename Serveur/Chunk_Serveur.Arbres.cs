@@ -6,6 +6,26 @@ using System.IO;
 
 public partial class Chunk_Serveur : RefCounted
 {
+	/// <summary>Résout surface arbre : Y monde, indice local dans la tranche, matériau. False si la surface n'est pas dans ce chunk.</summary>
+	private bool EssayerObtenirSurfaceArbre(int lx, int lz, out int yMonde, out int lyLocal, out byte matSurface)
+	{
+		yMonde = 0;
+		lyLocal = -1;
+		matSurface = 0;
+		int xGlobal = ChunkOffsetX * TailleChunk + lx;
+		int zGlobal = ChunkOffsetZ * TailleChunk + lz;
+		yMonde = CalculerHauteurTerrain(xGlobal, zGlobal);
+		if (yMonde <= 2) return false;
+		lyLocal = yMonde - ChunkOffsetY * HauteurMax;
+		if (lyLocal < 0 || lyLocal >= HauteurMax - 1) return false;
+		lock (_verrouVoxel)
+		{
+			if (_materials == null) return false;
+			matSurface = _materials[lx, lyLocal, lz];
+		}
+		return true;
+	}
+
 	/// <summary>Enregistre les positions d'arbres (ArbreVivant 3D) — sans injection voxel. Monde_Serveur les instancie.</summary>
 	private void InjecterArbresLSystem()
 	{
@@ -33,15 +53,7 @@ public partial class Chunk_Serveur : RefCounted
 			if (!TerrainAssezPlat(xGlobal, zGlobal)) continue;
 			if (!TerrainAvecMargeBord(xGlobal, zGlobal)) continue;
 
-			int hauteurSurface = CalculerHauteurTerrain(xGlobal, zGlobal);
-			if (hauteurSurface < 0 || hauteurSurface >= HauteurMax - 1) continue;
-			if (hauteurSurface <= 2) continue;
-
-			byte matSurface;
-			lock (_verrouVoxel)
-			{
-				matSurface = _materials[x, hauteurSurface, z];
-			}
+			if (!EssayerObtenirSurfaceArbre(x, z, out int hauteurSurface, out _, out byte matSurface)) continue;
 
 			// Tempéré: herbe (1). Froid/enneigé: neige (5) et glace (9). Sec: terre aride (6) et désert sableux (3).
 			bool solTempere = matSurface == 1;
@@ -135,15 +147,8 @@ public partial class Chunk_Serveur : RefCounted
 			if (!TerrainAssezPlat(xGlobal, zGlobal)) continue;
 			if (!TerrainAvecMargeBord(xGlobal, zGlobal)) continue;
 
-			int hauteurSurface = CalculerHauteurTerrain(xGlobal, zGlobal);
-			if (hauteurSurface < 0 || hauteurSurface >= HauteurMax - 1) continue;
-			if (hauteurSurface <= 2) continue;
+			if (!EssayerObtenirSurfaceArbre(x, z, out int hauteurSurface, out _, out byte matSurface)) continue;
 
-			byte matSurface;
-			lock (_verrouVoxel)
-			{
-				matSurface = _materials[x, hauteurSurface, z];
-			}
 			bool solTempere = matSurface == 1;
 			bool solFroid = matSurface == 5 || matSurface == 9;
 			bool solAride = matSurface == 6;
@@ -200,12 +205,7 @@ public partial class Chunk_Serveur : RefCounted
 			if (!EstPlaineJungleAbysse(xGlobal, zGlobal)) continue;
 			if (!TerrainAssezPlat(xGlobal, zGlobal)) continue;
 			if (!TerrainAvecMargeBord(xGlobal, zGlobal)) continue;
-			int hauteurSurface = CalculerHauteurTerrain(xGlobal, zGlobal);
-			if (hauteurSurface < 0 || hauteurSurface >= HauteurMax - 1) continue;
-			if (hauteurSurface <= 2) continue;
-			byte matSurface;
-			lock (_verrouVoxel)
-				matSurface = _materials[x, hauteurSurface, z];
+			if (!EssayerObtenirSurfaceArbre(x, z, out int hauteurSurface, out _, out byte matSurface)) continue;
 			if (matSurface != 1) continue;
 			float bruitDensite = DeterministicRand(xGlobal * 1.7f, zGlobal * 2.3f);
 			float chanceLocale = Mathf.Lerp(0.068f, 0.132f, bruitDensite);
@@ -224,11 +224,8 @@ public partial class Chunk_Serveur : RefCounted
 			int zGlobal = ChunkOffsetZ * TailleChunk + z;
 			if (!EstPlaineJungleAbysse(xGlobal, zGlobal)) continue;
 			if (!TerrainAssezPlat(xGlobal, zGlobal) || !TerrainAvecMargeBord(xGlobal, zGlobal)) continue;
-			int hauteurSurface = CalculerHauteurTerrain(xGlobal, zGlobal);
-			if (hauteurSurface < 3 || hauteurSurface >= HauteurMax - 1) continue;
-			byte matSurface;
-			lock (_verrouVoxel)
-				matSurface = _materials[x, hauteurSurface, z];
+			if (!EssayerObtenirSurfaceArbre(x, z, out int hauteurSurface, out _, out byte matSurface)) continue;
+			if (hauteurSurface < 3) continue;
 			if (matSurface != 1) continue;
 			var racine = new Vector3I(xGlobal, hauteurSurface + 1, zGlobal);
 			uint seedArbre = (uint)((xGlobal * 73856093) ^ (zGlobal * 19349663));

@@ -94,6 +94,39 @@ public partial class Monde_Client : Node3D
 		return dx * dx + dz * dz;
 	}
 
+	/// <summary>
+	/// Mode « Sauver les FPS » : réduit le débit lointain mais ne doit pas bloquer la génération de chunks
+	/// (nouveau monde, sol manquant, file/radar en retard, tranches profondeur absentes).
+	/// </summary>
+	private bool EstStreamingChunksPrioritaire(bool enChargement, bool garantirProcheJoueur)
+	{
+		if (!ModeSurvieFpsAgressif)
+			return enChargement || garantirProcheJoueur;
+		if (enChargement || garantirProcheJoueur)
+			return true;
+		if (_timerGraceStreamingBootstrap > 0f)
+			return true;
+		if (_chunksACharger.Count > 0)
+			return true;
+		if (_rayonRequetesActuel + 2 < RayonChargementChunksActif())
+			return true;
+		if (CompterBacklog() > SeuilBacklogBas)
+			return true;
+		if (ModeProfondeurTranchesActif() && EssayerObtenirJoueurDansArbre(out CharacterBody3D joueurRef))
+		{
+			Vector2I c = Gestionnaire_Monde.WorldToChunkCoord(joueurRef.GlobalPosition, TailleChunk);
+			int cy = CoordYDepuisMondeY((int)Mathf.Floor(joueurRef.GlobalPosition.Y));
+			int demi = ConstantesProfondeurVerticale.DemiFenetreTranches;
+			for (int dy = -demi; dy <= demi; dy++)
+			{
+				if (!TryGetChunkDataPourCoordY(c, cy + dy, out var data) || data == null
+					|| !data.VisualInstanceRID.IsValid)
+					return true;
+			}
+		}
+		return false;
+	}
+
 	/// <summary>Vrai si le streaming peut prendre un peu plus de marge (FPS/backlog stables, voir <see cref="AjusterFenetreRequetes"/>).</summary>
 	private bool StreamingPeutElargirTranquillement()
 	{
@@ -219,6 +252,23 @@ public partial class Monde_Client : Node3D
 		return v;
 	}
 
+	/// <summary>Minage près de Y=100,200… : inclure la tranche voisine déjà en RAM pour éviter mesh/collision désynchronisés.</summary>
+	private void ExpandirTranchesVoisinesPourRemeshMinage(HashSet<Vector3I> chunks)
+	{
+		if (chunks == null || chunks.Count == 0) return;
+		_voisinsRemeshMinageTemp.Clear();
+		_voisinsRemeshMinageTemp.AddRange(chunks);
+		foreach (Vector3I c in _voisinsRemeshMinageTemp)
+		{
+			var dessous = new Vector3I(c.X, c.Y - 1, c.Z);
+			if (TryGetChunkDataPourCoordY(new Vector2I(c.X, c.Z), c.Y - 1, out _))
+				chunks.Add(dessous);
+			var dessus = new Vector3I(c.X, c.Y + 1, c.Z);
+			if (TryGetChunkDataPourCoordY(new Vector2I(c.X, c.Z), c.Y + 1, out _))
+				chunks.Add(dessus);
+		}
+	}
+
 	private void ExecuterReconstructionPrioritaire(Vector3I coord)
 	{
 		ChunkData data = null;
@@ -227,18 +277,68 @@ public partial class Monde_Client : Node3D
 			if (!_chunksDataAbysse3D.TryGetValue(coord, out data))
 				return;
 		}
-		else if (!_chunksData.TryGetValue(new Vector2I(coord.X, coord.Z), out data))
-		{
+		else if (!TryGetChunkDataPourCoordY(new Vector2I(coord.X, coord.Z), coord.Y, out data))
 			return;
-		}
 		if (data.DensitiesFlat == null || data.MaterialsFlat == null) return;
 		data.EmpreinteDonneesServeur = 0;
-		// Libérer l'ancien mesh et la collision avant de recréer (sinon fuite RID)
-		data.LibérerRids();
-		var payloads = Chunk_Client.ReconstruirePayloadsDepuisData(data);
+		var payloads = Chunk_Client.ReconstruirePayloadsDepuisData(data, TryEchantillonnerVoxelProfondeur);
 		if (payloads != null && payloads.Count > 0)
-			IntegrerChunkDataRIDs(data, payloads);
+			IntegrerChunkDataRIDs(data, payloads, recoudreVoisinsVertical: false);
+		RestaurerCollisionImmediateSiSousJoueur(data);
 	}
+
+	/// <summary>Collision synchrone si le chunk est dans la zone prioritaire joueur (spawn / marche / minage).</summary>
+	private void SolidifierCollisionPrioritaireSiProcheJoueur(ChunkData data)
+	{
+		if (data == null || data._meshRef == null || !EssayerObtenirJoueurDansArbre(out CharacterBody3D joueurRef))
+			return;
+		Vector3 pos = joueurRef.GlobalPosition;
+		Vector3 velXZ = new Vector3(joueurRef.Velocity.X, 0f, joueurRef.Velocity.Z);
+		if (DoitSolidifierALIntegration(data, pos, velXZ))
+		{
+			EssayerSolidifierCorridorAIntegration(data, pos, velXZ);
+			return;
+		}
+		Vector2I cJoueur = Gestionnaire_Monde.WorldToChunkCoord(pos, TailleChunk);
+		int dx = Mathf.Abs(data.Coordonnees.X - cJoueur.X);
+		int dz = Mathf.Abs(data.Coordonnees.Y - cJoueur.Y);
+		bool solProchePret = ChunkSousPiedsAPret();
+		int rayonXZ = (dx == 0 && dz == 0) ? 0 : (solProchePret ? 1 : Mathf.Max(2, RayonGrilleMinSpawnPret));
+		if (dx > rayonXZ || dz > rayonXZ)
+			return;
+		if (ModeProfondeurTranchesActif())
+		{
+			int cyJoueur = CoordYDepuisMondeY((int)Mathf.Floor(pos.Y));
+			int dySlice = data.CoordChunkY - cyJoueur;
+			if (Mathf.Abs(dySlice) > ConstantesProfondeurVerticale.DemiFenetreTranches)
+				return;
+			int yBaseTranche = data.CoordChunkY * data.HauteurMax;
+			int yPieds = (int)Mathf.Floor(pos.Y);
+			if (yPieds < yBaseTranche - 2 || yPieds > yBaseTranche + data.HauteurMax + 2)
+				return;
+			if (!solProchePret)
+				rayonXZ = Mathf.Max(rayonXZ, RayonGrilleMinSpawnPret);
+		}
+		World3D world = GetWorld3D();
+		if (world == null)
+			return;
+		if (data.PhysicsBodyRID.IsValid && !data.Dormant)
+		{
+			PhysicsServer3D.Singleton.BodySetSpace(data.PhysicsBodyRID, world.Space);
+			data.EstEnFileSolidification = false;
+			return;
+		}
+		RetirerDeFileSolidification(data);
+		_setSolidificationUrgente.Remove(data);
+		data.EstEnFileSolidification = false;
+		AssurerCorpsPhysiqueChunk(data);
+		if (data.PhysicsBodyRID.IsValid)
+			PhysicsServer3D.Singleton.BodySetSpace(data.PhysicsBodyRID, world.Space);
+	}
+
+	/// <summary>Après minage : évite de traverser le sol pendant la file de solidification (collision synchrone sous les pieds).</summary>
+	private void RestaurerCollisionImmediateSiSousJoueur(ChunkData data)
+		=> SolidifierCollisionPrioritaireSiProcheJoueur(data);
 
 	private float DistanceCarreeAuJoueur(Vector2I chunk, Vector3 posObservation)
 	{
@@ -301,6 +401,38 @@ public partial class Monde_Client : Node3D
 				_cooldownDiagCoherenceAbysse = IntervalleDiagCoherenceAbysseSec;
 			}
 			return;
+		}
+		if (ModeProfondeurTranchesActif())
+		{
+			Vector2I obs2D = Gestionnaire_Monde.WorldToChunkCoord(positionObservation, TailleChunk);
+			int coordYCourant = CoordYDepuisMondeY((int)Mathf.Floor(positionObservation.Y));
+			var clesProfondesARetirer = new List<Vector3I>();
+			foreach (var kv in _chunksDataProfondeur3D)
+			{
+				int dx = kv.Key.X - obs2D.X;
+				int dz = kv.Key.Z - obs2D.Y;
+				float dist2 = dx * dx + dz * dz;
+				int dy = Mathf.Abs(kv.Key.Y - coordYCourant);
+				int demiFenetre = DemiFenetreTranchesStreamingActif();
+				if (dist2 > seuilEvictionCarree || dy > demiFenetre)
+					clesProfondesARetirer.Add(kv.Key);
+			}
+			for (int i = 0; i < clesProfondesARetirer.Count; i++)
+			{
+				Vector3I cle = clesProfondesARetirer[i];
+				if (!_chunksDataProfondeur3D.TryGetValue(cle, out var data) || data == null)
+					continue;
+				_chunksDataProfondeur3D.Remove(cle);
+				RetirerDeFileSolidification(data);
+				_setSolidificationUrgente.Remove(data);
+				Vector3I cleFlore = CleFlorePourChunkData(data);
+				_setFloreDifferee.Remove(cleFlore);
+				_fileFloreDifferee.Remove(cleFlore);
+				_frameEnqueueFlore.Remove(cleFlore);
+				RetirerTravauxEnAttentePourChunk(data);
+				data.LibérerRids();
+				data.LibererDonneesVoxel();
+			}
 		}
 		_chunksATuerTemp.Clear();
 		foreach (var kv in _chunksData)
@@ -376,6 +508,20 @@ public partial class Monde_Client : Node3D
 		GD.Print($"ZERO-K ABYSSE DIAG CLIENT: pos=({pos.X:F1},{pos.Y:F1},{pos.Z:F1}) chunk={chunk} sousPieds={chunkSousPiedsPret} croix={collisionCroixPrete} local={collisionLocalePrete} y={resumeY} chunks3D={_chunksDataAbysse3D.Count} obsY={positionObservation.Y:F1}");
 	}
 
+	/// <summary>Tri radial de la file de requêtes (plus proche en tête).</summary>
+	private void TrierFileChunksAChargerParDistance(Vector3 positionObservation)
+	{
+		if (_chunksACharger.Count <= 1) return;
+		float ox = positionObservation.X / (float)TailleChunk;
+		float oy = positionObservation.Z / (float)TailleChunk;
+		_chunksACharger.Sort((a, b) =>
+		{
+			float da = (a.X - ox) * (a.X - ox) + (a.Y - oy) * (a.Y - oy);
+			float db = (b.X - ox) * (b.X - ox) + (b.Y - oy) * (b.Y - oy);
+			return da.CompareTo(db);
+		});
+	}
+
 	private void RetirerChunksDeLaFile(HashSet<Vector2I> aRetirer)
 	{
 		if (aRetirer == null || aRetirer.Count == 0 || _chunksACharger.Count == 0) return;
@@ -384,55 +530,34 @@ public partial class Monde_Client : Node3D
 				_chunksACharger.RemoveAt(i);
 	}
 
-	/// <summary>Extraction radiale : le chunk à distance minimale de l'épicentre (caméra/joueur). DistanceSquaredTo évite la racine.</summary>
+	/// <summary>
+	/// Extraction radiale stricte : toujours le chunk le plus proche (file triée par le radar).
+	/// Pas de priorité « là où je regarde » : sinon les montagnes lointaines passent avant les trous proches.
+	/// </summary>
 	private Vector2I ExtraireChunkLePlusProche(List<Vector2I> liste, Vector3 positionObservation, Vector3 directionObservation)
 	{
 		if (liste.Count == 0) return Vector2I.Zero;
 		Vector2 posObsV2 = new Vector2(positionObservation.X / (float)TailleChunk, positionObservation.Z / (float)TailleChunk);
 		Vector2I chunkCible = liste[0];
-		float scoreMin = float.MaxValue;
+		float distMin = float.MaxValue;
 		int indexASupprimer = 0;
-		float rayonNear = Mathf.Max(3, RayonDormancePhysique + 1);
-		float rayonNearCarre = rayonNear * rayonNear;
-		float vitesseXZ = 0f;
-		if (EssayerObtenirJoueurDansArbre(out CharacterBody3D joueurRef))
-		{
-			Vector3 v = joueurRef.Velocity;
-			vitesseXZ = Mathf.Sqrt(v.X * v.X + v.Z * v.Z);
-		}
-		float facteurMouvement = Mathf.Clamp(vitesseXZ / 6f, 0f, 1f);
-		float penaliteArriere = Mathf.Lerp(180f, 340f, facteurMouvement);
-		float bonusAvant = Mathf.Lerp(10f, 72f, facteurMouvement);
 		int count = liste.Count;
 		int fenetre = Mathf.Clamp(FenetreSelectionRequetes, 8, 512);
 		int scan = Mathf.Min(count, fenetre);
-		if (_curseurSelectionRequetes >= count)
-			_curseurSelectionRequetes = 0;
-		for (int n = 0; n < scan; n++)
+		// Début de file = plus proche (tri radar + InsertRange prioritaire) : on scanne depuis l'index 0.
+		for (int i = 0; i < scan; i++)
 		{
-			int i = (_curseurSelectionRequetes + n) % count;
-			Vector2 posChunk = new Vector2(liste[i].X, liste[i].Y);
-			Vector2 to = posChunk - posObsV2;
-			float dist = to.LengthSquared();
-			float score = dist;
-			if (dist > rayonNearCarre)
+			Vector2I c = liste[i];
+			float dx = c.X - posObsV2.X;
+			float dz = c.Y - posObsV2.Y;
+			float dist = dx * dx + dz * dz;
+			if (dist < distMin)
 			{
-				float d = Mathf.Sqrt(Mathf.Max(0.0001f, dist));
-				Vector3 dir = new Vector3(to.X / d, 0f, to.Y / d);
-				float dot = directionObservation.Dot(dir);
-				if (dot < 0f)
-					score += (1f - dot) * penaliteArriere;
-				else
-					score -= dot * bonusAvant;
-			}
-			if (score < scoreMin)
-			{
-				scoreMin = score;
-				chunkCible = liste[i];
+				distMin = dist;
+				chunkCible = c;
 				indexASupprimer = i;
 			}
 		}
-		_curseurSelectionRequetes = (_curseurSelectionRequetes + 1) % count;
 		liste.RemoveAt(indexASupprimer);
 		return chunkCible;
 	}
@@ -462,6 +587,41 @@ public partial class Monde_Client : Node3D
 		}
 		_curseurSelectionSolidification = (_curseurSelectionSolidification + 1) % count;
 		return idxBest;
+	}
+
+	/// <summary>Retire de la file urgente le chunk le plus proche des pieds (tranche Y incluse en profondeur).</summary>
+	private bool PreleverSolidificationUrgenteProche(Vector3 positionJoueur, out ChunkData data)
+	{
+		data = null;
+		int count = _fileAttenteSolidificationUrgente.Count;
+		if (count == 0) return false;
+		Vector2I cJoueur = Gestionnaire_Monde.WorldToChunkCoord(positionJoueur, TailleChunk);
+		int cyJoueur = ModeProfondeurTranchesActif()
+			? CoordYDepuisMondeY((int)Mathf.Floor(positionJoueur.Y))
+			: 0;
+		int fenetre = Mathf.Min(count, 48);
+		int bestIdx = count - 1;
+		int bestScore = int.MaxValue;
+		for (int n = 0; n < fenetre; n++)
+		{
+			int idx = count - 1 - n;
+			ChunkData c = _fileAttenteSolidificationUrgente[idx];
+			if (c == null) continue;
+			int ddx = c.Coordonnees.X - cJoueur.X;
+			int ddz = c.Coordonnees.Y - cJoueur.Y;
+			int score = ddx * ddx + ddz * ddz;
+			if (ModeProfondeurTranchesActif())
+				score += Mathf.Abs(c.CoordChunkY - cyJoueur) * 12;
+			if (score < bestScore)
+			{
+				bestScore = score;
+				bestIdx = idx;
+			}
+		}
+		data = _fileAttenteSolidificationUrgente[bestIdx];
+		_fileAttenteSolidificationUrgente.RemoveAt(bestIdx);
+		_setSolidificationUrgente.Remove(data);
+		return data != null;
 	}
 
 	private void DeclencherReconstructionSection((int cx, int coordY, int cz, int section) cible)

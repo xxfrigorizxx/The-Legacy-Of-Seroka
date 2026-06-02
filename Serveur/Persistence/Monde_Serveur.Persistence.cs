@@ -48,7 +48,10 @@ public partial class Monde_Serveur : Node
 			GD.PrintErr($"ZERO-K REJET : Chunk {coord} — fichier inexistant ({cheminGodot}).");
 			return null;
 		}
-		int voxelCount = (TailleChunk + 1) * (HauteurMax + 1) * (TailleChunk + 1);
+		int hauteurTrancheAttendue = ModeProfondeurActive
+			? ConstantesProfondeurVerticale.HauteurTrancheMetres
+			: HauteurMax;
+		int voxelCount = (TailleChunk + 1) * (hauteurTrancheAttendue + 1) * (TailleChunk + 1);
 		int tailleAttendue = voxelCount * 9;
 		byte[] donneesVoxels;
 		try
@@ -56,7 +59,21 @@ public partial class Monde_Serveur : Node
 			using (var reader = new BinaryReader(File.Open(cheminAbsolu, FileMode.Open, System.IO.FileAccess.Read, FileShare.Read)))
 			{
 				byte version = reader.ReadByte();
-				if (version != 1)
+				if (ModeProfondeurActive)
+				{
+					if (version != ConstantesProfondeurVerticale.VersionChunkProfondeur)
+					{
+						GD.PrintErr($"ZERO-K REJET : Chunk {coord} couche {coordY} — sauvegarde tranche 720 m (v{version}) incompatible, régénération ({cheminGodot}).");
+						return null;
+					}
+					ushort hauteurFichier = reader.ReadUInt16();
+					if (hauteurFichier != ConstantesProfondeurVerticale.HauteurTrancheMetres)
+					{
+						GD.PrintErr($"ZERO-K REJET : Chunk {coord} — hauteur tranche {hauteurFichier} ≠ {ConstantesProfondeurVerticale.HauteurTrancheMetres}.");
+						return null;
+					}
+				}
+				else if (version != 1)
 				{
 					GD.PrintErr($"ZERO-K REJET : Chunk {coord} — version {version} non supportée ({cheminGodot}).");
 					return null;

@@ -97,13 +97,17 @@ public partial class Gestionnaire_Monde : Node3D
 		_mondeClient.MaxChunksParFrame = MaxChunksParFrame;
 		_mondeClient.MaterielTerrain = TerrainMaterialFactory.ObtenirMaterielTerrainRobuste(MaterielTerrain);
 		ConfigurerProfilMondeClientSelonMateriel();
+		_mondeClient.ActiverProfondeurEtendue = ActiverProfondeurEtendue;
+		_mondeClient.ProfondeurMaxMetres = ProfondeurMaxMetres;
 		_mondeClient.Initialiser(
 			_joueur,
 			GetNode<GameState>("/root/GameState").SeedTerrainActuel,
 			coord =>
 			{
 				Vector3 posJ = ObtenirPositionJoueurOuSpawn();
-				int coordY = Mathf.FloorToInt(posJ.Y / Mathf.Max(1f, _mondeServeur?.HauteurMax ?? 1));
+				int coordY = ActiverProfondeurEtendue && _dimensionLocaleActive != (int)DimensionJeu.Abysse
+					? ConstantesProfondeurVerticale.CoordYDepuisMondeY(posJ.Y)
+					: Mathf.FloorToInt(posJ.Y / Mathf.Max(1f, _mondeServeur?.HauteurMax ?? 1));
 				_mondeServeur?.EnregistrerDemandeChunk(coord, coordY, posJ);
 			},
 			(pointImpact, rayon, forceDegats) => _mondeServeur.AppliquerDestructionGlobale(pointImpact, rayon, forceDegats),

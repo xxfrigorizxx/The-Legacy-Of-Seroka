@@ -15,9 +15,10 @@ public partial class Monde_Client : Node3D
 	/// </summary>
 	private int AppliquerGateEtRampUp(int budgetActuel, bool doitGarantirProcheJoueur, int minSortieGel = 1)
 	{
-		if (doitGarantirProcheJoueur) return budgetActuel;
+		if (doitGarantirProcheJoueur || _streamingChunksPrioritaireCetteFrame) return budgetActuel;
 		// Grâce post-panneau graphismes : sinon le gate peut bloquer tout (0 requête chunk) malgré un RenderDistance élevé.
 		if (_timerGraceStreamingReglageUtilisateur > 0f) return budgetActuel;
+		if (_timerGraceStreamingBootstrap > 0f) return budgetActuel;
 		if (!ActiverGateFpsStrict) return budgetActuel;
 		// Ne pas renvoyer 0 : bloque toute intégration mesh / requête distante → sol visible sous les pieds seulement, arbres flottants.
 		if (_gateStreamingGele) return minSortieGel;
@@ -98,9 +99,11 @@ public partial class Monde_Client : Node3D
 			_fpsMoyenneAuto = Mathf.Lerp(_fpsMoyenneAuto, fps, alpha);
 		}
 
-		// === Gate FPS strict : gèle tout nouveau chargement tant que FPS < 60 (hystérésis). ===
-		// Pendant la grâce « Appliquer » graphismes, on n’entre pas ici : le else force dégel (sinon aucun chunk ne part).
-		if (ActiverGateFpsStrict && _timerGraceStreamingReglageUtilisateur <= 0f)
+		if (_timerGraceStreamingBootstrap > 0f)
+			_timerGraceStreamingBootstrap = Mathf.Max(0f, _timerGraceStreamingBootstrap - dt);
+
+		// === Gate FPS strict : ralentit le lointain si FPS bas — pas pendant bootstrap / monde incomplet. ===
+		if (ActiverGateFpsStrict && _timerGraceStreamingReglageUtilisateur <= 0f && _timerGraceStreamingBootstrap <= 0f)
 		{
 			float fpsInstant = fps > 1f ? fps : _fpsMoyenneAuto;
 			// Utilise à la fois FPS instantané et moyen pour une réaction rapide sans bruit.
@@ -261,9 +264,21 @@ public partial class Monde_Client : Node3D
 
 	public bool BootstrapInitialStabilise()
 	{
-		if (!ChunkSousPiedsAPret())
+		// Profondeur (tranches 100 m) : au boot, un chunk sous les pieds suffit ; la grille 5×5 se remplit en jeu.
+		if (ModeProfondeurTranchesActif())
+		{
+			if (!EssayerObtenirJoueurDansArbre(out CharacterBody3D joueurRef))
+				return false;
+			Vector2I c = Gestionnaire_Monde.WorldToChunkCoord(joueurRef.GlobalPosition, TailleChunk);
+			if (!ChunkCollisionActive(c))
+				return false;
+		}
+		else if (!ChunkSousPiedsAPret())
 			return false;
-		if (CompterBacklog() > Mathf.Max(0, SeuilBacklogBootstrapStable))
+		int seuilBacklog = ModeProfondeurTranchesActif()
+			? Mathf.Max(SeuilBacklogBootstrapStable, 96)
+			: SeuilBacklogBootstrapStable;
+		if (CompterBacklog() > Mathf.Max(0, seuilBacklog))
 			return false;
 		if (ExigerSolidificationVidePourBootstrap
 			&& (_fileAttenteSolidificationUrgente.Count > 0 || _fileAttenteSolidification.Count > 0))

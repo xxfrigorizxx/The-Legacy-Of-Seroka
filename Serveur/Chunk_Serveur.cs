@@ -128,6 +128,8 @@ public partial class Chunk_Serveur : RefCounted
 	private bool _estModifie;
 	/// <summary>True si chargé depuis disque. AUCUNE passe de génération ne doit jamais s'exécuter sur ce chunk.</summary>
 	private bool _chargeDepuisDisque;
+	/// <summary>Évite de rescanner tout le chunk à chaque ObtenirOuCreerChunk (coût CPU + renvoi réseau).</summary>
+	private bool _reparationLegacyProfondeurFaite;
 
 	public bool EstModifie => _estModifie;
 	public bool EstChargeDepuisDisque => _chargeDepuisDisque;
@@ -487,7 +489,7 @@ public partial class Chunk_Serveur : RefCounted
 				}
 			}
 			// Veines de minerais: système pré-intégré, désactivé tant que les switches restent à false.
-			AppliquerVeinesMinerais(hauteurColonne);
+			AppliquerVeinesMinerais(hauteurColonne, temperatureColonne, humiditeColonne);
 			AppliquerBiomeParasiteCornichesAbysse();
 			AppliquerEnsemencementFloreTrouAbysse(notifierClient: false);
 			// Couches profondes (sous Y=0) : pas d'eau de mer (aucun océan sous terre) ni d'arbres de surface.
@@ -506,15 +508,25 @@ public partial class Chunk_Serveur : RefCounted
 
 	/// <summary>
 	/// Injection initiale d'eau volumétrique (une seule fois à la génération du chunk).
-	/// Un voxel devient eau uniquement s'il est connecté à une colonne ouverte au ciel sous le niveau d'eau.
+	/// Un voxel devient eau uniquement s'il est dans une colonne ouverte au ciel sous le niveau d'eau.
+	/// On évite la propagation latérale systématique qui inondait toutes les grottes connectées.
+	/// En profondeur (tranches 100 m), le plafond d'eau utilise Y monde (pas un yMax local à 3 sur coordY=1).
 	/// </summary>
 	private void InitialiserEauVolumetrique(int[,] sommetSolide)
 	{
 		if (_densities == null || _densitiesEau == null || _materials == null) return;
-		int yMaxEau = Math.Min(ObtenirNiveauEauActif(), HauteurMax);
-		if (yMaxEau <= 2) return;
-
-		var file = new Queue<Vector3I>();
+		int niveauEauMonde = _generationAbysseActive ? AbyssNiveauEau : NiveauEau;
+		int yBaseMonde = ChunkOffsetY * HauteurMax;
+		int yMaxLocal = _profondeurEtendueActive
+			? ConstantesProfondeurVerticale.ObtenirYMaxEauLocalTranche(ChunkOffsetY, HauteurMax, niveauEauMonde)
+			: Math.Min(ObtenirNiveauEauActif(), HauteurMax);
+		if (yMaxLocal <= 2) return;
+		var roleEau = _profondeurEtendueActive
+			? ConstantesProfondeurVerticale.ObtenirRoleTrancheEauMer(ChunkOffsetY, HauteurMax, niveauEauMonde)
+			: ConstantesProfondeurVerticale.RoleTrancheEauMer.Aucun;
+		bool remplissageVolume3D = roleEau == ConstantesProfondeurVerticale.RoleTrancheEauMer.Chapeau
+			|| roleEau == ConstantesProfondeurVerticale.RoleTrancheEauMer.Corps;
+		int yMinDebutColonne = remplissageVolume3D ? 0 : 3;
 		for (int x = 0; x <= TailleChunk; x++)
 		{
 			for (int z = 0; z <= TailleChunk; z++)
@@ -524,31 +536,36 @@ public partial class Chunk_Serveur : RefCounted
 				// Le cœur abyssal doit rester un vide absolu, pas un puits rempli d'eau.
 				if (EstDansTrouNoirAbysseMonde(xGlobal, zGlobal))
 					continue;
-				int yDebut = Mathf.Clamp(sommetSolide[x, z] + 1, 3, yMaxEau);
-				for (int y = yDebut; y <= yMaxEau; y++)
+				int yDebut = Mathf.Clamp(sommetSolide[x, z] + 1, yMinDebutColonne, yMaxLocal);
+				for (int y = yDebut; y <= yMaxLocal; y++)
 				{
+					if (yBaseMonde + y > niveauEauMonde) continue;
 					if (!EstVoxelAirSansVerrou(x, y, z)) continue;
+					if (remplissageVolume3D)
+					{
+						DefinirEauSansVerrou(x, y, z);
+						continue;
+					}
+					if (!EstVoxelOuvertAuCielMonde(x, y, z, niveauEauMonde)) continue;
 					DefinirEauSansVerrou(x, y, z);
-					file.Enqueue(new Vector3I(x, y, z));
 				}
 			}
 		}
+	}
 
-		while (file.Count > 0)
+	/// <summary>Colonne ouverte jusqu'au niveau de la mer (Y monde), pas seulement le haut de la tranche courante.</summary>
+	private bool EstVoxelOuvertAuCielMonde(int x, int y, int z, int niveauEauMonde)
+	{
+		int yMonde = ChunkOffsetY * HauteurMax + y;
+		for (int ny = y + 1; ny <= HauteurMax; ny++)
 		{
-			Vector3I pos = file.Dequeue();
-			foreach (var d in DirPropagationEauInitiale)
-			{
-				int nx = pos.X + d.X;
-				int ny = pos.Y + d.Y;
-				int nz = pos.Z + d.Z;
-				if (nx < 0 || nx > TailleChunk || nz < 0 || nz > TailleChunk) continue;
-				if (ny <= 2 || ny > yMaxEau) continue;
-				if (!EstVoxelAirSansVerrou(nx, ny, nz)) continue;
-				DefinirEauSansVerrou(nx, ny, nz);
-				file.Enqueue(new Vector3I(nx, ny, nz));
-			}
+			int yMondeN = ChunkOffsetY * HauteurMax + ny;
+			if (yMondeN > niveauEauMonde)
+				return true;
+			if (_densities[x, ny, z] > Isolevel)
+				return false;
 		}
+		return true;
 	}
 
 	private int ObtenirNiveauEauActif()
@@ -562,6 +579,16 @@ public partial class Chunk_Serveur : RefCounted
 		bool sol = _densities[x, y, z] > Isolevel;
 		bool eau = _densitiesEau[x, y, z] > Isolevel;
 		return !sol && !eau;
+	}
+
+	private bool EstVoxelOuvertAuCielSansVerrou(int x, int y, int z)
+	{
+		for (int ny = y + 1; ny <= HauteurMax; ny++)
+		{
+			if (_densities[x, ny, z] > Isolevel)
+				return false;
+		}
+		return true;
 	}
 
 	private void DefinirEauSansVerrou(int x, int y, int z)
@@ -857,6 +884,34 @@ public partial class Chunk_Serveur : RefCounted
 		}
 	}
 
+	/// <summary>Sol d'une grotte (cavité fermée) — évite le plafond détecté par <see cref="ObtenirHauteurSurfaceLocale"/>.</summary>
+	public (int ySol, byte mat) ObtenirSolGrotteEtMateriau(int lx, int lz)
+	{
+		if (lx < 0 || lx > TailleChunk || lz < 0 || lz > TailleChunk || _densities == null)
+			return (-1, 0);
+		const int hauteurMinCavite = 4;
+		lock (_verrouVoxel)
+		{
+			for (int y = 2; y < HauteurMax - 4; y++)
+			{
+				if (_densities[lx, y, lz] <= Isolevel) continue;
+				if (_densities[lx, y + 1, lz] > Isolevel) continue;
+				int yAir = y + 1;
+				while (yAir < HauteurMax
+					&& _densities[lx, yAir, lz] <= Isolevel
+					&& (_densitiesEau == null || _densitiesEau[lx, yAir, lz] <= Isolevel))
+					yAir++;
+				if (yAir - (y + 1) < hauteurMinCavite) continue;
+				if (yAir > HauteurMax - 2) continue;
+				if (_densities[lx, yAir, lz] <= Isolevel) continue;
+				byte mat = _materials[lx, y, lz];
+				if (mat == 4) mat = 3;
+				return (y, mat);
+			}
+		}
+		return (-1, 0);
+	}
+
 	/// <summary>Hauteur de surface depuis les données chargées (chunks disque). -1 si hors limites ou pas de sol.</summary>
 	private int ObtenirHauteurSurfaceLocale(int lx, int lz)
 	{
@@ -1026,7 +1081,12 @@ public partial class Chunk_Serveur : RefCounted
 		byte[] donnees = ObtenirTableauBytes();
 		using (var writer = new BinaryWriter(File.Open(cheminFichier, FileMode.Create)))
 		{
-			writer.Write((byte)1);
+			byte version = _profondeurEtendueActive
+				? ConstantesProfondeurVerticale.VersionChunkProfondeur
+				: (byte)1;
+			writer.Write(version);
+			if (_profondeurEtendueActive)
+				writer.Write((ushort)HauteurMax);
 			writer.Write(donnees.Length);
 			writer.Write(donnees);
 		}
@@ -1129,6 +1189,83 @@ public partial class Chunk_Serveur : RefCounted
 
 		if (modifie)
 			AppliquerEnsemencementFloreTrouAbysse(notifierClient: false);
+	}
+
+	/// <summary>
+	/// Sauvegardes créées avant la profondeur étendue : vide ou bedrock artificiel sous Y≈0.
+	/// Rebouche le sous-sol procédural (roche + grottes) sans toucher au ciel ni au bedrock du fond monde.
+	/// </summary>
+	/// <returns>True si des voxels ont été rebouchés (chunk à renvoyer au client).</returns>
+	public bool ReparerSousSolProfondeurLegacySiChargee()
+	{
+		// Tranches 100 m (v2) : pas de rebouchage legacy 720 m.
+		if (_profondeurEtendueActive)
+			return false;
+		if (_reparationLegacyProfondeurFaite)
+			return false;
+		_reparationLegacyProfondeurFaite = true;
+		if (!_profondeurEtendueActive || _generationAbysseActive || !_chargeDepuisDisque)
+			return false;
+		if (_densities == null || _materials == null)
+			return false;
+
+		const bool activerGrottes = true;
+		bool modifie = false;
+		int taille = TailleChunk + 1;
+		lock (_verrouVoxel)
+		{
+			for (int x = 0; x < taille; x++)
+			for (int z = 0; z < taille; z++)
+			{
+				int xInt = ChunkOffsetX * TailleChunk + x;
+				int zInt = ChunkOffsetZ * TailleChunk + z;
+				int hauteurSurface = CalculerHauteurTerrain(xInt, zInt);
+				float trancheBas = ChunkOffsetY * HauteurMax;
+				float trancheHaut = trancheBas + HauteurMax;
+				float globalYMin;
+				float globalYMax;
+				if (ChunkOffsetY == 0)
+				{
+					// Ancien socle Y=0 : reboucher seulement le sous-sol peu profond.
+					globalYMin = Mathf.Max(_fondMondeY + 3f, trancheBas);
+					globalYMax = Mathf.Min(hauteurSurface - 4f, trancheBas + 64f);
+				}
+				else
+				{
+					// Jonction entre tranches : haut de la couche (ex. Y -720..-650 si coordY=-1).
+					globalYMax = Mathf.Min(hauteurSurface - 4f, trancheHaut);
+					globalYMin = Mathf.Max(trancheBas, Mathf.Max(_fondMondeY + 3f, globalYMax - 96f));
+				}
+				if (globalYMin >= globalYMax)
+					continue;
+				ObtenirPlageIndiceYMonde(globalYMin, globalYMax, out int yDebut, out int yFin);
+				if (yDebut > yFin)
+					continue;
+
+				for (int y = yDebut; y <= yFin; y++)
+				{
+					float globalY = ChunkOffsetY * HauteurMax + y;
+					if (_densities[x, y, z] > Isolevel)
+						continue;
+
+					float valeurGrotte = activerGrottes
+						? _noiseCavernes.GetNoise3D(xInt, globalY, zInt)
+						: -1f;
+					if (activerGrottes && valeurGrotte > 0.50f)
+						continue;
+
+					_densities[x, y, z] = 10.0f;
+					_materials[x, y, z] = 2;
+					if (_densitiesEau != null)
+						_densitiesEau[x, y, z] = -1.0f;
+					modifie = true;
+				}
+			}
+		}
+
+		if (modifie)
+			_estModifie = true;
+		return modifie;
 	}
 
 	/// <summary>Herbe sur replats + baies cyan (variante 8) dans le goufre APISARA. Idempotent ; génération procédurale uniquement (pas à chaque chargement disque).</summary>
