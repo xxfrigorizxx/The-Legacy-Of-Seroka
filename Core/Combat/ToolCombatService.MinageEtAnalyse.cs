@@ -7,6 +7,7 @@ public partial class Joueur
     {
         _cooldownMessageRecuperationFondation = Mathf.Max(0f, _cooldownMessageRecuperationFondation - dt);
         _cooldownMessageEtatBrasAction = Mathf.Max(0f, _cooldownMessageEtatBrasAction - dt);
+        _cooldownMessageInventairePleinMinage = Mathf.Max(0f, _cooldownMessageInventairePleinMinage - dt);
         bool mainVide = mainActive.EstVide;
         bool hachette = mainActive.ID == 106 || mainActive.ID == IdObjetHachePierreTier1;
         bool hachePierreTier1 = mainActive.ID == IdObjetHachePierreTier1;
@@ -229,15 +230,124 @@ public partial class Joueur
         ReinitialiserMinageMainNueProgression();
     }
 
+    private float _progressionRemplissageBolEau;
+    private const float DureeRemplissageBolEauSec = 0.5f;
+
+    /// <summary>True si la visée (ou juste devant la caméra) traverse de l'eau. Utilise EstPointDansEau (l'eau n'est pas un voxel solide).</summary>
+    private bool ViseDeLEauPourRemplissage()
+    {
+        if (_gestionnaireMonde == null || _camera == null)
+            return false;
+        _rayon.ForceRaycastUpdate();
+        Vector3 baseCam = _camera.GlobalPosition;
+        Vector3 avant = -_camera.GlobalTransform.Basis.Z.Normalized();
+        if (!_rayon.IsColliding())
+        {
+            // Eau libre (pas de fond touché à portée) : sonder quelques points devant la caméra.
+            for (float d = 1.0f; d <= 3.5f; d += 0.5f)
+                if (_gestionnaireMonde.EstPointDansEau(baseCam + avant * d))
+                    return true;
+            return false;
+        }
+        Vector3 impact = _rayon.GetCollisionPoint();
+        // L'eau n'a pas de collision : le rayon touche le fond. Sonder au-dessus du fond et à mi-chemin.
+        Vector3[] tests =
+        {
+            impact + Vector3.Up * 0.4f,
+            impact + Vector3.Up * 1.0f,
+            (baseCam + impact) * 0.5f
+        };
+        foreach (Vector3 p in tests)
+            if (_gestionnaireMonde.EstPointDansEau(p))
+                return true;
+        return false;
+    }
+
+    /// <summary>Clic gauche maintenu ~0,5 s avec un bol vide en visant l'eau : le bol vide devient un bol d'eau (même essence).</summary>
+    private void MettreAJourRemplissageBolEau(float dt)
+    {
+        SlotInventaire mainActive = MainGaucheEstActive ? MainGauche : MainDroite;
+        if (mainActive.ID != IdObjetBolBois || mainActive.EstVide)
+        {
+            _progressionRemplissageBolEau = 0f;
+            return;
+        }
+        if (!ViseDeLEauPourRemplissage())
+        {
+            _progressionRemplissageBolEau = 0f;
+            return;
+        }
+        _progressionRemplissageBolEau += dt;
+        if (_progressionRemplissageBolEau < DureeRemplissageBolEauSec)
+            return;
+        _progressionRemplissageBolEau = 0f;
+
+        var bolEau = new SlotInventaire
+        {
+            ID = IdObjetBolEau,
+            Quantite = 1,
+            IndexBotanique = mainActive.IndexBotanique,
+            IndexChimique = mainActive.IndexChimique,
+            IndexMorphologique = mainActive.IndexMorphologique
+        };
+
+        if (Joueur.ObtenirQuantiteSlot(mainActive) <= 1)
+        {
+            // Transformation directe : 1 bol vide en main → 1 bol d'eau.
+            if (MainGaucheEstActive) MainGauche = bolEau;
+            else MainDroite = bolEau;
+        }
+        else
+        {
+            // Pile de bols : ne remplir qu'une unité, ranger le bol d'eau (ou le poser si plein).
+            if (!ADeLaPlacePourSlotInventaire(bolEau))
+            {
+                GD.Print("SEROKA : Inventaire plein — videz une place pour remplir un bol.");
+                return;
+            }
+            mainActive.Quantite -= 1;
+            if (MainGaucheEstActive) MainGauche = mainActive;
+            else MainDroite = mainActive;
+            EssayerAjouterDansInventaire(bolEau);
+        }
+        RafraichirHUD();
+        MettreAJourObjetEnMain();
+        GD.Print("SEROKA : Bol rempli d'eau.");
+    }
+
     private void ExecuterMinageVoxelMainNue(Vector3 pointImpactVoxel, int idExtrait, bool consommerUsureOutil)
     {
         if (!EstMatiereMinableMainNue(idExtrait) && !EstMatiereMinablePioche(idExtrait))
             return;
-        var nouveauSlot = new SlotInventaire { ID = idExtrait, IndexMorphologique = 0, IndexChimique = 0, Quantite = 1 };
-        if (!ADeLaPlacePourSlotInventaire(nouveauSlot))
-            return;
 
-        _gestionnaireMonde?.AppliquerDestructionGlobale(pointImpactVoxel, RAYON_SCULPTURE, 5.0f);
+        SlotInventaire nouveauSlot;
+        if (Atlas_Matiere.EstIdVoxelTerrainMinerai(idExtrait))
+        {
+            int seed = _gestionnaireMonde?.SeedTerrain ?? 0;
+            nouveauSlot = ConstruireSlotLootMineraiVoxel(idExtrait, pointImpactVoxel, seed);
+        }
+        else
+            nouveauSlot = new SlotInventaire { ID = idExtrait, IndexMorphologique = 0, IndexChimique = 0, Quantite = 1 };
+
+        Vector3 centreVoxel = new Vector3(
+            Mathf.Floor(pointImpactVoxel.X) + 0.5f,
+            Mathf.Floor(pointImpactVoxel.Y) + 0.5f,
+            Mathf.Floor(pointImpactVoxel.Z) + 0.5f);
+        _gestionnaireMonde?.AppliquerDestructionGlobale(centreVoxel, RAYON_SCULPTURE, 5.0f);
+
+        if (!ADeLaPlacePourSlotInventaire(nouveauSlot))
+        {
+            if (_cooldownMessageInventairePleinMinage <= 0f)
+            {
+                _cooldownMessageInventairePleinMinage = 1.2f;
+                GD.Print("ZERO-K : Inventaire plein — le bloc est détruit mais le butin n'a pas pu être récupéré.");
+            }
+            if (consommerUsureOutil)
+                AppliquerUsureOutilMainActive(1f);
+            AttribuerXpMetierExtractionTerrain(idExtrait);
+            RafraichirHUD();
+            return;
+        }
         if (!EssayerAjouterDansInventaire(nouveauSlot))
             return;
         if (consommerUsureOutil)

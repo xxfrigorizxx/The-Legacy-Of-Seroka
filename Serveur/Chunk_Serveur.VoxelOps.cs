@@ -64,6 +64,7 @@ public partial class Chunk_Serveur : RefCounted
 					}
 			if (!modifie) return;
 			_estModifie = true; // Joueur a miné → sauvegarde obligatoire au déchargement.
+			_contenuChangeDepuisEnvoiClient = true;
 			foreach (var pos in positionsDetruites) VerifierStabilite(pos);
 		}
 
@@ -107,6 +108,7 @@ public partial class Chunk_Serveur : RefCounted
 					}
 			if (positionsModifiees.Count == 0) return;
 			_estModifie = true; // Joueur a placé des blocs → sauvegarde obligatoire.
+			_contenuChangeDepuisEnvoiClient = true;
 		}
 
 		foreach (var pos in positionsModifiees)
@@ -267,7 +269,10 @@ public partial class Chunk_Serveur : RefCounted
 			if (_densitiesEau != null) _densitiesEau[x, y, z] = 1.0f;
 			modifie = !dejaEau;
 			if (modifie)
+			{
 				_estModifie = true;
+				_contenuChangeDepuisEnvoiClient = true;
+			}
 		}
 		if (modifie)
 			AuditerGraviteFlore();
@@ -287,7 +292,10 @@ public partial class Chunk_Serveur : RefCounted
 			if (_densitiesEau != null) _densitiesEau[x, y, z] = -1.0f;
 			modifie = !dejaAir;
 			if (modifie)
+			{
 				_estModifie = true;
+				_contenuChangeDepuisEnvoiClient = true;
+			}
 		}
 		if (modifie)
 			AuditerGraviteFlore();
@@ -322,6 +330,7 @@ public partial class Chunk_Serveur : RefCounted
 		if (marquerChunkModifie)
 		{
 			_estModifie = true;
+			_contenuChangeDepuisEnvoiClient = true;
 			AuditerGraviteFlore();
 		}
 	}
@@ -331,6 +340,7 @@ public partial class Chunk_Serveur : RefCounted
 	{
 		SetVoxelLocal(lx, ly, lz, id);
 		_estModifie = true;
+		_contenuChangeDepuisEnvoiClient = true;
 		int gy = ChunkOffsetY * HauteurMax + ly;
 		var posGlobal = new Vector3I(ChunkOffsetX * TailleChunk + lx, gy, ChunkOffsetZ * TailleChunk + lz);
 		_onVoxelModifie?.Invoke(posGlobal, id);

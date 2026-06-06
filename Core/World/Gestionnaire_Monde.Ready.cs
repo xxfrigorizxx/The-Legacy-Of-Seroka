@@ -22,6 +22,11 @@ public partial class Gestionnaire_Monde : Node3D
 			AssurerOverlayPortailTransition,
 			InitialiserWarmupShadersProgressif);
 		DirAccess.MakeDirRecursiveAbsolute("user://chunks");
+		if (!Engine.IsEditorHint())
+		{
+			JournalErreursZeroK.Initialiser();
+			TreeExiting += () => JournalErreursZeroK.Flush();
+		}
 		_joueur = GetParent().GetNode<CharacterBody3D>("Joueur");
 		// F5 / lancement direct : GameState reste sur « MonMonde » par défaut alors que les sauvegardes sont dans le dernier monde du menu.
 		GameState.Instance?.AppliquerDernierMondeJoueSiChargementDirectVersMondeZero();
@@ -122,6 +127,8 @@ public partial class Gestionnaire_Monde : Node3D
 			if (sessionSauvegardee.HasValue)
 				_dimensionLocaleActive = dimensionReconnexion;
 			DemarrerArchitectureReseau();
+			if (sessionSauvegardee.HasValue && _mondeClient != null)
+				_mondeClient.ActiverGraceBootstrapReconnexion(20f);
 			// Reconnexion : si la dernière dimension active n'est pas Alpha (déjà l'état par défaut au boot)
 			// et qu'elle existe bien dans nos serveurs, on bascule dessus à la même position. Couvre Abysse + Beta/Omega/Delta.
 			if (sessionSauvegardee.HasValue

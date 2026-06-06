@@ -133,7 +133,17 @@ public partial class Chunk_Serveur : RefCounted
 
 	public bool EstModifie => _estModifie;
 	public bool EstChargeDepuisDisque => _chargeDepuisDisque;
-	internal void MarquerModifie() => _estModifie = true;
+	internal void MarquerModifie() { _estModifie = true; _contenuChangeDepuisEnvoiClient = true; }
+
+	/// <summary>
+	/// Anti-gaspillage réseau : true tant que le client n'a pas reçu la dernière version de CE chunk.
+	/// Posé à true à la création (jamais envoyé) et à chaque mutation voxel ; remis à false après mise en file d'envoi.
+	/// Évite de re-sérialiser (~260 Ko) et renvoyer en boucle un chunk inchangé que le client possède déjà.
+	/// </summary>
+	private bool _contenuChangeDepuisEnvoiClient = true;
+	public bool ABesoinDeReenvoiClient() => _contenuChangeDepuisEnvoiClient;
+	public void MarquerEnvoyeAuClient() => _contenuChangeDepuisEnvoiClient = false;
+	internal void InvaliderCopieClient() => _contenuChangeDepuisEnvoiClient = true;
 
 	/// <summary>Repeuple <see cref="InventaireArbres"/> en rejouant uniquement la passe procédurale d'arbres sur les voxels actuels.
 	/// Utilisé en migration sur saves Abysse antérieures à la persistance des arbres : ne touche pas <c>_densities/_materials</c>.</summary>
@@ -536,17 +546,25 @@ public partial class Chunk_Serveur : RefCounted
 				// Le cœur abyssal doit rester un vide absolu, pas un puits rempli d'eau.
 				if (EstDansTrouNoirAbysseMonde(xGlobal, zGlobal))
 					continue;
-				int yDebut = Mathf.Clamp(sommetSolide[x, z] + 1, yMinDebutColonne, yMaxLocal);
+				int hauteurSurface = CalculerHauteurTerrain((int)xGlobal, (int)zGlobal);
+				int yDebut;
+				if (remplissageVolume3D)
+				{
+					// Tranche 100 m : eau uniquement entre la surface monde (≈103) et la mer — pas dans les grottes sous Y=0.
+					int yMondeDebutEau = hauteurSurface + 1;
+					yDebut = Mathf.Clamp(yMondeDebutEau - yBaseMonde, yMinDebutColonne, yMaxLocal);
+					if (yDebut > yMaxLocal)
+						continue;
+				}
+				else
+					yDebut = Mathf.Clamp(sommetSolide[x, z] + 1, yMinDebutColonne, yMaxLocal);
 				for (int y = yDebut; y <= yMaxLocal; y++)
 				{
-					if (yBaseMonde + y > niveauEauMonde) continue;
+					int yMonde = yBaseMonde + y;
+					if (yMonde > niveauEauMonde) continue;
+					if (yMonde <= hauteurSurface) continue;
 					if (!EstVoxelAirSansVerrou(x, y, z)) continue;
-					if (remplissageVolume3D)
-					{
-						DefinirEauSansVerrou(x, y, z);
-						continue;
-					}
-					if (!EstVoxelOuvertAuCielMonde(x, y, z, niveauEauMonde)) continue;
+					if (!remplissageVolume3D && !EstVoxelOuvertAuCielMonde(x, y, z, niveauEauMonde)) continue;
 					DefinirEauSansVerrou(x, y, z);
 				}
 			}

@@ -383,10 +383,14 @@ public partial class Gestionnaire_Monde : Node3D
 			// Mémorise la position actuelle dans la dim qu'on quitte (clé = dimensionActuelle).
 			_positionsSauvegardeesParDimension[dimensionActuelle] = positionAvantTp;
 			SauvegarderSessionJoueur(dimensionActuelle, positionAvantTp);
-			if (_joueur is Joueur j && ConstantesDimensions.EssayerObtenirInfo(dimensionActuelle, out var infoCourante))
-				SauvegarderPersistanceCompleteMonde($"TransfererPeer.quit.{infoCourante.NomCanonique}");
-			else if (_joueur is Joueur jFallback)
-				jFallback.SauvegarderEtatPersistantJoueurSeulement();
+			if (_joueur is Joueur j)
+			{
+				// Inventaire / progression uniquement : les chunks modifiés sont flushés par la suspension
+				// serveur de la dimension quittée (budget), pas par un Râle d'Agonie multi-dimensions.
+				j.SauvegarderEtatPersistantJoueurSeulement();
+				if (ConstantesDimensions.EssayerObtenirInfo(dimensionActuelle, out var infoCourante))
+					GD.Print($"ZERO-K : Transfert dimension — persistance joueur OK, chunks dim {infoCourante.NomCanonique} différés (suspension/autosave).");
+			}
 		}
 		DefinirDimensionPeer(peerId, dimensionCible);
 		if (peerId == Multiplayer.GetUniqueId())

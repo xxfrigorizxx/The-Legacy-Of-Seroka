@@ -3,7 +3,9 @@ using Godot;
 /// <summary>Padding MC vertical (tranches 100 m) et corridor de solidification / marche.</summary>
 public partial class Monde_Client : Node3D
 {
-	/// <summary>Échantillonne un voxel local ou sur la tranche voisine (ly±1 hors limites).</summary>
+	/// <summary>
+	/// Échantillonne un voxel en coordonnées monde (tranche voisine coordY±1, chunk voisin XZ, ou prolongement de bord).
+	/// </summary>
 	public bool TryEchantillonnerVoxelProfondeur(ChunkData data, int lx, int ly, int lz, out float densite, out float eau, out byte mat)
 	{
 		densite = -10f;
@@ -20,71 +22,76 @@ public partial class Monde_Client : Node3D
 			return true;
 		}
 
+		int tc = data.TailleChunk;
 		int h = data.HauteurMax;
-		Vector2I coord = data.Coordonnees;
 		int cy = data.CoordChunkY;
-		ChunkData source = data;
-		int lyLecture = ly;
+		Vector2I coord = data.Coordonnees;
+		int xMonde = coord.X * tc + lx;
+		int zMonde = coord.Y * tc + lz;
+		int yMonde = cy * h + ly;
 
-		int yMonde = ConstantesProfondeurVerticale.MondeYDepuisLocal(cy, h, ly);
-		const int niveauMer = ConstantesProfondeurVerticale.NiveauEauMondeAlpha;
+		Vector2I coordCible = Gestionnaire_Monde.WorldToChunkCoord(xMonde, zMonde, TailleChunk);
+		int cyCible = ConstantesProfondeurVerticale.CoordYDepuisMondeY(yMonde);
+		int lxC = xMonde - coordCible.X * tc;
+		int lzC = zMonde - coordCible.Y * tc;
+		int lyC = yMonde - cyCible * h;
 
-		if (ly > h)
+		if (TryGetChunkDataPourCoordY(coordCible, cyCible, out var source)
+			&& source?.DensitiesFlat != null && source.MaterialsFlat != null
+			&& lxC >= 0 && lxC <= tc && lyC >= 0 && lyC <= source.HauteurMax && lzC >= 0 && lzC <= tc)
 		{
-			if (TryGetChunkDataPourCoordY(coord, cy + 1, out source) && source?.DensitiesFlat != null)
-				lyLecture = 0;
-			else
-			{
-				// Tranche du dessus pas encore chargée : prolonger ly=h (évite déchirure MC à Y=100).
-				source = data;
-				lyLecture = h;
-				LireVoxelLocal(source, lx, lyLecture, lz, ref densite, ref eau, ref mat);
-				if (densite <= 0f && ConstantesProfondeurVerticale.EstSousNiveauMer(yMonde, niveauMer)
-					&& (cy + 1) * h <= niveauMer)
-				{
-					densite = -10f;
-					eau = 1f;
-					mat = 4;
-				}
-				return true;
-			}
-		}
-		else if (ly < 0)
-		{
-			if (TryGetChunkDataPourCoordY(coord, cy - 1, out source) && source?.DensitiesFlat != null)
-				lyLecture = h;
-			else
-			{
-				source = data;
-				lyLecture = 0;
-				LireVoxelLocal(source, lx, lyLecture, lz, ref densite, ref eau, ref mat);
-				if (densite <= 0f && ConstantesProfondeurVerticale.EstSousNiveauMer(yMonde, niveauMer))
-				{
-					densite = -10f;
-					eau = 1f;
-					mat = 4;
-				}
-				return true;
-			}
-		}
-
-		if (lx < 0 || lx > source.TailleChunk || lyLecture < 0 || lyLecture > source.HauteurMax || lz < 0 || lz > source.TailleChunk)
+			LireVoxelLocal(source, lxC, lyC, lzC, ref densite, ref eau, ref mat);
 			return true;
+		}
 
-		LireVoxelLocal(source, lx, lyLecture, lz, ref densite, ref eau, ref mat);
-		if (ly < 0 && eau <= 0f && lyLecture > 0
-			&& source.DensitiesEauFlat != null
-			&& source.DensitiesEauFlat[source.Idx(lx, lyLecture - 1, lz)] > 0f)
-			LireVoxelLocal(source, lx, lyLecture - 1, lz, ref densite, ref eau, ref mat);
+		// Voisin vertical absent : miroir sur la ligne de couture (ly=0 / ly=h) au lieu d'un clamp aveugle.
+		int lxBord = Mathf.Clamp(lx, 0, tc);
+		int lzBord = Mathf.Clamp(lz, 0, tc);
+		if (cyCible == cy - 1 && ly < 0)
+		{
+			LireVoxelLocal(data, lxBord, 0, lzBord, ref densite, ref eau, ref mat);
+			return true;
+		}
+		if (cyCible == cy + 1 && ly > h)
+		{
+			LireVoxelLocal(data, lxBord, h, lzBord, ref densite, ref eau, ref mat);
+			return true;
+		}
+
+		int lyBord = ly;
+		if (ly > h)
+			lyBord = h;
+		else if (ly < 0)
+			lyBord = 0;
+
+		// Voisin horizontal absent : prolonger le bord local (air/roche) — ne jamais inventer de l'eau ici.
+		LireVoxelLocal(data, lxBord, lyBord, lzBord, ref densite, ref eau, ref mat);
 		return true;
 	}
 
 	private static void LireVoxelLocal(ChunkData data, int lx, int ly, int lz, ref float densite, ref float eau, ref byte mat)
 	{
-		densite = data.DensitiesFlat[data.Idx(lx, ly, lz)];
-		mat = data.MaterialsFlat[data.Idx(lx, ly, lz)];
+		if (data?.DensitiesFlat == null || data.MaterialsFlat == null)
+		{
+			densite = -10f;
+			eau = -1f;
+			mat = 0;
+			return;
+		}
+		int tc = data.TailleChunk;
+		int h = data.HauteurMax;
+		if (lx < 0 || lz < 0 || lx > tc || lz > tc || ly < 0 || ly > h)
+		{
+			densite = -10f;
+			eau = -1f;
+			mat = 0;
+			return;
+		}
+		int i = data.Idx(lx, ly, lz);
+		densite = data.DensitiesFlat[i];
+		mat = data.MaterialsFlat[i];
 		if (data.DensitiesEauFlat != null)
-			eau = data.DensitiesEauFlat[data.Idx(lx, ly, lz)];
+			eau = data.DensitiesEauFlat[i];
 	}
 
 	/// <summary>Frein avant un mesh visible sans collision dans le cône de course (pas le ciel lointain).</summary>
@@ -113,6 +120,30 @@ public partial class Monde_Client : Node3D
 		return false;
 	}
 
+	/// <summary>Chunks manquants (pas de mesh) dans le cône de course : le joueur marche vers du vide.</summary>
+	public bool CorridorStreamingEnRetard(Vector3 posJoueur, Vector3 velXZ)
+	{
+		if (velXZ.LengthSquared() < 0.25f)
+			return false;
+
+		Vector2 dir = new Vector2(velXZ.X, velXZ.Z);
+		if (dir.LengthSquared() < 1e-6f)
+			return false;
+		dir = dir.Normalized();
+
+		Vector2I cJoueur = Gestionnaire_Monde.WorldToChunkCoord(posJoueur, TailleChunk);
+		int profondeur = Mathf.Clamp(RayonPrioriteCollisionJoueur + 3, 3, 6);
+		for (int i = 1; i <= profondeur; i++)
+		{
+			Vector2I cc = new Vector2I(
+				cJoueur.X + Mathf.RoundToInt(dir.X * i),
+				cJoueur.Y + Mathf.RoundToInt(dir.Y * i));
+			if (!ChunkDisponiblePourObservation(cc, posJoueur))
+				return true;
+		}
+		return false;
+	}
+
 	/// <summary>Chunks visibles dans le corridor sans corps physique (solidification en retard).</summary>
 	public bool CorridorSolidificationEnRetard(Vector3 posJoueur, Vector3 velXZ)
 	{
@@ -123,6 +154,12 @@ public partial class Monde_Client : Node3D
 		int cyJoueur = ModeProfondeurTranchesActif()
 			? CoordYDepuisMondeY((int)Mathf.Floor(posJoueur.Y))
 			: 0;
+		int lyJoueur = ModeProfondeurTranchesActif()
+			? ConstantesProfondeurVerticale.LocalYDepuisMondeY((int)Mathf.Floor(posJoueur.Y))
+			: 0;
+		int h = ConstantesProfondeurVerticale.HauteurTrancheMetres;
+		bool procheJonction = ModeProfondeurTranchesActif()
+			&& ConstantesProfondeurVerticale.EstProcheJonctionTranche(lyJoueur, h);
 		int rayon = Mathf.Clamp(RayonPrioriteCollisionJoueur + 1, 2, 4);
 
 		for (int dx = -rayon; dx <= rayon; dx++)
@@ -130,15 +167,20 @@ public partial class Monde_Client : Node3D
 			for (int dz = -rayon; dz <= rayon; dz++)
 			{
 				Vector2I cc = new Vector2I(cJoueur.X + dx, cJoueur.Y + dz);
-				int cy = ModeProfondeurTranchesActif() ? cyJoueur : 0;
-				if (!TryGetChunkDataPourCoordY(cc, cy, out var data) || data == null)
-					continue;
-				if (!data.VisualInstanceRID.IsValid)
-					continue;
-				if (!EstDansCorridorMarche(data, posJoueur, velXZ))
-					continue;
-				if (!data.PhysicsBodyRID.IsValid || data.EstEnFileSolidification)
-					return true;
+				int[] tranches = procheJonction
+					? new[] { cyJoueur - 1, cyJoueur, cyJoueur + 1 }
+					: new[] { cyJoueur };
+				foreach (int cy in tranches)
+				{
+					if (!TryGetChunkDataPourCoordY(cc, cy, out var data) || data == null)
+						continue;
+					if (!data.VisualInstanceRID.IsValid)
+						continue;
+					if (!EstDansCorridorMarche(data, posJoueur, velXZ))
+						continue;
+					if (!data.PhysicsBodyRID.IsValid || data.EstEnFileSolidification)
+						return true;
+				}
 			}
 		}
 		return false;
@@ -233,8 +275,8 @@ public partial class Monde_Client : Node3D
 		return false;
 	}
 
-	/// <summary>Mesh visible sans collision dans la fenêtre ±2 tranches (ex. fond d'étang après la chute).</summary>
-	internal void SolidifierVolumesVisiblesAutourJoueur(Vector3 posJoueur)
+	/// <summary>Mesh visible sans collision dans la fenêtre physique (tranche courante ±1) — ex. fond d'étang après la chute.</summary>
+	internal void SolidifierVolumesVisiblesAutourJoueur(Vector3 posJoueur, float fpsMoyen = 60f)
 	{
 		if (!ModeProfondeurTranchesActif() || !EssayerObtenirJoueurDansArbre(out _))
 			return;
@@ -243,10 +285,10 @@ public partial class Monde_Client : Node3D
 
 		Vector2I c = Gestionnaire_Monde.WorldToChunkCoord(posJoueur, TailleChunk);
 		int cy = CoordYDepuisMondeY((int)Mathf.Floor(posJoueur.Y));
-		int demiY = ConstantesProfondeurVerticale.DemiFenetreTranches;
+		int demiY = ConstantesProfondeurVerticale.DemiFenetrePhysiqueTranches;
 		int rayon = Mathf.Clamp(RayonPrioriteCollisionJoueur + 1, 2, 3);
 		int traites = 0;
-		const int maxParFrame = 5;
+		int maxParFrame = fpsMoyen < 32f ? 1 : (fpsMoyen < 45f ? 2 : 3);
 
 		for (int dy = -demiY; dy <= demiY && traites < maxParFrame; dy++)
 		{

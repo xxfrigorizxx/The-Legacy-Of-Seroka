@@ -387,6 +387,18 @@ public partial class MenuAnatomie : Control
 				RepositionnerInfobulleSlotSourisSiVisible();
 
 			RafraichirPanneauSanteCorps(inclureAvatar: false);
+			RafraichirBarresPitFeuRoche();
+			// Feu de camp roche ouvert : rafraîchir le contenu des cellules en continu (steak cuit qui apparaît,
+			// stock de combustible qui descend) — sinon le résultat n'apparaissait qu'au prochain clic.
+			if (_joueurRef != null && _joueurRef.RackOuvertEstPitFeuRoche())
+			{
+				_accumRafraichPitRoche += (float)delta;
+				if (_accumRafraichPitRoche >= 0.35f)
+				{
+					_accumRafraichPitRoche = 0f;
+					RafraichirCellulesCraft();
+				}
+			}
 			_compteurFrameMenuProcess++;
 			if ((_compteurFrameMenuProcess & 1) == 0)
 			{

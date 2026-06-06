@@ -27,10 +27,11 @@ public partial class Gestionnaire_Monde : Node3D
 			}
 		}
 
-		// Verrou anti-chute : tant que le spawn n'est pas aligné au sol, on ancre le joueur au point de spawn.
+		// Verrou anti-chute : tant que le spawn n'est pas aligné au sol, ancrer le joueur (sans snap visible si déjà au bon endroit).
 		if (_spawnDoitEtreAligneAuSol && !_spawnAligneAuSol && _joueur != null)
 		{
-			_joueur.GlobalPosition = _spawnInitialEnAttente;
+			if (_joueur.GlobalPosition.DistanceSquaredTo(_spawnInitialEnAttente) > 0.12f * 0.12f)
+				_joueur.GlobalPosition = _spawnInitialEnAttente;
 			_joueur.Velocity = Vector3.Zero;
 			_joueur.Visible = false;
 		}
@@ -171,7 +172,8 @@ public partial class Gestionnaire_Monde : Node3D
 					|| _mondeClient == null
 					|| _mondeClient.BootstrapInitialStabilise()
 					|| !ExigerBootstrapClientStableAvantMasquerOverlay
-					|| _secondesOverlayChargement >= Math.Max(0.0f, DureeMaxAttenteBootstrapClientSec);
+					|| _secondesOverlayChargement >= Math.Max(0.0f, DureeMaxAttenteBootstrapClientSec)
+					|| (spawnPretEtAligne && _secondesOverlayChargement >= 4.0);
 				if (!bootstrapClientStable)
 				{
 					// On garde l’overlay un peu plus longtemps pour préchauffer collision/files et lisser les premières secondes de déplacement.

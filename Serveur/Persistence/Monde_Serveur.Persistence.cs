@@ -29,6 +29,14 @@ public partial class Monde_Serveur : Node
 		return File.Exists(ProjectSettings.GlobalizePath(ObtenirCheminChunkRelatif(coord, coordY)));
 	}
 
+	internal bool FichierPierresChunkExiste(Vector2I coord, int coordY)
+	{
+		string dossier = ProjectSettings.GlobalizePath(ObtenirDossierChunksRelatif());
+		string chemin = Path.Combine(dossier, $"chunk_{coord.X}_{coordY}_{coord.Y}_items.bin");
+		if (File.Exists(chemin)) return true;
+		return File.Exists(Path.Combine(dossier, $"chunk_{coord.X}_0_{coord.Y}_items.bin"));
+	}
+
 	private string ObtenirCheminSauvegarde(Vector2I coord, int coordY) => ObtenirCheminChunkRelatif(coord, coordY);
 
 	/// <summary>Délègue au chunk la sauvegarde binaire. NE sauvegarde QUE si EstModifie.</summary>
@@ -45,7 +53,7 @@ public partial class Monde_Serveur : Node
 		string cheminAbsolu = ProjectSettings.GlobalizePath(cheminGodot);
 		if (!File.Exists(cheminAbsolu))
 		{
-			GD.PrintErr($"ZERO-K REJET : Chunk {coord} — fichier inexistant ({cheminGodot}).");
+			JournalErreursZeroK.Erreur($"ZERO-K REJET : Chunk {coord} — fichier inexistant ({cheminGodot}).");
 			return null;
 		}
 		int hauteurTrancheAttendue = ModeProfondeurActive
@@ -63,25 +71,25 @@ public partial class Monde_Serveur : Node
 				{
 					if (version != ConstantesProfondeurVerticale.VersionChunkProfondeur)
 					{
-						GD.PrintErr($"ZERO-K REJET : Chunk {coord} couche {coordY} — sauvegarde tranche 720 m (v{version}) incompatible, régénération ({cheminGodot}).");
+						JournalErreursZeroK.Erreur($"ZERO-K REJET : Chunk {coord} couche {coordY} — sauvegarde tranche 720 m (v{version}) incompatible, régénération ({cheminGodot}).");
 						return null;
 					}
 					ushort hauteurFichier = reader.ReadUInt16();
 					if (hauteurFichier != ConstantesProfondeurVerticale.HauteurTrancheMetres)
 					{
-						GD.PrintErr($"ZERO-K REJET : Chunk {coord} — hauteur tranche {hauteurFichier} ≠ {ConstantesProfondeurVerticale.HauteurTrancheMetres}.");
+						JournalErreursZeroK.Erreur($"ZERO-K REJET : Chunk {coord} — hauteur tranche {hauteurFichier} ≠ {ConstantesProfondeurVerticale.HauteurTrancheMetres}.");
 						return null;
 					}
 				}
 				else if (version != 1)
 				{
-					GD.PrintErr($"ZERO-K REJET : Chunk {coord} — version {version} non supportée ({cheminGodot}).");
+					JournalErreursZeroK.Erreur($"ZERO-K REJET : Chunk {coord} — version {version} non supportée ({cheminGodot}).");
 					return null;
 				}
 				int tailleLu = reader.ReadInt32();
 				if (tailleLu != tailleAttendue)
 				{
-					GD.PrintErr($"ZERO-K REJET : Chunk {coord} corrompu (taille {tailleLu} ≠ {tailleAttendue}) ({cheminGodot}). Régénération forcée.");
+					JournalErreursZeroK.Erreur($"ZERO-K REJET : Chunk {coord} corrompu (taille {tailleLu} ≠ {tailleAttendue}) ({cheminGodot}). Régénération forcée.");
 					return null;
 				}
 				donneesVoxels = reader.ReadBytes(tailleLu);
@@ -89,19 +97,19 @@ public partial class Monde_Serveur : Node
 		}
 		catch (Exception ex)
 		{
-			GD.PrintErr($"ZERO-K REJET : Chunk {coord} — erreur lecture ({cheminGodot}) : {ex.Message}");
+			JournalErreursZeroK.Erreur($"ZERO-K REJET : Chunk {coord} — erreur lecture ({cheminGodot}) : {ex.Message}");
 			return null;
 		}
 		if (donneesVoxels == null || donneesVoxels.Length != tailleAttendue)
 		{
-			GD.PrintErr($"ZERO-K REJET : Chunk {coord} refusé ! Taille lue : {donneesVoxels?.Length ?? 0} | Attendue : {tailleAttendue} ({cheminGodot}).");
+			JournalErreursZeroK.Erreur($"ZERO-K REJET : Chunk {coord} refusé ! Taille lue : {donneesVoxels?.Length ?? 0} | Attendue : {tailleAttendue} ({cheminGodot}).");
 			return null;
 		}
 		GD.Print($"ZERO-K SUCCÈS : Chunk {coord} chargé depuis le disque ({donneesVoxels.Length} bytes).");
 		var chunk = CreerChunkServeur(coord, coordY);
 		if (!chunk.AppliquerTableauBytes(donneesVoxels))
 		{
-			GD.PrintErr($"ZERO-K REJET : Chunk {coord} — AppliquerTableauBytes a échoué ({cheminGodot}). Régénération forcée.");
+			JournalErreursZeroK.Erreur($"ZERO-K REJET : Chunk {coord} — AppliquerTableauBytes a échoué ({cheminGodot}). Régénération forcée.");
 			return null;
 		}
 		if (ActiverGenerationAbysse)
@@ -133,7 +141,7 @@ public partial class Monde_Serveur : Node
 				}
 			}
 		}
-		catch (Exception ex) { GD.PrintErr($"ZERO-K : Erreur sauvegarde flore chunk {coord} : {ex.Message}"); }
+		catch (Exception ex) { JournalErreursZeroK.Erreur($"ZERO-K : Erreur sauvegarde flore chunk {coord} : {ex.Message}"); }
 	}
 
 	/// <summary>Charge l’inventaire flore; fallback procédural si fichier absent.</summary>
@@ -169,7 +177,7 @@ public partial class Monde_Serveur : Node
 		}
 		catch (Exception ex)
 		{
-			GD.PrintErr($"ZERO-K : Erreur chargement flore chunk {coord} : {ex.Message}");
+			JournalErreursZeroK.Erreur($"ZERO-K : Erreur chargement flore chunk {coord} : {ex.Message}");
 			chunk.RegenererInventaireFloreDepuisSurface();
 		}
 		if (ActiverGenerationAbysse)

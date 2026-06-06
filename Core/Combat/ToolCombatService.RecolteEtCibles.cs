@@ -401,11 +401,17 @@ public partial class Joueur
             int id = _gestionnaireMonde.ObtenirMatiereExacte(p);
             if (id >= 1 && id <= 9)
                 return id;
+            if (Atlas_Matiere.EstIdVoxelTerrainMinerai(id))
+                return id;
         }
 
         // Repli conservateur pour ne pas bloquer le minage si un cas limite est rencontré.
         int fallback = _gestionnaireMonde.ObtenirMatiereExacte(pointImpactVoxel - n * 0.5f);
-        return (fallback >= 1 && fallback <= 9) ? fallback : 0;
+        if (fallback >= 1 && fallback <= 9)
+            return fallback;
+        if (Atlas_Matiere.EstIdVoxelTerrainMinerai(fallback))
+            return fallback;
+        return 0;
     }
 
     private bool EssayerObtenirAtelierSousVisee(out ItemPhysique atelier, out Vector3 pointImpact, out Vector3 normaleImpact)

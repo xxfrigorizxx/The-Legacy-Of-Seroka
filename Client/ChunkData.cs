@@ -57,6 +57,17 @@ public class ChunkData
 	public bool EstVideIntegral { get; set; }
 	/// <summary>Empreinte des derniers octets serveur intégrés : évite de refaire marching cubes si le même chunk est renvoyé.</summary>
 	public ulong EmpreinteDonneesServeur { get; set; }
+	/// <summary>Couture Y=100 appliquée une fois au premier maillage (évite d'écraser le minage local).</summary>
+	internal bool CoutureVoxelAppliquee { get; set; }
+	/// <summary>Cache des sections MC pour remesh partiel au minage.</summary>
+	internal List<SectionPayload> CachePayloadsSections { get; set; }
+
+	/// <summary>
+	/// Shape de collision pré-construite (BVH inclus) sur le thread de fond pour le streaming :
+	/// évite le pic <c>CreateTrimeshShape</c> sur le thread principal quand le chunk apparaît.
+	/// Consommée puis remise à null par la solidification ; invalidée au remesh (mining).
+	/// </summary>
+	internal ConcavePolygonShape3D ShapeCollisionPrecalc { get; set; }
 
 	/// <summary>Bruit climat (une seule instance par chunk, réutilisée pour tous les voxels).</summary>
 	public FastNoiseLite NoiseTemperature { get; set; }
@@ -165,5 +176,8 @@ public class ChunkData
 		DensitiesEauFlat = null;
 		InventaireFlore = null;
 		EmpreinteDonneesServeur = 0;
+		CoutureVoxelAppliquee = false;
+		CachePayloadsSections = null;
+		ShapeCollisionPrecalc = null;
 	}
 }

@@ -342,8 +342,8 @@ public partial class Chunk_Client : Node3D
 			Color couleurHerbe = couleurSol.Lerp(new Color(0.22f, 0.32f, 0.20f, 1f), 0.08f);
 			uint hashBase = (uint)(kv.Key.X * 73856093) ^ (uint)(kv.Key.Z * 19349663);
 			int densiteBase = ConstantesDimensionAbysse.EstDansTrouNoirXZ(kv.Key.X, kv.Key.Z)
-				? 11
-				: (distCarree <= rayonQualiteCarre ? 19 : (distCarree <= rayonQualiteCarre * 2.6f ? 11 : 5));
+				? 7
+				: (distCarree <= rayonQualiteCarre ? 9 : (distCarree <= rayonQualiteCarre * 2.6f ? 6 : 3));
 			float humidite = CalculerHumiditeGlobaleDepuisChunkData(data, kv.Key.X, kv.Key.Z);
 			float facteurHum = Mathf.Clamp((humidite + 1f) * 0.5f, 0f, 1f);
 			float facteurHauteur = Mathf.Lerp(1.0f, 1.32f, facteurHum);

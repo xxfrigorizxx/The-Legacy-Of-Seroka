@@ -117,6 +117,56 @@ public partial class Joueur
         parent.AddChild(modele);
     }
 
+    /// <summary>Bol rempli : même bol bois (essence du craft) + mesh « liquide » texturé avec le matériau eau du jeu.</summary>
+    public static void InstancierModeleBolEau(Node3D parent, SlotInventaire slot, Material materielLiquide, float tailleMaxMetres = 0.32f, bool ancrerBaseAuSol = false)
+    {
+        const string cheminGlb = "res://Modeles/materials/bowl_plaine.glb";
+        PackedScene scene = GD.Load<PackedScene>(cheminGlb);
+        byte essenceBois = slot.IndexBotanique;
+        if (essenceBois == Joueur.TagVarianteLiane || essenceBois == Joueur.TagVarianteHerbeSolide || essenceBois == Joueur.TagVarianteIntestin || essenceBois == Joueur.TagVarianteIntestinSolide)
+            essenceBois = LSystem_Botanique.IndexChene;
+        Material matBois = ArbreVivant.ObtenirMaterielBoisTriplanar(essenceBois);
+        Material matLiquide = materielLiquide ?? ConstruireMaterielEauBolFallback();
+
+        if (scene == null)
+        {
+            var fallback = new MeshInstance3D
+            {
+                Name = "ModeleArme",
+                Mesh = new SphereMesh { Radius = 0.10f, Height = 0.08f },
+                MaterialOverride = matBois
+            };
+            parent.AddChild(fallback);
+            return;
+        }
+
+        Node3D modele = scene.Instantiate<Node3D>();
+        modele.Name = "ModeleArme";
+        foreach (MeshInstance3D mi in ListerMeshes(modele))
+        {
+            string nom = mi.Name.ToString().ToLowerInvariant();
+            // Le mesh « liquide » (cf. bowl_plaine.glb) reçoit l'eau ; tout le reste garde le bois.
+            mi.MaterialOverride = nom.Contains("liquid") ? matLiquide : matBois;
+        }
+        if (ancrerBaseAuSol)
+            NormaliserEchelleTableAtelierAuSol(modele, tailleMaxMetres);
+        else
+            NormaliserEchelleEtCentrerModeleArme(modele, tailleMaxMetres);
+        parent.AddChild(modele);
+    }
+
+    /// <summary>Matériau eau de repli (bleu translucide) si le matériau eau du monde n'est pas disponible.</summary>
+    private static Material ConstruireMaterielEauBolFallback()
+    {
+        return new StandardMaterial3D
+        {
+            AlbedoColor = new Color(0.22f, 0.45f, 0.62f, 0.72f),
+            Transparency = BaseMaterial3D.TransparencyEnum.Alpha,
+            Roughness = 0.12f,
+            Metallic = 0.0f
+        };
+    }
+
     private static bool ExtraireEssencesMortierPilon(SlotInventaire slot, out byte essenceBol, out byte essencePilon)
     {
         essenceBol = slot.IndexBotanique;

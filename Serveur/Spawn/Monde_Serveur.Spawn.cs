@@ -55,6 +55,13 @@ public partial class Monde_Serveur : Node
 	{
 		await ToSignal(GetTree(), SceneTree.SignalName.PhysicsFrame);
 		await ToSignal(GetTree(), SceneTree.SignalName.PhysicsFrame);
+		// Déjà ensemencé (reload / décharge) : ne pas re-générer des cailloux procéduraux en double.
+		if (FichierPierresChunkExiste(chunkCoord, chunk.ChunkOffsetY))
+		{
+			ChargerEtSpawnerPierresChunk(chunkCoord, chunk.ChunkOffsetY);
+			onStasePrete?.Invoke(chunkCoord, chunk);
+			return;
+		}
 		var positionsFiltrees = CollecterPositionsEnsemencement(chunkCoord, chunk, tailleChunk);
 		var aEnfiler = new List<(Vector3 pos, int id, int indexCache, int indexChimique)>();
 		foreach (var p in positionsFiltrees)
@@ -95,12 +102,16 @@ public partial class Monde_Serveur : Node
 				if (rng.Randf() > 0.02f) continue;
 				int lx = Mathf.Clamp(Mathf.FloorToInt(x), 0, (int)tailleChunk);
 				int lz = Mathf.Clamp(Mathf.FloorToInt(z), 0, (int)tailleChunk);
-				var (ySurface, idMatiere) = ModeProfondeurActive
-					? chunk.ObtenirSolGrotteEtMateriau(lx, lz)
-					: chunk.ObtenirSurfaceEtMateriau(lx, lz);
+				// Surface d'abord (herbe/roche à Y≈103) ; grottes souterraines seulement si pas de surface locale.
+				var (ySurface, idMatiere) = chunk.ObtenirSurfaceEtMateriau(lx, lz);
+				if (ySurface < 0 && ModeProfondeurActive)
+					(ySurface, idMatiere) = chunk.ObtenirSolGrotteEtMateriau(lx, lz);
 				if (ySurface < 0) continue;
 
-				float yMonde = chunk.ChunkOffsetY * chunk.HauteurMax + ySurface + 0.5f;
+				int hauteurTranche = ModeProfondeurActive
+					? ConstantesProfondeurVerticale.HauteurTrancheMetres
+					: chunk.HauteurMax;
+				float yMonde = chunk.ChunkOffsetY * hauteurTranche + ySurface + 0.5f;
 				if (ModeProfondeurActive && yMonde < 8f)
 					continue;
 				Vector3 pointImpact = new Vector3(
@@ -159,9 +170,73 @@ public partial class Monde_Serveur : Node
 	{
 		Vector3I cle = new Vector3I(coordChunk.X, coordY, coordChunk.Y);
 		if (!_rochesEnStase.TryGetValue(cle, out var liste)) return;
+		RetirerPierresChunkProfond(coordChunk, coordY);
+		PersistencerPierresListeSurDisque(coordChunk, coordY, liste);
 		foreach (var p in liste)
 			_filePierresAInstancier.Enqueue(p);
 		_rochesEnStase.Remove(cle);
+	}
+
+	/// <summary>Instancie immédiatement la file pierres (et vide la stase) avant sauvegarde — évite items.bin vide au reload rapide.</summary>
+	private void ForcerInstanciationPierresEnAttente(Vector2I? filtreCoord = null, int? filtreCoordY = null)
+	{
+		if (filtreCoord.HasValue && filtreCoordY.HasValue)
+		{
+			Vector3I cle = new Vector3I(filtreCoord.Value.X, filtreCoordY.Value, filtreCoord.Value.Y);
+			if (_rochesEnStase.TryGetValue(cle, out var stase))
+			{
+				RetirerPierresChunkProfond(filtreCoord.Value, filtreCoordY);
+				foreach (var p in stase)
+					_filePierresAInstancier.Enqueue(p);
+				_rochesEnStase.Remove(cle);
+			}
+		}
+		else if (_rochesEnStase.Count > 0)
+		{
+			var cles = new List<Vector3I>(_rochesEnStase.Keys);
+			foreach (Vector3I cle in cles)
+			{
+				if (!_rochesEnStase.TryGetValue(cle, out var stase)) continue;
+				RetirerPierresChunkProfond(new Vector2I(cle.X, cle.Z), cle.Y);
+				foreach (var p in stase)
+					_filePierresAInstancier.Enqueue(p);
+				_rochesEnStase.Remove(cle);
+			}
+		}
+
+		if (_filePierresAInstancier.Count == 0) return;
+		var restant = new Queue<(Vector3 pos, int id, int indexCache, int indexChimique)>();
+		while (_filePierresAInstancier.Count > 0)
+		{
+			var entree = _filePierresAInstancier.Dequeue();
+			if (filtreCoord.HasValue)
+			{
+				Vector2I c = Gestionnaire_Monde.WorldToChunkCoord(entree.pos, TailleChunk);
+				if (c != filtreCoord.Value)
+				{
+					restant.Enqueue(entree);
+					continue;
+				}
+				if (filtreCoordY.HasValue && ModeProfondeurActive)
+				{
+					int cy = ConstantesProfondeurVerticale.CoordYDepuisMondeY(entree.pos.Y);
+					if (cy != filtreCoordY.Value)
+					{
+						restant.Enqueue(entree);
+						continue;
+					}
+				}
+			}
+			int idx = entree.indexCache;
+			if (idx < 0)
+			{
+				float distEau = Mathf.Abs(entree.pos.Y - NIVEAU_EAU);
+				idx = distEau > SeuilDistanceEauFormesCassées ? -2 : -1;
+			}
+			GenererItemPhysique(entree.pos, entree.id, idx, entree.indexChimique);
+		}
+		while (restant.Count > 0)
+			_filePierresAInstancier.Enqueue(restant.Dequeue());
 	}
 
 	/// <summary>Enfile cailloux et silex sur le tapis roulant en ordre spatial logique (X, Z, Y) : terrain cohérent.</summary>

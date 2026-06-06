@@ -9,6 +9,90 @@ public partial class Chunk_Client : Node3D
 	/// <summary>Échantillon voxel avec extension verticale (tranche voisine coordY±1).</summary>
 	public delegate bool EchantillonnerVoxelChunkDelegate(ChunkData owner, int lx, int ly, int lz, out float densite, out float eau, out byte mat);
 
+	private static int CompterSommetsSection(SectionPayload payload)
+		=> payload?.SommetsVisuels?.Length ?? 0;
+
+	/// <summary>
+	/// Construit la shape de collision (trimesh + BVH) à partir des payloads, sur le thread de fond.
+	/// Le coûteux build BVH (SetFaces) est ainsi sorti du thread principal (anti-pic streaming).
+	/// Sommets en espace LOCAL (CAS B) — le body applique l'origine du chunk, comme le visuel.
+	/// </summary>
+	public static ConcavePolygonShape3D ConstruireShapeCollisionDepuisPayloads(List<SectionPayload> payloads)
+	{
+		if (payloads == null)
+			return null;
+		int total = 0;
+		foreach (var p in payloads)
+			if (p?.SommetsVisuels != null)
+				total += p.SommetsVisuels.Length;
+		total -= total % 3;
+		if (total < 3)
+			return null;
+		var faces = new Vector3[total];
+		int offset = 0;
+		foreach (var p in payloads)
+		{
+			if (p?.SommetsVisuels == null || p.SommetsVisuels.Length == 0)
+				continue;
+			int count = p.SommetsVisuels.Length;
+			if (offset + count > total)
+				count = total - offset;
+			if (count <= 0)
+				break;
+			Array.Copy(p.SommetsVisuels, 0, faces, offset, count);
+			offset += count;
+		}
+		try
+		{
+			var shape = new ConcavePolygonShape3D();
+			shape.SetFaces(faces); // Build BVH ici, sur le thread de fond.
+			return shape;
+		}
+		catch
+		{
+			return null;
+		}
+	}
+
+	/// <summary>Padding MC vertical (ly&lt;0 / ly&gt;h) : seulement sections bas/haut de tranche.</summary>
+	private static bool SectionUtilisePaddingVertical(int indexSection, int nbSections)
+		=> indexSection <= 0 || indexSection >= nbSections - 1;
+
+	/// <summary>Reconstruit uniquement les sections listées ; réutilise le cache pour le reste.</summary>
+	public static List<SectionPayload> ReconstruireSectionsDepuisData(
+		ChunkData data,
+		IReadOnlyCollection<int> sectionsAReconstruire,
+		EchantillonnerVoxelChunkDelegate echantillonner = null)
+	{
+		if (data?.DensitiesFlat == null || data.MaterialsFlat == null || sectionsAReconstruire == null || sectionsAReconstruire.Count == 0)
+			return null;
+		int nbSections = ObtenirNbSectionsEffectif(data.HauteurMax);
+		List<SectionPayload> payloads;
+		if (data.CachePayloadsSections != null && data.CachePayloadsSections.Count == nbSections)
+			payloads = new List<SectionPayload>(data.CachePayloadsSections);
+		else
+			payloads = ReconstruirePayloadsDepuisData(data, echantillonner);
+		if (payloads == null || payloads.Count != nbSections)
+			return payloads;
+		float baseX = data.Coordonnees.X * (float)data.TailleChunk;
+		float baseZ = data.Coordonnees.Y * (float)data.TailleChunk;
+		foreach (int sec in sectionsAReconstruire)
+		{
+			if (sec < 0 || sec >= nbSections) continue;
+			var echSec = SectionUtilisePaddingVertical(sec, nbSections) ? echantillonner : null;
+			var nouveau = ConstruireSectionPayloadEnBackgroundFromData(data, sec, baseX, baseZ, echSec);
+			int sommetsAnciens = CompterSommetsSection(payloads[sec]);
+			int sommetsNouveaux = CompterSommetsSection(nouveau);
+			if (sommetsNouveaux == 0 && sommetsAnciens > 0)
+				continue;
+			// Effondrement massif (voisin absent) : conserver la section précédente.
+			if (sommetsAnciens >= 256 && sommetsNouveaux < sommetsAnciens / 8)
+				continue;
+			payloads[sec] = nouveau;
+		}
+		return payloads;
+	}
+
 	/// <summary>Reconstruit les 45 SectionPayload à partir d'un ChunkData déjà rempli (minage/pose). Pour mise à jour visuelle après AppliquerVoxel.</summary>
 	public static List<SectionPayload> ReconstruirePayloadsDepuisData(ChunkData data, EchantillonnerVoxelChunkDelegate echantillonner = null)
 	{
@@ -18,7 +102,10 @@ public partial class Chunk_Client : Node3D
 		int nbSections = ObtenirNbSectionsEffectif(data.HauteurMax);
 		var payloads = new List<SectionPayload>(nbSections);
 		for (int i = 0; i < nbSections; i++)
-			payloads.Add(ConstruireSectionPayloadEnBackgroundFromData(data, i, baseX, baseZ, echantillonner));
+		{
+			var echSec = SectionUtilisePaddingVertical(i, nbSections) ? echantillonner : null;
+			payloads.Add(ConstruireSectionPayloadEnBackgroundFromData(data, i, baseX, baseZ, echSec));
+		}
 		return payloads;
 	}
 
@@ -35,8 +122,15 @@ public partial class Chunk_Client : Node3D
 		int yDebut = indexSection * hauteurSection;
 		int yFin = Math.Min(yDebut + hauteurSection, data.HauteurMax);
 		int tailleY = yFin - yDebut + 1;
+		// Padding MC vers tranche coordY±1 (jonction Y=100,200…) : indispensable pour ne pas déchirer le voile.
 		bool padHautMc = echantillonner != null && yFin >= data.HauteurMax;
-		int tailleYBuffer = tailleY + (padHautMc ? 1 : 0);
+		bool padBasMc = echantillonner != null && yDebut == 0
+			&& data.CoordChunkY > ConstantesProfondeurVerticale.CoordYDepuisMondeY(-1200);
+		int padBas = padBasMc ? 1 : 0;
+		int padHaut = padHautMc ? 1 : 0;
+		int tailleYBuffer = tailleY + padBas + padHaut;
+		int yDebutBuffer = yDebut - padBas;
+		int nbCubesY = tailleYBuffer - 1;
 		int tc = data.TailleChunk;
 		int tx = tc + 1, tz = tc + 1;
 
@@ -86,7 +180,7 @@ public partial class Chunk_Client : Node3D
 			for (int x = 0; x < tx; x++)
 				for (int y = 0; y < tailleYBuffer; y++)
 					for (int z = 0; z < tz; z++)
-						RemplirCelluleBuffer(x, y, z, yDebut + y);
+						RemplirCelluleBuffer(x, y, z, yDebutBuffer + y);
 
 			bool sectionVide = true;
 			for (int i = 0; i < nbVoxels; i++)
@@ -113,9 +207,9 @@ public partial class Chunk_Client : Node3D
 			byte[] mats = _matsRecyclables;
 
 			for (int x = 0; x < tc; x++)
-				for (int y = 0; y < yFin - yDebut; y++)
+				for (int y = 0; y < nbCubesY; y++)
 				{
-					int yG = yDebut + y;
+					int yG = yDebutBuffer + y;
 					for (int z = 0; z < tc; z++)
 					{
 						verts[0] = new Vector3(x, yG, z);
@@ -181,9 +275,9 @@ public partial class Chunk_Client : Node3D
 				float[] valsEau = _valsEauRecyclables;
 				Vector3[] vertsEau = _vertsEauRecyclables;
 				for (int x = 0; x < tc; x++)
-					for (int y = 0; y < yFin - yDebut; y++)
+					for (int y = 0; y < nbCubesY; y++)
 					{
-						int yG = yDebut + y;
+						int yG = yDebutBuffer + y;
 						if (echantillonner != null
 							&& ConstantesProfondeurVerticale.CorpsOmetMaillageEauALaJonction(
 								data.CoordChunkY, data.HauteurMax, yG))

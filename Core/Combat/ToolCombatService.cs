@@ -26,6 +26,7 @@ public partial class Joueur
     private float _cooldownParticulesRecuperationAtelier;
     private float _cooldownMessageRecuperationFondation;
     private float _cooldownMessageEtatBrasAction;
+    private float _cooldownMessageInventairePleinMinage;
     private ItemPhysique _atelierCibleRecuperation;
     private const float DureeRecolteBuissonOutilSecondes = 3.0f;
     private const float DureeRecolteAloeDagueSecondes = 1.0f;
@@ -63,14 +64,14 @@ public partial class Joueur
 
     private static bool EstMatiereMinablePioche(int idMatiere)
     {
-        // Pioche : roche voxel.
-        return idMatiere == 2;
+        // Pioche : roche voxel + minerais de terrain (IDs 10–29, 32–48).
+        return idMatiere == 2 || Atlas_Matiere.EstIdVoxelTerrainMinerai(idMatiere);
     }
 
     private void AttribuerXpMetierExtractionTerrain(int idMatiereExtraite)
     {
         // Distribution métier basée sur la matière réellement modifiée.
-        if (idMatiereExtraite == 2)
+        if (idMatiereExtraite == 2 || Atlas_Matiere.EstIdVoxelTerrainMinerai(idMatiereExtraite))
             AjouterXpMetier("Mineur", 1UL);
         else if (idMatiereExtraite == 1 || idMatiereExtraite == 3 || idMatiereExtraite == 5 || idMatiereExtraite == 6 || idMatiereExtraite == 7 || idMatiereExtraite == 8 || idMatiereExtraite == 9)
             AjouterXpMetier("Terrassier", 1UL);
@@ -85,6 +86,32 @@ public partial class Joueur
     {
         return !slot.EstVide && ItemPhysique.EstIdRocheMatiere(slot.ID)
             && (slot.IndexMorphologique == 1 || slot.IndexMorphologique == 2 || slot.IndexMorphologique == 3);
+    }
+
+    /// <summary>Roche plate (1) ou en pointe (3) : fauchage du gazon au clic sur le sol.</summary>
+    private static bool EstRocheFaucheuseEnMain(SlotInventaire slot)
+    {
+        if (slot.EstVide || !ItemPhysique.EstIdRocheMatiere(slot.ID))
+            return false;
+        int forme = Mathf.Clamp(slot.IndexMorphologique, 0, 3);
+        return forme == 1 || forme == 3;
+    }
+
+    /// <summary>Dague, faux, roche plate/pointe ou éclat — outils de fauchage (pas la hachette 106).</summary>
+    private static bool EstOutilFaucheurEnMain(SlotInventaire slot)
+    {
+        if (slot.EstVide)
+            return false;
+        return slot.ID == 105
+            || slot.ID == IdObjetFauxPierreTier0
+            || EstRocheFaucheuseEnMain(slot)
+            || (slot.EstUnEclat && slot.MeshEclat != null);
+    }
+
+    /// <summary>Surface assez horizontale pour faucher même si le raycast touche une fibre posée au sol.</summary>
+    private bool EstSurfaceHorizontaleFauchable(float normaleMinY = 0.32f)
+    {
+        return _rayon != null && _rayon.IsColliding() && _rayon.GetCollisionNormal().Y >= normaleMinY;
     }
 
     /// <summary>

@@ -278,11 +278,19 @@ public partial class Monde_Client : Node3D
 		int seuilBacklog = ModeProfondeurTranchesActif()
 			? Mathf.Max(SeuilBacklogBootstrapStable, 96)
 			: SeuilBacklogBootstrapStable;
+		// Reconnexion / reload : ne pas bloquer l'overlay indéfiniment si le sol local est prêt.
+		if (_timerGraceStreamingBootstrap > 0f)
+			seuilBacklog = Mathf.Max(seuilBacklog, 256);
 		if (CompterBacklog() > Mathf.Max(0, seuilBacklog))
 			return false;
 		if (ExigerSolidificationVidePourBootstrap
 			&& (_fileAttenteSolidificationUrgente.Count > 0 || _fileAttenteSolidification.Count > 0))
 			return false;
 		return true;
+	}
+
+	internal void ActiverGraceBootstrapReconnexion(float dureeSec = 20f)
+	{
+		_timerGraceStreamingBootstrap = Mathf.Max(_timerGraceStreamingBootstrap, Mathf.Max(5f, dureeSec));
 	}
 }

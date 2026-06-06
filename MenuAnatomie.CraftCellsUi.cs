@@ -4,6 +4,65 @@ using System.Collections.Generic;
 
 public partial class MenuAnatomie : Control
 {
+	private ProgressBar _barreCuissonPitRoche;
+	private ProgressBar _barreCombustionPitRoche;
+	private float _accumRafraichPitRoche;
+
+	/// <summary>Barres du feu de camp roche : combustion (cellule combustible, slot 0) et cuisson (cellule cuisson, slot 1).</summary>
+	private void RafraichirBarresPitFeuRoche()
+	{
+		if (_joueurRef == null || GrilleAssemblage == null)
+			return;
+		bool pitRoche = _joueurRef.StockageRackBatonsOuvert
+			&& _joueurRef.RackBatonsOuvert != null
+			&& GodotObject.IsInstanceValid(_joueurRef.RackBatonsOuvert)
+			&& _joueurRef.RackBatonsOuvert.ID_Objet == Joueur.IdObjetPitFeuRoche;
+		float pComb = pitRoche ? _joueurRef.RackBatonsOuvert.ObtenirProgressionCombustionPitFeuRoche() : -1f;
+		float pCuis = pitRoche ? _joueurRef.RackBatonsOuvert.ObtenirProgressionCuissonPitFeuRoche() : -1f;
+		MajBarrePitRoche(ref _barreCombustionPitRoche, "BarreCombustionPitRoche", 0, pComb, new Color(0.95f, 0.5f, 0.18f));
+		MajBarrePitRoche(ref _barreCuissonPitRoche, "BarreCuissonPitRoche", 1, pCuis, new Color(0.45f, 0.8f, 0.35f));
+	}
+
+	private void MajBarrePitRoche(ref ProgressBar barre, string nom, int slotIndex, float progress, Color couleurRemplissage)
+	{
+		Panel panel = (GrilleAssemblage.GetChildCount() > slotIndex)
+			? GrilleAssemblage.GetChild(slotIndex) as Panel
+			: null;
+		if (panel == null || progress < 0f)
+		{
+			if (barre != null && GodotObject.IsInstanceValid(barre))
+				barre.Visible = false;
+			return;
+		}
+		if (barre == null || !GodotObject.IsInstanceValid(barre) || barre.GetParent() != panel)
+		{
+			if (barre != null && GodotObject.IsInstanceValid(barre))
+				barre.QueueFree();
+			barre = new ProgressBar
+			{
+				Name = nom,
+				MinValue = 0,
+				MaxValue = 100,
+				ShowPercentage = false,
+				MouseFilter = Control.MouseFilterEnum.Ignore
+			};
+			barre.SetAnchorsPreset(Control.LayoutPreset.BottomWide);
+			barre.OffsetLeft = 3f;
+			barre.OffsetRight = -3f;
+			barre.OffsetTop = -11f;
+			barre.OffsetBottom = -3f;
+			var fond = new StyleBoxFlat { BgColor = new Color(0f, 0f, 0f, 0.55f) };
+			fond.SetCornerRadiusAll(2);
+			var remplissage = new StyleBoxFlat { BgColor = couleurRemplissage };
+			remplissage.SetCornerRadiusAll(2);
+			barre.AddThemeStyleboxOverride("background", fond);
+			barre.AddThemeStyleboxOverride("fill", remplissage);
+			panel.AddChild(barre);
+		}
+		barre.Visible = true;
+		barre.Value = progress * 100f;
+	}
+
 	private void RafraichirCellulesCraft()
 	{
 		if (_joueurRef == null || GrilleAssemblage == null) return;
@@ -81,6 +140,7 @@ public partial class MenuAnatomie : Control
 				}
 				if (_lblResultatCraft != null)
 					_lblResultatCraft.Visible = false;
+				RafraichirBarresPitFeuRoche();
 				return;
 			}
 
@@ -121,6 +181,7 @@ public partial class MenuAnatomie : Control
 			}
 			RafraichirQuantiteSlot(SlotResultatCraft, sRes);
 		}
+		RafraichirBarresPitFeuRoche();
 	}
 
 	private Label TrouverOuCreerLabel(Panel parent, string texteDefaut)

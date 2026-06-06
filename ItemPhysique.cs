@@ -199,6 +199,8 @@ public partial class ItemPhysique : RigidBody3D
 	private double _pitFeuDernierSyncRestantSec = -1d;
 	private int _pitFeuRocheStockCombustible = 0;
 	private double _pitFeuRocheResteSec = 0d;
+	/// <summary>Durée totale (s) de l'unité de combustible en train de brûler — pour la barre de combustion (resteSec / total).</summary>
+	private double _pitFeuRocheDureeUniteCouranteSec = DureeCombustionPitFeuSec;
 	private double _pitFeuRocheDernierSyncRestantSec = -1d;
 	private double _pitFeuRocheProgressCuissonSec = 0d;
 	private const string MetaTorcheAllumee = "TorcheAllumee";
@@ -829,17 +831,19 @@ public partial class ItemPhysique : RigidBody3D
 			}
 			if (_pitFlammeLight != null && GodotObject.IsInstanceValid(_pitFlammeLight))
 			{
-				_pitFlammeLight.LightEnergy = 2.05f + 0.28f * Mathf.Sin(t * 9.6f) + 0.14f * pulseSlow;
+				_pitFlammeLight.LightEnergy = LumiereFeuEnergy - 0.35f + 0.28f * Mathf.Sin(t * 9.6f) + 0.14f * pulseSlow;
 			}
 			if (resteSec <= 0.001d)
 			{
 				if (estRoche)
 				{
 					_pitFeuRocheStockCombustible = CompterCombustiblePitFeuRocheDepuisGrille();
+					byte essenceCombustible = ObtenirEssenceCombustiblePitFeuRoche();
 					if (_pitFeuRocheStockCombustible > 0 && RetirerCombustiblePitFeuRocheDepuisGrille(1))
 					{
 						_pitFeuRocheStockCombustible = CompterCombustiblePitFeuRocheDepuisGrille();
-						resteSec = DureeCombustionPitFeuSec;
+						resteSec = DureeCombustionPitFeuRochePourEssence(essenceCombustible);
+						_pitFeuRocheDureeUniteCouranteSec = resteSec;
 					}
 					else
 					{

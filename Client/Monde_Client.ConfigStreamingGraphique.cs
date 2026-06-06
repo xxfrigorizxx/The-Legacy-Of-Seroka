@@ -19,15 +19,33 @@ public partial class Monde_Client : Node3D
 	{
 		int rendu = Mathf.Max(RayonDormancePhysique + 1, RenderDistance);
 		if (_dimensionReseauActive == (int)DimensionJeu.Abysse)
-			rendu = Mathf.Min(rendu, 10);
+			rendu = Mathf.Min(rendu, JoueurEnModeVolCreatif() ? 6 : 10);
 		else if (ModeProfondeurTranchesActif())
 			rendu = Mathf.Min(rendu, Mathf.Max(RayonDormancePhysique + MargePreloadChunks + 2, PlafondRayonChargementProfondeurChunks));
+		if (JoueurEnModeVolCreatif() && ModeProfondeurTranchesActif())
+			rendu = Mathf.Min(rendu, 8);
 		return Mathf.Max(rendu, RayonDetailChunksActif());
 	}
 
 	private int DemiFenetreTranchesStreamingActif()
 	{
+		if (EssayerObtenirJoueurDansArbre(out CharacterBody3D joueurRef)
+			&& ConstantesProfondeurVerticale.EstProcheJonctionTrancheMonde(joueurRef.GlobalPosition.Y))
+			return Mathf.Max(1, ConstantesProfondeurVerticale.DemiFenetreTranches);
+		// Noclip créatif : une tranche par défaut, sauf près d'une jonction (Y=100,200…) où ±1 est requis pour le voile MC.
+		if (JoueurEnModeVolCreatif())
+		{
+			if (EssayerObtenirJoueurDansArbre(out CharacterBody3D joueurRefCreatif))
+			{
+				if (ConstantesProfondeurVerticale.EstProcheJonctionTrancheMonde(joueurRefCreatif.GlobalPosition.Y))
+					return 1;
+			}
+			return 0;
+		}
 		float vy = _joueur?.Velocity.Y ?? 0f;
+		// Survie : ±1 tranche (3 couches) au lieu de ±2 (5) — moins de chunks par colonne XZ.
+		if (ModeSurvieFpsAgressif)
+			return 1;
 		return ConstantesProfondeurVerticale.DemiFenetreTranchesStreaming(vy);
 	}
 

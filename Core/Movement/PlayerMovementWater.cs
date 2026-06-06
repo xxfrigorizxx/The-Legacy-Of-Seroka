@@ -151,9 +151,20 @@ public partial class Joueur
                     _forceLancer = Mathf.Min(5.0f, _forceLancer + (VitesseChargeBras * 2.5f) * dt);
             }
             if (_gaucheMaintenu && (mainActive.EstVide || mainActive.ID == 105 || mainActive.ID == 106 || mainActive.ID == IdObjetHachePierreTier1 || mainActive.ID == IdObjetPellePierreTier0 || mainActive.ID == IdObjetPiochePierreTier0 || mainActive.ID == IdObjetLancePierreTier0 || mainActive.ID == IdObjetFauxPierreTier0))
+            {
+                _progressionRemplissageBolEau = 0f;
                 MettreAJourMinageMainNueOuAtelier(dt, mainActive);
-            else
+            }
+            else if (_gaucheMaintenu && mainActive.ID == IdObjetBolBois)
+            {
                 ReinitialiserMinageMainNueProgression();
+                MettreAJourRemplissageBolEau(dt);
+            }
+            else
+            {
+                _progressionRemplissageBolEau = 0f;
+                ReinitialiserMinageMainNueProgression();
+            }
         }
         else
         {

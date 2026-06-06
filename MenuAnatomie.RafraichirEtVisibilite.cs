@@ -209,7 +209,10 @@ public partial class MenuAnatomie : Control
 		if (_ecranBarreCourant == ModeEcranBarreMenu.Analyseur)
 			RafraichirPanneauAnalyseur();
 		else if (_ecranBarreCourant == ModeEcranBarreMenu.CreatifAdmin)
-			RafraichirPanneauCreatifAdmin();
+		{
+			_creatifAdminListeSale = true;
+			RafraichirPanneauCreatifAdminSiThrottle();
+		}
 		if (_joueurRef.StockageRackBatonsOuvert && _joueurRef.RackBatonsOuvert != null && GodotObject.IsInstanceValid(_joueurRef.RackBatonsOuvert))
 		{
 			if (_joueurRef.RackBatonsOuvert.ID_Objet == Joueur.IdObjetRackBatons)

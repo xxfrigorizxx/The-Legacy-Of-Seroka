@@ -126,16 +126,25 @@ public partial class Monde_Client : Node3D
 		Rid space = world.Space;
 		if (ModeProfondeurTranchesActif())
 		{
-			Vector3 obsMonde = _joueur?.GlobalPosition ?? ObtenirPositionObservation();
+			Vector3 obsMonde = EssayerObtenirJoueurDansArbre(out CharacterBody3D joueurDormance)
+				? joueurDormance.GlobalPosition
+				: ObtenirPositionObservation();
 			Vector2I cp = Gestionnaire_Monde.WorldToChunkCoord(obsMonde, TailleChunk);
 			int coordYJoueur = CoordYDepuisMondeY((int)Mathf.Floor(obsMonde.Y));
-			int demiYPhysique = ConstantesProfondeurVerticale.DemiFenetreTranches;
+			// Fenêtre de dormance alignée sur la physique (±1) : sinon les tranches ±2 sans corps physique
+			// étaient ré-enfilées en solidification à chaque passage (churn + gros pics « Dormance »).
+			int demiYPhysique = ConstantesProfondeurVerticale.DemiFenetrePhysiqueTranches;
 			int rayon = Mathf.Min(RayonDormancePhysique, 4);
 			int transitionsProf = 0;
 			int limiteProf = Mathf.Max(1, maxTransitions);
-			for (int dx = -rayon; dx <= rayon; dx++)
+			// Budget temps : la dormance ne doit jamais geler la frame. Au-delà, on reprend la frame suivante
+			// (priorité au déplacement du joueur), exactement « frame par frame » au lieu de tout d'un coup.
+			ulong debutDormUs = Time.GetTicksUsec();
+			const ulong budgetDormUs = 2500;
+			bool budgetDormEpuise = false;
+			for (int dx = -rayon; dx <= rayon && !budgetDormEpuise; dx++)
 			{
-				for (int dz = -rayon; dz <= rayon; dz++)
+				for (int dz = -rayon; dz <= rayon && !budgetDormEpuise; dz++)
 				{
 					for (int dy = -demiYPhysique; dy <= demiYPhysique; dy++)
 					{
@@ -160,6 +169,8 @@ public partial class Monde_Client : Node3D
 							d.EstEnFileSolidification = true;
 						}
 					}
+					if (Time.GetTicksUsec() - debutDormUs > budgetDormUs)
+						budgetDormEpuise = true;
 				}
 			}
 			// Endort les tranches lointaines (visuel seulement) — scan borné pour ne pas parcourir des milliers d'entrées/frame.
@@ -167,6 +178,8 @@ public partial class Monde_Client : Node3D
 			foreach (var kv in _chunksDataProfondeur3D)
 			{
 				if (transitionsProf >= limiteProf || scanned++ > 64)
+					break;
+				if (Time.GetTicksUsec() - debutDormUs > budgetDormUs)
 					break;
 				ChunkData d = kv.Value;
 				if (d == null || !d.PhysicsBodyRID.IsValid || d.Dormant)
@@ -188,7 +201,9 @@ public partial class Monde_Client : Node3D
 		{
 			// En Abysse multi-couches, on évite d'endormir agressivement par vue 2D:
 			// cela peut désactiver la mauvaise couche Y et provoquer des chutes.
-			Vector3 obsMonde = _joueur?.GlobalPosition ?? ObtenirPositionObservation();
+			Vector3 obsMonde = EssayerObtenirJoueurDansArbre(out CharacterBody3D joueurAbysseDormance)
+				? joueurAbysseDormance.GlobalPosition
+				: ObtenirPositionObservation();
 			Vector2I cpAbysse = Gestionnaire_Monde.WorldToChunkCoord(obsMonde, TailleChunk);
 			_coordYActifsAbysseTravail.Clear();
 			RemplirCoordYPrioritairesAbysse(obsMonde, _coordYActifsAbysseTravail);

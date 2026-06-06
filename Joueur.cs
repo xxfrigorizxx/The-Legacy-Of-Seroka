@@ -104,6 +104,8 @@ public partial class Joueur : CharacterBody3D
     public const string MetaGenomeAssemblage = "GenomeAssemblage";
     /// <summary>Prévisualisation main : cuir bovin (variante texture/genome).</summary>
     public const string MetaSignatureLootCuir117 = "SigLootCuir117";
+    /// <summary>Prévisualisation GLB simple (steak, charbon, os…) — signature = ID objet.</summary>
+    public const string MetaSignatureGlbLootSimple = "SigGlbLootSimple";
     /// <summary>ItemPhysique dague (105) : durabilitÃ© synchronisÃ©e inventaire / sol.</summary>
     public const string MetaDurabiliteOutilMax = "DurOutilMax";
     public const string MetaDurabiliteOutilActuelle = "DurOutilAct";
@@ -194,6 +196,77 @@ public partial class Joueur : CharacterBody3D
     public const int IdObjetTableArtisanaTier1 = 148;
     /// <summary>Aloe vera récoltable/replantable (objet dédié, mesh procédural spécifique).</summary>
     public const int IdObjetAloeVera = 149;
+    /// <summary>Morceau de charbon — basse qualité (Y proche surface).</summary>
+    public const int IdObjetCharbonBasseQualite = 150;
+    /// <summary>Morceau de charbon — qualité moyenne.</summary>
+    public const int IdObjetCharbonMoyenneQualite = 151;
+    /// <summary>Morceau de charbon — bonne qualité.</summary>
+    public const int IdObjetCharbonBonneQualite = 152;
+    /// <summary>Morceau de charbon — anthracite (profondeur, léger reflet).</summary>
+    public const int IdObjetCharbonAntracite = 153;
+    /// <summary>Bol en bois rempli d'eau (obtenu en remplissant un bol vide dans l'eau). Garde l'essence du bois.</summary>
+    public const int IdObjetBolEau = 154;
+
+    public static bool EstIdCharbonRecolte(int id) =>
+        id == IdObjetCharbonBasseQualite
+        || id == IdObjetCharbonMoyenneQualite
+        || id == IdObjetCharbonBonneQualite
+        || id == IdObjetCharbonAntracite;
+
+    private const int SeuilHauteurMontagneCharbonRecolte = 150;
+    private const int IdVoxelMineraiCharbon = 10;
+
+    /// <summary>Loot charbon miné (voxel 10) selon Y monde et biome montagne (aligné filons serveur).</summary>
+    public static int ObtenirIdObjetCharbonRecolteDepuisPositionMonde(Vector3 positionMonde, int seedTerrain)
+    {
+        int gx = Mathf.FloorToInt(positionMonde.X);
+        int gy = Mathf.FloorToInt(positionMonde.Y);
+        int gz = Mathf.FloorToInt(positionMonde.Z);
+        int hSurf = Generateur_Voxel.ObtenirHauteurTerrainMonde(gx, gz, seedTerrain);
+        if (hSurf >= SeuilHauteurMontagneCharbonRecolte)
+        {
+            float r = RandDeterministeUnitaireCharbon(gx, gy, gz, seedTerrain);
+            return r < 0.05f ? IdObjetCharbonAntracite : IdObjetCharbonBonneQualite;
+        }
+        if (gy <= 0)
+            return IdObjetCharbonAntracite;
+        if (gy <= 30)
+            return IdObjetCharbonBonneQualite;
+        if (gy <= 49)
+            return IdObjetCharbonMoyenneQualite;
+        if (gy <= 95)
+            return IdObjetCharbonBasseQualite;
+        return IdObjetCharbonBasseQualite;
+    }
+
+    public static SlotInventaire ConstruireSlotLootMineraiVoxel(int idVoxelMinerai, Vector3 positionMonde, int seedTerrain)
+    {
+        if (idVoxelMinerai == IdVoxelMineraiCharbon)
+        {
+            return new SlotInventaire
+            {
+                ID = ObtenirIdObjetCharbonRecolteDepuisPositionMonde(positionMonde, seedTerrain),
+                Quantite = 1
+            };
+        }
+        return new SlotInventaire
+        {
+            ID = 2,
+            GenomeAssemblage = $"VOXEL_TERRAIN:{idVoxelMinerai}",
+            Quantite = 1
+        };
+    }
+
+    private static float RandDeterministeUnitaireCharbon(int x, int y, int z, int seed)
+    {
+        uint h = (uint)(seed ^ (x * 73856093) ^ (y * 19349663) ^ (z * 83492791));
+        h ^= h >> 16;
+        h *= 0x7feb352d;
+        h ^= h >> 15;
+        h *= 0x846ca68b;
+        h ^= h >> 16;
+        return (h & 0xFFFFFF) / (float)0x1000000;
+    }
     /// <summary>Emprise horizontale des planchers posés (carré X×Z, léger débord sur fondation 4 m).</summary>
     public const float PlancherEmpriseMetres = 4.1f;
     /// <summary>Épaisseur des planchers bois / roche.</summary>
@@ -644,6 +717,7 @@ public partial class Joueur : CharacterBody3D
     private const string MetaSignatureAllumeFeu121 = "SigAllumeFeu121";
     private const string MetaSignatureMailletBois128 = "SigMailletBois128";
     private const string MetaSignatureBolBois129 = "SigBolBois129";
+    private const string MetaSignatureBolEau154 = "SigBolEau154";
     private const string MetaSignatureMortierPilon130 = "SigMortierPilon130";
     private const string MetaSignatureFenetreBois146 = "SigFenetreBois146";
     private const string MetaSignatureTableAnalyse131 = "SigTableAnalyse131";
@@ -1222,7 +1296,7 @@ public partial class Joueur : CharacterBody3D
         MettreAJourVisibilitePreviews();
         if (_menuAnatomie != null && _menuAnatomie.EstOuvert)
         {
-            const ulong intervalleMenuHudMs = 50UL;
+            ulong intervalleMenuHudMs = _modeCreatifAdmin ? 150UL : 50UL;
             ulong maintenant = Time.GetTicksMsec();
             if (maintenant - _msDernierRafraichirMenuCompletHud >= intervalleMenuHudMs
                 || _msDernierRafraichirMenuCompletHud == 0UL)
@@ -1360,18 +1434,88 @@ public partial class Joueur : CharacterBody3D
     {
         for (Node n = col; n != null; n = n.GetParent())
         {
-            if (n is RigidBody3D rb && rb.Name.ToString().Contains("ArbreMort"))
+            if (n is RigidBody3D rb && (rb.Name.ToString().Contains("ArbreMort") || rb.IsInGroup("CadavreArbre")))
                 return rb;
         }
         return null;
     }
 
-    /// <summary>Après abattage, la visée peut toucher le sol/feuillage sans collider : on cherche un cadavre proche du point d'impact.</summary>
+    /// <summary>
+    /// Résout le cadavre visé : collider direct, puis le long du rayon caméra, puis proximité filtrée par la visée.
+    /// Évite de frapper le mauvais arbre quand plusieurs cadavres sont proches.
+    /// </summary>
+    private RigidBody3D ResoudreCadavreArbreCible(Node objetTouche, Vector3 pointImpact)
+    {
+        RigidBody3D direct = ResoudreCadavreArbreDepuisCollider(objetTouche);
+        if (direct != null && GodotObject.IsInstanceValid(direct))
+            return direct;
+        RigidBody3D leLongVisée = ChercherCadavreArbreLeLongVisée(pointImpact);
+        if (leLongVisée != null)
+            return leLongVisée;
+        return ChercherCadavreArbreProchePointImpact(pointImpact);
+    }
+
+    /// <summary>Parcourt le rayon caméra→impact en ignorant sol/objets jusqu'à trouver un <c>ArbreMort</c>.</summary>
+    private RigidBody3D ChercherCadavreArbreLeLongVisée(Vector3 pointImpact, float margeApresImpactMetres = 1.6f)
+    {
+        var space = GetWorld3D()?.DirectSpaceState;
+        if (space == null || _rayon == null)
+            return null;
+
+        Vector3 origine = _rayon.GlobalPosition;
+        Vector3 versImpact = pointImpact - origine;
+        if (versImpact.LengthSquared() < 1e-8f)
+            return null;
+        Vector3 direction = versImpact.Normalized();
+        float longueur = versImpact.Length() + margeApresImpactMetres;
+        Vector3 destination = origine + direction * longueur;
+
+        var excludes = new Godot.Collections.Array<Rid>();
+        if (this is CollisionObject3D coJoueur)
+            excludes.Add(coJoueur.GetRid());
+
+        const int maxPasses = 10;
+        for (int passe = 0; passe < maxPasses; passe++)
+        {
+            var q = PhysicsRayQueryParameters3D.Create(origine, destination);
+            q.CollisionMask = 0xFFFFFFFF;
+            q.CollideWithAreas = false;
+            q.CollideWithBodies = true;
+            q.Exclude = excludes;
+            Godot.Collections.Dictionary hit = space.IntersectRay(q);
+            if (hit.Count == 0 || !hit.ContainsKey("collider"))
+                break;
+
+            Node col = NoeudDepuisColliderRaycast(hit["collider"].AsGodotObject());
+            RigidBody3D cadavre = ResoudreCadavreArbreDepuisCollider(col);
+            if (cadavre != null && GodotObject.IsInstanceValid(cadavre) && cadavre.IsInsideTree())
+                return cadavre;
+
+            if (hit.ContainsKey("rid"))
+                excludes.Add((Rid)hit["rid"]);
+            else
+                break;
+        }
+        return null;
+    }
+
+    /// <summary>Après abattage, la visée peut toucher le sol sans collider cadavre : on cherche dans un tube autour du rayon caméra.</summary>
     private RigidBody3D ChercherCadavreArbreProchePointImpact(Vector3 pointMonde, float rayonMetres = 2.35f)
     {
         var space = GetWorld3D()?.DirectSpaceState;
         if (space == null) return null;
+
+        Vector3 origineRayon = _rayon != null ? _rayon.GlobalPosition : pointMonde + Vector3.Up * 1.6f;
+        Vector3 dirRayon = pointMonde - origineRayon;
+        if (dirRayon.LengthSquared() < 1e-8f && _camera != null)
+            dirRayon = -_camera.GlobalTransform.Basis.Z;
+        if (dirRayon.LengthSquared() < 1e-8f)
+            dirRayon = Vector3.Forward;
+        dirRayon = dirRayon.Normalized();
+
         float rayonSq = rayonMetres * rayonMetres;
+        const float maxEcartRayonMetres = 1.05f;
+        float maxEcartRayonSq = maxEcartRayonMetres * maxEcartRayonMetres;
         var ppq = new PhysicsPointQueryParameters3D
         {
             Position = pointMonde,
@@ -1381,7 +1525,7 @@ public partial class Joueur : CharacterBody3D
         };
         Godot.Collections.Array<Godot.Collections.Dictionary> results = space.IntersectPoint(ppq, 48);
         RigidBody3D meilleur = null;
-        float meilleureDistSq = rayonSq;
+        float meilleurScore = float.MaxValue;
         for (int i = 0; i < results.Count; i++)
         {
             if (!results[i].TryGetValue("collider", out Variant vCol)) continue;
@@ -1389,10 +1533,24 @@ public partial class Joueur : CharacterBody3D
             Node noeud = colObj is CollisionShape3D sh ? sh.GetParent() as Node : colObj as Node;
             RigidBody3D rb = ResoudreCadavreArbreDepuisCollider(noeud);
             if (rb == null || !GodotObject.IsInstanceValid(rb) || !rb.IsInsideTree()) continue;
-            float d = rb.GlobalPosition.DistanceSquaredTo(pointMonde);
-            if (d < meilleureDistSq)
+
+            Vector3 auCorps = rb.GlobalPosition - origineRayon;
+            float leLong = auCorps.Dot(dirRayon);
+            if (leLong < -0.35f || leLong > rayonMetres + 2.5f)
+                continue;
+            Vector3 perp = auCorps - dirRayon * leLong;
+            if (perp.LengthSquared() > maxEcartRayonSq)
+                continue;
+
+            float distImpactSq = rb.GlobalPosition.DistanceSquaredTo(pointMonde);
+            if (distImpactSq > rayonSq)
+                continue;
+
+            // Priorité : alignement visée, puis proximité du point d'impact.
+            float score = perp.LengthSquared() * 6f + distImpactSq;
+            if (score < meilleurScore)
             {
-                meilleureDistSq = d;
+                meilleurScore = score;
                 meilleur = rb;
             }
         }

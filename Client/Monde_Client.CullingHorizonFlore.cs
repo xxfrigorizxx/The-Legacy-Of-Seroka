@@ -14,8 +14,17 @@ public partial class Monde_Client : Node3D
 		if (world == null) return;
 
 		Shape3D shape = null;
-		try { shape = data._meshRef.CreateTrimeshShape(); }
-		catch (Exception) { shape = null; }
+		// Shape pré-construite (BVH déjà bâti sur le thread de fond) : évite le pic CreateTrimeshShape ici.
+		if (data.ShapeCollisionPrecalc != null)
+		{
+			shape = data.ShapeCollisionPrecalc;
+			data.ShapeCollisionPrecalc = null;
+		}
+		if (shape == null)
+		{
+			try { shape = data._meshRef.CreateTrimeshShape(); }
+			catch (Exception) { shape = null; }
+		}
 		if (shape == null) return;
 
 		Transform3D transformChunk = new Transform3D(
@@ -189,7 +198,12 @@ public partial class Monde_Client : Node3D
 		if (data._nodeFlore is Node3D flore && flore.Visible != visible)
 			flore.Visible = visible;
 		if (replanifierFloreSiVisible && visible && !etaitVisible && data.InventaireFlore != null && data.InventaireFlore.Count > 0)
-			EnfilerFloreChunk(data, positionObservation);
+		{
+			if (data._nodeFlore is Node3D floreVisible && GodotObject.IsInstanceValid(floreVisible))
+				Chunk_Client.MettreAJourFlorePourChunkData(data, positionObservation, floreVisible);
+			else
+				EnfilerFloreChunk(data, positionObservation);
+		}
 	}
 
 	/// <summary>Remet tout le terrain déjà chargé en visible (anti-trous après changement d’options / désactivation « Sauver les FPS »).</summary>
@@ -323,12 +337,33 @@ public partial class Monde_Client : Node3D
 			Vector3I cle = CleFlorePourChunkData(data);
 			return _chunksDataAbysse3D.TryGetValue(cle, out ChunkData d) && ReferenceEquals(d, data);
 		}
+		if (ModeProfondeurTranchesActif())
+		{
+			Vector3I cle = CleFlorePourChunkData(data);
+			return _chunksDataProfondeur3D.TryGetValue(cle, out ChunkData dProf) && ReferenceEquals(dProf, data);
+		}
 		return _chunksData.TryGetValue(data.Coordonnees, out ChunkData d2) && ReferenceEquals(d2, data);
+	}
+
+	private void RetirerFloreDiffereePourChunk(ChunkData data)
+	{
+		if (data == null) return;
+		Vector3I cle = CleFlorePourChunkData(data);
+		_setFloreDifferee.Remove(cle);
+		_fileFloreDifferee.Remove(cle);
+		_frameEnqueueFlore.Remove(cle);
 	}
 
 	private void EnfilerFloreChunk(ChunkData data, Vector3 positionObservation)
 	{
 		if (data == null || data.InventaireFlore == null || data.InventaireFlore.Count == 0) return;
+		if (data._nodeFlore is Node3D existant && GodotObject.IsInstanceValid(existant))
+		{
+			Chunk_Client.MettreAJourFlorePourChunkData(data, positionObservation, existant);
+			existant.Visible = data.CullingVisible;
+			RetirerFloreDiffereePourChunk(data);
+			return;
+		}
 		Vector3I cle = CleFlorePourChunkData(data);
 		if (_setFloreDifferee.Add(cle))
 		{
@@ -367,9 +402,9 @@ public partial class Monde_Client : Node3D
 	private void ReplanifierFloreAutourJoueur(Vector2I chunkCentre)
 	{
 		int rayon = Mathf.Max(1, Mathf.Min(RayonGazonVisibleChunks, RayonBuissonsVisibleChunks));
+		Vector3 posObs = ObtenirPositionObservation();
 		if (_dimensionReseauActive == (int)DimensionJeu.Abysse)
 		{
-			Vector3 posObs = ObtenirPositionObservation();
 			foreach (var kv in _chunksDataAbysse3D)
 			{
 				Vector3I key = kv.Key;
@@ -382,12 +417,27 @@ public partial class Monde_Client : Node3D
 				ChunkData data = kv.Value;
 				if (data?.InventaireFlore == null || data.InventaireFlore.Count == 0)
 					continue;
-				Vector3I cle = CleFlorePourChunkData(data);
-				if (_setFloreDifferee.Add(cle))
-				{
-					_fileFloreDifferee.Add(cle);
-					_frameEnqueueFlore[cle] = Engine.GetPhysicsFrames();
-				}
+				EnfilerFloreChunk(data, posObs);
+			}
+			return;
+		}
+		if (ModeProfondeurTranchesActif())
+		{
+			int cyObs = CoordYDepuisMondeY((int)Mathf.Floor(posObs.Y));
+			int demiFenetre = ConstantesProfondeurVerticale.DemiFenetreTranches;
+			foreach (var kv in _chunksDataProfondeur3D)
+			{
+				Vector3I key = kv.Key;
+				int ddx = Mathf.Abs(key.X - chunkCentre.X);
+				int ddz = Mathf.Abs(key.Z - chunkCentre.Y);
+				if (ddx > rayon || ddz > rayon)
+					continue;
+				if (Mathf.Abs(key.Y - cyObs) > demiFenetre)
+					continue;
+				ChunkData data = kv.Value;
+				if (data?.InventaireFlore == null || data.InventaireFlore.Count == 0)
+					continue;
+				EnfilerFloreChunk(data, posObs);
 			}
 			return;
 		}
@@ -398,12 +448,7 @@ public partial class Monde_Client : Node3D
 				Vector2I coord = new Vector2I(chunkCentre.X + dx, chunkCentre.Y + dz);
 				if (!_chunksData.TryGetValue(coord, out var data)) continue;
 				if (data.InventaireFlore == null || data.InventaireFlore.Count == 0) continue;
-				Vector3I cle = CleFlorePourChunkData(data);
-				if (_setFloreDifferee.Add(cle))
-				{
-					_fileFloreDifferee.Add(cle);
-					_frameEnqueueFlore[cle] = Engine.GetPhysicsFrames();
-				}
+				EnfilerFloreChunk(data, posObs);
 			}
 		}
 	}
@@ -429,6 +474,8 @@ public partial class Monde_Client : Node3D
 			ChunkData data = null;
 			if (_dimensionReseauActive == (int)DimensionJeu.Abysse)
 				_chunksDataAbysse3D.TryGetValue(coord, out data);
+			else if (ModeProfondeurTranchesActif())
+				_chunksDataProfondeur3D.TryGetValue(coord, out data);
 			else if (_chunksData.TryGetValue(new Vector2I(coord.X, coord.Z), out var dAlpha) && dAlpha.CoordChunkY == coord.Y)
 				data = dAlpha;
 			if (data == null)

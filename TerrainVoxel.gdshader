@@ -227,13 +227,15 @@ void fragment() {
 void light() {
 	float ndotl = max(dot(NORMAL, LIGHT), 0.0);
 	float half_lambert = ndotl * 0.5 + 0.5;
-	float diffus_lisse = smoothstep(0.18 - douceur_ombre * 0.15, 0.92, half_lambert);
+	float diffus_lisse = smoothstep(0.12 - douceur_ombre * 0.18, 0.96, half_lambert);
 	float diffus = max(lumiere_ambiante, diffus_lisse);
+	// Atténuation adoucie pour les omni (torche) : transition plus longue vers l'obscurité.
+	float att = pow(clamp(ATTENUATION, 0.0, 1.0), 0.78);
 
 	// Garde une lumière majoritairement neutre pour éviter la dérive orange du sable.
 	float lum_light = dot(LIGHT_COLOR, vec3(0.2126, 0.7152, 0.0722));
 	vec3 lumiere_rgb = mix(vec3(lum_light), LIGHT_COLOR, 0.22);
-	DIFFUSE_LIGHT += ALBEDO * lumiere_rgb * diffus * ATTENUATION;
+	DIFFUSE_LIGHT += ALBEDO * lumiere_rgb * diffus * att;
 
 	// Sol/roche/sable volontairement mats : aucun reflet speculaire.
 }

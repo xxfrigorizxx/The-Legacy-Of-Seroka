@@ -4,6 +4,38 @@ using System.Collections.Generic;
 
 public partial class ItemPhysique : RigidBody3D
 {
+	// Lumière torche / feu : portée étendue + atténuation douce (évite coupure radicale).
+	private const float LumiereTorcheEnergy = 2.15f;
+	private const float LumiereTorchePortee = 8.2f;
+	private const float LumiereTorcheAttenuation = 0.26f;
+	private const float LumiereFeuEnergy = 2.45f;
+	private const float LumiereFeuPortee = 9.5f;
+	private const float LumiereFeuAttenuation = 0.26f;
+
+	private static void ConfigurerLumiereTorche(OmniLight3D light)
+	{
+		if (light == null || !GodotObject.IsInstanceValid(light))
+			return;
+		light.LightColor = new Color(1.0f, 0.62f, 0.30f);
+		light.LightEnergy = LumiereTorcheEnergy;
+		light.OmniRange = LumiereTorchePortee;
+		light.OmniAttenuation = LumiereTorcheAttenuation;
+		light.LightSpecular = 0.12f;
+		light.ShadowEnabled = false;
+	}
+
+	private static void ConfigurerLumiereFeuCamp(OmniLight3D light)
+	{
+		if (light == null || !GodotObject.IsInstanceValid(light))
+			return;
+		light.LightColor = new Color(1.0f, 0.58f, 0.26f);
+		light.LightEnergy = LumiereFeuEnergy;
+		light.OmniRange = LumiereFeuPortee;
+		light.OmniAttenuation = LumiereFeuAttenuation;
+		light.LightSpecular = 0.12f;
+		light.ShadowEnabled = false;
+	}
+
 	private void ActiverVisuelPitFeu(bool actif)
 	{
 		if (ID_Objet != Joueur.IdObjetPitFeu && ID_Objet != Joueur.IdObjetPitFeuRoche)
@@ -99,12 +131,10 @@ public partial class ItemPhysique : RigidBody3D
 			_pitFlammeLight = new OmniLight3D
 			{
 				Name = "PitFeuLumiere",
-				LightColor = new Color(1.0f, 0.58f, 0.26f),
-				LightEnergy = 2.2f,
-				OmniRange = 5.8f,
 				Position = new Vector3(0f, 0.28f, 0f),
 				Visible = false
 			};
+			ConfigurerLumiereFeuCamp(_pitFlammeLight);
 			AddChild(_pitFlammeLight);
 		}
 		_pitFlammeCroix.Visible = actif;
@@ -198,7 +228,7 @@ public partial class ItemPhysique : RigidBody3D
 			var flammes = new GpuParticles3D
 			{
 				Name = "TorcheFlammesParticles",
-				Amount = 54,
+				Amount = 38,
 				Explosiveness = 0f,
 				Lifetime = 0.68,
 				OneShot = false,
@@ -222,7 +252,7 @@ public partial class ItemPhysique : RigidBody3D
 			var fumee = new GpuParticles3D
 			{
 				Name = "TorcheFumeeParticles",
-				Amount = 16,
+				Amount = 10,
 				Explosiveness = 0f,
 				Lifetime = 2.5,
 				OneShot = false,
@@ -259,13 +289,13 @@ public partial class ItemPhysique : RigidBody3D
 			light = new OmniLight3D
 			{
 				Name = "TorcheLumiere",
-				LightColor = new Color(1.0f, 0.62f, 0.30f),
-				LightEnergy = 1.7f,
-				OmniRange = 5.1f,
 				Position = new Vector3(0f, 0.90f, 0f)
 			};
+			ConfigurerLumiereTorche(light);
 			parent.AddChild(light);
 		}
+		else
+			ConfigurerLumiereTorche(light);
 		light.Visible = true;
 	}
 
@@ -401,16 +431,29 @@ public partial class ItemPhysique : RigidBody3D
 		if (ID_Objet != Joueur.IdObjetPitFeuRoche)
 			return;
 		AssurerGrillePitFeuRoche3Slots();
-		_pitFeuRocheStockCombustible = CompterCombustiblePitFeuRocheDepuisGrille();
-		long finMs = _pitFeuRocheResteSec > 0.001d
-			? DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + (long)Mathf.Round((float)(_pitFeuRocheResteSec * 1000.0))
-			: 0L;
-		long progressCuissonMs = (long)Mathf.Round((float)Math.Max(0d, _pitFeuRocheProgressCuissonSec * 1000.0));
-		GenomeAssemblage = $"PITFEUROCHE:{_pitFeuRocheStockCombustible}:{finMs}:{progressCuissonMs}";
+		SlotInventaire comb = GrillePlanTravailAtelier[PitFeuRocheSlotCombustible];
+		SlotInventaire cuis = GrillePlanTravailAtelier[PitFeuRocheSlotCuisson];
+		SlotInventaire res = GrillePlanTravailAtelier[PitFeuRocheSlotResultat];
+		bool combOk = EstSlotCombustiblePitFeuRoche(comb);
+		int combQte = combOk ? Joueur.ObtenirQuantiteSlot(comb) : 0;
+		_pitFeuRocheStockCombustible = combQte;
+		int combId = combOk ? comb.ID : 32;
+		byte combEssence = combOk ? comb.IndexBotanique : LSystem_Botanique.IndexChene;
+		int crus = EstSlotCuissonPitFeuRoche(cuis) ? Joueur.ObtenirQuantiteSlot(cuis) : 0;
+		int cuits = EstSlotResultatPitFeuRoche(res) ? Joueur.ObtenirQuantiteSlot(res) : 0;
+		// Provenance du steak (index) : prise du cru en priorité, sinon du cuit (préserve la variante).
+		SlotInventaire steakRef = crus > 0 ? cuis : res;
+		byte sBot = steakRef.IndexBotanique;
+		int sChi = steakRef.IndexChimique;
+		int sMor = steakRef.IndexMorphologique;
+		long t0 = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+		long resteMs = (long)Mathf.Round((float)Math.Max(0d, _pitFeuRocheResteSec * 1000.0));
+		long dureeMs = (long)Mathf.Round((float)Math.Max(1d, _pitFeuRocheDureeUniteCouranteSec * 1000.0));
+		long progMs = (long)Mathf.Round((float)Math.Max(0d, _pitFeuRocheProgressCuissonSec * 1000.0));
+		// Format v2 : état complet pour rattrapage hors-ligne (bois+essence, steaks crus/cuits, temps de référence).
+		GenomeAssemblage = $"PITFEUROCHE2:{t0}:{combQte}:{combEssence}:{combId}:{resteMs}:{dureeMs}:{progMs}:{crus}:{cuits}:{sBot}:{sChi}:{sMor}";
 		SetMeta(Joueur.MetaGenomeAssemblage, GenomeAssemblage);
-		SetMeta(MetaPitFeuRocheStockCombustible, _pitFeuRocheStockCombustible);
-		SetMeta(MetaPitFeuRocheFinCombustionUnixMs, finMs);
-		SetMeta(MetaPitFeuRocheProgressCuissonMs, progressCuissonMs);
+		SetMeta(MetaPitFeuRocheStockCombustible, combQte);
 	}
 
 	private void ChargerEtatPitFeuDepuisGenome()
@@ -446,13 +489,58 @@ public partial class ItemPhysique : RigidBody3D
 		if (ID_Objet != Joueur.IdObjetPitFeuRoche)
 			return;
 		long maintenant = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+		string g = GenomeAssemblage ?? "";
+
+		// Format v2 : état complet + rattrapage hors-ligne (combustion + cuisson pendant l'absence).
+		if (g.StartsWith("PITFEUROCHE2:", StringComparison.Ordinal))
+		{
+			string[] m = g.Substring("PITFEUROCHE2:".Length).Split(':');
+			if (m.Length >= 12)
+			{
+				long.TryParse(m[0], out long t0);
+				int.TryParse(m[1], out int combQte);
+				byte.TryParse(m[2], out byte essence);
+				int.TryParse(m[3], out int combId);
+				long.TryParse(m[4], out long resteMs);
+				long.TryParse(m[5], out long dureeMs);
+				long.TryParse(m[6], out long progMs);
+				int.TryParse(m[7], out int crus);
+				int.TryParse(m[8], out int cuits);
+				byte.TryParse(m[9], out byte sBot);
+				int.TryParse(m[10], out int sChi);
+				int.TryParse(m[11], out int sMor);
+
+				double resteUnite = Math.Max(0d, resteMs / 1000.0);
+				double dureeUnite = Math.Max(1d, dureeMs / 1000.0);
+				double progress = Math.Max(0d, progMs / 1000.0);
+				combQte = Mathf.Max(0, combQte);
+				crus = Mathf.Max(0, crus);
+				cuits = Mathf.Max(0, cuits);
+
+				int plafondCuits = Mathf.Max(1, Joueur.ObtenirPileMax(
+					new SlotInventaire { ID = Joueur.IdObjetSteakCuit, Quantite = 1 }));
+				double tempsEcoule = Math.Max(0d, (maintenant - t0) / 1000.0);
+				SimulerRattrapagePitFeuRoche(ref combQte, essence, ref resteUnite, dureeUnite,
+					ref progress, ref crus, ref cuits, tempsEcoule, plafondCuits);
+
+				RestaurerGrillePitFeuRoche(combQte, combId, essence, crus, cuits, sBot, sChi, sMor);
+				_pitFeuRocheStockCombustible = combQte;
+				_pitFeuRocheResteSec = resteUnite;
+				_pitFeuRocheDureeUniteCouranteSec = dureeUnite;
+				_pitFeuRocheProgressCuissonSec = progress;
+				_pitFeuRocheDernierSyncRestantSec = -1d;
+				ActiverVisuelPitFeu(resteUnite > 0.001d);
+				return;
+			}
+		}
+
+		// Compat ancien format PITFEUROCHE: (stock:finMs:progress) — restauration simple sans steaks.
 		long finMs = 0L;
 		long progressCuissonMs = 0L;
 		int stock = 0;
-		if (!string.IsNullOrEmpty(GenomeAssemblage) && GenomeAssemblage.StartsWith("PITFEUROCHE:", StringComparison.Ordinal))
+		if (g.StartsWith("PITFEUROCHE:", StringComparison.Ordinal))
 		{
-			string brut = GenomeAssemblage.Substring("PITFEUROCHE:".Length);
-			string[] morceaux = brut.Split(':');
+			string[] morceaux = g.Substring("PITFEUROCHE:".Length).Split(':');
 			if (morceaux.Length >= 2)
 			{
 				int.TryParse(morceaux[0], out stock);
@@ -473,7 +561,7 @@ public partial class ItemPhysique : RigidBody3D
 		_pitFeuRocheStockCombustible = Mathf.Max(0, stock);
 		AssurerGrillePitFeuRoche3Slots();
 		if (_pitFeuRocheStockCombustible > 0 && CompterCombustiblePitFeuRocheDepuisGrille() <= 0)
-			AjouterCombustiblePitFeuRocheDansGrille(_pitFeuRocheStockCombustible, 32);
+			AjouterCombustiblePitFeuRocheDansGrille(_pitFeuRocheStockCombustible, 32, LSystem_Botanique.IndexChene);
 		_pitFeuRocheStockCombustible = CompterCombustiblePitFeuRocheDepuisGrille();
 		_pitFeuRocheProgressCuissonSec = Math.Max(0d, progressCuissonMs / 1000.0);
 		if (finMs > maintenant)
@@ -487,6 +575,74 @@ public partial class ItemPhysique : RigidBody3D
 			_pitFeuRocheResteSec = 0d;
 			ActiverVisuelPitFeu(false);
 		}
+	}
+
+	/// <summary>
+	/// Rattrapage hors-ligne : simule la combustion (bois brûlé unité par unité) ET la cuisson des steaks
+	/// pendant <paramref name="tempsEcoule"/> secondes. Le feu brûle son bois en continu (comme en ligne) ;
+	/// la cuisson n'avance que tant que le feu brûle. Si le bois s'épuise, le feu s'éteint et la cuisson restante est perdue.
+	/// </summary>
+	private void SimulerRattrapagePitFeuRoche(ref int comb, byte essence, ref double resteUnite, double dureeUnite,
+		ref double progress, ref int crus, ref int cuits, double tempsEcoule, int plafondCuits)
+	{
+		if (dureeUnite <= 0d)
+			dureeUnite = DureeCombustionPitFeuRochePourEssence(essence);
+		double dureeCuisson = Math.Max(0.001d, DureeCuissonPitFeuRocheSteakSec);
+		double t = tempsEcoule;
+		bool allume = resteUnite > 0.0001d;
+		int garde = 0;
+		while (t > 0.0001d && allume && garde++ < 1000000)
+		{
+			double dt = Math.Min(t, resteUnite);
+			// Cuisson active seulement si un steak cru attend et que le résultat n'est pas plein.
+			if (crus > 0 && cuits < plafondCuits)
+			{
+				progress += dt;
+				while (progress >= dureeCuisson && crus > 0 && cuits < plafondCuits)
+				{
+					progress -= dureeCuisson;
+					crus--;
+					cuits++;
+				}
+				if (crus <= 0 || cuits >= plafondCuits)
+					progress = 0d;
+			}
+			else
+			{
+				progress = 0d;
+			}
+			resteUnite -= dt;
+			t -= dt;
+			if (resteUnite <= 0.0001d)
+			{
+				if (comb > 0)
+				{
+					comb--;
+					resteUnite = dureeUnite; // unité suivante (même essence).
+				}
+				else
+				{
+					allume = false;
+					resteUnite = 0d; // plus de bois → feu éteint.
+				}
+			}
+		}
+	}
+
+	/// <summary>Réécrit les 3 slots du feu roche (combustible+essence, steaks crus, steaks cuits) après rattrapage/chargement.</summary>
+	private void RestaurerGrillePitFeuRoche(int combQte, int combId, byte essence, int crus, int cuits, byte sBot, int sChi, int sMor)
+	{
+		AssurerGrillePitFeuRoche3Slots();
+		int idComb = combId == BlocChutant.ID_BRANCHE ? BlocChutant.ID_BRANCHE : 32;
+		GrillePlanTravailAtelier[PitFeuRocheSlotCombustible] = combQte > 0
+			? new SlotInventaire { ID = idComb, Quantite = combQte, IndexBotanique = essence }
+			: new SlotInventaire();
+		GrillePlanTravailAtelier[PitFeuRocheSlotCuisson] = crus > 0
+			? new SlotInventaire { ID = Joueur.IdObjetSteakCru, Quantite = crus, IndexBotanique = sBot, IndexChimique = sChi, IndexMorphologique = sMor }
+			: new SlotInventaire();
+		GrillePlanTravailAtelier[PitFeuRocheSlotResultat] = cuits > 0
+			? new SlotInventaire { ID = Joueur.IdObjetSteakCuit, Quantite = cuits, IndexBotanique = sBot, IndexChimique = sChi, IndexMorphologique = sMor }
+			: new SlotInventaire();
 	}
 
 	public bool EstPitFeuAllume()
@@ -519,6 +675,74 @@ public partial class ItemPhysique : RigidBody3D
 		return !s.EstVide && s.ID == Joueur.IdObjetSteakCru;
 	}
 
+	/// <summary>Durée de combustion (s) d'UNE unité de combustible selon l'essence de bois (branche/bâton). Repli = <see cref="DureeCombustionPitFeuSec"/>.</summary>
+	private static double DureeCombustionPitFeuRochePourEssence(byte essence)
+	{
+		switch (essence)
+		{
+			case LSystem_Botanique.IndexChene:
+			case LSystem_Botanique.IndexBouleau:
+				return 60.0;
+			case LSystem_Botanique.IndexPin:
+			case LSystem_Botanique.IndexSapin:
+				return 40.0;
+			case LSystem_Botanique.IndexJungle:
+				return 20.0;
+			case LSystem_Botanique.IndexCheneMort:
+				return 120.0;
+			case LSystem_Botanique.IndexBouleauMort:
+				return 80.0;
+			default:
+				return DureeCombustionPitFeuSec;
+		}
+	}
+
+	/// <summary>
+	/// Progression de cuisson du steak en cours (0..1) pour la barre UI, ou -1 si rien ne cuit
+	/// (feu éteint, pas de steak cru dans le slot cuisson, ou slot résultat plein).
+	/// </summary>
+	public float ObtenirProgressionCuissonPitFeuRoche()
+	{
+		if (ID_Objet != Joueur.IdObjetPitFeuRoche || GrillePlanTravailAtelier == null)
+			return -1f;
+		if (_pitFeuRocheResteSec <= 0.001d)
+			return -1f;
+		AssurerGrillePitFeuRoche3Slots();
+		SlotInventaire cuisson = GrillePlanTravailAtelier[PitFeuRocheSlotCuisson];
+		if (!EstSlotCuissonPitFeuRoche(cuisson))
+			return -1f;
+		SlotInventaire resultat = GrillePlanTravailAtelier[PitFeuRocheSlotResultat];
+		if (!resultat.EstVide && EstSlotResultatPitFeuRoche(resultat)
+			&& Joueur.ObtenirQuantiteSlot(resultat) >= Mathf.Max(1, Joueur.ObtenirPileMax(resultat)))
+			return -1f; // Résultat plein : cuisson en pause.
+		if (DureeCuissonPitFeuRocheSteakSec <= 0.0)
+			return -1f;
+		return Mathf.Clamp((float)(_pitFeuRocheProgressCuissonSec / DureeCuissonPitFeuRocheSteakSec), 0f, 1f);
+	}
+
+	/// <summary>Progression de combustion de l'unité de bois en cours (1 = pleine, 0 = consumée), ou -1 si le feu est éteint. Pour la barre UI.</summary>
+	public float ObtenirProgressionCombustionPitFeuRoche()
+	{
+		if (ID_Objet != Joueur.IdObjetPitFeuRoche || _pitFeuRocheResteSec <= 0.001d)
+			return -1f;
+		double total = Math.Max(_pitFeuRocheDureeUniteCouranteSec, _pitFeuRocheResteSec);
+		if (total <= 0.0)
+			return -1f;
+		return Mathf.Clamp((float)(_pitFeuRocheResteSec / total), 0f, 1f);
+	}
+
+	/// <summary>Essence du combustible actuellement dans le slot (pour calculer sa durée avant consommation). Chêne par défaut.</summary>
+	private byte ObtenirEssenceCombustiblePitFeuRoche()
+	{
+		if (ID_Objet != Joueur.IdObjetPitFeuRoche || GrillePlanTravailAtelier == null)
+			return LSystem_Botanique.IndexChene;
+		AssurerGrillePitFeuRoche3Slots();
+		SlotInventaire slot = GrillePlanTravailAtelier[PitFeuRocheSlotCombustible];
+		if (!EstSlotCombustiblePitFeuRoche(slot))
+			return LSystem_Botanique.IndexChene;
+		return slot.IndexBotanique;
+	}
+
 	private static bool EstSlotResultatPitFeuRoche(SlotInventaire s)
 	{
 		return !s.EstVide && s.ID == Joueur.IdObjetSteakCuit;
@@ -543,12 +767,25 @@ public partial class ItemPhysique : RigidBody3D
 		int totalCombustible = 0;
 		int totalCru = 0;
 		int totalCuit = 0;
+		// Préserver l'ID (branche/bâton) ET l'essence réels du combustible — sinon les branches
+		// étaient transformées en bâtons de chêne et les durées par essence étaient perdues.
+		int idCombustible = 32;
+		byte essenceCombustible = LSystem_Botanique.IndexChene;
+		bool combustibleVu = false;
 		int nSlots = Mathf.Min(9, GrillePlanTravailAtelier.Length);
 		for (int i = 0; i < nSlots; i++)
 		{
 			SlotInventaire s = GrillePlanTravailAtelier[i];
 			if (EstSlotCombustiblePitFeuRoche(s))
+			{
 				totalCombustible += Joueur.ObtenirQuantiteSlot(s);
+				if (!combustibleVu)
+				{
+					combustibleVu = true;
+					idCombustible = s.ID;
+					essenceCombustible = s.IndexBotanique;
+				}
+			}
 			else if (EstSlotCuissonPitFeuRoche(s))
 				totalCru += Joueur.ObtenirQuantiteSlot(s);
 			else if (EstSlotResultatPitFeuRoche(s))
@@ -558,7 +795,7 @@ public partial class ItemPhysique : RigidBody3D
 		for (int i = 0; i < nSlots; i++)
 			GrillePlanTravailAtelier[i] = new SlotInventaire();
 
-		var combustible = new SlotInventaire { ID = 32, Quantite = 1, IndexBotanique = LSystem_Botanique.IndexChene };
+		var combustible = new SlotInventaire { ID = idCombustible, Quantite = 1, IndexBotanique = essenceCombustible };
 		int maxCombustible = Mathf.Max(1, Joueur.ObtenirPileMax(combustible));
 		combustible.Quantite = Mathf.Clamp(totalCombustible, 0, maxCombustible);
 		if (combustible.Quantite > 0)
@@ -588,7 +825,7 @@ public partial class ItemPhysique : RigidBody3D
 		return Mathf.Clamp(Joueur.ObtenirQuantiteSlot(slot), 0, 999);
 	}
 
-	private int AjouterCombustiblePitFeuRocheDansGrille(int quantite, int idCombustible)
+	private int AjouterCombustiblePitFeuRocheDansGrille(int quantite, int idCombustible, byte essence)
 	{
 		if (ID_Objet != Joueur.IdObjetPitFeuRoche || GrillePlanTravailAtelier == null || quantite <= 0)
 			return 0;
@@ -600,6 +837,9 @@ public partial class ItemPhysique : RigidBody3D
 			return 0;
 		if (!slot.EstVide && slot.ID != idCombustible)
 			return 0;
+		// Ne pas mélanger deux essences dans la même pile : leurs durées de combustion diffèrent.
+		if (!slot.EstVide && slot.IndexBotanique != essence)
+			return 0;
 
 		if (slot.EstVide)
 		{
@@ -607,7 +847,7 @@ public partial class ItemPhysique : RigidBody3D
 			{
 				ID = idCombustible,
 				Quantite = 0,
-				IndexBotanique = LSystem_Botanique.IndexChene
+				IndexBotanique = essence
 			};
 		}
 		int maxPile = Mathf.Max(1, Joueur.ObtenirPileMax(slot));
@@ -729,7 +969,7 @@ public partial class ItemPhysique : RigidBody3D
 		return ID_Objet == Joueur.IdObjetPitFeuRoche && _pitFeuRocheResteSec > 0.001d;
 	}
 
-	public bool AjouterCombustiblePitFeuRoche(int quantite = 1, int idCombustible = 32)
+	public bool AjouterCombustiblePitFeuRoche(int quantite = 1, int idCombustible = 32, byte essence = LSystem_Botanique.IndexChene)
 	{
 		if (ID_Objet != Joueur.IdObjetPitFeuRoche)
 			return false;
@@ -739,7 +979,7 @@ public partial class ItemPhysique : RigidBody3D
 		int espace = Mathf.Max(0, 999 - stockAvant);
 		if (espace <= 0)
 			return false;
-		int ajoute = AjouterCombustiblePitFeuRocheDansGrille(Mathf.Min(espace, quantite), idCombustible);
+		int ajoute = AjouterCombustiblePitFeuRocheDansGrille(Mathf.Min(espace, quantite), idCombustible, essence);
 		if (ajoute <= 0)
 			return false;
 		_pitFeuRocheStockCombustible = CompterCombustiblePitFeuRocheDepuisGrille();
@@ -756,10 +996,13 @@ public partial class ItemPhysique : RigidBody3D
 		_pitFeuRocheStockCombustible = CompterCombustiblePitFeuRocheDepuisGrille();
 		if (_pitFeuRocheStockCombustible <= 0)
 			return false;
+		byte essenceAllumage = ObtenirEssenceCombustiblePitFeuRoche();
 		if (!RetirerCombustiblePitFeuRocheDepuisGrille(1))
 			return false;
 		_pitFeuRocheStockCombustible = CompterCombustiblePitFeuRocheDepuisGrille();
-		_pitFeuRocheResteSec = Math.Max(1d, dureeSec);
+		// Durée selon l'essence de la branche/bâton consommé (le paramètre dureeSec n'est plus utilisé pour le feu roche).
+		_pitFeuRocheResteSec = Math.Max(1d, DureeCombustionPitFeuRochePourEssence(essenceAllumage));
+		_pitFeuRocheDureeUniteCouranteSec = _pitFeuRocheResteSec;
 		_pitFeuRocheDernierSyncRestantSec = -1d;
 		ActiverVisuelPitFeu(true);
 		SynchroniserGenomePitFeuRoche();

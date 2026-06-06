@@ -17,9 +17,9 @@ public partial class Monde_Client : Node3D
 	[Export(PropertyHint.Range, "6,24,1")] public int PlafondRayonChargementProfondeurChunks = 10;
 	[Export] public int RenderDistance = 200;
 	[Export] public int RenderDistanceDetailChunks = 15;
-	[Export] public int RayonQualiteMaxChunks = 7;
-	[Export] public int RayonGazonVisibleChunks = 12;
-	[Export] public int RayonBuissonsVisibleChunks = 24;
+	[Export] public int RayonQualiteMaxChunks = 4;
+	[Export] public int RayonGazonVisibleChunks = 6;
+	[Export] public int RayonBuissonsVisibleChunks = 12;
 	[Export] public bool ProfilLodCinematiqueUltraSmooth = true;
 	[Export] public int LODTextureEtapes = 12;
 	[Export] public int MaxChunksParFrame = 9;
@@ -60,15 +60,15 @@ public partial class Monde_Client : Node3D
 	[Export] public float SecondesAnticipationChargement = 3.0f;
 	[Export] public float IntervalleRafraichissementRadarImmobile = 0.45f;
 	/// <summary>Intégrations mesh/collision par frame quand le spawn est déjà prêt (exploration). Augmente si le sol met du temps à « se réveiller ».</summary>
-	[Export] public int MaxIntegrationsParFrameExploration = 4;
+	[Export] public int MaxIntegrationsParFrameExploration = 1;
 	/// <summary>Intégrations mesh/collision par frame pendant le chargement initial (anti-pic CPU/GPU).</summary>
-	[Export] public int MaxIntegrationsParFrameChargement = 5;
+	[Export] public int MaxIntegrationsParFrameChargement = 3;
 	/// <summary>Budget de vertices intégrés par frame (exploration). Lisse l'arrivée des triangles.</summary>
-	[Export] public int BudgetVerticesIntegrationParFrameExploration = 42000;
+	[Export] public int BudgetVerticesIntegrationParFrameExploration = 16000;
 	/// <summary>Budget de vertices intégrés par frame au chargement initial (plus généreux).</summary>
 	[Export] public int BudgetVerticesIntegrationParFrameChargement = 70000;
 	/// <summary>Solidifications BodySetSpace par frame en exploration (hors chargement initial). Bas = moins de CreateTrimeshShape / frame (Jolt).</summary>
-	[Export] public int MaxSolidificationsParFrameExploration = 3;
+	[Export] public int MaxSolidificationsParFrameExploration = 2;
 	/// <summary>Budget minimal de solidifications quand le joueur se déplace vite (anti-traversée du sol).</summary>
 	[Export] public int MaxSolidificationsPrioriteJoueur = 6;
 	/// <summary>Nombre max d'entrées inspectées pour choisir un chunk à solidifier (évite un scan complet de la file à chaque tick).</summary>
@@ -78,7 +78,7 @@ public partial class Monde_Client : Node3D
 	/// <summary>Anticipation (secondes) pour pré-réveiller les collisions devant le joueur.</summary>
 	[Export] public float SecondesAnticipationCollision = 0.85f;
 	/// <summary>Nombre max de chunks de flore (gazon/buissons) construits par frame en exploration.</summary>
-	[Export] public int MaxFloreParFrameExploration = 6;
+	[Export] public int MaxFloreParFrameExploration = 3;
 	/// <summary>Nombre max de chunks de flore construits par frame pendant le chargement initial.</summary>
 	[Export] public int MaxFloreParFrameChargement = 4;
 	[ExportGroup("Performance streaming")]
@@ -144,14 +144,14 @@ public partial class Monde_Client : Node3D
 	[Export(PropertyHint.Range, "0.1,4,0.1")] public float BudgetMsLancementWorkersMainThread = 0.8f;
 	[Export(PropertyHint.Range, "0.05,0.8,0.01")] public float IntervalleServicesLointainsUrgenceSec = 0.22f;
 	[Export(PropertyHint.Range, "8,512,1")] public int FenetreSelectionRequetes = 96;
-	[Export(PropertyHint.Range, "1,8,1")] public int MaxLancementsTravailleursParTick = 2;
+	[Export(PropertyHint.Range, "1,8,1")] public int MaxLancementsTravailleursParTick = 1;
 	/// <summary>Anti micro-freeze : hors zone critique joueur, exécute les charges lourdes en série (intégrations, puis solidifications, puis workers) au lieu de les cumuler sur une même frame.</summary>
 	[Export] public bool ForcerOrdonnancementSerieAntiFreeze = true;
 	[Export(PropertyHint.Range, "0.01,0.5,0.01")] public float IntervalleMinRebuildRadarSec = 0.10f;
 	[Export(PropertyHint.Range, "0,128,1")] public int SeuilBacklogBootstrapStable = 6;
 	[Export] public bool ExigerSolidificationVidePourBootstrap = false;
 	[ExportGroup("Diagnostic performance")]
-	[Export] public bool ActiverProfilagePerfMondeClient = false;
+	[Export] public bool ActiverProfilagePerfMondeClient = true;
 	[Export(PropertyHint.Range, "0.2,10,0.1")] public float IntervalleLogProfilageSec = 2.0f;
 	[Export] public bool ActiverDiagnosticCollisionAbysse = false;
 
@@ -209,14 +209,26 @@ public partial class Monde_Client : Node3D
 	private readonly List<Vector2I> _prioritaireListTemp = new List<Vector2I>();
 	private readonly HashSet<Vector3I> _chunksUniquesTemp = new HashSet<Vector3I>();
 	private readonly HashSet<Vector3I> _chunksTraitesRemeshTemp = new HashSet<Vector3I>();
+	private readonly Dictionary<Vector3I, HashSet<int>> _sectionsParChunkRemeshTemp = new Dictionary<Vector3I, HashSet<int>>();
+	private readonly HashSet<(int cx, int coordY, int cz, int section)> _sectionsRemeshTraiteesTemp = new HashSet<(int, int, int, int)>();
 	private readonly List<Vector3I> _voisinsRemeshMinageTemp = new List<Vector3I>(8);
+	private readonly List<Vector3I> _remeshOrdreChunksTemp = new List<Vector3I>(32);
 	private readonly List<Vector2I> _chunksATuerTemp = new List<Vector2I>();
 	private readonly List<Vector3I> _clesChunksAbysseARetirerTemp = new List<Vector3I>();
 	private bool _radarEnCours;
 	private HashSet<(int cx, int coordY, int cz, int section)> _sectionsAReconstruire = new HashSet<(int, int, int, int)>();
 	private CharacterBody3D _joueur;
+	/// <summary>CoordY joueur lue sur le thread principal (_PhysicsProcess) — safe pour workers MC.</summary>
+	private volatile int _coordYJoueurProfondeurCache = int.MinValue;
+	private volatile bool _joueurPresentPourWorkers;
 	private Vector2I _ancienChunkJoueur = new Vector2I(-99999, -99999);
 	private bool _modificationEnCours;
+	/// <summary>Mutations voxel reçues avant que la tranche/chunk soit en RAM client (minage sans trou visuel).</summary>
+	private readonly Dictionary<Vector3I, byte> _voxelsModifiesEnAttente = new Dictionary<Vector3I, byte>();
+	private readonly List<Vector3I> _voxelsEnAttenteBuffer = new List<Vector3I>();
+	/// <summary>Sections MC synchrones max par frame au minage (évite spike si 50 RPC d'un coup).</summary>
+	private int _remeshMinageSyncRestantFrame = 0;
+	private bool _mondeClientSortieEnCours;
 	private MeshInstance3D _horizonLodMesh;
 	private static StandardMaterial3D _cacheMatHorizon;
 	private Vector2I _centreHorizonCell = new Vector2I(int.MinValue, int.MinValue);
@@ -414,18 +426,24 @@ public partial class Monde_Client : Node3D
 
 	public override void _Ready()
 	{
+		// Profilage perf : actif uniquement en éditeur (F5). Dans une version exportée (launcher/joueurs),
+		// OS.HasFeature("editor") est faux → profileur auto-désactivé (pas de spam log chez les joueurs).
+		ActiverProfilagePerfMondeClient = ActiverProfilagePerfMondeClient && OS.HasFeature("editor");
 		// Assure-toi que les chemins correspondent à ton arborescence exacte
 		_slotGauche = GetNode<Panel>("../HUD_Inventaire/Conteneur_Ancrage/Boite_Slots/Slot_Main_Gauche");
 		_slotDroite = GetNode<Panel>("../HUD_Inventaire/Conteneur_Ancrage/Boite_Slots/Slot_Main_Droite");
 		InitialiserHorizonLointain();
 	}
 
-
-
+	public override void _ExitTree()
+	{
+		_mondeClientSortieEnCours = true;
+		base._ExitTree();
+	}
 
 	public override void _PhysicsProcess(double delta)
 	{
-		if (!IsInsideTree()) return; // GARROT SPATIAL : pas de manipulation de chunks si l'arbre s'effondre.
+		if (!IsInsideTree() || _mondeClientSortieEnCours) return; // GARROT SPATIAL : pas de manipulation de chunks si l'arbre s'effondre.
 		float dt = (float)delta;
 		ulong debutFramePerfUs = ActiverProfilagePerfMondeClient ? PerfBudgetMonitor.Begin() : 0UL;
 		_cooldownRebuildRadar = Mathf.Max(0f, _cooldownRebuildRadar - dt);
@@ -437,6 +455,10 @@ public partial class Monde_Client : Node3D
 		Camera3D cameraActive = ObtenirCameraObservation();
 		bool joueurValide = EssayerObtenirJoueurDansArbre(out CharacterBody3D joueurRef);
 		Vector3 positionJoueurSecurisee = joueurValide ? joueurRef.GlobalPosition : Vector3.Zero;
+		_joueurPresentPourWorkers = joueurValide;
+		_coordYJoueurProfondeurCache = joueurValide
+			? CoordYDepuisMondeY((int)Mathf.Floor(positionJoueurSecurisee.Y))
+			: int.MinValue;
 		Vector3 directionJoueurSecurisee = joueurValide ? (-joueurRef.GlobalTransform.Basis.Z).Normalized() : Vector3.Forward;
 		Vector3 positionObservation = joueurValide ? positionJoueurSecurisee : Vector3.Zero;
 		Vector3 positionJoueur = joueurValide ? positionJoueurSecurisee : positionObservation;
@@ -472,6 +494,10 @@ public partial class Monde_Client : Node3D
 			}
 		}
 		MettreAJourAutoDiagnostic(dt);
+		_remeshMinageSyncRestantFrame = _modificationEnCours ? 8 : 4;
+		if (joueurValide && ModeProfondeurTranchesActif()
+			&& ConstantesProfondeurVerticale.EstProcheJonctionTrancheMonde(positionJoueurSecurisee.Y))
+			_remeshMinageSyncRestantFrame = Mathf.Max(_remeshMinageSyncRestantFrame, _modificationEnCours ? 12 : 8);
 		int niveauUrgence = _niveauUrgencePerf;
 		float budgetFrameMs = Mathf.Clamp(BudgetFrameCibleMs, 8f, 25f);
 		if (niveauUrgence >= 3) budgetFrameMs -= Mathf.Clamp(MargeBudgetUrgenceMs, 0.1f, 4f);
@@ -486,10 +512,18 @@ public partial class Monde_Client : Node3D
 			vitesseJoueurXZ = Mathf.Sqrt(vv.X * vv.X + vv.Z * vv.Z);
 		}
 		bool prioriteJoueur = vitesseJoueurXZ >= SeuilVitessePrioriteJoueur;
+		Vector3 velXZJoueur = joueurValide
+			? new Vector3(joueurRef.Velocity.X, 0f, joueurRef.Velocity.Z)
+			: Vector3.Zero;
+		bool corridorStreamingEnRetard = joueurValide && CorridorStreamingEnRetard(positionJoueurSecurisee, velXZJoueur);
+		bool corridorEnRetard = joueurValide && (CorridorSolidificationEnRetard(positionJoueurSecurisee, velXZJoueur)
+			|| corridorStreamingEnRetard);
 		if (joueurValide)
 		{
 			int rayonUrgenceCollision = ObtenirRayonUrgenceCollisionActif();
 			EnfilerSolidificationUrgenteAutour(positionJoueurSecurisee, rayonUrgenceCollision);
+			if (ModeProfondeurTranchesActif())
+				MaintenirJonctionsTranchesAutourJoueur(positionJoueurSecurisee, dt);
 			if (prioriteJoueur)
 			{
 				Vector3 vel = joueurRef.Velocity;
@@ -544,8 +578,9 @@ public partial class Monde_Client : Node3D
 		}
 
 		// 2) Intégrations : chargement initial agressif ; exploration : plusieurs par frame pour suivre un monde infini.
+		bool meshGrilleSousPieds = joueurValide && ChunkMeshGrilleSousPiedsPret();
 		bool enChargement = ModeProfondeurTranchesActif()
-			? !ChunkCollisionActive(Gestionnaire_Monde.WorldToChunkCoord(positionJoueurSecurisee, TailleChunk))
+			? !ChunkSousPiedsAPret() && !meshGrilleSousPieds
 			: !ChunkSousPiedsAPret();
 		// GARANTIE SOL JOUEUR : dès que le sol proche manque ou que le joueur est en l'air, on refuse toute restriction sous les pieds.
 		bool joueurEnChute = joueurValide && joueurRef.Velocity.Y < -0.5f;
@@ -554,7 +589,9 @@ public partial class Monde_Client : Node3D
 			&& EstVideAbysseAttendu(positionJoueurSecurisee);
 		if (enVideAttenduAbysse)
 			enChargement = false; // Dans le vide attendu, l'absence de sol local est normale.
-		bool doitGarantirProcheJoueur = enChargement || joueurEnChute || prioriteJoueur;
+		// Marche rapide : ne pas saturer la frame (12 solidifications + 16 remesh MC) si le sol est déjà visible sous les pieds.
+		bool doitGarantirProcheJoueur = enChargement || joueurEnChute || corridorEnRetard || corridorStreamingEnRetard
+			|| (prioriteJoueur && !meshGrilleSousPieds);
 		_streamingChunksPrioritaireCetteFrame = EstStreamingChunksPrioritaire(enChargement, doitGarantirProcheJoueur);
 		if (enVideAttenduAbysse)
 		{
@@ -573,24 +610,29 @@ public partial class Monde_Client : Node3D
 		float ratioVertices = Mathf.Lerp(0.58f, 1.25f, _ratioChargeAuto) * facteurAntiSpikeBacklog;
 		if (_timerFreinSpike > 0f) ratioVertices *= 0.70f;
 		int budgetVerticesDyn = Mathf.Clamp(Mathf.RoundToInt(budgetVerticesBase * ratioVertices), 12000, Mathf.Max(12000, budgetVerticesBase + 55000));
-		// Priorité input : limiter les gros bursts quand le joueur file vite (uniquement en mode « Sauver les FPS »).
-		if (ModeSurvieFpsAgressif && prioriteJoueur)
+		// Mode « Sauver les FPS » : en exploration, 1 mesh lourd/frame max (évite le lag à chaque chunk).
+		if (ModeSurvieFpsAgressif && !doitGarantirProcheJoueur && !corridorStreamingEnRetard && !enChargement)
+		{
+			maxIntegrations = 1;
+			budgetVerticesDyn = Mathf.Min(budgetVerticesDyn, BudgetVerticesIntegrationParFrameExploration);
+		}
+		else if (ModeSurvieFpsAgressif && prioriteJoueur && !corridorStreamingEnRetard && enChargement)
 		{
 			maxIntegrations = Mathf.Max(2, Mathf.Min(maxIntegrations, 3));
 			budgetVerticesDyn = Mathf.Max(18000, Mathf.RoundToInt(budgetVerticesDyn * 0.78f));
 		}
 		// Les restrictions d'urgence ne s'appliquent JAMAIS si le sol proche joueur n'est pas prêt (sinon chute dans le vide).
-		if (ModeSurvieFpsAgressif && !doitGarantirProcheJoueur && urgencePerfExtreme)
+		if (ModeSurvieFpsAgressif && !doitGarantirProcheJoueur && !corridorStreamingEnRetard && urgencePerfExtreme)
 		{
 			maxIntegrations = 1;
 			budgetVerticesDyn = Mathf.Min(budgetVerticesDyn, 12000);
 		}
-		else if (ModeSurvieFpsAgressif && !doitGarantirProcheJoueur && urgencePerfCritique)
+		else if (ModeSurvieFpsAgressif && !doitGarantirProcheJoueur && !corridorStreamingEnRetard && urgencePerfCritique)
 		{
 			maxIntegrations = 1;
 			budgetVerticesDyn = Mathf.Min(budgetVerticesDyn, 12000);
 		}
-		else if (ModeSurvieFpsAgressif && !doitGarantirProcheJoueur && urgencePerfForte)
+		else if (ModeSurvieFpsAgressif && !doitGarantirProcheJoueur && !corridorStreamingEnRetard && urgencePerfForte)
 		{
 			maxIntegrations = Mathf.Min(maxIntegrations, 2);
 			budgetVerticesDyn = Mathf.Min(budgetVerticesDyn, 18000);
@@ -600,17 +642,28 @@ public partial class Monde_Client : Node3D
 			maxIntegrations = Mathf.Min(maxIntegrations, 1);
 			budgetVerticesDyn = Mathf.Min(budgetVerticesDyn, 14000);
 		}
-		// Plancher dur : si le sol manque, on refuse toute limite < 3 intégrations et 22k vertices.
+		if (JoueurEnModeVolCreatif())
+		{
+			maxIntegrations = Mathf.Min(maxIntegrations, 1);
+			budgetVerticesDyn = Mathf.Min(budgetVerticesDyn, 10000);
+		}
+		// Plancher anti-chute : si le sol manque, accélérer le chargement local (sans burst permanent en exploration).
 		if (doitGarantirProcheJoueur)
 		{
-			maxIntegrations = Mathf.Max(maxIntegrations, 3);
-			budgetVerticesDyn = Mathf.Max(budgetVerticesDyn, 22000);
+			bool solVisuelPret = meshGrilleSousPieds && !corridorEnRetard && !enChargement;
+			maxIntegrations = Mathf.Max(maxIntegrations, solVisuelPret ? 2 : 3);
+			int plafondVerticesAntiChute = solVisuelPret
+				? (ModeSurvieFpsAgressif ? 10000 : 14000)
+				: 22000;
+			budgetVerticesDyn = Mathf.Max(budgetVerticesDyn, plafondVerticesAntiChute);
 			budgetIntegrationsMs = Mathf.Max(budgetIntegrationsMs, 3.2f);
 			budgetSolidificationMs = Mathf.Max(budgetSolidificationMs, 3.0f);
 			budgetWorkersMainMs = Mathf.Max(budgetWorkersMainMs, 1.0f);
 			if (ModeProfondeurTranchesActif())
 			{
-				budgetSolidificationMs = Mathf.Max(budgetSolidificationMs, 5.5f);
+				budgetSolidificationMs = meshGrilleSousPieds && !corridorEnRetard
+					? Mathf.Max(budgetSolidificationMs, 2.8f)
+					: Mathf.Max(budgetSolidificationMs, 5.5f);
 			}
 			if (_dimensionReseauActive == (int)DimensionJeu.Abysse)
 			{
@@ -620,30 +673,37 @@ public partial class Monde_Client : Node3D
 				budgetVerticesDyn = Mathf.Min(budgetVerticesDyn, 14000);
 			}
 		}
+		if (corridorStreamingEnRetard)
+		{
+			int integCorridor = ModeSurvieFpsAgressif ? (enChargement ? 3 : 2) : (enChargement ? 4 : 3);
+			maxIntegrations = Mathf.Max(maxIntegrations, integCorridor);
+			int plafondCorridor = ModeSurvieFpsAgressif
+				? (enChargement ? 16000 : 12000)
+				: (enChargement ? 28000 : 22000);
+			budgetVerticesDyn = Mathf.Min(budgetVerticesDyn, plafondCorridor);
+		}
 		// GATE FPS STRICT : hors zone critique, gel total si FPS < seuil, puis ramp-up 1→budget.
 		maxIntegrations = AppliquerGateEtRampUp(maxIntegrations, doitGarantirProcheJoueur, 1);
-		// Sous gel : garder un flux minimal de triangles (0 = 1 seul mesh/frame puis blocage total au-delà).
+		// Sous gel : drain minimal (1 mesh léger/frame) — ne PAS forcer 22k vertices (spirale 10 FPS).
 		if (!doitGarantirProcheJoueur && _gateStreamingGele)
-			budgetVerticesDyn = Mathf.Max(budgetVerticesDyn, 22000);
+			budgetVerticesDyn = Mathf.Min(budgetVerticesDyn, ModeSurvieFpsAgressif ? 6000 : 9000);
 		else if (!doitGarantirProcheJoueur && _tempsDepuisDegel < DureeRampUpPostDegel)
 		{
 			float tRamp = Mathf.Clamp(_tempsDepuisDegel / Mathf.Max(0.01f, DureeRampUpPostDegel), 0f, 1f);
-			budgetVerticesDyn = Mathf.Min(budgetVerticesDyn, Mathf.RoundToInt(Mathf.Lerp(12000, budgetVerticesDyn, tRamp)));
+			budgetVerticesDyn = Mathf.Min(budgetVerticesDyn, Mathf.RoundToInt(Mathf.Lerp(8000, budgetVerticesDyn, tRamp)));
 		}
 		// File d’intégration non vide : garder un flux minimal même sous gate, sans forcer un burst qui freeze.
 		if (!doitGarantirProcheJoueur && _fileIntegrationMainThread.TryPeek(out _)
 			&& (_gateStreamingGele || maxIntegrations <= 1))
 		{
 			maxIntegrations = Mathf.Max(maxIntegrations, 1);
-			budgetVerticesDyn = Mathf.Max(budgetVerticesDyn, _gateStreamingGele ? 14000 : 16000);
+			budgetVerticesDyn = Mathf.Min(budgetVerticesDyn, _gateStreamingGele ? 7000 : 10000);
 		}
 		bool autoriserIntegrations = true;
 		bool autoriserSolidifications = true;
 		bool autoriserWorkers = true;
 		// Hors zone critique joueur, sérielle stricte : une seule famille de charge lourde par frame.
-		bool corridorEnRetard = joueurValide && CorridorSolidificationEnRetard(positionJoueurSecurisee,
-			new Vector3(joueurRef.Velocity.X, 0f, joueurRef.Velocity.Z));
-		if (ForcerOrdonnancementSerieAntiFreeze && !doitGarantirProcheJoueur && !corridorEnRetard)
+		if (ForcerOrdonnancementSerieAntiFreeze && !doitGarantirProcheJoueur && !corridorEnRetard && !corridorStreamingEnRetard)
 		{
 			bool pendingIntegrations = _fileIntegrationMainThread.TryPeek(out _);
 			bool pendingSolidifications = _fileAttenteSolidificationUrgente.Count > 0 || _fileAttenteSolidification.Count > 0;
@@ -672,6 +732,9 @@ public partial class Monde_Client : Node3D
 		}
 		if (!autoriserIntegrations)
 			maxIntegrations = 0;
+		int integrationsBacklog = _fileIntegrationMainThread.Count;
+		if (ModeSurvieFpsAgressif && integrationsBacklog >= 2 && !doitGarantirProcheJoueur)
+			maxIntegrations = Mathf.Min(maxIntegrations, 1);
 		int integrations = 0;
 		int verticesIntegres = 0;
 		ulong debutIntegrationsUs = ActiverProfilagePerfMondeClient ? PerfBudgetMonitor.Begin() : 0UL;
@@ -691,7 +754,7 @@ public partial class Monde_Client : Node3D
 			}
 			try { integration.Action.Invoke(); }
 			catch (ObjectDisposedException) { /* Chunk déjà supprimé */ }
-			catch (System.Exception ex) { GD.PrintErr("Monde_Client intégration: ", ex.Message); }
+			catch (System.Exception ex) { JournalErreursZeroK.Erreur("Monde_Client intégration: " + ex.Message, forcerConsole: true); }
 			verticesIntegres += cout;
 			integrations++;
 			if (integrations > 0 && PerfBudgetMonitor.Begin() - debutIntegrationsUs >= budgetIntegrationsUs)
@@ -715,7 +778,10 @@ public partial class Monde_Client : Node3D
 			if (prioriteJoueur)
 				maxSolidifications = Mathf.Max(maxSolidifications, Mathf.Max(3, MaxSolidificationsPrioriteJoueur));
 			if (ModeProfondeurTranchesActif() && (doitGarantirProcheJoueur || prioriteJoueur))
-				maxSolidifications = Mathf.Max(maxSolidifications, enChargement ? 10 : 7);
+			{
+				int plafondProf = meshGrilleSousPieds && !corridorEnRetard && !enChargement ? 4 : (enChargement ? 10 : 7);
+				maxSolidifications = Mathf.Max(maxSolidifications, plafondProf);
+			}
 			if (_fileAttenteSolidificationUrgente.Count > 0)
 				maxSolidifications = Mathf.Max(maxSolidifications, Mathf.Min(8, 3 + _fileAttenteSolidificationUrgente.Count / 6));
 			if (ModeSurvieFpsAgressif && !doitGarantirProcheJoueur && urgencePerfExtreme)
@@ -724,10 +790,16 @@ public partial class Monde_Client : Node3D
 				maxSolidifications = Mathf.Min(maxSolidifications, 2);
 			else if (ModeSurvieFpsAgressif && !doitGarantirProcheJoueur && urgencePerfForte)
 				maxSolidifications = Mathf.Min(maxSolidifications, 3);
-			// Plancher anti-chute : si le sol proche joueur n'est pas prêt, garantir plusieurs solidifications par frame.
+			// Plancher anti-chute : si le sol proche joueur n'est pas prêt, garantir quelques solidifications par frame.
 			if (doitGarantirProcheJoueur)
 			{
-				maxSolidifications = Mathf.Max(maxSolidifications, ModeProfondeurTranchesActif() ? 12 : 4);
+				bool solVisuelPret = meshGrilleSousPieds && !corridorEnRetard && !enChargement;
+				int plancherSol = ModeProfondeurTranchesActif()
+					? (solVisuelPret ? 2 : (enChargement ? 5 : 4))
+					: 4;
+				maxSolidifications = Mathf.Max(maxSolidifications, plancherSol);
+				if (ModeSurvieFpsAgressif && solVisuelPret && !joueurEnChute && vitesseJoueurXZ < 3f)
+					maxSolidifications = Mathf.Min(maxSolidifications, 2);
 				if (_dimensionReseauActive == (int)DimensionJeu.Abysse)
 				{
 					// CreateTrimeshShape + BodySetSpace : un burst élevé gèle l’image. Plancher modéré pour le sol,
@@ -850,6 +922,23 @@ public partial class Monde_Client : Node3D
 		// GATE FPS STRICT : hors zone critique, zero worker lancé si gelé, puis ramp-up.
 		maxTravailleurs = AppliquerGateEtRampUp(maxTravailleurs, doitGarantirProcheJoueur, 1);
 		budgetLancementsWorkers = AppliquerGateEtRampUp(budgetLancementsWorkers, doitGarantirProcheJoueur, 1);
+		// Évite rafales : si des meshes attendent le thread principal, ne pas lancer de nouveaux MC en parallèle.
+		int integrationBacklogWorkers = _fileIntegrationMainThread.Count;
+		if (ModeSurvieFpsAgressif && integrationBacklogWorkers >= 2 && !doitGarantirProcheJoueur)
+		{
+			budgetLancementsWorkers = Mathf.Min(budgetLancementsWorkers, 1);
+			maxTravailleurs = Mathf.Min(maxTravailleurs, Mathf.Max(1, Thread.VolatileRead(ref _chunksEnCoursDeCalcul)));
+		}
+		if (ModeSurvieFpsAgressif && integrationBacklogWorkers >= 5 && !doitGarantirProcheJoueur)
+		{
+			maxTravailleurs = 0;
+			budgetLancementsWorkers = 0;
+		}
+		if (ModeSurvieFpsAgressif && _sectionsAReconstruire.Count > 14 && !doitGarantirProcheJoueur)
+		{
+			maxTravailleurs = 0;
+			budgetLancementsWorkers = 0;
+		}
 		if (!autoriserWorkers)
 		{
 			maxTravailleurs = 0;
@@ -896,12 +985,22 @@ public partial class Monde_Client : Node3D
 			Interlocked.Increment(ref _chunksEnCoursDeCalcul);
 			var mondeRef = this;
 			var enqueueIntegration = EnqueueIntegration;
+			// Pré-construire la collision dans le worker seulement pour les chunks proches qui vont être
+			// solidifiés (anti-pic streaming), sans gaspiller mémoire/CPU sur les chunks lointains.
+			bool prochePhysique =
+				Mathf.Abs(chunkData.Coordonnees.X - obsChunk.X) <= RayonDormancePhysique + 1
+				&& Mathf.Abs(chunkData.Coordonnees.Y - obsChunk.Y) <= RayonDormancePhysique + 1
+				&& (!ModeProfondeurTranchesActif()
+					|| (_coordYJoueurProfondeurCache != int.MinValue
+						&& Mathf.Abs(chunkData.CoordChunkY - _coordYJoueurProfondeurCache)
+							<= ConstantesProfondeurVerticale.DemiFenetrePhysiqueTranches));
 			Task.Run(() =>
 			{
 				try
 				{
 					Chunk_Client.RemplirDonneesVoxelDepuisServeur(chunkData, donnees);
-					mondeRef.SynchroniserFrontieresVerticalesProfondeurClient(chunkData);
+					if (ModeProfondeurTranchesActif())
+						mondeRef.SynchroniserFrontieresVerticalesProfondeurClient(chunkData, postTraitementLegermachine: true);
 					var payloads = Chunk_Client.ReconstruirePayloadsDepuisData(
 						chunkData, mondeRef.TryEchantillonnerVoxelProfondeur);
 					if (payloads != null)
@@ -912,6 +1011,11 @@ public partial class Monde_Client : Node3D
 							var p = payloads[i];
 							if (p?.SommetsVisuels != null) coutVertices += p.SommetsVisuels.Length;
 							if (p?.SommetsEau != null) coutVertices += p.SommetsEau.Length;
+						}
+						if (prochePhysique)
+						{
+							try { chunkData.ShapeCollisionPrecalc = Chunk_Client.ConstruireShapeCollisionDepuisPayloads(payloads); }
+							catch { chunkData.ShapeCollisionPrecalc = null; }
 						}
 						enqueueIntegration(() => mondeRef.IntegrerChunkDataRIDs(chunkData, payloads), coutVertices);
 					}
@@ -928,8 +1032,9 @@ public partial class Monde_Client : Node3D
 		if (ActiverProfilagePerfMondeClient)
 			PerfBudgetMonitor.End("MondeClient/LancementWorkers", debutWorkersUs);
 		ReinitialiserCompteurSolidificationCorridorFrame();
-		if (joueurValide && ModeProfondeurTranchesActif())
-			SolidifierVolumesVisiblesAutourJoueur(positionJoueurSecurisee);
+		if (joueurValide && ModeProfondeurTranchesActif()
+			&& (corridorEnRetard || enChargement || _fpsMoyenneAuto >= 38f))
+			SolidifierVolumesVisiblesAutourJoueur(positionJoueurSecurisee, _fpsMoyenneAuto);
 		bool frameChargeeStreaming = integrations > 0 || solidificationsEffectuees > 0 || workersLancesTick > 0;
 		// « Sauver les FPS » : économise culling/radar lointain si budget serré, mais ne bloque pas la génération de chunks.
 		bool economiserServicesFondLointains = ModeSurvieFpsAgressif
@@ -938,11 +1043,88 @@ public partial class Monde_Client : Node3D
 		bool phaseFondAutorisee = !economiserServicesFondLointains
 			&& (!urgencePerfCritique || !frameChargeeStreaming || _streamingChunksPrioritaireCetteFrame);
 
-		bool hadModifications = _sectionsAReconstruire.Count > 0;
-		_modificationEnCours = false;
+		// Voxels RPC reçus avant chargement tranche : appliquer AVANT le remesh (sinon déchirure 1–N frames).
+		AppliquerVoxelsEnAttente();
 
-		// En Abysse, on force les requêtes proches du joueur seulement en zone critique
-		// (collision locale pas prête ou déplacement rapide) pour éviter les bursts permanents.
+		bool hadModifications = _sectionsAReconstruire.Count > 0;
+
+		// PRIORITÉ ABSOLUE : remesh partiel (sections) au minage — synchrone près du joueur.
+		if (hadModifications)
+		{
+			_sectionsParChunkRemeshTemp.Clear();
+			foreach (var cible in _sectionsAReconstruire)
+			{
+				var cleChunk = new Vector3I(cible.cx, cible.coordY, cible.cz);
+				if (!_sectionsParChunkRemeshTemp.TryGetValue(cleChunk, out HashSet<int> secs))
+				{
+					secs = new HashSet<int>();
+					_sectionsParChunkRemeshTemp[cleChunk] = secs;
+				}
+				secs.Add(cible.section);
+			}
+			int budgetSectionsRemesh = enChargement ? 3 : 6;
+			if (prioriteJoueur && !enChargement)
+				budgetSectionsRemesh = Mathf.Min(budgetSectionsRemesh, 3);
+			if (_modificationEnCours)
+				budgetSectionsRemesh = Mathf.Max(budgetSectionsRemesh, ModeSurvieFpsAgressif ? 8 : 12);
+			else if (ModeSurvieFpsAgressif && _fpsMoyenneAuto < 45f)
+				budgetSectionsRemesh = 2;
+			else if (ModeSurvieFpsAgressif && _fpsMoyenneAuto < 55f)
+				budgetSectionsRemesh = Mathf.Max(2, budgetSectionsRemesh / 2);
+			if (!_modificationEnCours && _sectionsAReconstruire.Count > 24)
+				budgetSectionsRemesh = 1;
+			if (_niveauUrgencePerf >= 2 && !_modificationEnCours)
+				budgetSectionsRemesh = Mathf.Max(1, budgetSectionsRemesh / 2);
+			int sectionsRemeshues = 0;
+			_sectionsRemeshTraiteesTemp.Clear();
+			_remeshOrdreChunksTemp.Clear();
+			_remeshOrdreChunksTemp.AddRange(_sectionsParChunkRemeshTemp.Keys);
+			if (EssayerObtenirJoueurDansArbre(out CharacterBody3D joueurRemesh))
+			{
+				Vector3 posJ = joueurRemesh.GlobalPosition;
+				_remeshOrdreChunksTemp.Sort((a, b) =>
+				{
+					float da = ObtenirCentreMondeChunkApprox(a).DistanceSquaredTo(posJ);
+					float db = ObtenirCentreMondeChunkApprox(b).DistanceSquaredTo(posJ);
+					return da.CompareTo(db);
+				});
+			}
+			foreach (Vector3I cleChunk in _remeshOrdreChunksTemp)
+			{
+				if (sectionsRemeshues >= budgetSectionsRemesh)
+					break;
+				if (!_sectionsParChunkRemeshTemp.TryGetValue(cleChunk, out HashSet<int> secsChunk) || secsChunk.Count == 0)
+					continue;
+				int reste = budgetSectionsRemesh - sectionsRemeshues;
+				var batch = new HashSet<int>();
+				foreach (int sec in secsChunk)
+				{
+					if (batch.Count >= reste)
+						break;
+					batch.Add(sec);
+				}
+				if (batch.Count == 0)
+					continue;
+				if (EstRemeshPrioritaireMinage(cleChunk))
+					ExecuterReconstructionPrioritaire(cleChunk, batch);
+				else
+					EnfilerRemeshSectionsEnArrierePlan(cleChunk, batch);
+				foreach (int sec in batch)
+				{
+					_sectionsRemeshTraiteesTemp.Add((cleChunk.X, cleChunk.Y, cleChunk.Z, sec));
+					sectionsRemeshues++;
+				}
+			}
+			if (_sectionsRemeshTraiteesTemp.Count > 0)
+			{
+				_sectionsAReconstruire.RemoveWhere(s =>
+					_sectionsRemeshTraiteesTemp.Contains((s.cx, s.coordY, s.cz, s.section)));
+			}
+		}
+		if (_sectionsAReconstruire.Count == 0)
+			_modificationEnCours = false;
+
+		// En Abysse : requêtes proches si collision locale pas prête ou déplacement rapide.
 		if (_dimensionReseauActive == (int)DimensionJeu.Abysse && joueurValide)
 		{
 			Vector3 posJoueur = positionJoueurSecurisee;
@@ -957,36 +1139,6 @@ public partial class Monde_Client : Node3D
 			}
 		}
 
-		// 1. PRIORITÉ ABSOLUE : Reconstruire les chunks modifiés (minage/pose) — budget limité au chargement pour ne pas geler le streaming.
-		if (hadModifications)
-		{
-			_chunksUniquesTemp.Clear();
-			foreach (var cible in _sectionsAReconstruire)
-				_chunksUniquesTemp.Add(new Vector3I(cible.cx, cible.coordY, cible.cz));
-			if (ModeProfondeurTranchesActif())
-				ExpandirTranchesVoisinesPourRemeshMinage(_chunksUniquesTemp);
-			int maxRebuilds = enChargement ? 1 : _chunksUniquesTemp.Count;
-			// Jonction Y=100,200… : il faut souvent remailler coordY et coordY±1 dans la même frame.
-			if (!enChargement && ModeProfondeurTranchesActif() && _chunksUniquesTemp.Count > 1)
-				maxRebuilds = Mathf.Min(_chunksUniquesTemp.Count, 4);
-			int rebuilds = 0;
-			_chunksTraitesRemeshTemp.Clear();
-			foreach (Vector3I coordRebuild in _chunksUniquesTemp)
-			{
-				if (rebuilds++ >= maxRebuilds)
-					break;
-				ExecuterReconstructionPrioritaire(coordRebuild);
-				_chunksTraitesRemeshTemp.Add(coordRebuild);
-			}
-			if (_chunksTraitesRemeshTemp.Count > 0)
-			{
-				_sectionsAReconstruire.RemoveWhere(s =>
-				{
-					var c = new Vector3I(s.cx, s.coordY, s.cz);
-					return _chunksTraitesRemeshTemp.Contains(c);
-				});
-			}
-		}
 		Vector2I chunkPieds = chunkObservationActuel;
 		if (!phaseFondAutorisee)
 		{
@@ -1212,8 +1364,14 @@ public partial class Monde_Client : Node3D
 		{
 			nbRequetes = Mathf.Max(nbRequetes, chunkPiedsManquant ? 8 : 4);
 		}
+		if (corridorStreamingEnRetard && !JoueurEnModeVolCreatif())
+			nbRequetes = Mathf.Max(nbRequetes, chunkPiedsManquant ? 10 : 6);
+		else if (corridorStreamingEnRetard && JoueurEnModeVolCreatif())
+			nbRequetes = Mathf.Min(nbRequetes, chunkPiedsManquant ? 2 : 1);
+		if (JoueurEnModeVolCreatif())
+			nbRequetes = Mathf.Min(nbRequetes, chunkPiedsManquant ? 2 : 1);
 		// Plancher dur : en situation de risque de chute, garantir au moins 4 requêtes par frame.
-		if (doitGarantirProcheJoueur)
+		if (doitGarantirProcheJoueur && !JoueurEnModeVolCreatif())
 			nbRequetes = Mathf.Max(nbRequetes, 4);
 		// GATE FPS STRICT : aucune nouvelle requête hors zone critique si gelé, ramp-up ensuite.
 		nbRequetes = AppliquerGateEtRampUp(nbRequetes, doitGarantirProcheJoueur, 1);

@@ -56,7 +56,7 @@ public partial class Monde_Serveur : Node
 	private bool _simulationSuspendue;
 	private int _jourAbsoluMemorisePourArbresSuspension = -1;
 	private long _unixMemorisePourArbresSuspension;
-	private const int BudgetChunksDirtyAvantSuspension = 128;
+	private const int BudgetChunksDirtyAvantSuspension = 32;
 	private readonly HashSet<long> _adminPeerIds = new HashSet<long>();
 	private readonly Dictionary<long, bool> _modeCreatifParPeer = new Dictionary<long, bool>();
 	private readonly Dictionary<long, bool> _noclipParPeer = new Dictionary<long, bool>();
@@ -153,10 +153,14 @@ public partial class Monde_Serveur : Node
 	private float _tempsDepuisVerifDecharge;
 	private const float IntervalleEvaluationTectonique = 0.5f;
 	/// <summary>Tapis roulant décharge : au plus N chunks sauvegardés/déchargés par frame (évite lag).</summary>
-	[Export] public int MaxChunksDechargeParTick = 2;
+	[Export] public int MaxChunksDechargeParTick = 4;
 	[Export] public float BudgetMsDechargeParTick = 0.80f;
 	private readonly Queue<Vector2I> _chunksEnAttenteDecharge = new Queue<Vector2I>();
 	private readonly HashSet<Vector2I> _chunksEnAttenteDechargeSet = new HashSet<Vector2I>();
+	private readonly Queue<Vector3I> _chunksProfondsEnAttenteDecharge = new Queue<Vector3I>();
+	private readonly HashSet<Vector3I> _chunksProfondsEnAttenteDechargeSet = new HashSet<Vector3I>();
+	private readonly List<Vector3I> _cycleEvalDechargeProfonds = new List<Vector3I>();
+	private int _indexEvalDechargeProfonds;
 	private FastNoiseLite _noiseTemperatureArbres;
 	private int _noiseTemperatureArbresSeed = int.MinValue;
 	private FastNoiseLite _noiseHumiditeArbres;
@@ -173,8 +177,12 @@ public partial class Monde_Serveur : Node
 	private int _indexCycleAutosaveChunks;
 	private readonly List<Vector3I> _cycleAutosaveChunksAbysse = new List<Vector3I>();
 	private int _indexCycleAutosaveChunksAbysse;
+	private readonly List<Vector3I> _cycleAutosaveChunksProfonds = new List<Vector3I>();
+	private int _indexCycleAutosaveChunksProfonds;
 	private readonly Queue<Vector2I> _fileChunksDirtyAutosave = new Queue<Vector2I>();
 	private readonly HashSet<Vector2I> _setChunksDirtyAutosave = new HashSet<Vector2I>();
+	private readonly Queue<Vector3I> _fileChunksDirtyAutosaveProfonds = new Queue<Vector3I>();
+	private readonly HashSet<Vector3I> _setChunksDirtyAutosaveProfonds = new HashSet<Vector3I>();
 	[Export] public int MultiplicateurScanDirtyAutosave = 6;
 
 	/// <summary>
@@ -625,6 +633,7 @@ public partial class Monde_Serveur : Node
 		string contexteInfo = string.IsNullOrWhiteSpace(contexte) ? "générique" : contexte;
 		GD.Print($"ZERO-K : Lancement du Râle d'Agonie ({contexteInfo}, ignorerDedoublonage={ignorerDedoublonage}). Sauvegarde des Chunks modifiés...");
 		ForcerInstanciationArbresEnAttente();
+		ForcerInstanciationPierresEnAttente();
 		int chunksSauves = 0;
 		if (ActiverGenerationAbysse)
 		{
@@ -702,6 +711,41 @@ public partial class Monde_Serveur : Node
 			}
 			return sauvegardes;
 		}
+		if (ModeProfondeurActive)
+		{
+			if (_chunksProfonds.Count == 0)
+				return 0;
+			int sauvegardesProf = 0;
+			int budgetProf = maxChunks <= 0 ? int.MaxValue : maxChunks;
+			int tentativeProf = _fileChunksDirtyAutosaveProfonds.Count;
+			while (sauvegardesProf < budgetProf && tentativeProf > 0 && _fileChunksDirtyAutosaveProfonds.Count > 0)
+			{
+				tentativeProf--;
+				Vector3I cle = _fileChunksDirtyAutosaveProfonds.Dequeue();
+				_setChunksDirtyAutosaveProfonds.Remove(cle);
+				if (SauvegarderChunkCleProfond(cle, uniquementSiModifie: true))
+					sauvegardesProf++;
+			}
+			if (sauvegardesProf >= budgetProf)
+				return sauvegardesProf;
+			ReconstruireCycleAutosaveProfondsSiNecessaire();
+			if (_cycleAutosaveChunksProfonds.Count == 0)
+				return sauvegardesProf;
+			int scansProf = Mathf.Max((budgetProf - sauvegardesProf) * Mathf.Max(2, MultiplicateurScanDirtyAutosave), 8);
+			int totalProf = _cycleAutosaveChunksProfonds.Count;
+			scansProf = Mathf.Clamp(scansProf, 1, totalProf);
+			for (int i = 0; i < scansProf && sauvegardesProf < budgetProf; i++)
+			{
+				if (_indexCycleAutosaveChunksProfonds >= totalProf)
+					_indexCycleAutosaveChunksProfonds = 0;
+				Vector3I cle = _cycleAutosaveChunksProfonds[_indexCycleAutosaveChunksProfonds++];
+				if (!_chunksProfonds.TryGetValue(cle, out var chunk) || chunk == null || !chunk.EstModifie)
+					continue;
+				if (SauvegarderChunkCleProfond(cle, uniquementSiModifie: true))
+					sauvegardesProf++;
+			}
+			return sauvegardesProf;
+		}
 		if (_chunks.Count == 0) return 0;
 		int scansAlpha = Mathf.Max(maxChunks * Mathf.Max(2, MultiplicateurScanDirtyAutosave), 8);
 		AlimenterFileChunksDirtyAutosave(scansAlpha);
@@ -723,7 +767,9 @@ public partial class Monde_Serveur : Node
 	/// <summary>Retourne un backlog compact pour diagnostics autosave/décharge (profil perf).</summary>
 	public (int DirtyAutosave, int Decharge) ObtenirBacklogsPersistance()
 	{
-		return (_fileChunksDirtyAutosave.Count, _chunksEnAttenteDecharge.Count);
+		int dirty = ModeProfondeurActive ? _fileChunksDirtyAutosaveProfonds.Count : _fileChunksDirtyAutosave.Count;
+		int decharge = ModeProfondeurActive ? _chunksProfondsEnAttenteDecharge.Count : _chunksEnAttenteDecharge.Count;
+		return (dirty, decharge);
 	}
 
 	/// <summary>Flush explicite des chunks modifiés (quitter/sauvegarde forcée) avec budget optionnel.</summary>
@@ -747,6 +793,24 @@ public partial class Monde_Serveur : Node
 				}
 			}
 			return sauvegardes;
+		}
+		if (ModeProfondeurActive)
+		{
+			if (_chunksProfonds.Count == 0) return 0;
+			int budgetProf = maxChunks <= 0 ? int.MaxValue : maxChunks;
+			int scans = Mathf.Max(budgetProf * Mathf.Max(2, MultiplicateurScanDirtyAutosave), 8);
+			AlimenterFileChunksDirtyAutosaveProfonds(scans);
+			int sauvegardesProf = 0;
+			int tentativeProf = _fileChunksDirtyAutosaveProfonds.Count;
+			while (sauvegardesProf < budgetProf && tentativeProf > 0 && _fileChunksDirtyAutosaveProfonds.Count > 0)
+			{
+				tentativeProf--;
+				Vector3I cle = _fileChunksDirtyAutosaveProfonds.Dequeue();
+				_setChunksDirtyAutosaveProfonds.Remove(cle);
+				if (SauvegarderChunkCleProfond(cle, uniquementSiModifie: true))
+					sauvegardesProf++;
+			}
+			return sauvegardesProf;
 		}
 		if (_chunks.Count == 0) return 0;
 		AlimenterFileChunksDirtyAutosave(_chunks.Count);
@@ -798,18 +862,30 @@ public partial class Monde_Serveur : Node
 		return SauvegarderChunkCoordEtCouche(coord, coordYSauvegarde, chunk, uniquementSiModifie);
 	}
 
+	private bool SauvegarderChunkCleProfond(Vector3I cle, bool uniquementSiModifie)
+	{
+		if (!_chunksProfonds.TryGetValue(cle, out var chunk) || chunk == null)
+			return false;
+		Vector2I coord = new Vector2I(cle.X, cle.Z);
+		return SauvegarderChunkCoordEtCouche(coord, cle.Y, chunk, uniquementSiModifie);
+	}
+
 	private bool SauvegarderChunkCoordEtCouche(Vector2I coord, int coordY, Chunk_Serveur chunk, bool uniquementSiModifie)
 	{
 		if (chunk == null)
 			return false;
-		if (uniquementSiModifie && !chunk.EstModifie)
-			return false;
-		ForcerInstanciationArbresEnAttente(coord);
-		_chunkPersistenceService.SauvegarderChunkSurDisque(coord, chunk);
-		_floraPersistenceService.SauvegarderFloreChunk(coord, chunk);
+		bool sauverVoxels = !uniquementSiModifie || chunk.EstModifie;
+		ForcerInstanciationPierresEnAttente(coord, coordY);
+		if (sauverVoxels)
+		{
+			ForcerInstanciationArbresEnAttente(coord);
+			_chunkPersistenceService.SauvegarderChunkSurDisque(coord, chunk);
+			_floraPersistenceService.SauvegarderFloreChunk(coord, chunk);
+			_arbrePersistenceService.SauvegarderArbresChunk(coord, chunk);
+		}
+		// Toujours synchroniser les pierres (positions peuvent bouger sans mutation voxel).
 		_pierrePersistenceService.SauvegarderPierresChunk(coord, coordY);
-		_arbrePersistenceService.SauvegarderArbresChunk(coord, chunk);
-		return true;
+		return sauverVoxels;
 	}
 
 	private void ReconstruireCycleAutosaveAbysseSiNecessaire()
@@ -826,6 +902,46 @@ public partial class Monde_Serveur : Node
 				_cycleAutosaveChunksAbysse.Add(new Vector3I(coord.X, ConstantesDimensionAbysse.ObtenirCoordYChunkRepresentatifDuStage(kvStage.Key, HauteurMax), coord.Y));
 		}
 		_indexCycleAutosaveChunksAbysse = 0;
+	}
+
+	private void ReconstruireCycleAutosaveProfondsSiNecessaire()
+	{
+		if (_cycleAutosaveChunksProfonds.Count == _chunksProfonds.Count)
+			return;
+		_cycleAutosaveChunksProfonds.Clear();
+		foreach (var cle in _chunksProfonds.Keys)
+			_cycleAutosaveChunksProfonds.Add(cle);
+		_indexCycleAutosaveChunksProfonds = 0;
+	}
+
+	private void AlimenterFileChunksDirtyAutosaveProfonds(int budgetScan)
+	{
+		if (_chunksProfonds.Count == 0 || budgetScan <= 0) return;
+		ReconstruireCycleAutosaveProfondsSiNecessaire();
+		int total = _cycleAutosaveChunksProfonds.Count;
+		if (total == 0) return;
+		int scans = Mathf.Clamp(budgetScan, 1, total);
+		for (int i = 0; i < scans; i++)
+		{
+			if (_indexCycleAutosaveChunksProfonds >= total)
+				_indexCycleAutosaveChunksProfonds = 0;
+			Vector3I cle = _cycleAutosaveChunksProfonds[_indexCycleAutosaveChunksProfonds++];
+			if (_setChunksDirtyAutosaveProfonds.Contains(cle)) continue;
+			if (!_chunksProfonds.TryGetValue(cle, out var chunk) || chunk == null) continue;
+			if (!chunk.EstModifie) continue;
+			_setChunksDirtyAutosaveProfonds.Add(cle);
+			_fileChunksDirtyAutosaveProfonds.Enqueue(cle);
+		}
+	}
+
+	/// <summary>Minage / pose : priorise la gravure disque avant décharge de tranche (descente puis remontée).</summary>
+	private void SignalerSliceProfondeurModifiee(Vector2I coord, int coordY, Chunk_Serveur chunk)
+	{
+		if (!ModeProfondeurActive || chunk == null) return;
+		Vector3I cle = new Vector3I(coord.X, ClampCoordYProfond(coordY), coord.Y);
+		if (_setChunksDirtyAutosaveProfonds.Contains(cle)) return;
+		_setChunksDirtyAutosaveProfonds.Add(cle);
+		_fileChunksDirtyAutosaveProfonds.Enqueue(cle);
 	}
 
 	private bool ColonneAbysseExiste(Vector2I coord)
@@ -1038,7 +1154,10 @@ public partial class Monde_Serveur : Node
 			if (Mathf.Abs(coordYClamp - coordYJoueur) <= ConstantesProfondeurVerticale.DemiFenetreTranches)
 				_chunks[coord] = chunk;
 			SynchroniserFrontieresVerticalesProfond(coord, chunk);
-			HarmoniserEauVerticaleProfondeur(coord, chunk);
+			SynchroniserFrontieresHorizontalesProfond(coord, chunk);
+			// Tranche disque : ne pas ré-appliquer l'eau procédurale (rebouche les trous minés sauvegardés).
+			if (!chunk.EstChargeDepuisDisque)
+				HarmoniserEauVerticaleProfondeur(coord, chunk);
 			return;
 		}
 		_chunks[coord] = chunk;
@@ -1064,6 +1183,10 @@ public partial class Monde_Serveur : Node
 			// Garde-fou anti-file infinie: on refuse de grossir la file quand elle est saturée.
 			return;
 		}
+		if (ModeProfondeurActive
+			&& !_demandesEnAttenteSet.Contains(cle)
+			&& _chunksEnAttenteEnvoi.Count >= Mathf.Max(384, MaxDemandesAbysseEnFile))
+			return;
 		var demande = new DemandeChunk
 		{
 			Coord = coord,
@@ -1195,7 +1318,12 @@ public partial class Monde_Serveur : Node
 			if (chunk.EstChargeDepuisDisque && !voisin.EstChargeDepuisDisque) return;
 			for (int x = 0; x <= TailleChunk; x++)
 				for (int z = 0; z <= TailleChunk; z++)
-					chunk.SetVoxelLocal(x, destLy, z, voisin.LireVoxelLocalBrut(x, sourceLy, z), false);
+				{
+					byte id = voisin.LireVoxelLocalBrut(x, sourceLy, z);
+					if (DoitPreserverAirMinageSurCouture(chunk, x, destLy, z, voisin, id)) continue;
+					if (chunk.LireVoxelLocalBrut(x, destLy, z) == id) continue;
+					chunk.SetVoxelLocal(x, destLy, z, id, true);
+				}
 		}
 
 		if (TryGetChunkRuntime(coord, cy - 1, out var dessous) && dessous != null)
@@ -1215,20 +1343,105 @@ public partial class Monde_Serveur : Node
 			if (voisin.EstChargeDepuisDisque && !sourceChunk.EstChargeDepuisDisque) return;
 			for (int x = 0; x <= TailleChunk; x++)
 				for (int z = 0; z <= TailleChunk; z++)
-					voisin.SetVoxelLocal(x, destLy, z, sourceChunk.LireVoxelLocalBrut(x, sourceLy, z), false);
+				{
+					byte id = sourceChunk.LireVoxelLocalBrut(x, sourceLy, z);
+					if (DoitPreserverAirMinageSurCouture(voisin, x, destLy, z, sourceChunk, id)) continue;
+					if (voisin.LireVoxelLocalBrut(x, destLy, z) == id) continue;
+					voisin.SetVoxelLocal(x, destLy, z, id, true);
+				}
 		}
+	}
+
+	/// <summary>Ne pas reboucher un trou miné (air sur tranche modifiée/disque) avec du sol procédural voisin.</summary>
+	private static bool DoitPreserverAirMinageSurCouture(Chunk_Serveur cible, int lx, int ly, int lz, Chunk_Serveur source, byte idSource)
+	{
+		if (idSource == 0) return false;
+		if (!cible.EstModifie && !cible.EstChargeDepuisDisque) return false;
+		if (cible.LireVoxelLocalBrut(lx, ly, lz) != 0) return false;
+		return !source.EstModifie && !source.EstChargeDepuisDisque;
+	}
+
+	/// <summary>Couture XZ entre tranches de même coordY (legacy 2D désactivé en profondeur — requis à Y=100 sur bord de chunk).</summary>
+	private void SynchroniserFrontieresHorizontalesProfond(Vector2I coord, Chunk_Serveur chunk)
+	{
+		if (chunk == null || !ModeProfondeurActive) return;
+		int coordY = chunk.ChunkOffsetY;
+		int h = chunk.HauteurMax;
+		int tc = TailleChunk;
+
+		void CopierBordureDepuis(Vector2I coordVoisin, int voisinX, int chunkX, int voisinZ, int chunkZ, bool axeX)
+		{
+			if (!TryGetChunkRuntime(coordVoisin, coordY, out var voisin) || voisin == null) return;
+			if (chunk.EstChargeDepuisDisque && !voisin.EstChargeDepuisDisque) return;
+			for (int y = 0; y <= h; y++)
+			{
+				if (axeX)
+				{
+					for (int z = 0; z <= tc; z++)
+						chunk.SetVoxelLocal(chunkX, y, z, voisin.LireVoxelLocalBrut(voisinX, y, z), false);
+				}
+				else
+				{
+					for (int x = 0; x <= tc; x++)
+						chunk.SetVoxelLocal(x, y, chunkZ, voisin.LireVoxelLocalBrut(x, y, voisinZ), false);
+				}
+			}
+		}
+
+		void RepousserBordureVers(Vector2I coordVoisin, int voisinX, int chunkX, int voisinZ, int chunkZ, bool axeX)
+		{
+			if (!TryGetChunkRuntime(coordVoisin, coordY, out var voisin) || voisin == null) return;
+			if (voisin.EstChargeDepuisDisque && !chunk.EstChargeDepuisDisque) return;
+			for (int y = 0; y <= h; y++)
+			{
+				if (axeX)
+				{
+					for (int z = 0; z <= tc; z++)
+						voisin.SetVoxelLocal(voisinX, y, z, chunk.LireVoxelLocalBrut(chunkX, y, z), false);
+				}
+				else
+				{
+					for (int x = 0; x <= tc; x++)
+						voisin.SetVoxelLocal(x, y, voisinZ, chunk.LireVoxelLocalBrut(x, y, chunkZ), false);
+				}
+			}
+		}
+
+		CopierBordureDepuis(new Vector2I(coord.X - 1, coord.Y), tc, 0, 0, 0, true);
+		RepousserBordureVers(new Vector2I(coord.X - 1, coord.Y), tc, 0, 0, 0, true);
+		CopierBordureDepuis(new Vector2I(coord.X + 1, coord.Y), 0, tc, 0, 0, true);
+		RepousserBordureVers(new Vector2I(coord.X + 1, coord.Y), 0, tc, 0, 0, true);
+		CopierBordureDepuis(new Vector2I(coord.X, coord.Y - 1), 0, 0, tc, 0, false);
+		RepousserBordureVers(new Vector2I(coord.X, coord.Y - 1), 0, 0, tc, 0, false);
+		CopierBordureDepuis(new Vector2I(coord.X, coord.Y + 1), 0, 0, 0, tc, false);
+		RepousserBordureVers(new Vector2I(coord.X, coord.Y + 1), 0, 0, 0, tc, false);
+
+		void CopierCoinDepuis(Vector2I coordCoin, int vx, int vz, int cx, int cz)
+		{
+			if (!TryGetChunkRuntime(coordCoin, coordY, out var voisin) || voisin == null) return;
+			if (chunk.EstChargeDepuisDisque && !voisin.EstChargeDepuisDisque) return;
+			for (int y = 0; y <= h; y++)
+				chunk.SetVoxelLocal(cx, y, cz, voisin.LireVoxelLocalBrut(vx, y, vz), false);
+		}
+
+		CopierCoinDepuis(new Vector2I(coord.X - 1, coord.Y - 1), tc, tc, 0, 0);
+		CopierCoinDepuis(new Vector2I(coord.X + 1, coord.Y - 1), 0, tc, tc, 0);
+		CopierCoinDepuis(new Vector2I(coord.X - 1, coord.Y + 1), tc, 0, 0, tc);
+		CopierCoinDepuis(new Vector2I(coord.X + 1, coord.Y + 1), 0, 0, tc, tc);
 	}
 
 	/// <summary>Propage l'eau à travers les jonctions Y=100, 200… (évite une « surface » d'eau au milieu d'une colonne immergée).</summary>
 	private void HarmoniserEauVerticaleProfondeur(Vector2I coord, Chunk_Serveur chunk)
 	{
 		if (!ModeProfondeurActive || chunk == null) return;
+		if (chunk.EstChargeDepuisDisque) return;
 		int cy = chunk.ChunkOffsetY;
 		int h = chunk.HauteurMax;
 		int yBaseMonde = cy * h;
 		const int niveauEauMonde = ConstantesProfondeurVerticale.NiveauEauMondeAlpha;
 
 		NettoyerEauAuDessusNiveauMer(chunk);
+		NettoyerEauSousSurfaceTerrestreProfondeur(chunk);
 
 		int yMaxEauLocal = ConstantesProfondeurVerticale.ObtenirYMaxEauLocalTranche(cy, h, niveauEauMonde);
 		if (yMaxEauLocal > 0 && TryGetChunkRuntime(coord, cy - 1, out var dessous) && dessous != null)
@@ -1243,8 +1456,12 @@ public partial class Monde_Serveur : Node
 						lySource = lySource - 1;
 					if (dessous.LireVoxelLocalBrut(x, lySource, z) != 4)
 						continue;
+					int xg = coord.X * TailleChunk + x;
+					int zg = coord.Y * TailleChunk + z;
+					int hSurf = Generateur_Voxel.ObtenirHauteurTerrainMonde(xg, zg, SeedTerrain);
 					for (int y = 0; y <= yMaxEauLocal; y++)
 					{
+						if (yBaseMonde + y <= hSurf) break;
 						if (chunk.LireVoxelLocalBrut(x, y, z) != 0) break;
 						chunk.DefinirVoxelEau(x, y, z);
 					}
@@ -1265,26 +1482,49 @@ public partial class Monde_Serveur : Node
 	private void RemplirEauVolumeMer3DServeur(Chunk_Serveur chunk, int yBaseMonde, int yMaxEauLocal, int niveauEauMonde)
 	{
 		int h = chunk.HauteurMax;
+		Vector2I coord = new Vector2I(chunk.ChunkOffsetX, chunk.ChunkOffsetZ);
 		for (int x = 0; x <= TailleChunk; x++)
 		{
 			for (int z = 0; z <= TailleChunk; z++)
 			{
-				int sommetSolide = -1;
-				for (int ly = h; ly >= 0; ly--)
-				{
-					byte v = chunk.LireVoxelLocalBrut(x, ly, z);
-					if (v != 0 && v != 4)
-					{
-						sommetSolide = ly;
-						break;
-					}
-				}
-				int yDebut = Mathf.Clamp(sommetSolide + 1, 0, yMaxEauLocal);
+				int xg = coord.X * TailleChunk + x;
+				int zg = coord.Y * TailleChunk + z;
+				int hSurf = Generateur_Voxel.ObtenirHauteurTerrainMonde(xg, zg, SeedTerrain);
+				int yMondeDebutEau = hSurf + 1;
+				int yDebut = Mathf.Clamp(yMondeDebutEau - yBaseMonde, 0, yMaxEauLocal);
+				if (yDebut > yMaxEauLocal)
+					continue;
 				for (int y = yDebut; y <= yMaxEauLocal; y++)
 				{
-					if (yBaseMonde + y > niveauEauMonde) continue;
+					int yMonde = yBaseMonde + y;
+					if (yMonde > niveauEauMonde) continue;
+					if (yMonde <= hSurf) continue;
 					if (chunk.LireVoxelLocalBrut(x, y, z) != 0) continue;
 					chunk.DefinirVoxelEau(x, y, z);
+				}
+			}
+		}
+	}
+
+	/// <summary>Retire l'eau dans la roche / grottes (Y monde ≤ surface terrain), ex. lacs fantômes en tranche coordY=0.</summary>
+	private void NettoyerEauSousSurfaceTerrestreProfondeur(Chunk_Serveur chunk)
+	{
+		if (!ModeProfondeurActive || chunk == null) return;
+		int h = chunk.HauteurMax;
+		int yBaseMonde = chunk.ChunkOffsetY * h;
+		Vector2I coord = new Vector2I(chunk.ChunkOffsetX, chunk.ChunkOffsetZ);
+		for (int x = 0; x <= TailleChunk; x++)
+		{
+			for (int z = 0; z <= TailleChunk; z++)
+			{
+				int xg = coord.X * TailleChunk + x;
+				int zg = coord.Y * TailleChunk + z;
+				int hSurf = Generateur_Voxel.ObtenirHauteurTerrainMonde(xg, zg, SeedTerrain);
+				for (int y = 0; y <= h; y++)
+				{
+					if (yBaseMonde + y > hSurf) continue;
+					if (chunk.LireVoxelLocalBrut(x, y, z) == 4)
+						chunk.DefinirVoxelAir(x, y, z);
 				}
 			}
 		}
@@ -1435,7 +1675,11 @@ public partial class Monde_Serveur : Node
 			ModeProfondeurActive,
 			FondMondeYProfond
 		);
-		chunk.SetOnVoxelModifie((pos, id) => _onVoxelModifie?.Invoke(pos, id));
+		chunk.SetOnVoxelModifie((pos, id) =>
+		{
+			SignalerSliceProfondeurModifiee(new Vector2I(chunk.ChunkOffsetX, chunk.ChunkOffsetZ), chunk.ChunkOffsetY, chunk);
+			_onVoxelModifie?.Invoke(pos, id);
+		});
 		chunk.SetOnFlorePurgée((c, coordChunkY, inventaire) =>
 		{
 			_onFloreModifie?.Invoke(c, coordChunkY, inventaire);
@@ -1454,18 +1698,38 @@ public partial class Monde_Serveur : Node
 		float xMax = (coord.X + 1) * TailleChunk;
 		float zMin = coord.Y * TailleChunk;
 		float zMax = (coord.Y + 1) * TailleChunk;
+		float yMin = 0f;
+		float yMax = float.MaxValue;
+		if (ModeProfondeurActive)
+		{
+			int tranche = ConstantesProfondeurVerticale.HauteurTrancheMetres;
+			yMin = coordY * tranche;
+			yMax = (coordY + 1) * tranche;
+		}
 		var pierres = new List<(Vector3 pos, int id, int index, int chimique)>();
 		foreach (Node child in _parentPourBlocsChutants.GetChildren())
 		{
 			var item = child as ItemPhysique ?? child.GetNodeOrNull<ItemPhysique>("ItemPhysique");
 			if (item == null) continue;
-			if (item.EstEclatFracture) continue; // Éclats de fracture : pas sauvegardés (créés à l'instant, supprimés quand chunk déchargé).
+			if (item.EstEclatFracture) continue;
 			int id = item.ID_Objet;
 			if (!ItemPhysique.EstIdRocheMatiere(id)) continue;
+			if (child.HasMeta("DimensionId"))
+			{
+				if (child.GetMeta("DimensionId").AsInt32() != _dimensionServeurId)
+					continue;
+			}
+			else if (_dimensionServeurId != (int)DimensionJeu.Alpha && !ActiverGenerationAbysse)
+				continue;
 			if (child is not Node3D n3 || !TryGetPositionMonde(n3, out Vector3 pos)) continue;
-			if (pos.X >= xMin && pos.X < xMax && pos.Z >= zMin && pos.Z < zMax)
+			if (pos.X >= xMin && pos.X < xMax && pos.Z >= zMin && pos.Z < zMax && pos.Y >= yMin && pos.Y < yMax)
 				pierres.Add((pos, id, Mathf.Clamp(item.IndexCacheMemoire, 0, 3), Mathf.Clamp(item.IndexTailleRoche, 0, 4)));
 		}
+		PersistencerPierresListeSurDisque(coord, coordY, pierres);
+	}
+
+	internal void PersistencerPierresListeSurDisque(Vector2I coord, int coordY, List<(Vector3 pos, int id, int indexCache, int indexChimique)> pierres)
+	{
 		string dossier = ProjectSettings.GlobalizePath(ObtenirDossierChunksRelatif() + "/");
 		Directory.CreateDirectory(dossier);
 		string chemin = Path.Combine(dossier, $"chunk_{coord.X}_{coordY}_{coord.Y}_items.bin");
@@ -1473,7 +1737,7 @@ public partial class Monde_Serveur : Node
 		{
 			using (var w = new BinaryWriter(File.Open(chemin, FileMode.Create)))
 			{
-				w.Write(0x5A4B324A); // Magic v3 = IndexCacheMemoire + IndexChimique
+				w.Write(0x5A4B324A);
 				w.Write(pierres.Count);
 				foreach (var (pos, id, index, chimique) in pierres)
 				{
@@ -1501,6 +1765,7 @@ public partial class Monde_Serveur : Node
 		if (!File.Exists(chemin)) return false;
 		try
 		{
+			RetirerPierresChunkProfond(coord, coordY);
 			var pierres = new List<(Vector3 pos, int id, int indexCache, int indexChimique)>();
 			using (var stream = File.Open(chemin, FileMode.Open, System.IO.FileAccess.Read, FileShare.Read))
 			using (var r = new BinaryReader(stream))
@@ -1736,6 +2001,16 @@ public partial class Monde_Serveur : Node
 		if (localX == 0 && localZ == 0)
 			ObtenirVoisinPadding(cx - 1, cz - 1)?.SetVoxelLocal(TailleChunk, localY, TailleChunk, id);
 
+		Chunk_Serveur chunkCourantHoriz = ObtenirVoisinPadding(cx, cz);
+		int last = TailleChunk - 1;
+		// Padding local est/sud (symétrique ouest/nord) — évite mur MC à x=15/16.
+		if (localX == last && chunkCourantHoriz != null)
+			chunkCourantHoriz.SetVoxelLocal(TailleChunk, localY, localZ, id);
+		if (localZ == last && chunkCourantHoriz != null)
+			chunkCourantHoriz.SetVoxelLocal(localX, localY, TailleChunk, id);
+		if (localX == last && localZ == last && chunkCourantHoriz != null)
+			chunkCourantHoriz.SetVoxelLocal(TailleChunk, localY, TailleChunk, id);
+
 		if (!ModeProfondeurActive) return;
 		int hauteurTranche = HauteurTrancheProfondeur;
 		Chunk_Serveur ObtenirVoisinVertical(int targetCoordY)
@@ -1745,14 +2020,32 @@ public partial class Monde_Serveur : Node
 			return ObtenirOuCreerChunk(new Vector2I(cx, cz), targetCoordY);
 		}
 		Chunk_Serveur chunkCourant = ObtenirVoisinVertical(chunkY);
+
+		void RepliquerSliceV(int targetCy, int lx, int ly, int lz)
+		{
+			ObtenirVoisinVertical(targetCy)?.SetVoxelLocal(lx, ly, lz, id);
+		}
+
 		// Frontière basse de tranche (ly=0) ↔ padding ly=h de la tranche du dessous.
 		if (localY == 0 && chunkY > CoordYMinProfond)
-			ObtenirVoisinVertical(chunkY - 1)?.SetVoxelLocal(localX, hauteurTranche, localZ, id);
-		// Dernière rangée modifiable (ly=h-1) : met à jour le padding haut local + ly=0 de la tranche au-dessus.
+		{
+			RepliquerSliceV(chunkY - 1, localX, hauteurTranche, localZ);
+			if (localX == 0) RepliquerSliceV(chunkY - 1, TailleChunk, hauteurTranche, localZ);
+			if (localX == last) RepliquerSliceV(chunkY - 1, 0, hauteurTranche, localZ);
+			if (localZ == 0) RepliquerSliceV(chunkY - 1, localX, hauteurTranche, TailleChunk);
+			if (localZ == last) RepliquerSliceV(chunkY - 1, localX, hauteurTranche, 0);
+		}
+		// Dernière rangée modifiable (ly=h-1) : padding haut local + ly=0 tranche au-dessus.
 		if (localY == hauteurTranche - 1)
 		{
 			chunkCourant?.SetVoxelLocal(localX, hauteurTranche, localZ, id);
-			ObtenirVoisinVertical(chunkY + 1)?.SetVoxelLocal(localX, 0, localZ, id);
+			if (localX == last) chunkCourant?.SetVoxelLocal(TailleChunk, hauteurTranche, localZ, id);
+			if (localZ == last) chunkCourant?.SetVoxelLocal(localX, hauteurTranche, TailleChunk, id);
+			RepliquerSliceV(chunkY + 1, localX, 0, localZ);
+			if (localX == 0) RepliquerSliceV(chunkY + 1, TailleChunk, 0, localZ);
+			if (localX == last) RepliquerSliceV(chunkY + 1, 0, 0, localZ);
+			if (localZ == 0) RepliquerSliceV(chunkY + 1, localX, 0, TailleChunk);
+			if (localZ == last) RepliquerSliceV(chunkY + 1, localX, 0, 0);
 		}
 	}
 
@@ -1886,7 +2179,11 @@ public partial class Monde_Serveur : Node
 				indexASupprimer = i;
 			}
 		}
-		liste.RemoveAt(indexASupprimer);
+		// Retrait O(1) par swap avec le dernier (l'ordre n'importe pas : on re-scanne le min à chaque appel).
+		// Évite le RemoveAt O(n) répété qui faisait exploser « Serveur/Demandes » sur grosse file.
+		int dernier = liste.Count - 1;
+		liste[indexASupprimer] = liste[dernier];
+		liste.RemoveAt(dernier);
 		return chunkCible;
 	}
 
@@ -1953,6 +2250,11 @@ public partial class Monde_Serveur : Node
 	{
 		if (_obtenirPositionJoueur == null || _onOrdonnerDestructionChunk == null) return;
 		Vector3 posJoueur = InvokerPositionJoueurStreaming();
+		if (ModeProfondeurActive)
+		{
+			EvaluerDechargementChunksProfonds(posJoueur);
+			return;
+		}
 		Vector2I cj = Gestionnaire_Monde.WorldToChunkCoord(posJoueur, TailleChunk);
 		int cjX = cj.X;
 		int cjZ = cj.Y;
@@ -1967,17 +2269,115 @@ public partial class Monde_Serveur : Node
 		}
 	}
 
+	/// <summary>Profondeur 3D : retire les tranches hors fenêtre XZ + Y (sinon accumulation infinie en marchant).</summary>
+	private void EvaluerDechargementChunksProfonds(Vector3 posJoueur)
+	{
+		if (_chunksProfonds.Count == 0) return;
+		if (_cycleEvalDechargeProfonds.Count != _chunksProfonds.Count)
+		{
+			_cycleEvalDechargeProfonds.Clear();
+			foreach (var cle in _chunksProfonds.Keys)
+				_cycleEvalDechargeProfonds.Add(cle);
+			_indexEvalDechargeProfonds = 0;
+		}
+		Vector2I cj = Gestionnaire_Monde.WorldToChunkCoord(posJoueur, TailleChunk);
+		int coordYJoueur = CoordYDepuisMondeYProfond(posJoueur.Y);
+		int demiFenetre = ConstantesProfondeurVerticale.DemiFenetreTranches;
+		int margeDecharge = 1;
+		int total = _cycleEvalDechargeProfonds.Count;
+		int scans = Mathf.Clamp(Mathf.Max(64, total / 3), 1, total);
+		for (int i = 0; i < scans; i++)
+		{
+			if (_indexEvalDechargeProfonds >= total)
+				_indexEvalDechargeProfonds = 0;
+			Vector3I cle = _cycleEvalDechargeProfonds[_indexEvalDechargeProfonds++];
+			if (!_chunksProfonds.ContainsKey(cle))
+				continue;
+			int dx = Mathf.Abs(cle.X - cj.X);
+			int dz = Mathf.Abs(cle.Z - cj.Y);
+			int dy = Mathf.Abs(cle.Y - coordYJoueur);
+			if (dx <= RenderDistance + margeDecharge && dz <= RenderDistance + margeDecharge && dy <= demiFenetre + margeDecharge)
+				continue;
+			if (_chunksProfondsEnAttenteDechargeSet.Add(cle))
+				_chunksProfondsEnAttenteDecharge.Enqueue(cle);
+		}
+	}
+
+	private bool ColonneProfondeurAEncoreSlices(int coordX, int coordZ)
+	{
+		foreach (var kv in _chunksProfonds)
+		{
+			if (kv.Key.X == coordX && kv.Key.Z == coordZ)
+				return true;
+		}
+		return false;
+	}
+
+	private void DechargerSliceProfond(Vector3I cle)
+	{
+		if (!_chunksProfonds.TryGetValue(cle, out var chunk) || chunk == null)
+			return;
+		Vector2I coord = new Vector2I(cle.X, cle.Z);
+		_rochesEnStase.Remove(cle);
+		// Toujours graver les tranches minées avant décharge (sinon regen procédurale au retour).
+		if (chunk.EstModifie || _setChunksDirtyAutosaveProfonds.Contains(cle))
+		{
+			SauvegarderChunkCoordEtCouche(coord, cle.Y, chunk, uniquementSiModifie: false);
+			_setChunksDirtyAutosaveProfonds.Remove(cle);
+		}
+		RetirerPierresChunkProfond(coord, cle.Y);
+		RetirerArbresChunkProfond(coord, cle.Y);
+		_chunksProfonds.Remove(cle);
+		if (_chunks.TryGetValue(coord, out var proxy) && ReferenceEquals(proxy, chunk))
+			_chunks.Remove(coord);
+		if (!ColonneProfondeurAEncoreSlices(cle.X, cle.Z))
+			_onOrdonnerDestructionChunk?.Invoke(coord);
+	}
+
 	/// <summary>Traite au plus MaxChunksDechargeParTick chunks : sauvegarde (voxels + pierres) puis décharge (retrait pierres, Remove chunk, notif client).</summary>
 	private void ProcesserDechargeProgressive()
 	{
-		if (_chunksEnAttenteDecharge.Count == 0 || _onOrdonnerDestructionChunk == null) return;
+		if (_onOrdonnerDestructionChunk == null) return;
 		Vector3 posJoueur = InvokerPositionJoueurStreaming();
 		Vector2I cj = Gestionnaire_Monde.WorldToChunkCoord(posJoueur, TailleChunk);
 		float facteurPression = CalculerFacteurPressionSpawn();
-		int budgetChunks = Mathf.Max(1, Mathf.RoundToInt(CalculerBudgetSpawnAdaptatif(Mathf.Max(1, MaxChunksDechargeParTick)) * Mathf.Clamp(facteurPression * 0.9f, 0.2f, 1f)));
+		int budgetChunksBase = Mathf.Max(1, MaxChunksDechargeParTick);
+		if (ModeProfondeurActive && _chunksProfonds.Count > 0)
+		{
+			int tranchesAttendues = (2 * ConstantesProfondeurVerticale.DemiFenetreTranches + 1);
+			int capaciteAttendue = (RenderDistance + 2) * (RenderDistance + 2) * tranchesAttendues;
+			if (_chunksProfonds.Count > capaciteAttendue)
+				budgetChunksBase = Mathf.Min(8, budgetChunksBase + 2);
+		}
+		int budgetChunks = Mathf.Max(1, Mathf.RoundToInt(CalculerBudgetSpawnAdaptatif(budgetChunksBase) * Mathf.Clamp(facteurPression * 0.9f, 0.2f, 1f)));
 		ulong t0 = Time.GetTicksUsec();
 		ulong budgetUs = (ulong)Mathf.Max(140f, BudgetMsDechargeParTick * 1000f * Mathf.Clamp(facteurPression, 0.2f, 1f));
 		int traites = 0;
+
+		if (ModeProfondeurActive)
+		{
+			int coordYJoueur = CoordYDepuisMondeYProfond(posJoueur.Y);
+			int demiFenetre = ConstantesProfondeurVerticale.DemiFenetreTranches;
+			int margeDecharge = 1;
+			while (traites < budgetChunks && _chunksProfondsEnAttenteDecharge.Count > 0)
+			{
+				if (Time.GetTicksUsec() - t0 >= budgetUs) break;
+				Vector3I cle = _chunksProfondsEnAttenteDecharge.Dequeue();
+				_chunksProfondsEnAttenteDechargeSet.Remove(cle);
+				int dx = Mathf.Abs(cle.X - cj.X);
+				int dz = Mathf.Abs(cle.Z - cj.Y);
+				int dy = Mathf.Abs(cle.Y - coordYJoueur);
+				if (dx <= RenderDistance + margeDecharge && dz <= RenderDistance + margeDecharge && dy <= demiFenetre + margeDecharge)
+					continue;
+				if (!_chunksProfonds.ContainsKey(cle))
+					continue;
+				DechargerSliceProfond(cle);
+				traites++;
+			}
+			return;
+		}
+
+		if (_chunksEnAttenteDecharge.Count == 0) return;
 		while (traites < budgetChunks && _chunksEnAttenteDecharge.Count > 0)
 		{
 			if (Time.GetTicksUsec() - t0 >= budgetUs) break;
@@ -1991,9 +2391,9 @@ public partial class Monde_Serveur : Node
 			if (colonneChargee)
 			{
 				if (ActiverGenerationAbysse)
-					SauvegarderColonneAbysse(coord, uniquementSiModifie: false);
+					SauvegarderColonneAbysse(coord, uniquementSiModifie: true);
 				else
-					SauvegarderChunkCoord(coord, uniquementSiModifie: false);
+					SauvegarderChunkCoord(coord, uniquementSiModifie: true);
 				RetirerPierresChunk(coord);
 				RetirerArbresChunk(coord);
 				if (ActiverGenerationAbysse)

@@ -22,10 +22,14 @@ public partial class Joueur
 
         Node objetTouche = NoeudDepuisColliderRaycast(_rayon.GetCollider());
         Vector3 pointImpact = _rayon.GetCollisionPoint();
-        RigidBody3D cadavreArbreVise = ResoudreCadavreArbreDepuisCollider(objetTouche)
-            ?? ChercherCadavreArbreProchePointImpact(pointImpact);
-        if (cadavreArbreVise != null)
-            objetTouche = cadavreArbreVise;
+        bool viseTerrain = EstSolViseParRayon(_rayon, objetTouche);
+        // Sol prioritaire : ne pas détourner vers un cadavre d'arbre proche (sinon le fauchage ne part jamais).
+        if (!viseTerrain)
+        {
+            RigidBody3D cadavreArbreVise = ResoudreCadavreArbreCible(objetTouche, pointImpact);
+            if (cadavreArbreVise != null)
+                objetTouche = cadavreArbreVise;
+        }
 
         BoeufSauvage boeufSousVisee = ObtenirBoeufDepuisCollider(objetTouche);
 
@@ -37,7 +41,9 @@ public partial class Joueur
 
         var (effHache, effPelle, masseOutil) = AnalyserOutilCAO(directionMouvement);
 
-        if (boeufSousVisee == null && EstSolViseParRayon(_rayon, objetTouche))
+        bool surfaceFauchable = viseTerrain
+            || (EstOutilFaucheurEnMain(mainActive) && EstSurfaceHorizontaleFauchable());
+        if (boeufSousVisee == null && surfaceFauchable)
         {
             if (mainActive.ID == IdObjetLancePierreTier0)
             {
@@ -219,26 +225,35 @@ public partial class Joueur
             }
         }
 
-        if (efficacitePelle < 0.6f)
+        if (EstOutilFaucheurEnMain(mainActive))
         {
-            // Fauchage : dague (105), roche plate (1) ou en pointe (3), ou éclat — pas la hachette (106), inadaptée au gazon fin.
-            bool estRocheFaucheuse = ItemPhysique.EstIdRocheMatiere(mainActive.ID) && (mainActive.IndexMorphologique == 1 || mainActive.IndexMorphologique == 3);
-            bool estOutilFaucheur = mainActive.ID == 105 || mainActive.ID == IdObjetFauxPierreTier0
-                || estRocheFaucheuse
-                || mainActive.EstUnEclat;
+            _gestionnaireMonde?.AppliquerFauchageGlobal(pointImpact, 3.1f);
+            if (mainActive.ID == 105 || mainActive.ID == IdObjetFauxPierreTier0)
+                AppliquerUsureOutilMainActive(mainActive.ID == IdObjetFauxPierreTier0 ? 0.78f : 0.75f);
+            if (mainActive.ID == 105 || mainActive.ID == IdObjetFauxPierreTier0)
+                AjouterXpFutureState("Dextiriter", 1UL);
+            else if (EstRocheFaucheuseEnMain(mainActive) && ObtenirNiveauFutureState("Dextiriter") < 15UL)
+                AjouterXpFutureState("Dextiriter", 1UL);
 
-            if (estOutilFaucheur)
+            if ((mainActive.ID == 105 || mainActive.ID == IdObjetFauxPierreTier0) && efficacitePelle >= 0.6f)
             {
-                _gestionnaireMonde?.AppliquerFauchageGlobal(pointImpact, 3.1f);
-                if (mainActive.ID == 105 || mainActive.ID == IdObjetFauxPierreTier0)
-                    AppliquerUsureOutilMainActive(mainActive.ID == IdObjetFauxPierreTier0 ? 0.78f : 0.75f);
-                if (mainActive.ID == 105 || mainActive.ID == IdObjetFauxPierreTier0)
-                    AjouterXpFutureState("Dextiriter", 1UL);
-                else if (estRocheFaucheuse && ObtenirNiveauFutureState("Dextiriter") < 15UL)
-                    AjouterXpFutureState("Dextiriter", 1UL);
-                GD.Print("ZERO-K : Fauchage de la flore. Récolte de fibres en cours.");
+                int idMatiereImpact = _gestionnaireMonde?.ObtenirMatiereExacte(pointImpact - (_rayon.GetCollisionNormal() * 0.45f)) ?? 0;
+                _gestionnaireMonde?.AppliquerDestructionGlobale(pointImpact, 0.95f, 4.5f);
+                _gestionnaireMonde?.AppliquerFauchageGlobal(pointImpact, 2.8f);
+                AppliquerUsureOutilMainActive(2.4f);
+                AttribuerXpMetierExtractionTerrain(idMatiereImpact);
+                GD.Print(mainActive.ID == IdObjetFauxPierreTier0
+                    ? "ZERO-K : La faux racle la surface (coup orienté pelle, peu de pénétration)."
+                    : "ZERO-K : La dague racle la surface (coup orienté pelle, peu de pénétration).");
                 return;
             }
+
+            GD.Print("ZERO-K : Fauchage de la flore. Récolte de fibres en cours.");
+            return;
+        }
+
+        if (efficacitePelle < 0.6f)
+        {
             AlerteSqueletteBoiteNoire("Mauvais angle de lame pour deplacer la terre. Il faut une surface plate (Pelle/Houe).");
             return;
         }
@@ -257,18 +272,6 @@ public partial class Joueur
             GD.Print($"ZERO-K : Extraction du sol réussie. (Force Volume: {forceCreusage:F1})");
             if (mainActive.ID == 105 || mainActive.ID == IdObjetFauxPierreTier0 || mainActive.ID == 106 || mainActive.ID == IdObjetPellePierreTier0)
                 AppliquerUsureOutilMainActive(3.2f);
-        }
-        else if ((mainActive.ID == 105 || mainActive.ID == IdObjetFauxPierreTier0) && efficacitePelle >= 0.6f)
-        {
-            // Dague mal orientée en « pelle » : le creusage formel est trop faible, mais on gratte quand même un peu + fauchage herbe.
-            int idMatiereImpact = _gestionnaireMonde?.ObtenirMatiereExacte(pointImpact - (_rayon.GetCollisionNormal() * 0.45f)) ?? 0;
-            _gestionnaireMonde?.AppliquerDestructionGlobale(pointImpact, 0.95f, 4.5f);
-            _gestionnaireMonde?.AppliquerFauchageGlobal(pointImpact, 2.8f);
-            AppliquerUsureOutilMainActive(2.4f);
-            AttribuerXpMetierExtractionTerrain(idMatiereImpact);
-            GD.Print(mainActive.ID == IdObjetFauxPierreTier0
-                ? "ZERO-K : La faux racle la surface (coup orienté pelle, peu de pénétration)."
-                : "ZERO-K : La dague racle la surface (coup orienté pelle, peu de pénétration).");
         }
         else
         {
@@ -306,7 +309,7 @@ public partial class Joueur
         branchesRestantes = Mathf.Clamp(branchesRestantes, 0, 10);
 
         Node feuillage = rbCible.GetNodeOrNull("Feuillage");
-        if (!brancheMorte && feuillage is MeshInstance3D miFeu && miFeu.Mesh != null)
+        if (!brancheMorte && feuillage != null && feuillage is MeshInstance3D miFeu && miFeu.Mesh != null)
         {
             Mesh meshFeuillage = miFeu.Mesh;
             Material matFeuilles = miFeu.MaterialOverride?.Duplicate() as Material;
@@ -375,14 +378,27 @@ public partial class Joueur
             ScaleEclat = new Vector3(1, 1, scaleZ)
         };
 
-        CalculerDimensionsBoisPose(30, 0, 0, out float rayonTroncSpawn, out float longueurBaseTronc, out _, out _);
-        float longueurTroncMonde = longueurBaseTronc * scaleZ;
-        Vector3 refSpawn = rbCible.GlobalPosition.Lerp(pointImpact, 0.45f);
-        float margeSol = rayonTroncSpawn + Mathf.Clamp(longueurTroncMonde * 0.22f, 0.25f, 1.35f);
-        Vector3 posTronc = CalculerPointAuDessusSol(refSpawn + Vector3.Up * 1.5f, margeSol);
+        CalculerDimensionsBoisPose(30, 0, 0, out float rayonTroncSpawn, out _, out _, out _);
+        Vector3 refSpawn = rbCible.GlobalPosition;
+        Vector3 posTronc = CalculerPointAuDessusSol(refSpawn, Mathf.Clamp(rayonTroncSpawn * 0.35f, 0.12f, 0.38f));
         Node3D leTronc = CreerBlocPose(posTronc, slotTroncLong);
         if (leTronc != null)
+        {
             leTronc.GlobalRotation = rbCible.GlobalRotation;
+            leTronc.GlobalPosition = refSpawn;
+            if (leTronc is RigidBody3D rbTronc)
+            {
+                // Bûche de cadavre : objet lâché, pas un bloc posé figé dans les airs.
+                rbTronc.RemoveFromGroup("BlocsPoses");
+                rbTronc.Freeze = false;
+                rbTronc.GravityScale = 1f;
+                rbTronc.Sleeping = false;
+                Vector3 impulsion = directionFrappe.LengthSquared() > 1e-6f
+                    ? directionFrappe.Normalized() * 2.4f + Vector3.Down * 1.8f
+                    : Vector3.Down * 3.2f;
+                rbTronc.ApplyCentralImpulse(impulsion);
+            }
+        }
 
         rbCible.QueueFree();
     }

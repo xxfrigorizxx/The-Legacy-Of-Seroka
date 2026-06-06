@@ -9,6 +9,18 @@ public partial class Monde_Serveur : Node
 {
 	internal void DeclencherGenerationChunk(Vector2I coord, int coordY, Vector3I cleDemande)
 	{
+		// Garde-fou : ne jamais regénérer si une cicatrice disque existe (trous minés).
+		if (FichierChunkExiste(coord, coordY))
+		{
+			lock (_verrouGeneration)
+			{
+				_chunksEnCoursGeneration.Remove(cleDemande);
+				if (_chunksEnGenerationActive > 0)
+					_chunksEnGenerationActive--;
+			}
+			Callable.From(() => EnregistrerDemandeChunk(coord, coordY)).CallDeferred();
+			return;
+		}
 		lock (_verrouGeneration)
 		{
 			if (!_chunksEnCoursGeneration.Add(cleDemande))

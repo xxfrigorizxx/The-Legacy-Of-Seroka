@@ -5,7 +5,7 @@ using System.Reflection;
 /// <summary>Construction du catalogue inventaire créatif/admin (variantes + IDs objets manquants).</summary>
 public static class CreatifCatalogueService
 {
-    public const int VersionCatalogue = 18;
+    public const int VersionCatalogue = 19;
 
     public enum CategorieCreatif
     {
@@ -167,6 +167,10 @@ public static class CreatifCatalogueService
         if (id == Joueur.IdObjetBaie || id == Joueur.IdObjetSteakCru || id == Joueur.IdObjetSteakCuit
             || id == Joueur.IdObjetAtelleJambe || id == Joueur.IdObjetAtelleBras || id == Joueur.IdObjetBandageTier1)
             return CategorieCreatif.Consommables;
+        if (id == Joueur.IdObjetOsBoeuf || id == Joueur.IdObjetCuirBoeuf || id == Joueur.IdObjetIntestinBoeuf || id == Joueur.IdObjetIntestinBoeufNettoye)
+            return CategorieCreatif.Consommables;
+        if (Joueur.EstIdCharbonRecolte(id))
+            return CategorieCreatif.Pierre;
         return CategorieCreatif.Admin;
     }
 

@@ -500,6 +500,11 @@ public static partial class Atlas_Matiere
             string essence = slot.IndexBotanique switch { 0 => "Chêne", 1 => "Bouleau", 2 => "Pin", 3 => "Sapin", 4 => "Fromager", _ => "Bois" };
             return $"Bol en {essence}";
         }
+        if (id == Joueur.IdObjetBolEau)
+        {
+            string essence = slot.IndexBotanique switch { 0 => "Chêne", 1 => "Bouleau", 2 => "Pin", 3 => "Sapin", 4 => "Fromager", _ => "Bois" };
+            return $"Bol d'eau ({essence})";
+        }
         if (id == Joueur.IdObjetMortierPilonBois)
         {
             string EssenceBois(byte idx) => idx switch { 0 => "Chêne", 1 => "Bouleau", 2 => "Pin", 3 => "Sapin", 4 => "Fromager", _ => "Bois" };
@@ -545,6 +550,19 @@ public static partial class Atlas_Matiere
                 : (id == Joueur.IdObjetOsBoeuf ? "Os"
                 : (id == Joueur.IdObjetCuirBoeuf ? "Cuir"
                 : (id == Joueur.IdObjetIntestinBoeufNettoye ? "Intestin propre" : "Intestin"))));
+            return q > 1 ? $"{nom} x{q}" : nom;
+        }
+        if (Joueur.EstIdCharbonRecolte(id))
+        {
+            int q = Joueur.ObtenirQuantiteSlot(slot);
+            string nom = id switch
+            {
+                Joueur.IdObjetCharbonBasseQualite => "Charbon (basse qualité)",
+                Joueur.IdObjetCharbonMoyenneQualite => "Charbon (qualité moyenne)",
+                Joueur.IdObjetCharbonBonneQualite => "Charbon (bonne qualité)",
+                Joueur.IdObjetCharbonAntracite => "Charbon anthracite",
+                _ => "Charbon"
+            };
             return q > 1 ? $"{nom} x{q}" : nom;
         }
         return id switch

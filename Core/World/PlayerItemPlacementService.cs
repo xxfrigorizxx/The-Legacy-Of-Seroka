@@ -567,6 +567,31 @@ public partial class Joueur
             }
             corps = item;
         }
+        else if (id == IdObjetBolEau)
+        {
+            var item = new ItemPhysique
+            {
+                ID_Objet = id,
+                IndexBotanique = mainActive.IndexBotanique,
+                IndexChimique = mainActive.IndexChimique,
+                IndexCacheMemoire = mainActive.IndexMorphologique,
+                Name = "ItemPhysique",
+                ContinuousCd = true
+            };
+            var meshRoot = new Node3D { Name = "MeshInstance3D" };
+            InstancierModeleBolEau(meshRoot, mainActive, _gestionnaireMonde?.MaterielEau, 0.62f, false);
+            item.AddChild(meshRoot);
+            if (AjouterCollisionsConvexesDepuisMeshesSousRacineItem(item, meshRoot) == 0)
+            {
+                item.AddChild(new CollisionShape3D
+                {
+                    Name = "CollisionShape3D",
+                    Shape = new BoxShape3D { Size = new Vector3(0.22f, 0.10f, 0.22f) },
+                    Position = new Vector3(0f, 0.05f, 0f)
+                });
+            }
+            corps = item;
+        }
         else if (id == IdObjetMortierPilonBois)
         {
             var item = new ItemPhysique
@@ -1407,6 +1432,22 @@ public partial class Joueur
             item.AddChild(new CollisionShape3D { Shape = new SphereShape3D { Radius = 0.07f } });
             corps = item;
         }
+        else if (EstIdCharbonRecolte(id))
+        {
+            var item = new ItemPhysique
+            {
+                ID_Objet = id,
+                IndexChimique = 0,
+                IndexCacheMemoire = 0,
+                Name = "ItemPhysique",
+                ContinuousCd = true
+            };
+            var meshRoot = new Node3D { Name = "MeshInstance3D" };
+            InstancierModeleCharbon(meshRoot, mainActive, 0.22f);
+            item.AddChild(meshRoot);
+            item.AddChild(new CollisionShape3D { Shape = new BoxShape3D { Size = new Vector3(0.16f, 0.12f, 0.14f) } });
+            corps = item;
+        }
         else if (id == IdObjetSteakCuit)
         {
             var item = new ItemPhysique
@@ -1745,14 +1786,17 @@ public partial class Joueur
                 rbPose.AngularDamp = 1.0f;
             }
             else if (id == 20 || id == 21 || id == IdObjetCeinturePoches || id == IdObjetCeintureSacoches || id == IdObjetPochetteTier0 || id == IdObjetSacTier0 || id == IdObjetCarnetSavoir
-                || id == IdObjetSteakCru || id == IdObjetSteakCuit || id == IdObjetOsBoeuf || id == IdObjetCuirBoeuf || id == IdObjetIntestinBoeuf || id == IdObjetIntestinBoeufNettoye)
+                || id == IdObjetSteakCru || id == IdObjetSteakCuit || id == IdObjetOsBoeuf || id == IdObjetCuirBoeuf || id == IdObjetIntestinBoeuf || id == IdObjetIntestinBoeufNettoye
+                || EstIdCharbonRecolte(id))
             {
                 rbPose.PhysicsMaterialOverride = _physMatCorde;
                 rbPose.LinearDampMode = RigidBody3D.DampMode.Replace;
                 rbPose.AngularDampMode = RigidBody3D.DampMode.Replace;
                 rbPose.LinearDamp = 0.32f;
                 rbPose.AngularDamp = 0.95f;
-                if (id == IdObjetSteakCru || id == IdObjetSteakCuit || id == IdObjetOsBoeuf || id == IdObjetCuirBoeuf || id == IdObjetIntestinBoeuf || id == IdObjetIntestinBoeufNettoye)
+                if (EstIdCharbonRecolte(id))
+                    rbPose.Mass = id == IdObjetCharbonAntracite ? 0.14f : 0.11f;
+                else if (id == IdObjetSteakCru || id == IdObjetSteakCuit || id == IdObjetOsBoeuf || id == IdObjetCuirBoeuf || id == IdObjetIntestinBoeuf || id == IdObjetIntestinBoeufNettoye)
                     rbPose.Mass = id == IdObjetOsBoeuf ? 0.55f : (id == IdObjetCuirBoeuf ? 0.25f : ((id == IdObjetIntestinBoeuf || id == IdObjetIntestinBoeufNettoye) ? 0.20f : 0.18f));
             }
             else if (id == 999)

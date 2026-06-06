@@ -253,17 +253,31 @@ public partial class Monde_Serveur : Node
 	/// <summary>Retire du monde les ArbreVivant dont la position est dans le chunk (décharge).</summary>
 	private void RetirerArbresChunk(Vector2I coord)
 	{
+		RetirerArbresChunkProfond(coord, coordYProfond: null);
+	}
+
+	/// <summary>Décharge arbres d'une tranche profondeur (filtre Y) ou colonne entière si <paramref name="coordYProfond"/> est null.</summary>
+	private void RetirerArbresChunkProfond(Vector2I coord, int? coordYProfond)
+	{
 		if (_parentPourArbres == null) return;
 		float xMin = coord.X * TailleChunk;
 		float xMax = (coord.X + 1) * TailleChunk;
 		float zMin = coord.Y * TailleChunk;
 		float zMax = (coord.Y + 1) * TailleChunk;
+		float yMin = 0f;
+		float yMax = float.MaxValue;
+		if (coordYProfond.HasValue)
+		{
+			int tranche = ConstantesProfondeurVerticale.HauteurTrancheMetres;
+			yMin = coordYProfond.Value * tranche;
+			yMax = (coordYProfond.Value + 1) * tranche;
+		}
 		var aRetirer = new List<Node>();
 		foreach (Node n in _parentPourArbres.GetChildren())
 		{
 			if (n is not ArbreVivant) continue;
 			if (n is not Node3D n3 || !TryGetPositionMonde(n3, out Vector3 p)) continue;
-			if (p.X >= xMin && p.X < xMax && p.Z >= zMin && p.Z < zMax)
+			if (p.X >= xMin && p.X < xMax && p.Z >= zMin && p.Z < zMax && p.Y >= yMin && p.Y < yMax)
 				aRetirer.Add(n);
 		}
 		foreach (var n in aRetirer)
@@ -276,19 +290,40 @@ public partial class Monde_Serveur : Node
 	/// <summary>Retire du monde les pierres/silex dont la position est dans le chunk ; remet dans le pool de la taille si possible.</summary>
 	private void RetirerPierresChunk(Vector2I coord)
 	{
+		RetirerPierresChunkProfond(coord, coordYProfond: null);
+	}
+
+	/// <summary>Décharge pierres d'une tranche profondeur (filtre Y) ou colonne entière si <paramref name="coordYProfond"/> est null.</summary>
+	private void RetirerPierresChunkProfond(Vector2I coord, int? coordYProfond)
+	{
 		if (_parentPourBlocsChutants == null) return;
 		float xMin = coord.X * TailleChunk;
 		float xMax = (coord.X + 1) * TailleChunk;
 		float zMin = coord.Y * TailleChunk;
 		float zMax = (coord.Y + 1) * TailleChunk;
+		float yMin = 0f;
+		float yMax = float.MaxValue;
+		if (coordYProfond.HasValue)
+		{
+			int tranche = ConstantesProfondeurVerticale.HauteurTrancheMetres;
+			yMin = coordYProfond.Value * tranche;
+			yMax = (coordYProfond.Value + 1) * tranche;
+		}
 		var aRetirer = new List<Node>();
 		foreach (Node child in _parentPourBlocsChutants.GetChildren())
 		{
 			var item = child as ItemPhysique ?? child.GetNodeOrNull<ItemPhysique>("ItemPhysique");
 			if (item == null) continue;
 			if (!ItemPhysique.EstIdRocheMatiere(item.ID_Objet)) continue;
+			if (child.HasMeta("DimensionId"))
+			{
+				if (child.GetMeta("DimensionId").AsInt32() != _dimensionServeurId)
+					continue;
+			}
+			else if (_dimensionServeurId != (int)DimensionJeu.Alpha && !ActiverGenerationAbysse)
+				continue;
 			if (child is not Node3D n3p || !TryGetPositionMonde(n3p, out Vector3 pos)) continue;
-			if (pos.X >= xMin && pos.X < xMax && pos.Z >= zMin && pos.Z < zMax)
+			if (pos.X >= xMin && pos.X < xMax && pos.Z >= zMin && pos.Z < zMax && pos.Y >= yMin && pos.Y < yMax)
 				aRetirer.Add(child);
 		}
 		foreach (var n in aRetirer)

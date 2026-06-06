@@ -12,6 +12,42 @@ public partial class Joueur
         return parent.FindChild("ModeleArme", true, false) == null;
     }
 
+    private static bool DoitReconstruireModeleGlbLootSimple(Node3D parent, int signatureObjet)
+    {
+        if (ModeleArmeAbsent(parent))
+            return true;
+        if (!parent.HasMeta(MetaSignatureGlbLootSimple))
+            return true;
+        return (int)parent.GetMeta(MetaSignatureGlbLootSimple).AsInt32() != signatureObjet;
+    }
+
+    private static void MarquerModeleGlbLootSimple(Node3D parent, int signatureObjet)
+    {
+        parent.SetMeta(MetaSignatureGlbLootSimple, signatureObjet);
+    }
+
+    private static void InstancierModeleGlbLootSimple(Node3D parent, SlotInventaire slot, int signatureObjet, float tailleMetres)
+    {
+        if (!DoitReconstruireModeleGlbLootSimple(parent, signatureObjet))
+            return;
+        NettoyerModelesEnfants(parent);
+        if (EstIdCharbonRecolte(slot.ID))
+            InstancierModeleCharbon(parent, slot, tailleMetres);
+        else if (slot.ID == IdObjetSteakCru)
+            InstancierModeleSteakCru(parent, slot, tailleMetres);
+        else if (slot.ID == IdObjetSteakCuit)
+            InstancierModeleSteakCuit(parent, slot, tailleMetres);
+        else if (slot.ID == IdObjetOsBoeuf)
+            InstancierModeleOsBoeuf(parent, slot, tailleMetres);
+        else if (slot.ID == IdObjetIntestinBoeuf)
+            InstancierModeleIntestinBoeuf(parent, slot, tailleMetres);
+        else if (slot.ID == IdObjetIntestinBoeufNettoye)
+            InstancierModeleIntestinBoeufNettoye(parent, slot, tailleMetres);
+        else
+            return;
+        MarquerModeleGlbLootSimple(parent, signatureObjet);
+    }
+
     private static void RetirerMetaSiDifferente(Node3D node, string cleMeta, string cleMetaCourante)
     {
         if (node == null || cleMeta == cleMetaCourante)
@@ -71,6 +107,7 @@ public partial class Joueur
         if (node.HasMeta(MetaSignatureCarnet114)) node.RemoveMeta(MetaSignatureCarnet114);
         if (node.HasMeta(MetaSignatureBaie35)) node.RemoveMeta(MetaSignatureBaie35);
         if (node.HasMeta(MetaSignatureLootCuir117)) node.RemoveMeta(MetaSignatureLootCuir117);
+        if (node.HasMeta(MetaSignatureGlbLootSimple)) node.RemoveMeta(MetaSignatureGlbLootSimple);
         if (node.HasMeta(MetaSignatureTableAnalyse131)) node.RemoveMeta(MetaSignatureTableAnalyse131);
     }
 
@@ -454,34 +491,21 @@ public partial class Joueur
             _objetEnMain.RotationDegrees = new Vector3(-8f + _rotationManuelleX, 28f + _rotationManuelleY, 4f + _rotationManuelleZ);
             return;
         }
-        if (main.ID == IdObjetSteakCru)
+        if (main.ID == IdObjetSteakCru || EstIdCharbonRecolte(main.ID) || main.ID == IdObjetSteakCuit
+            || main.ID == IdObjetOsBoeuf || main.ID == IdObjetIntestinBoeuf || main.ID == IdObjetIntestinBoeufNettoye)
         {
             _objetEnMain.Mesh = null;
             _objetEnMain.MaterialOverride = null;
-            NettoyerModelesEnfants(_objetEnMain);
-            InstancierModeleSteakCru(_objetEnMain, main, 0.18f);
+            InstancierModeleGlbLootSimple(_objetEnMain, main, main.ID, main.ID == IdObjetOsBoeuf ? 0.28f : (EstIdCharbonRecolte(main.ID) ? 0.2f : 0.18f));
             _objetEnMain.Scale = Vector3.One;
-            _objetEnMain.RotationDegrees = new Vector3(-4f + _rotationManuelleX, 18f + _rotationManuelleY, 5f + _rotationManuelleZ);
-            return;
-        }
-        if (main.ID == IdObjetSteakCuit)
-        {
-            _objetEnMain.Mesh = null;
-            _objetEnMain.MaterialOverride = null;
-            NettoyerModelesEnfants(_objetEnMain);
-            InstancierModeleSteakCuit(_objetEnMain, main, 0.18f);
-            _objetEnMain.Scale = Vector3.One;
-            _objetEnMain.RotationDegrees = new Vector3(-4f + _rotationManuelleX, 18f + _rotationManuelleY, 5f + _rotationManuelleZ);
-            return;
-        }
-        if (main.ID == IdObjetOsBoeuf)
-        {
-            _objetEnMain.Mesh = null;
-            _objetEnMain.MaterialOverride = null;
-            NettoyerModelesEnfants(_objetEnMain);
-            InstancierModeleOsBoeuf(_objetEnMain, main, 0.28f);
-            _objetEnMain.Scale = Vector3.One;
-            _objetEnMain.RotationDegrees = new Vector3(8f + _rotationManuelleX, 24f + _rotationManuelleY, -12f + _rotationManuelleZ);
+            if (EstIdCharbonRecolte(main.ID))
+                _objetEnMain.RotationDegrees = new Vector3(6f + _rotationManuelleX, 22f + _rotationManuelleY, -8f + _rotationManuelleZ);
+            else if (main.ID == IdObjetOsBoeuf)
+                _objetEnMain.RotationDegrees = new Vector3(8f + _rotationManuelleX, 24f + _rotationManuelleY, -12f + _rotationManuelleZ);
+            else if (main.ID == IdObjetIntestinBoeuf || main.ID == IdObjetIntestinBoeufNettoye)
+                _objetEnMain.RotationDegrees = new Vector3(6f + _rotationManuelleX, 30f + _rotationManuelleY, -4f + _rotationManuelleZ);
+            else
+                _objetEnMain.RotationDegrees = new Vector3(-4f + _rotationManuelleX, 18f + _rotationManuelleY, 5f + _rotationManuelleZ);
             return;
         }
         if (main.ID == IdObjetCuirBoeuf)
@@ -499,26 +523,6 @@ public partial class Joueur
             }
             _objetEnMain.Scale = Vector3.One;
             _objetEnMain.RotationDegrees = new Vector3(2f + _rotationManuelleX, 40f + _rotationManuelleY, -6f + _rotationManuelleZ);
-            return;
-        }
-        if (main.ID == IdObjetIntestinBoeuf)
-        {
-            _objetEnMain.Mesh = null;
-            _objetEnMain.MaterialOverride = null;
-            NettoyerModelesEnfants(_objetEnMain);
-            InstancierModeleIntestinBoeuf(_objetEnMain, main, 0.22f);
-            _objetEnMain.Scale = Vector3.One;
-            _objetEnMain.RotationDegrees = new Vector3(6f + _rotationManuelleX, 30f + _rotationManuelleY, -4f + _rotationManuelleZ);
-            return;
-        }
-        if (main.ID == IdObjetIntestinBoeufNettoye)
-        {
-            _objetEnMain.Mesh = null;
-            _objetEnMain.MaterialOverride = null;
-            NettoyerModelesEnfants(_objetEnMain);
-            InstancierModeleIntestinBoeufNettoye(_objetEnMain, main, 0.22f);
-            _objetEnMain.Scale = Vector3.One;
-            _objetEnMain.RotationDegrees = new Vector3(6f + _rotationManuelleX, 30f + _rotationManuelleY, -4f + _rotationManuelleZ);
             return;
         }
         if (main.ID == IdObjetAllumeFeu)
@@ -584,6 +588,23 @@ public partial class Joueur
                 NettoyerModelesEnfants(_objetEnMain);
                 InstancierModeleBolBois(_objetEnMain, main, 0.28f, false);
                 _objetEnMain.SetMeta(MetaSignatureBolBois129, sig);
+            }
+            _objetEnMain.Scale = Vector3.One;
+            _objetEnMain.RotationDegrees = new Vector3(-6f + _rotationManuelleX, 40f + _rotationManuelleY, 2f + _rotationManuelleZ);
+            return;
+        }
+        if (main.ID == IdObjetBolEau)
+        {
+            _objetEnMain.Mesh = null;
+            _objetEnMain.MaterialOverride = null;
+            int sig = HashCode.Combine(main.ID, main.IndexBotanique);
+            int prev = _objetEnMain.HasMeta(MetaSignatureBolEau154) ? (int)_objetEnMain.GetMeta(MetaSignatureBolEau154).AsInt32() : int.MinValue;
+            bool manqueModele = _objetEnMain.FindChild("ModeleArme", true, false) == null;
+            if (manqueModele || sig != prev)
+            {
+                NettoyerModelesEnfants(_objetEnMain);
+                InstancierModeleBolEau(_objetEnMain, main, _gestionnaireMonde?.MaterielEau, 0.28f, false);
+                _objetEnMain.SetMeta(MetaSignatureBolEau154, sig);
             }
             _objetEnMain.Scale = Vector3.One;
             _objetEnMain.RotationDegrees = new Vector3(-6f + _rotationManuelleX, 40f + _rotationManuelleY, 2f + _rotationManuelleZ);
@@ -1181,34 +1202,22 @@ public partial class Joueur
             meshNode.RotationDegrees = new Vector3(-4f, 32f, 2f);
             return;
         }
-        if (slot.ID == IdObjetSteakCru)
+        if (slot.ID == IdObjetSteakCru || EstIdCharbonRecolte(slot.ID) || slot.ID == IdObjetSteakCuit
+            || slot.ID == IdObjetOsBoeuf || slot.ID == IdObjetIntestinBoeuf || slot.ID == IdObjetIntestinBoeufNettoye)
         {
             meshNode.Mesh = null;
             meshNode.MaterialOverride = null;
-            NettoyerModelesEnfants(meshNode);
-            InstancierModeleSteakCru(meshNode, slot, 0.16f);
+            float taille = slot.ID == IdObjetOsBoeuf ? 0.252f : (EstIdCharbonRecolte(slot.ID) ? 0.18f : 0.16f);
+            InstancierModeleGlbLootSimple(meshNode, slot, slot.ID, taille);
             meshNode.Scale = Vector3.One;
-            meshNode.RotationDegrees = new Vector3(-2f, 22f, 4f);
-            return;
-        }
-        if (slot.ID == IdObjetSteakCuit)
-        {
-            meshNode.Mesh = null;
-            meshNode.MaterialOverride = null;
-            NettoyerModelesEnfants(meshNode);
-            InstancierModeleSteakCuit(meshNode, slot, 0.16f);
-            meshNode.Scale = Vector3.One;
-            meshNode.RotationDegrees = new Vector3(-2f, 22f, 4f);
-            return;
-        }
-        if (slot.ID == IdObjetOsBoeuf)
-        {
-            meshNode.Mesh = null;
-            meshNode.MaterialOverride = null;
-            NettoyerModelesEnfants(meshNode);
-            InstancierModeleOsBoeuf(meshNode, slot, 0.252f);
-            meshNode.Scale = Vector3.One;
-            meshNode.RotationDegrees = new Vector3(6f, 28f, -10f);
+            if (EstIdCharbonRecolte(slot.ID))
+                meshNode.RotationDegrees = new Vector3(4f, 26f, -6f);
+            else if (slot.ID == IdObjetOsBoeuf)
+                meshNode.RotationDegrees = new Vector3(6f, 28f, -10f);
+            else if (slot.ID == IdObjetIntestinBoeuf || slot.ID == IdObjetIntestinBoeufNettoye)
+                meshNode.RotationDegrees = new Vector3(8f, 30f, -2f);
+            else
+                meshNode.RotationDegrees = new Vector3(-2f, 22f, 4f);
             return;
         }
         if (slot.ID == IdObjetCuirBoeuf)
@@ -1226,26 +1235,6 @@ public partial class Joueur
             }
             meshNode.Scale = Vector3.One;
             meshNode.RotationDegrees = new Vector3(4f, 36f, -4f);
-            return;
-        }
-        if (slot.ID == IdObjetIntestinBoeuf)
-        {
-            meshNode.Mesh = null;
-            meshNode.MaterialOverride = null;
-            NettoyerModelesEnfants(meshNode);
-            InstancierModeleIntestinBoeuf(meshNode, slot, 0.2f);
-            meshNode.Scale = Vector3.One;
-            meshNode.RotationDegrees = new Vector3(8f, 30f, -2f);
-            return;
-        }
-        if (slot.ID == IdObjetIntestinBoeufNettoye)
-        {
-            meshNode.Mesh = null;
-            meshNode.MaterialOverride = null;
-            NettoyerModelesEnfants(meshNode);
-            InstancierModeleIntestinBoeufNettoye(meshNode, slot, 0.2f);
-            meshNode.Scale = Vector3.One;
-            meshNode.RotationDegrees = new Vector3(8f, 30f, -2f);
             return;
         }
         if (slot.ID == IdObjetAllumeFeu)
@@ -1311,6 +1300,23 @@ public partial class Joueur
                 NettoyerModelesEnfants(meshNode);
                 InstancierModeleBolBois(meshNode, slot, 0.24f, false);
                 meshNode.SetMeta(MetaSignatureBolBois129, sig);
+            }
+            meshNode.Scale = Vector3.One;
+            meshNode.RotationDegrees = new Vector3(-4f, 48f, 4f);
+            return;
+        }
+        if (slot.ID == IdObjetBolEau)
+        {
+            meshNode.Mesh = null;
+            meshNode.MaterialOverride = null;
+            int sig = HashCode.Combine(slot.ID, slot.IndexBotanique);
+            int prev = meshNode.HasMeta(MetaSignatureBolEau154) ? (int)meshNode.GetMeta(MetaSignatureBolEau154).AsInt32() : int.MinValue;
+            bool manqueModele = meshNode.FindChild("ModeleArme", true, false) == null;
+            if (manqueModele || sig != prev)
+            {
+                NettoyerModelesEnfants(meshNode);
+                InstancierModeleBolEau(meshNode, slot, _gestionnaireMonde?.MaterielEau, 0.24f, false);
+                meshNode.SetMeta(MetaSignatureBolEau154, sig);
             }
             meshNode.Scale = Vector3.One;
             meshNode.RotationDegrees = new Vector3(-4f, 48f, 4f);

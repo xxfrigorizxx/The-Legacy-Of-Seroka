@@ -191,7 +191,7 @@ public partial class Joueur
             ?? (objetTouche as Node)?.GetNodeOrNull<ItemPhysique>("ItemPhysique");
         if (itemTouche == null || itemTouche.ID_Objet != IdObjetPitFeuRoche)
             return false;
-        if (!itemTouche.AjouterCombustiblePitFeuRoche(1, mainActive.ID))
+        if (!itemTouche.AjouterCombustiblePitFeuRoche(1, mainActive.ID, mainActive.IndexBotanique))
             return false;
         ConsommerUneUniteMainActive();
         if (!Engine.IsEditorHint())

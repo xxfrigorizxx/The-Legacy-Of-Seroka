@@ -82,6 +82,25 @@ public partial class Monde_Serveur : Node
 			return;
 		}
 
+		// Mode profondeur (tranches verticales) : faucher dans les tranches Y impactées (le gazon de surface
+		// est dans la tranche coordY≥1, pas coordY=0). Sans cette branche, le fauchage ratait toute l'herbe en 3D.
+		if (ModeProfondeurActive)
+		{
+			var coordYImpactes = new HashSet<int>();
+			RemplirCoordYImpactesProfond(pointImpact.Y, rayon, coordYImpactes);
+			for (int cx = cxMin; cx <= cxMax; cx++)
+				for (int cz = czMin; cz <= czMax; cz++)
+				{
+					Vector2I coord = new Vector2I(cx, cz);
+					foreach (int coordY in coordYImpactes)
+					{
+						var chunk = ObtenirOuCreerChunk(coord, coordY);
+						chunk.FaucherFlore(pointImpact, rayon);
+					}
+				}
+			return;
+		}
+
 		for (int cx = cxMin; cx <= cxMax; cx++)
 			for (int cz = czMin; cz <= czMax; cz++)
 			{
@@ -102,6 +121,24 @@ public partial class Monde_Serveur : Node
 		{
 			var coordYImpactes = new HashSet<int>();
 			RemplirCoordYImpactesParRayonAbysse(pointImpact.Y, rayon, coordYImpactes);
+			for (int cx = cxMin; cx <= cxMax; cx++)
+				for (int cz = czMin; cz <= czMax; cz++)
+				{
+					Vector2I coord = new Vector2I(cx, cz);
+					foreach (int coordY in coordYImpactes)
+					{
+						var chunk = ObtenirOuCreerChunk(coord, coordY);
+						if (chunk.FaucherFloreSansLoot(pointImpact, rayon))
+							aFauche = true;
+					}
+				}
+			return aFauche;
+		}
+
+		if (ModeProfondeurActive)
+		{
+			var coordYImpactes = new HashSet<int>();
+			RemplirCoordYImpactesProfond(pointImpact.Y, rayon, coordYImpactes);
 			for (int cx = cxMin; cx <= cxMax; cx++)
 				for (int cz = czMin; cz <= czMax; cz++)
 				{
@@ -149,6 +186,23 @@ public partial class Monde_Serveur : Node
 				}
 			return false;
 		}
+		if (ModeProfondeurActive)
+		{
+			var coordYImpactes = new HashSet<int>();
+			RemplirCoordYImpactesProfond(pointImpact.Y, rayon, coordYImpactes);
+			for (int cx = cxMin; cx <= cxMax; cx++)
+				for (int cz = czMin; cz <= czMax; cz++)
+				{
+					Vector2I coord = new Vector2I(cx, cz);
+					foreach (int coordY in coordYImpactes)
+					{
+						var chunk = ObtenirOuCreerChunk(coord, coordY);
+						if (chunk.ExisteGazonDansRayon(pointImpact, rayon))
+							return true;
+					}
+				}
+			return false;
+		}
 		for (int cx = cxMin; cx <= cxMax; cx++)
 			for (int cz = czMin; cz <= czMax; cz++)
 			{
@@ -170,6 +224,23 @@ public partial class Monde_Serveur : Node
 		{
 			var coordYImpactes = new HashSet<int>();
 			RemplirCoordYImpactesParRayonAbysse(pointImpact.Y, rayon, coordYImpactes);
+			for (int cx = cxMin; cx <= cxMax; cx++)
+				for (int cz = czMin; cz <= czMax; cz++)
+				{
+					Vector2I coord = new Vector2I(cx, cz);
+					foreach (int coordY in coordYImpactes)
+					{
+						var chunk = ObtenirOuCreerChunk(coord, coordY);
+						if (chunk.RecolterBuisson(pointImpact, rayon, modeRecolte))
+							return true;
+					}
+				}
+			return false;
+		}
+		if (ModeProfondeurActive)
+		{
+			var coordYImpactes = new HashSet<int>();
+			RemplirCoordYImpactesProfond(pointImpact.Y, rayon, coordYImpactes);
 			for (int cx = cxMin; cx <= cxMax; cx++)
 				for (int cz = czMin; cz <= czMax; cz++)
 				{
@@ -228,6 +299,30 @@ public partial class Monde_Serveur : Node
 					}
 				}
 		}
+		else if (ModeProfondeurActive)
+		{
+			var coordYImpactes = new HashSet<int>();
+			RemplirCoordYImpactesProfond(pointImpact.Y, rayon, coordYImpactes);
+			for (int cx = cxMin; cx <= cxMax; cx++)
+				for (int cz = czMin; cz <= czMax; cz++)
+				{
+					Vector2I coord = new Vector2I(cx, cz);
+					foreach (int coordY in coordYImpactes)
+					{
+						var chunk = ObtenirOuCreerChunk(coord, coordY);
+						if (!chunk.EssayerDetecterBuisson(pointImpact, rayon, out Vector3 pos, out byte type))
+							continue;
+						float d2 = pos.DistanceSquaredTo(pointImpact);
+						if (!trouve || d2 < meilleureDist2)
+						{
+							trouve = true;
+							meilleureDist2 = d2;
+							posBuisson = pos;
+							typeFlore = type;
+						}
+					}
+				}
+		}
 		else
 		{
 			for (int cx = cxMin; cx <= cxMax; cx++)
@@ -253,7 +348,10 @@ public partial class Monde_Serveur : Node
 	public bool PlanterBuissonGlobal(Vector3 pointImpact, byte typeFlore)
 	{
 		Vector2I coord = Gestionnaire_Monde.WorldToChunkCoord(pointImpact.X, pointImpact.Z, TailleChunk);
-		var chunk = ObtenirOuCreerChunk(coord);
+		int coordY = ModeProfondeurActive
+			? ClampCoordYProfond(CoordYDepuisMondeYProfond(pointImpact.Y))
+			: 0;
+		var chunk = ObtenirOuCreerChunk(coord, coordY);
 		return chunk.PlanterBuisson(pointImpact, typeFlore);
 	}
 
@@ -298,6 +396,31 @@ public partial class Monde_Serveur : Node
 					}
 				}
 		}
+		else if (ModeProfondeurActive)
+		{
+			var coordYImpactes = new HashSet<int>();
+			RemplirCoordYImpactesProfond(pointImpact.Y, rayon, coordYImpactes);
+			for (int cx = cxMin; cx <= cxMax; cx++)
+				for (int cz = czMin; cz <= czMax; cz++)
+				{
+					Vector2I coord = new Vector2I(cx, cz);
+					foreach (int coordY in coordYImpactes)
+					{
+						var chunk = ObtenirOuCreerChunk(coord, coordY);
+						if (!chunk.EssayerDetecterBuisson(pointImpact, rayon, out Vector3 pos, out byte typeFlore) || !Chunk_Serveur.EstBuissonPlein(typeFlore))
+							continue;
+						float d2 = pos.DistanceSquaredTo(pointImpact);
+						if (!trouve || d2 < meilleureDist2)
+						{
+							trouve = true;
+							meilleureDist2 = d2;
+							meilleurePos = pos;
+							meilleurChunk = coord;
+							meilleurCoordYChunk = coordY;
+						}
+					}
+				}
+		}
 		else
 		{
 			for (int cx = cxMin; cx <= cxMax; cx++)
@@ -319,7 +442,7 @@ public partial class Monde_Serveur : Node
 		}
 
 		if (!trouve) return false;
-		var cible = ActiverGenerationAbysse
+		var cible = ActiverGenerationAbysse || ModeProfondeurActive
 			? ObtenirOuCreerChunk(meilleurChunk, meilleurCoordYChunk)
 			: ObtenirOuCreerChunk(meilleurChunk);
 		return cible.RecolterBaiesBuisson(meilleurePos, rayon, out quantiteBaies, out indexCouleurBaie);

@@ -66,13 +66,14 @@ public partial class Monde_Client : Node3D
 					if (vitesseY > 0.25f) return b.CompareTo(a);
 					return a.CompareTo(b);
 				});
+				int delaiAntiSpamAbysse = JoueurEnModeVolCreatif() ? 24 : 8;
 				foreach (int coordYActif in _coordYActifsAbysseListeTravail)
 				{
 					if (ChunkDisponiblePourY(coord, coordYActif))
 						continue;
 					var cle = new Vector3I(coord.X, coordYActif, coord.Y);
 					if (_demandesAbysseFrameDerniereEmission.TryGetValue(cle, out ulong derniereFrame)
-						&& frame - derniereFrame < 8)
+						&& frame - derniereFrame < (ulong)delaiAntiSpamAbysse)
 						continue;
 					_demandesAbysseFrameDerniereEmission[cle] = frame;
 					_networkManager.EnvoyerDemandeChunkDimensionAuServeur(coord, coordYActif, _dimensionReseauActive, obs);
@@ -121,7 +122,8 @@ public partial class Monde_Client : Node3D
 					if (CoucheChunkRenduPret(coord, coordYActif))
 						continue;
 					var cle = new Vector3I(coord.X, coordYActif, coord.Y);
-					int delaiAntiSpam = DistanceCarreeAuJoueur(coord, obs) <= (RayonDormancePhysique + 2) * (RayonDormancePhysique + 2) ? 3 : 8;
+					float dist2 = DistanceCarreeAuJoueur(coord, obs);
+					int delaiAntiSpam = dist2 <= (RayonDormancePhysique + 2) * (RayonDormancePhysique + 2) ? 2 : 6;
 					if (_demandesProfondeurFrameDerniereEmission.TryGetValue(cle, out ulong derniereFrame)
 						&& frame - derniereFrame < (ulong)delaiAntiSpam)
 						continue;
@@ -218,6 +220,10 @@ public partial class Monde_Client : Node3D
 		int cySurf = ConstantesProfondeurVerticale.CoordYDepuisMondeY(hSurf);
 		for (int cy = cySurf - 1; cy <= cySurf + 1; cy++)
 			sortie.Add(ConstantesProfondeurVerticale.ClampCoordYProfond(cy, ProfondeurMaxMetres));
+		// Toujours inclure la fenêtre du joueur (évite de rater la tranche Y=103 sur le bord de falaise).
+		int cyObs = ConstantesProfondeurVerticale.CoordYDepuisMondeY((int)Mathf.Floor(obs.Y));
+		for (int d = -1; d <= 1; d++)
+			sortie.Add(ConstantesProfondeurVerticale.ClampCoordYProfond(cyObs + d, ProfondeurMaxMetres));
 	}
 
 	internal bool ModeProfondeurTranchesActif()
@@ -327,7 +333,8 @@ public partial class Monde_Client : Node3D
 		int palierCourant = ObtenirIndexPalierAbysse(observation.Y);
 		// Mode 2D par étages: fenêtre fixe courant ±N.
 		AjouterCoordYPalierAbysse(palierCourant, sortie);
-		int demiFenetre = Mathf.Max(0, ConstantesDimensionAbysse.ObtenirDemiFenetrePaliersActifs(observation.X, observation.Z));
+		int demiFenetre = JoueurEnModeVolCreatif() ? 0
+			: Mathf.Max(0, ConstantesDimensionAbysse.ObtenirDemiFenetrePaliersActifs(observation.X, observation.Z));
 		for (int i = 1; i <= demiFenetre; i++)
 		{
 			AjouterCoordYPalierAbysse(palierCourant - i, sortie);
@@ -351,7 +358,9 @@ public partial class Monde_Client : Node3D
 		int palierChunk = ConstantesDimensionAbysse.ObtenirIndexStageDepuisCoordYChunk(coordY, HauteurMax);
 		int palierObservation = ObtenirIndexPalierAbysse(observation.Y);
 		int ecart = Mathf.Abs(palierChunk - palierObservation);
-		int demiFenetre = ConstantesDimensionAbysse.ObtenirDemiFenetrePaliersActifs(observation.X, observation.Z);
+		int demiFenetre = JoueurEnModeVolCreatif()
+			? 0
+			: ConstantesDimensionAbysse.ObtenirDemiFenetrePaliersActifs(observation.X, observation.Z);
 		return ecart <= Mathf.Max(0, demiFenetre);
 	}
 
@@ -468,6 +477,7 @@ public partial class Monde_Client : Node3D
 		_indexDormanceScan = 0;
 		_timerTrimAbysse = 0f;
 		_demandesAbysseFrameDerniereEmission.Clear();
+		DemarrerGraceStreamingBootstrapNouveauMonde();
 	}
 
 	/// <summary>
@@ -476,6 +486,9 @@ public partial class Monde_Client : Node3D
 	/// </summary>
 	private void GarantirRequetesChunksProcheJoueur(Vector3 positionObservation, Vector2I chunkObservationActuel)
 	{
+		// Noclip créatif : pas d'urgence anti-chute ; évite les rafales réseau en vol rapide (surtout APISARA).
+		if (JoueurEnModeVolCreatif())
+			return;
 		bool modeAbysse = _dimensionReseauActive == (int)DimensionJeu.Abysse;
 		bool zoneCritiqueAbysse = false;
 		float vitesseXZ = 0f;
@@ -497,8 +510,6 @@ public partial class Monde_Client : Node3D
 		int budgetRequetesForce = modeAbysse
 			? (zoneCritiqueAbysse ? (vitesseXZ >= 4.0f ? 20 : 14) : (vitesseXZ >= 4.0f ? 12 : 8))
 			: 6;
-		if (modeAbysse && JoueurEnModeVolCreatif())
-			budgetRequetesForce = Mathf.Min(budgetRequetesForce, 6);
 		int emises = 0;
 		for (int r = 0; r <= rayonMin && emises < budgetRequetesForce; r++)
 		{

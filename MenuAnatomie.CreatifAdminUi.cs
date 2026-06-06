@@ -73,7 +73,8 @@ public partial class MenuAnatomie : Control
 		_rechercheCreatifAdmin.TextChanged += _ =>
 		{
 			_pageCreatifAdmin = 0;
-			RafraichirPanneauCreatifAdmin();
+			_creatifAdminListeSale = true;
+			RafraichirPanneauCreatifAdminSiThrottle();
 		};
 		ligneFiltres.AddChild(_rechercheCreatifAdmin);
 
@@ -211,6 +212,16 @@ public partial class MenuAnatomie : Control
 			var m = mineraisVoxel[i];
 			Ajouter(CreerSlotVoxelMinerai(m.idVoxel), CategorieCreatifAdmin.Pierre, $"Voxel minerai: {m.nom} (ID {m.idVoxel})");
 		}
+
+		int[] idsCharbonRecolte =
+		{
+			Joueur.IdObjetCharbonBasseQualite,
+			Joueur.IdObjetCharbonMoyenneQualite,
+			Joueur.IdObjetCharbonBonneQualite,
+			Joueur.IdObjetCharbonAntracite
+		};
+		foreach (int idCharbon in idsCharbonRecolte)
+			Ajouter(new SlotInventaire { ID = idCharbon, Quantite = 1 }, CategorieCreatifAdmin.Pierre);
 
 		int[] idsConsommables = {
 			1,2,3,4,5,6,7,8,9,
@@ -451,6 +462,18 @@ public partial class MenuAnatomie : Control
 		return categorie == CategorieCreatifAdmin.TousVariants
 			|| categorie == CategorieCreatifAdmin.Tous
 			|| e.Categorie == categorie;
+	}
+
+	private void RafraichirPanneauCreatifAdminSiThrottle(bool force = false)
+	{
+		if (!force && !_creatifAdminListeSale)
+			return;
+		ulong now = Time.GetTicksMsec();
+		if (!force && now - _msDernierRafraichCreatifAdmin < IntervalleRafraichCreatifAdminMs)
+			return;
+		_msDernierRafraichCreatifAdmin = now;
+		_creatifAdminListeSale = false;
+		RafraichirPanneauCreatifAdmin();
 	}
 
 	private void RafraichirPanneauCreatifAdmin()

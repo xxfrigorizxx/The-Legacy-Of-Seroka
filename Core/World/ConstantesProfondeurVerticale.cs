@@ -9,6 +9,25 @@ public static class ConstantesProfondeurVerticale
 	public const int HauteurTrancheMetres = 100;
 	public const int HauteurSectionMetres = 16;
 	public const int DemiFenetreTranches = 2;
+	/// <summary>
+	/// Fenêtre verticale des corps physiques Jolt (tranche courante ± n). Plus petite que le visuel (<see cref="DemiFenetreTranches"/>)
+	/// car les collisions ne servent qu'autour du joueur : ±1 = courante + dessus + dessous (≈300 m), suffisant pour marcher/tomber,
+	/// et divise par ~1,7 le nombre de trimesh Jolt actifs vs ±2. Les chemins anti-chute prioritaires forcent quand même la zone joueur.
+	/// </summary>
+	public const int DemiFenetrePhysiqueTranches = 1;
+	/// <summary>Voxels (~m) près d'une jonction Y=0, ±100… (streaming, chargement).</summary>
+	public const int MargeJonctionTrancheVoxels = 8;
+	/// <summary>Padding vertical répliqué au minage (voxels réels touchant ly=0 / ly=h).</summary>
+	public const int MargePaddingMinageVoxels = 3;
+
+	/// <summary>Vrai si le joueur / voxel est dans la zone sensible d'une couture verticale.</summary>
+	public static bool EstProcheJonctionTranche(int localY, int hauteurTranche = HauteurTrancheMetres)
+		=> localY >= 0
+			&& (localY <= MargeJonctionTrancheVoxels
+				|| localY >= hauteurTranche - MargeJonctionTrancheVoxels - 1);
+
+	public static bool EstProcheJonctionTrancheMonde(float yMonde, int hauteurTranche = HauteurTrancheMetres)
+		=> EstProcheJonctionTranche(LocalYDepuisMondeY((int)Mathf.Floor(yMonde)), hauteurTranche);
 	/// <summary>Plafond Y monde des tranches positives (aligné sur <see cref="Gestionnaire_Monde.HauteurMax"/>).</summary>
 	public const int HauteurMondeMaxMetres = 720;
 	/// <summary>v1 = tranches 720 m legacy ; v2 = tranches 100 m.</summary>

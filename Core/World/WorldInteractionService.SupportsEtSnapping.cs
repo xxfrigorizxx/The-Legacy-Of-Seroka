@@ -748,24 +748,18 @@ public partial class Joueur
         if (mainActive.EstVide || !PeutUtiliserFrappe(mainActive))
             return false;
 
-        // Roche plate (1), pointe (3) ou dague — pas la hachette pour le gazon.
-        bool estOutilFaucheur = mainActive.ID == 105 || mainActive.ID == IdObjetFauxPierreTier0
-            || (ItemPhysique.EstIdRocheMatiere(mainActive.ID) && (mainActive.IndexMorphologique == 1 || mainActive.IndexMorphologique == 3));
-        if (!estOutilFaucheur)
+        if (!EstOutilFaucheurEnMain(mainActive))
             return false;
 
         _rayon.ForceRaycastUpdate();
         if (!_rayon.IsColliding())
             return false;
         Node objetTouche = NoeudDepuisColliderRaycast(_rayon.GetCollider());
-        if (!EstSolViseParRayon(_rayon, objetTouche))
+        if (!EstSolViseParRayon(_rayon, objetTouche) && !EstSurfaceHorizontaleFauchable())
             return false;
 
         Vector3 directionMouvement = -_camera.GlobalTransform.Basis.Z.Normalized();
         var (effHache, effPelle, masseOutil) = AnalyserOutilCAO(directionMouvement);
-        if (effPelle >= 0.6f)
-            return false;
-
         ExecuterCreusage(1f, effPelle, masseOutil, _rayon.GetCollisionPoint());
         JouerAnimationFrappe(TypeMouvementFrappe.Estoc);
         return true;

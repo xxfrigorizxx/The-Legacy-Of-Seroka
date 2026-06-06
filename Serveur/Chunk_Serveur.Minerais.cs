@@ -53,36 +53,48 @@ public partial class Chunk_Serveur
         TempereBoue,
     }
 
+    /// <summary>
+    /// Filon charbon = nappe horizontale (~1 m en Y), large en X/Z.
+    /// Plusieurs nappes peuvent s'empiler (PasY) ; plus profond = patch X/Z plus large + plus rare.
+    /// </summary>
     private readonly struct ParametresTierFilon
     {
         public ParametresTierFilon(
             int yMin, int yMax,
             float pasY, float freqXz,
             float seuilPresence,
-            float epaisseurMin, float epaisseurMax)
+            float epaisseurVerticaleMin, float epaisseurVerticaleMax,
+            float tailleCelluleXzMetres)
         {
             YMin = yMin;
             YMax = yMax;
             PasY = pasY;
             FreqXz = freqXz;
             SeuilPresence = seuilPresence;
-            EpaisseurMin = epaisseurMin;
-            EpaisseurMax = epaisseurMax;
+            EpaisseurVerticaleMin = epaisseurVerticaleMin;
+            EpaisseurVerticaleMax = epaisseurVerticaleMax;
+            TailleCelluleXzMetres = tailleCelluleXzMetres;
         }
 
         public int YMin { get; }
         public int YMax { get; }
+        /// <summary>Distance entre centres de nappes empilables (m).</summary>
         public float PasY { get; }
         public float FreqXz { get; }
+        /// <summary>Plus haut = filon plus rare.</summary>
         public float SeuilPresence { get; }
-        public float EpaisseurMin { get; }
-        public float EpaisseurMax { get; }
+        /// <summary>Épaisseur verticale du filon (~1 m max — le filon ne « monte » pas en Y).</summary>
+        public float EpaisseurVerticaleMin { get; }
+        public float EpaisseurVerticaleMax { get; }
+        /// <summary>Quantification horizontale : plus grand = filon plus large en X/Z (profondeur).</summary>
+        public float TailleCelluleXzMetres { get; }
     }
 
-    private static readonly ParametresTierFilon TierPetitCharbon = new(50, 95, 6f, 0.004f, 0.72f, 2f, 5f);
-    private static readonly ParametresTierFilon TierMoyenCharbon = new(31, 49, 10f, 0.0025f, 0.80f, 5f, 10f);
-    private static readonly ParametresTierFilon TierMegaCharbon = new(0, 30, 16f, 0.0015f, 0.86f, 10f, 25f);
-    private static readonly ParametresTierFilon TierMontagneCharbon = new(YMinFilonsMontagneCharbon, int.MaxValue, 0f, 0.006f, 0.90f, 2f, 6f);
+    // Profondeur ↑ → seuil ↑ (rare), cellule X/Z ↑ (gros patch), même ~1 m d'épaisseur verticale.
+    private static readonly ParametresTierFilon TierPetitCharbon = new(50, 95, 6f, 0.004f, 0.72f, 0.45f, 1.0f, 5f);
+    private static readonly ParametresTierFilon TierMoyenCharbon = new(31, 49, 10f, 0.0025f, 0.80f, 0.45f, 1.0f, 10f);
+    private static readonly ParametresTierFilon TierMegaCharbon = new(0, 30, 16f, 0.0015f, 0.86f, 0.45f, 1.0f, 18f);
+    private static readonly ParametresTierFilon TierMontagneCharbon = new(YMinFilonsMontagneCharbon, int.MaxValue, 12f, 0.005f, 0.90f, 0.45f, 1.0f, 8f);
 
     private readonly struct RegleMinerai
     {
@@ -163,46 +175,79 @@ public partial class Chunk_Serveur
         if (globalY < tier.YMin || globalY > tier.YMax)
             return false;
 
-        float pasCouche = tier.PasY;
+        float pasCouche = Mathf.Max(1f, tier.PasY);
         float centreY = Mathf.Floor(globalY / pasCouche) * pasCouche + pasCouche * 0.5f;
         float distY = Mathf.Abs(globalY - centreY);
-        if (distY > tier.EpaisseurMax)
+        if (distY > tier.EpaisseurVerticaleMax)
             return false;
 
+        // Patch horizontal : même décision pour toute une cellule X/Z (gros filons en profondeur).
+        float cell = Mathf.Max(1f, tier.TailleCelluleXzMetres);
+        float qx = Mathf.Floor(xGlobal / cell);
+        float qz = Mathf.Floor(zGlobal / cell);
         float presence = DeterministicRand(
-            xGlobal * tier.FreqXz,
-            zGlobal * tier.FreqXz + centreY * 0.003f);
+            qx * tier.FreqXz,
+            qz * tier.FreqXz + centreY * 0.003f);
         if (presence < tier.SeuilPresence)
             return false;
 
         float plageSeuil = 1f - tier.SeuilPresence;
         float facteur = plageSeuil > 0.0001f ? (presence - tier.SeuilPresence) / plageSeuil : 1f;
-        float epaisseur = tier.EpaisseurMin + facteur * (tier.EpaisseurMax - tier.EpaisseurMin);
-        return distY <= epaisseur;
+        float epaisseurVert = tier.EpaisseurVerticaleMin + facteur * (tier.EpaisseurVerticaleMax - tier.EpaisseurVerticaleMin);
+        return distY <= epaisseurVert;
     }
 
-    private static bool EstDansMorceauMontagneCharbon(
+    private static bool EstDansFilonCharbonCategorie(
         float xGlobal, float zGlobal, float globalY,
-        ParametresTierFilon tier)
+        CategorieFilonsCharbon categorie)
     {
-        if (globalY < tier.YMin)
-            return false;
+        return categorie switch
+        {
+            CategorieFilonsCharbon.Montagne => globalY >= YMinFilonsMontagneCharbon
+                && EstDansCoucheHorizontaleCharbon(xGlobal, zGlobal, globalY, TierMontagneCharbon),
+            CategorieFilonsCharbon.ArideFroid => globalY >= TierMegaCharbon.YMin && globalY <= TierMegaCharbon.YMax
+                && EstDansCoucheHorizontaleCharbon(xGlobal, zGlobal, globalY, TierMegaCharbon),
+            CategorieFilonsCharbon.TempereBoue => globalY switch
+            {
+                >= 50 and <= 95 => EstDansCoucheHorizontaleCharbon(xGlobal, zGlobal, globalY, TierPetitCharbon),
+                >= 31 and <= 49 => EstDansCoucheHorizontaleCharbon(xGlobal, zGlobal, globalY, TierMoyenCharbon),
+                >= 0 and <= 30 => EstDansCoucheHorizontaleCharbon(xGlobal, zGlobal, globalY, TierMegaCharbon),
+                _ => false
+            },
+            _ => false,
+        };
+    }
 
-        float presence = DeterministicRand(
-            xGlobal * tier.FreqXz + globalY * 0.0011f,
-            zGlobal * tier.FreqXz - globalY * 0.0009f + 17.3f);
-        if (presence < tier.SeuilPresence)
-            return false;
+    private static void ObtenirPlageYLocalFilonsCharbon(
+        CategorieFilonsCharbon categorie, int chunkOffsetY, int hauteurMax,
+        out int yMinLocal, out int yMaxLocal)
+    {
+        int baseY = chunkOffsetY * hauteurMax;
+        int globalYMin;
+        int globalYMax;
+        switch (categorie)
+        {
+            case CategorieFilonsCharbon.Montagne:
+                globalYMin = YMinFilonsMontagneCharbon;
+                globalYMax = baseY + hauteurMax;
+                break;
+            case CategorieFilonsCharbon.ArideFroid:
+                globalYMin = TierMegaCharbon.YMin;
+                globalYMax = TierMegaCharbon.YMax;
+                break;
+            default:
+                globalYMin = TierMegaCharbon.YMin;
+                globalYMax = TierPetitCharbon.YMax;
+                break;
+        }
 
-        float plageSeuil = 1f - tier.SeuilPresence;
-        float facteur = plageSeuil > 0.0001f ? (presence - tier.SeuilPresence) / plageSeuil : 1f;
-        float epaisseur = tier.EpaisseurMin + facteur * (tier.EpaisseurMax - tier.EpaisseurMin);
-
-        float bruitY = DeterministicRand(
-            xGlobal * tier.FreqXz * 2.3f + 41.7f,
-            zGlobal * tier.FreqXz * 2.3f - 29.1f);
-        float centreY = Mathf.Floor(globalY / 4f) * 4f + 2f + (bruitY - 0.5f) * 2f;
-        return Mathf.Abs(globalY - centreY) <= epaisseur;
+        yMinLocal = Mathf.Clamp(globalYMin - baseY, 0, hauteurMax);
+        yMaxLocal = Mathf.Clamp(globalYMax - baseY, 0, hauteurMax);
+        if (yMinLocal > yMaxLocal)
+        {
+            yMinLocal = 0;
+            yMaxLocal = -1;
+        }
     }
 
     private void AppliquerFilonsCharbon(
@@ -229,27 +274,17 @@ public partial class Chunk_Serveur
                 byte materiauSurface = DeterminerMateriauCroûte(
                     xInt, zInt, hauteurSurface, hauteurSurface, temperature, humidite);
                 CategorieFilonsCharbon categorie = DeterminerCategorieFilonsCharbon(hauteurSurface, materiauSurface);
+                ObtenirPlageYLocalFilonsCharbon(categorie, ChunkOffsetY, HauteurMax, out int yMinFilon, out int yMaxFilon);
+                if (yMaxFilon < yMinFilon)
+                    continue;
 
-                for (int y = 0; y <= HauteurMax; y++)
+                for (int y = yMinFilon; y <= yMaxFilon; y++)
                 {
                     if (_materials[x, y, z] != 2 || _densities[x, y, z] <= Isolevel || _densitiesEau[x, y, z] > Isolevel)
                         continue;
 
                     float globalY = ChunkOffsetY * HauteurMax + y;
-                    bool dansFilon = categorie switch
-                    {
-                        CategorieFilonsCharbon.Montagne => EstDansMorceauMontagneCharbon(
-                            xGlobal, zGlobal, globalY, TierMontagneCharbon),
-                        CategorieFilonsCharbon.ArideFroid => EstDansCoucheHorizontaleCharbon(
-                            xGlobal, zGlobal, globalY, TierMegaCharbon),
-                        CategorieFilonsCharbon.TempereBoue =>
-                            EstDansCoucheHorizontaleCharbon(xGlobal, zGlobal, globalY, TierPetitCharbon)
-                            || EstDansCoucheHorizontaleCharbon(xGlobal, zGlobal, globalY, TierMoyenCharbon)
-                            || EstDansCoucheHorizontaleCharbon(xGlobal, zGlobal, globalY, TierMegaCharbon),
-                        _ => false,
-                    };
-
-                    if (dansFilon)
+                    if (EstDansFilonCharbonCategorie(xGlobal, zGlobal, globalY, categorie))
                         _materials[x, y, z] = IdMineraiCharbon;
                 }
             }

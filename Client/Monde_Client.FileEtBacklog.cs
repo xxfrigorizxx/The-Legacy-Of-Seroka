@@ -82,9 +82,6 @@ public partial class Monde_Client : Node3D
 				_fileAttenteMathsData.RemoveAt(pire);
 			}
 		}
-
-		int surplusIntegration = _fileIntegrationMainThread.Count - MaxFileIntegrationEnAttente;
-		for (int n = 0; n < surplusIntegration && _fileIntegrationMainThread.TryDequeue(out _); n++) { }
 	}
 
 	private static float DistanceCarreeChunk(Vector2I obs, Vector2I chunk)
@@ -269,7 +266,121 @@ public partial class Monde_Client : Node3D
 		}
 	}
 
-	private void ExecuterReconstructionPrioritaire(Vector3I coord)
+	private bool EstChunkRemeshSousPieds(Vector3I coord)
+	{
+		if (!EssayerObtenirJoueurDansArbre(out CharacterBody3D joueurRef))
+			return false;
+		Vector2I c = Gestionnaire_Monde.WorldToChunkCoord(joueurRef.GlobalPosition, TailleChunk);
+		if (coord.X != c.X || coord.Z != c.Y)
+			return false;
+		if (_dimensionReseauActive == (int)DimensionJeu.Abysse)
+			return coord.Y == CoordYStageAbysseDepuisYMonde(joueurRef.GlobalPosition.Y);
+		if (ModeProfondeurTranchesActif())
+			return coord.Y == CoordYDepuisMondeY((int)Mathf.Floor(joueurRef.GlobalPosition.Y));
+		return true;
+	}
+
+	private Vector3 ObtenirCentreMondeChunkApprox(Vector3I coord)
+	{
+		int hauteurTranche = HauteurMax;
+		if (TryGetChunkDataPourCoordY(new Vector2I(coord.X, coord.Z), coord.Y, out var data) && data != null)
+			hauteurTranche = data.HauteurMax;
+		float yMonde = ConstantesProfondeurVerticale.MondeYDepuisLocal(coord.Y, hauteurTranche, hauteurTranche / 2);
+		return new Vector3(
+			coord.X * TailleChunk + TailleChunk * 0.5f,
+			yMonde,
+			coord.Z * TailleChunk + TailleChunk * 0.5f);
+	}
+
+	/// <summary>Zone minage : chunk ±1 XZ et ±1 tranche Y (jonctions Y=0,100… incluses).</summary>
+	private bool EstRemeshPrioritaireMinage(Vector3I coord)
+	{
+		if (!EssayerObtenirJoueurDansArbre(out CharacterBody3D joueurRef))
+			return EstChunkRemeshSousPieds(coord);
+		Vector2I cJoueur = Gestionnaire_Monde.WorldToChunkCoord(joueurRef.GlobalPosition, TailleChunk);
+		if (Mathf.Abs(coord.X - cJoueur.X) > 1 || Mathf.Abs(coord.Z - cJoueur.Y) > 1)
+			return false;
+		if (_dimensionReseauActive == (int)DimensionJeu.Abysse)
+			return coord.Y == CoordYStageAbysseDepuisYMonde(joueurRef.GlobalPosition.Y);
+		if (ModeProfondeurTranchesActif())
+			return Mathf.Abs(coord.Y - CoordYDepuisMondeY((int)Mathf.Floor(joueurRef.GlobalPosition.Y))) <= 1;
+		return coord.X == cJoueur.X && coord.Z == cJoueur.Y;
+	}
+
+	/// <summary>Marching cubes remesh hors thread principal (intégration GPU reste sur la frame suivante).</summary>
+	private void EnfilerRemeshSectionsEnArrierePlan(Vector3I coord, HashSet<int> sections)
+	{
+		if (sections == null || sections.Count == 0)
+			return;
+		ChunkData data = null;
+		if (_dimensionReseauActive == (int)DimensionJeu.Abysse)
+		{
+			if (!_chunksDataAbysse3D.TryGetValue(coord, out data))
+				return;
+		}
+		else if (!TryGetChunkDataPourCoordY(new Vector2I(coord.X, coord.Z), coord.Y, out data))
+			return;
+		if (data?.DensitiesFlat == null || data.MaterialsFlat == null)
+			return;
+
+		var sectionsCopie = new HashSet<int>(sections);
+		var mondeRef = this;
+		var chunkRef = data;
+		var enqueueIntegration = EnqueueIntegration;
+		Interlocked.Increment(ref _chunksEnCoursDeCalcul);
+		Task.Run(() =>
+		{
+			try
+			{
+				if (mondeRef._mondeClientSortieEnCours || !GodotObject.IsInstanceValid(mondeRef))
+					return;
+				if (chunkRef?.DensitiesFlat == null || chunkRef.MaterialsFlat == null)
+					return;
+				List<SectionPayload> payloads = Chunk_Client.ReconstruireSectionsDepuisData(
+					chunkRef, sectionsCopie, mondeRef.TryEchantillonnerVoxelProfondeur);
+				if (payloads == null || payloads.Count == 0)
+					return;
+				int totalSommets = 0;
+				for (int i = 0; i < payloads.Count; i++)
+				{
+					var p = payloads[i];
+					if (p?.SommetsVisuels != null)
+						totalSommets += p.SommetsVisuels.Length;
+				}
+				if (totalSommets <= 0)
+					return;
+				int sommetsCache = 0;
+				if (chunkRef.CachePayloadsSections != null)
+				{
+					foreach (var p in chunkRef.CachePayloadsSections)
+						if (p?.SommetsVisuels != null)
+							sommetsCache += p.SommetsVisuels.Length;
+				}
+				if (sommetsCache >= 512 && totalSommets < sommetsCache / 4)
+					return;
+				int coutVertices = totalSommets;
+				enqueueIntegration(() =>
+				{
+					if (mondeRef._mondeClientSortieEnCours || !GodotObject.IsInstanceValid(mondeRef))
+						return;
+					if (chunkRef?.DensitiesFlat == null || chunkRef.MaterialsFlat == null)
+						return;
+					mondeRef.IntegrerChunkDataRIDs(chunkRef, payloads, recoudreVoisinsVertical: false);
+					mondeRef.SolidifierCollisionPrioritaireSiProcheJoueur(chunkRef);
+				}, Mathf.Max(800, coutVertices));
+			}
+			catch (Exception ex)
+			{
+				JournalErreursZeroK.Erreur("Monde_Client remesh sections: " + ex.Message);
+			}
+			finally
+			{
+				Interlocked.Decrement(ref _chunksEnCoursDeCalcul);
+			}
+		});
+	}
+
+	private void ExecuterReconstructionPrioritaire(Vector3I coord, HashSet<int> sections)
 	{
 		ChunkData data = null;
 		if (_dimensionReseauActive == (int)DimensionJeu.Abysse)
@@ -279,11 +390,33 @@ public partial class Monde_Client : Node3D
 		}
 		else if (!TryGetChunkDataPourCoordY(new Vector2I(coord.X, coord.Z), coord.Y, out data))
 			return;
-		if (data.DensitiesFlat == null || data.MaterialsFlat == null) return;
-		data.EmpreinteDonneesServeur = 0;
-		var payloads = Chunk_Client.ReconstruirePayloadsDepuisData(data, TryEchantillonnerVoxelProfondeur);
-		if (payloads != null && payloads.Count > 0)
-			IntegrerChunkDataRIDs(data, payloads, recoudreVoisinsVertical: false);
+		if (data.DensitiesFlat == null || data.MaterialsFlat == null || sections == null || sections.Count == 0)
+			return;
+		List<SectionPayload> payloads = Chunk_Client.ReconstruireSectionsDepuisData(
+			data, sections, TryEchantillonnerVoxelProfondeur);
+		if (payloads == null || payloads.Count == 0)
+			payloads = Chunk_Client.ReconstruirePayloadsDepuisData(data, TryEchantillonnerVoxelProfondeur);
+		if (payloads == null || payloads.Count == 0)
+			return;
+		int totalSommets = 0;
+		for (int i = 0; i < payloads.Count; i++)
+		{
+			var p = payloads[i];
+			if (p?.SommetsVisuels != null)
+				totalSommets += p.SommetsVisuels.Length;
+		}
+		if (totalSommets <= 0)
+			return;
+		int sommetsCache = 0;
+		if (data.CachePayloadsSections != null)
+		{
+			foreach (var p in data.CachePayloadsSections)
+				if (p?.SommetsVisuels != null)
+					sommetsCache += p.SommetsVisuels.Length;
+		}
+		if (sommetsCache >= 512 && totalSommets < sommetsCache / 4)
+			return;
+		IntegrerChunkDataRIDs(data, payloads, recoudreVoisinsVertical: false);
 		RestaurerCollisionImmediateSiSousJoueur(data);
 	}
 
@@ -331,6 +464,22 @@ public partial class Monde_Client : Node3D
 		RetirerDeFileSolidification(data);
 		_setSolidificationUrgente.Remove(data);
 		data.EstEnFileSolidification = false;
+		bool syncImmediate = dx == 0 && dz == 0;
+		if (ModeProfondeurTranchesActif())
+		{
+			int cyJoueur = CoordYDepuisMondeY((int)Mathf.Floor(pos.Y));
+			syncImmediate = syncImmediate && data.CoordChunkY == cyJoueur;
+		}
+		// Hors chunk sous les pieds : collision via file (évite CreateTrimeshShape × N à chaque intégration mesh).
+		if (!syncImmediate)
+		{
+			if (!data.EstEnFileSolidification && !_setSolidificationUrgente.Contains(data))
+			{
+				EnfilerSolidificationUrgenteUnique(data);
+				data.EstEnFileSolidification = true;
+			}
+			return;
+		}
 		AssurerCorpsPhysiqueChunk(data);
 		if (data.PhysicsBodyRID.IsValid)
 			PhysicsServer3D.Singleton.BodySetSpace(data.PhysicsBodyRID, world.Space);

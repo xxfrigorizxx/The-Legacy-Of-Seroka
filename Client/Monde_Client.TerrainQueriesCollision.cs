@@ -56,6 +56,87 @@ public partial class Monde_Client : Node3D
 		return true;
 	}
 
+	/// <summary>Oracle client : matière solide aux 8 coins du cube voxel (aligné serveur). 0 si chunk absent ou air.</summary>
+	public int ObtenirMatiereSolideDepuisDonneesClient(Vector3 positionGlobale)
+	{
+		int gx = Mathf.FloorToInt(positionGlobale.X);
+		int gy = Mathf.FloorToInt(positionGlobale.Y);
+		int gz = Mathf.FloorToInt(positionGlobale.Z);
+		const float isolevel = 0f;
+		int matiereTrouvee = 0;
+		bool trouveSolide = false;
+
+		for (int dx = 0; dx <= 1; dx++)
+		{
+			for (int dy = 0; dy <= 1; dy++)
+			{
+				for (int dz = 0; dz <= 1; dz++)
+				{
+					var pos = new Vector3I(gx + dx, gy + dy, gz + dz);
+					if (!EssayerLireMatiereSolideClient(pos, isolevel, out byte mat))
+						continue;
+					trouveSolide = true;
+					matiereTrouvee = mat;
+					if (mat != 1)
+						return mat;
+				}
+			}
+		}
+		return trouveSolide ? matiereTrouvee : 0;
+	}
+
+	private bool EssayerLireMatiereSolideClient(Vector3I posGlobale, float isolevel, out byte mat)
+	{
+		mat = 0;
+		Gestionnaire_Monde.WorldToChunkAndLocal(posGlobale.X, posGlobale.Z, TailleChunk, out Vector2I c, out int lx, out int lz);
+		if (lx < 0 || lx > TailleChunk || lz < 0 || lz > TailleChunk)
+			return false;
+		int coordY = CoordYDepuisMondeY(posGlobale.Y);
+		int ly = LocalYDepuisMondeY(posGlobale.Y);
+		int h = ConstantesProfondeurVerticale.HauteurTrancheMetres;
+
+		if (TryGetChunkDataPourCoordY(c, coordY, out var data) && data?.DensitiesFlat != null && data.MaterialsFlat != null)
+		{
+			if (ModeProfondeurTranchesActif() && (ly < 0 || ly > data.HauteurMax))
+			{
+				if (TryEchantillonnerVoxelProfondeur(data, lx, ly, lz, out float densEch, out _, out byte matEch)
+					&& densEch > isolevel && matEch > 0)
+				{
+					mat = matEch == 4 ? (byte)3 : matEch;
+					return true;
+				}
+			}
+			else if (ly >= 0 && ly <= data.HauteurMax)
+			{
+				float dens = data.DensitiesFlat[data.Idx(lx, ly, lz)];
+				if (dens > isolevel)
+				{
+					mat = data.MaterialsFlat[data.Idx(lx, ly, lz)];
+					if (mat == 4)
+						mat = 3;
+					return mat > 0;
+				}
+			}
+		}
+
+		if (!ModeProfondeurTranchesActif() || !ConstantesProfondeurVerticale.EstProcheJonctionTranche(ly, h))
+			return false;
+
+		int cyAlt = ly <= ConstantesProfondeurVerticale.MargeJonctionTrancheVoxels ? coordY - 1 : coordY + 1;
+		if (!TryGetChunkDataPourCoordY(c, cyAlt, out data) || data?.DensitiesFlat == null || data.MaterialsFlat == null)
+			return false;
+		int lyAlt = ly <= ConstantesProfondeurVerticale.MargeJonctionTrancheVoxels ? data.HauteurMax : 0;
+		if (lyAlt < 0 || lyAlt > data.HauteurMax)
+			return false;
+		float densAlt = data.DensitiesFlat[data.Idx(lx, lyAlt, lz)];
+		if (densAlt <= isolevel)
+			return false;
+		mat = data.MaterialsFlat[data.Idx(lx, lyAlt, lz)];
+		if (mat == 4)
+			mat = 3;
+		return mat > 0;
+	}
+
 	/// <summary>Interroge la densité à une position globale (chunk en RAM uniquement). Plus utilisé pour Marching Cubes (rembourrage 17³).</summary>
 	public (float valeur, bool trouve) ObtenirDensiteGlobaleEx(Vector3I posGlobale)
 	{
@@ -83,6 +164,56 @@ public partial class Monde_Client : Node3D
 		return true;
 	}
 
+	/// <summary>Mesh terrain intégré (visuel) pour ce chunk XZ à la hauteur d'observation — sans exiger la physique Jolt.</summary>
+	public bool ChunkMeshVisiblePourObservation(Vector2I coord, Vector3 observation)
+	{
+		if (_dimensionReseauActive == (int)DimensionJeu.Abysse)
+		{
+			int coordY = CoordYStageAbysseDepuisYMonde(observation.Y);
+			return _chunksDataAbysse3D.TryGetValue(new Vector3I(coord.X, coordY, coord.Y), out var ab)
+				&& ab != null && ab.VisualInstanceRID.IsValid;
+		}
+		if (ModeProfondeurTranchesActif())
+		{
+			int coordY = CoordYDepuisMondeY((int)Mathf.Floor(observation.Y));
+			if (TryGetChunkDataPourCoordY(coord, coordY, out var data) && data != null && data.VisualInstanceRID.IsValid)
+				return true;
+			int localY = ConstantesProfondeurVerticale.LocalYDepuisMondeY((int)Mathf.Floor(observation.Y));
+			int h = ConstantesProfondeurVerticale.HauteurTrancheMetres;
+			if (ConstantesProfondeurVerticale.EstProcheJonctionTranche(localY, h))
+			{
+				if (localY <= ConstantesProfondeurVerticale.MargeJonctionTrancheVoxels
+					&& TryGetChunkDataPourCoordY(coord, coordY - 1, out data) && data != null && data.VisualInstanceRID.IsValid)
+					return true;
+				if (localY >= h - ConstantesProfondeurVerticale.MargeJonctionTrancheVoxels - 1
+					&& TryGetChunkDataPourCoordY(coord, coordY + 1, out data) && data != null && data.VisualInstanceRID.IsValid)
+					return true;
+			}
+			return false;
+		}
+		int coordYSimple = CoordYDepuisMondeY((int)Mathf.Floor(observation.Y));
+		if (TryGetChunkDataPourCoordY(coord, coordYSimple, out var legacy) && legacy != null && legacy.VisualInstanceRID.IsValid)
+			return true;
+		return _chunksData.TryGetValue(coord, out legacy) && legacy != null && legacy.VisualInstanceRID.IsValid;
+	}
+
+	/// <summary>Même grille que <see cref="ChunkSousPiedsAPret"/> mais seulement le rendu (exploration : évite le mode « chargement agressif » tant que le sol est visible).</summary>
+	public bool ChunkMeshGrilleSousPiedsPret()
+	{
+		if (!EssayerObtenirJoueurDansArbre(out CharacterBody3D joueurRef)) return false;
+		Vector3 pos = joueurRef.GlobalPosition;
+		Vector2I c = Gestionnaire_Monde.WorldToChunkCoord(pos, TailleChunk);
+		int rg = Mathf.Clamp(RayonGrilleMinSpawnPret, 0, RayonDormancePhysique);
+		for (int dx = -rg; dx <= rg; dx++)
+			for (int dz = -rg; dz <= rg; dz++)
+			{
+				var v = new Vector2I(c.X + dx, c.Y + dz);
+				if (!ChunkMeshVisiblePourObservation(v, pos))
+					return false;
+			}
+		return true;
+	}
+
 	/// <summary>Vrai si le chunk a une collision active (body valide, non dormant, hors file de solidification).</summary>
 	public bool ChunkCollisionActive(Vector2I coord)
 	{
@@ -98,10 +229,18 @@ public partial class Monde_Client : Node3D
 		{
 			int coordY = CoordYDepuisMondeY((int)Mathf.Floor(observation.Y));
 			int localY = ConstantesProfondeurVerticale.LocalYDepuisMondeY((int)Mathf.Floor(observation.Y));
+			int h = ConstantesProfondeurVerticale.HauteurTrancheMetres;
 			if (CoucheCollisionActive(coord, coordY))
 				return true;
-			if (localY < 4 && CoucheCollisionActive(coord, coordY - 1))
-				return true;
+			if (ConstantesProfondeurVerticale.EstProcheJonctionTranche(localY, h))
+			{
+				if (localY <= ConstantesProfondeurVerticale.MargeJonctionTrancheVoxels
+					&& CoucheCollisionActive(coord, coordY - 1))
+					return true;
+				if (localY >= h - ConstantesProfondeurVerticale.MargeJonctionTrancheVoxels - 1
+					&& CoucheCollisionActive(coord, coordY + 1))
+					return true;
+			}
 			return false;
 		}
 		int coordYSimple = CoordYDepuisMondeY((int)Mathf.Floor(observation.Y));

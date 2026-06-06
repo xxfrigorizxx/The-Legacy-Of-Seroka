@@ -365,9 +365,11 @@ public partial class Joueur
                 if (estAtelierEnMain || estTableAnalyseEnMain || estRackBatonsEnMain || estCoffreEnMain || estPitFeuEnMain || estBuissonEnMain || estTerrainVoxel || _forceLancer < 0.5f)
                 {
                     // Clic droit court + lame / roche plate / pointe + sol : fauchage (le gauche le fait aussi).
-                    // Objet lançable : le clic droit court sert à poser sous la visée — pas de vol du fauchage.
+                    // On priorise le fauchage pour les OUTILS FAUCHEURS (dague, faux, roche plate/pointe, éclat),
+                    // même s'ils sont « lançables au maintien » : le clic court fauche, le maintien (>0,5 s) lance.
+                    // ExecuterFauchageSolPrioritaireClicDroit revérifie le sol + l'outil et renvoie false sinon (→ pose/lancer).
                     if (!estAtelierEnMain && !estTableAnalyseEnMain && !estRackBatonsEnMain && !estCoffreEnMain && !estPitFeuEnMain && !estTerrainVoxel && _forceLancer < 0.5f
-                        && !EstObjetLancableAuMaintien(mainActive)
+                        && EstOutilFaucheurEnMain(mainActive)
                         && ExecuterFauchageSolPrioritaireClicDroit())
                     {
                         _forceLancer = 0f;

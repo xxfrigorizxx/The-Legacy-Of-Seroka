@@ -89,7 +89,7 @@ public partial class Joueur
         else if (id == 21) return null; // GLB res://Modeles/materials/tissu_tier0.glb via InstancierModeleTissuTier0
         else if (id == IdObjetSacTier0) return null; // GLB res://Modeles/Equipable/Sac_Tiere0.glb via InstancierModeleSacTier0
         else if (id == IdObjetCarnetSavoir) return null; // modèle procédural via InstancierModeleCarnetSavoir
-        else if (id == IdObjetSteakCru || id == IdObjetSteakCuit || id == IdObjetOsBoeuf || id == IdObjetCuirBoeuf || id == IdObjetIntestinBoeuf || id == IdObjetIntestinBoeufNettoye) return null; // GLB via InstancierModele* dans ModelInstantiationService
+        else if (id == IdObjetSteakCru || id == IdObjetSteakCuit || id == IdObjetOsBoeuf || id == IdObjetCuirBoeuf || id == IdObjetIntestinBoeuf || id == IdObjetIntestinBoeufNettoye || EstIdCharbonRecolte(id)) return null; // GLB via InstancierModele* dans ModelInstantiationService
         else if (id == IdObjetCeinturePoches || id == IdObjetCeintureSacoches) return null; // GLB ceinture / ceinture+pochettes via instanciation dÃ©diÃ©e
         else if (id == IdObjetPochetteTier0) return null; // GLB res://Modeles/materials/Pochette_Tiere0.glb via InstancierModelePochetteTier0
         else if (id == IdObjetPellePierreTier0) return null; // GLB res://Modeles/Equipements/Pelle_Pierre_tier0.glb via InstancierModeleArme
@@ -104,6 +104,7 @@ public partial class Joueur
         else if (id == IdObjetAllumeFeu) return null; // GLB allume-feu via InstancierModeleAllumeFeu
         else if (id == IdObjetMailletBois) return null; // GLB maillet via InstancierModeleMailletBois
         else if (id == IdObjetBolBois) return null; // GLB bol via InstancierModeleBolBois
+        else if (id == IdObjetBolEau) return null; // GLB bol plein via InstancierModeleBolEau
         else if (id == IdObjetMortierPilonBois) return null; // GLB mortier+pilon via InstancierModeleMortierPilonBois
         else if (id == IdObjetAtelleJambe) return null; // GLB res://Modeles/soin/Atelle_jambe.glb via InstancierModeleAtelleJambe
         else if (id == IdObjetAtelleBras) return null; // GLB res://Modeles/soin/Atelle_Bras.glb via InstancierModeleAtelleBras

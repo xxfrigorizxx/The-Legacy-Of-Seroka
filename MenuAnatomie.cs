@@ -133,6 +133,9 @@ public partial class MenuAnatomie : Control
 	private const int TaillePageCreatifAdmin = 24;
 	private int _versionCatalogueCreatifChargee;
 	private CategorieCreatifAdmin _categorieCreatifActive = CategorieCreatifAdmin.Tous;
+	private ulong _msDernierRafraichCreatifAdmin;
+	private bool _creatifAdminListeSale;
+	private const ulong IntervalleRafraichCreatifAdminMs = 200UL;
 
 	private enum CategorieCreatifAdmin
 	{

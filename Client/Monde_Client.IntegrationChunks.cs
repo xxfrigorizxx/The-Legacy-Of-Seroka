@@ -15,6 +15,11 @@ public partial class Monde_Client : Node3D
 		if (data.VisualInstanceRID.IsValid && data.EmpreinteDonneesServeur == empreinte && empreinte != 0)
 			return;
 		data.EmpreinteDonneesServeur = empreinte;
+		if (empreinte != 0)
+		{
+			data.CoutureVoxelAppliquee = false;
+			data.CachePayloadsSections = null;
+		}
 		lock (_lockFileAttenteMaths)
 		{
 			for (int i = _fileAttenteMathsData.Count - 1; i >= 0; i--)
@@ -34,7 +39,11 @@ public partial class Monde_Client : Node3D
 		if (world == null) return;
 		bool remplacerVisuelExistant = data.VisualInstanceRID.IsValid;
 		if (remplacerVisuelExistant)
+		{
 			LibererPhysiqueChunk(data);
+			// Mesh remplacé (remesh/mining) : une shape pré-calculée du mesh précédent serait périmée.
+			data.ShapeCollisionPrecalc = null;
+		}
 
 		// 1. Fusion des payloads en un seul ArrayMesh (terrain) sans SurfaceTool/GenerateNormals.
 		int totalTerrainVertices = 0;
@@ -44,9 +53,19 @@ public partial class Monde_Client : Node3D
 		if (totalTerrainVertices <= 0)
 		{
 			if (remplacerVisuelExistant)
-				data.LibérerRids();
+				return;
 			return;
 		}
+
+		int sommetsCacheAvant = 0;
+		if (remplacerVisuelExistant && data.CachePayloadsSections != null)
+		{
+			foreach (var p in data.CachePayloadsSections)
+				if (p?.SommetsVisuels != null)
+					sommetsCacheAvant += p.SommetsVisuels.Length;
+		}
+		if (sommetsCacheAvant >= 512 && totalTerrainVertices < sommetsCacheAvant / 4)
+			return;
 
 		var terrainVertices = new Vector3[totalTerrainVertices];
 		var terrainNormals = new Vector3[totalTerrainVertices];
@@ -73,7 +92,7 @@ public partial class Monde_Client : Node3D
 
 		if (terrainOffset != totalTerrainVertices)
 		{
-			GD.PrintErr($"ZERO-K : fusion terrain incohérente offset={terrainOffset} attendu={totalTerrainVertices} chunk ({data.Coordonnees.X},{data.Coordonnees.Y}).");
+			JournalErreursZeroK.Erreur($"ZERO-K : fusion terrain incohérente offset={terrainOffset} attendu={totalTerrainVertices} chunk ({data.Coordonnees.X},{data.Coordonnees.Y}) cy={data.CoordChunkY}.");
 			Array.Resize(ref terrainVertices, terrainOffset);
 			Array.Resize(ref terrainNormals, terrainOffset);
 			Array.Resize(ref terrainColors, terrainOffset);
@@ -83,7 +102,7 @@ public partial class Monde_Client : Node3D
 		if (resteTri != 0)
 		{
 			int nv = nSommetsTerrain - resteTri;
-			GD.PrintErr($"ZERO-K : sommets terrain non multiple de 3 (n={nSommetsTerrain}), troncature de {resteTri} — chunk ({data.Coordonnees.X},{data.Coordonnees.Y}).");
+			JournalErreursZeroK.Erreur($"ZERO-K : sommets terrain non multiple de 3 (n={nSommetsTerrain}), troncature de {resteTri} — chunk ({data.Coordonnees.X},{data.Coordonnees.Y}) cy={data.CoordChunkY}.");
 			Array.Resize(ref terrainVertices, nv);
 			Array.Resize(ref terrainNormals, nv);
 			Array.Resize(ref terrainColors, nv);
@@ -144,38 +163,48 @@ public partial class Monde_Client : Node3D
 			solidifieCorridor = EssayerSolidifierCorridorAIntegration(data, posC, velC);
 		}
 
-		// Flore (gazon + buissons) : retirer l'ancien nœud si réintégration.
-		if (data._nodeFlore != null)
-		{
-			data._nodeFlore.QueueFree();
-			data._nodeFlore = null;
-		}
-		// STREAMING UN-A-UN : toute la flore passe par la file différée. Le budget par frame
-		// (MaxFloreParFrame*) + le gate FPS + le ramp-up assurent une apparition séquentielle,
-		// jamais « tout d'un coup ». Seul le chunk sous les pieds (risque visuel de sol nu immédiat)
-		// est construit immédiatement.
+		// Flore : remesh terrain seul → conserver le nœud (évite flash herbe/buissons lors des recousures bord).
 		Vector3 posObsFlore = ObtenirPositionObservation();
-		if (EssayerObtenirJoueurDansArbre(out CharacterBody3D _))
+		if (data.InventaireFlore == null || data.InventaireFlore.Count == 0)
 		{
-			Vector2I cJoueurFlore = Gestionnaire_Monde.WorldToChunkCoord(posObsFlore, TailleChunk);
-			int ddx = Mathf.Abs(data.Coordonnees.X - cJoueurFlore.X);
-			int ddz = Mathf.Abs(data.Coordonnees.Y - cJoueurFlore.Y);
-			bool chunkSousPiedsXZ = ddx == 0 && ddz == 0;
-			if (chunkSousPiedsXZ)
+			if (data._nodeFlore != null)
 			{
-				if (_dimensionReseauActive == (int)DimensionJeu.Abysse)
-					chunkSousPiedsXZ = data.CoordChunkY == CoordYStageAbysseDepuisYMonde(posObsFlore.Y);
-				else if (ModeProfondeurTranchesActif())
-					chunkSousPiedsXZ = data.CoordChunkY == CoordYDepuisMondeY((int)Mathf.Floor(posObsFlore.Y));
+				data._nodeFlore.QueueFree();
+				data._nodeFlore = null;
 			}
-			if (chunkSousPiedsXZ)
-				ConstruireFloreChunk(data, posObsFlore);
-			else
-				EnfilerFloreChunk(data, posObsFlore);
+		}
+		else if (data._nodeFlore is Node3D floreExistante && GodotObject.IsInstanceValid(floreExistante))
+		{
+			Chunk_Client.MettreAJourFlorePourChunkData(data, posObsFlore, floreExistante);
+			floreExistante.Visible = data.CullingVisible;
+			RetirerFloreDiffereePourChunk(data);
 		}
 		else
 		{
-			EnfilerFloreChunk(data, posObsFlore);
+			// STREAMING UN-A-UN : file différée + budget par frame. Seul le chunk sous les pieds
+			// est construit immédiatement (sol nu évité).
+			if (EssayerObtenirJoueurDansArbre(out CharacterBody3D _))
+			{
+				Vector2I cJoueurFlore = Gestionnaire_Monde.WorldToChunkCoord(posObsFlore, TailleChunk);
+				int ddx = Mathf.Abs(data.Coordonnees.X - cJoueurFlore.X);
+				int ddz = Mathf.Abs(data.Coordonnees.Y - cJoueurFlore.Y);
+				bool chunkSousPiedsXZ = ddx == 0 && ddz == 0;
+				if (chunkSousPiedsXZ)
+				{
+					if (_dimensionReseauActive == (int)DimensionJeu.Abysse)
+						chunkSousPiedsXZ = data.CoordChunkY == CoordYStageAbysseDepuisYMonde(posObsFlore.Y);
+					else if (ModeProfondeurTranchesActif())
+						chunkSousPiedsXZ = data.CoordChunkY == CoordYDepuisMondeY((int)Mathf.Floor(posObsFlore.Y));
+				}
+				if (chunkSousPiedsXZ)
+					ConstruireFloreChunk(data, posObsFlore);
+				else
+					EnfilerFloreChunk(data, posObsFlore);
+			}
+			else
+			{
+				EnfilerFloreChunk(data, posObsFlore);
+			}
 		}
 
 		// Physique lazy : seulement les tranches Y proches du joueur (±1) ; le reste reste visuel sans Jolt.
@@ -188,7 +217,7 @@ public partial class Monde_Client : Node3D
 			if (ModeProfondeurTranchesActif())
 			{
 				int cyJoueur = CoordYDepuisMondeY((int)Mathf.Floor(joueurSolidif.GlobalPosition.Y));
-				solidifier = Mathf.Abs(data.CoordChunkY - cyJoueur) <= ConstantesProfondeurVerticale.DemiFenetreTranches;
+				solidifier = Mathf.Abs(data.CoordChunkY - cyJoueur) <= ConstantesProfondeurVerticale.DemiFenetrePhysiqueTranches;
 			}
 			if (solidifier && !solidifieCorridor)
 			{
@@ -215,10 +244,7 @@ public partial class Monde_Client : Node3D
 			}
 		}
 		SolidifierCollisionPrioritaireSiProcheJoueur(data);
-		if (ModeProfondeurTranchesActif() && recoudreVoisinsVertical)
-			MarquerRemeshVoisinsVerticalDejaMailes(data);
-
-		// 4. Eau : on conserve SurfaceTool ici (chemin robuste visuellement avec le matériau eau existant).
+		// 4. Eau : SurfaceTool (matériau eau existant).
 		var stEau = new SurfaceTool();
 		stEau.Begin(Mesh.PrimitiveType.Triangles);
 		foreach (var p in payloads)
@@ -289,6 +315,12 @@ public partial class Monde_Client : Node3D
 
 		SynchroniserProxyChunkProfondeur(data.Coordonnees);
 		RestaurerCollisionImmediateSiSousJoueur(data);
+		data.CachePayloadsSections = new List<SectionPayload>(payloads);
+		if (recoudreVoisinsVertical && ModeProfondeurTranchesActif())
+			RecoudreVoisinsVerticalApresIntegration(data);
+		if (_voxelsModifiesEnAttente.Count > 0
+			&& EstRemeshPrioritaireMinage(new Vector3I(data.Coordonnees.X, data.CoordChunkY, data.Coordonnees.Y)))
+			AppliquerVoxelsEnAttente();
 	}
 
 	/// <summary>Avance les fondus d'émergence. Appelé 1×/frame depuis _PhysicsProcess. Retire les anims terminées.</summary>

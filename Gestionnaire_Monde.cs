@@ -1259,6 +1259,7 @@ public partial class Gestionnaire_Monde : Node3D
 				(kv.Value as Generateur_Voxel)?.Sauvegarder(kv.Key);
 		}
 		BoeufSauvage.ViderCachesBibliothequesExternesPourDechargementMonde();
+		_networkManager?.LibererPeer();
 		base._ExitTree();
 	}
 
@@ -1626,9 +1627,21 @@ public partial class Gestionnaire_Monde : Node3D
 	/// <summary>Oracle géologique : lecture directe de l'ADN (_materials) depuis le Serveur. Évite la dissonance visuelle (mine terre → reçoit pierre).</summary>
 	public int ObtenirMatiereExacte(Vector3 positionGlobale)
 	{
-		if (UseArchitectureReseau && _mondeServeur != null)
-			return _mondeServeur.ObtenirMatiereExacte(positionGlobale);
-		return AnalyserMatiereAuPoint(positionGlobale, Vector3.Up);
+		int idServeur = UseArchitectureReseau && _mondeServeur != null
+			? _mondeServeur.ObtenirMatiereExacte(positionGlobale)
+			: AnalyserMatiereAuPoint(positionGlobale, Vector3.Up);
+		if (UseArchitectureReseau && _mondeClient != null)
+		{
+			int idClient = _mondeClient.ObtenirMatiereSolideDepuisDonneesClient(positionGlobale);
+			if (idClient <= 0)
+				return idServeur;
+			// Serveur sans chunk chargé renvoie souvent terre (1) alors que le mesh client affiche roche/minerai.
+			if (idServeur <= 1 && idClient > 1)
+				return idClient;
+			if (Atlas_Matiere.EstIdVoxelTerrainMinerai(idClient) && !Atlas_Matiere.EstIdVoxelTerrainMinerai(idServeur))
+				return idClient;
+		}
+		return idServeur;
 	}
 
 	/// <summary>True si l’eau voxel est présente près du point (bûche de chêne : flotter seulement ici, pas sur la terre ferme).</summary>

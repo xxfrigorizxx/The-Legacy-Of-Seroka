@@ -19,13 +19,36 @@ public partial class NetworkManager : Node
 	public bool EstServeur => _estServeur;
 	public bool EstConnecte => Multiplayer.HasMultiplayerPeer() && Multiplayer.MultiplayerPeer.GetConnectionStatus() == MultiplayerPeer.ConnectionStatus.Connected;
 
+	/// <summary>Libère le peer multiplayer (ENet) avant changement de scène — évite « Couldn't create an ENet host » au reload.</summary>
+	public void LibererPeer()
+	{
+		try
+		{
+			if (Multiplayer.MultiplayerPeer == _peer)
+				Multiplayer.MultiplayerPeer = null;
+		}
+		catch { /* scène en cours de destruction */ }
+		if (_peer != null)
+		{
+			try { _peer.Close(); } catch { }
+			_peer.Dispose();
+			_peer = null;
+		}
+		PortEnecoute = null;
+		ENetActif = false;
+		_estServeur = false;
+	}
+
+	public override void _ExitTree()
+	{
+		LibererPeer();
+		base._ExitTree();
+	}
+
 	/// <summary>Démarre en mode Héberger/Solo : tente plusieurs ports puis bascule hors-ligne si ENet est impossible.</summary>
 	public void DemarrerHostSolo()
 	{
-		_peer?.Dispose();
-		_peer = null;
-		PortEnecoute = null;
-		ENetActif = false;
+		LibererPeer();
 
 		ushort portEssai = PortServeur;
 		ENetMultiplayerPeer enet = null;
@@ -53,8 +76,8 @@ public partial class NetworkManager : Node
 			}
 
 			GD.PrintErr($"NetworkManager: impossible d'ouvrir le port {portEssai} pour ENet ({err}). Cause fréquente : port déjà utilisé (autre instance du jeu, Minecraft Java, etc.).");
-			// Si ENet n'arrive même pas à créer l'hôte, inutile d'insister sur 16 ports.
-			if (err == Error.CantCreate)
+			// CantCreate peut être ponctuel (host précédent pas encore libéré) : essayer le port suivant.
+			if (err == Error.CantCreate && i + 1 >= NombrePortsEssai)
 				break;
 			if (portEssai < ushort.MaxValue)
 				portEssai++;
@@ -153,6 +176,13 @@ public partial class NetworkManager : Node
 
 	public void EnvoyerDemandeChunkDimensionAuServeur(Vector2I coord, int coordY, int dimensionId, Vector3 positionObservation)
 	{
+		// Hors ENet (reload / port occupé) : signal local direct — les RPC RpcId(1) peuvent ne pas router.
+		if (!ENetActif)
+		{
+			EmitSignal(SignalName.DemandeChunkDimensionDemandee, coord.X, coordY, coord.Y, dimensionId,
+				positionObservation.X, positionObservation.Y, positionObservation.Z, 1L);
+			return;
+		}
 		RpcId(1, nameof(DemanderChunkDimension), coord.X, coordY, coord.Y, dimensionId, positionObservation.X, positionObservation.Y, positionObservation.Z);
 	}
 

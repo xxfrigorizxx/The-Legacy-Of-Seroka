@@ -16,8 +16,8 @@ public partial class Joueur
         float multiplicateurForce = ObtenirMultiplicateurDegatsForce();
 
         // Évite un « soft-lock » : avec pelle/outil lourd ou mauvais angle, efficaciteHache peut chuter avant d'atteindre ArbreMort.
-        RigidBody3D probeCadavre = ResoudreCadavreArbreDepuisCollider(objetTouche)
-            ?? ChercherCadavreArbreProchePointImpact(pointImpact);
+        bool viseTerrain = EstSolViseParRayon(_rayon, objetTouche);
+        RigidBody3D probeCadavre = viseTerrain ? null : ResoudreCadavreArbreCible(objetTouche, pointImpact);
         bool cadavreBoise = EstRigidCadavreBoise(probeCadavre);
 
         if (!cadavreBoise && efficaciteHache < 0.4f && masseOutil > 2f && mainActive.ID != 106)
@@ -59,8 +59,7 @@ public partial class Joueur
         if (objetTouche == null)
             return;
 
-        RigidBody3D cadavreArbre = ResoudreCadavreArbreDepuisCollider(objetTouche)
-            ?? ChercherCadavreArbreProchePointImpact(pointImpact);
+        RigidBody3D cadavreArbre = viseTerrain ? null : ResoudreCadavreArbreCible(objetTouche, pointImpact);
         if (cadavreArbre != null)
         {
             ExecuterFrappeCadavreArbre(cadavreArbre, mainActive, pointImpact, directionFrappe);

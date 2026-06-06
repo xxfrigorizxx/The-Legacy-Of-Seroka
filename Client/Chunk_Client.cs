@@ -561,7 +561,7 @@ public partial class Chunk_Client : Node3D
 				float facteurHum = Mathf.Clamp((humidite + 1f) * 0.5f, 0f, 1f);
 				float facteurHauteur = Mathf.Lerp(1.0f, 1.32f, facteurHum);
 				float facteurLargeur = Mathf.Lerp(0.92f, 1.12f, facteurHum);
-				int densiteMax = ConstantesDimensionAbysse.EstDansTrouNoirXZ(kv.Key.X, kv.Key.Z) ? 11 : 19;
+				int densiteMax = ConstantesDimensionAbysse.EstDansTrouNoirXZ(kv.Key.X, kv.Key.Z) ? 7 : 9;
 				int densiteGazon = CalculerDensiteGazonSelonHumidite(humidite, densiteMax);
 				for (int i = 0; i < densiteGazon; i++)
 				{
@@ -687,7 +687,7 @@ public partial class Chunk_Client : Node3D
 		int r = sommets.Count % 3;
 		if (r == 0) return;
 		int n = sommets.Count - r;
-		GD.PrintErr($"ZERO-K : troncature {r} sommet(s) hors triplet terrain (était {sommets.Count}).");
+		JournalErreursZeroK.Erreur($"ZERO-K : troncature {r} sommet(s) hors triplet terrain (était {sommets.Count}).");
 		sommets.RemoveRange(n, r);
 		if (normales != null && normales.Count >= n + r) normales.RemoveRange(n, r);
 		if (couleurs != null && couleurs.Count >= n + r) couleurs.RemoveRange(n, r);
@@ -699,7 +699,7 @@ public partial class Chunk_Client : Node3D
 		int r = sommets.Count % 3;
 		if (r == 0) return;
 		int n = sommets.Count - r;
-		GD.PrintErr($"ZERO-K : troncature {r} sommet(s) hors triplet eau (était {sommets.Count}).");
+		JournalErreursZeroK.Erreur($"ZERO-K : troncature {r} sommet(s) hors triplet eau (était {sommets.Count}).");
 		sommets.RemoveRange(n, r);
 		if (normales != null && normales.Count >= n + r) normales.RemoveRange(n, r);
 	}
@@ -990,7 +990,7 @@ public partial class Chunk_Client : Node3D
 				float facteurHum = Mathf.Clamp((humidite + 1f) * 0.5f, 0f, 1f);
 				float facteurHauteur = Mathf.Lerp(1.0f, 1.32f, facteurHum);
 				float facteurLargeur = Mathf.Lerp(0.92f, 1.12f, facteurHum);
-				int densiteMax = ConstantesDimensionAbysse.EstDansTrouNoirXZ(kv.Key.X, kv.Key.Z) ? 11 : 19;
+				int densiteMax = ConstantesDimensionAbysse.EstDansTrouNoirXZ(kv.Key.X, kv.Key.Z) ? 7 : 9;
 				int densiteGazon = CalculerDensiteGazonSelonHumidite(humidite, densiteMax);
 				for (int i = 0; i < densiteGazon; i++)
 				{
