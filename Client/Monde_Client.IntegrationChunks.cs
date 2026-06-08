@@ -362,6 +362,10 @@ public partial class Monde_Client : Node3D
 	/// <summary>Réserve une fenêtre raisonnable autour du spawn (pas RenderDistance entier : 200² chunks = blocage / liste énorme / chargement infini).</summary>
 	public void ReserverChunkSpawnPrioritaire(Vector2I coordSpawn)
 	{
+		if (coordSpawn == _dernierChunkReservePrioritaire && _cooldownReservePrioritaireSec > 0f)
+			return;
+		_dernierChunkReservePrioritaire = coordSpawn;
+		_cooldownReservePrioritaireSec = 2.5f;
 		// Cap strict : au plus ce qu’il faut pour la dormance + marge ; le radar remplira le reste progressivement.
 		int rayonSpawn = ModeProfondeurTranchesActif()
 			? Mathf.Min(RayonChargementChunksActif(), RayonDormancePhysique + MargePreloadChunks + 2)

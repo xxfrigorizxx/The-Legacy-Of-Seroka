@@ -26,6 +26,36 @@ public partial class Joueur
         parent.SetMeta(MetaSignatureGlbLootSimple, signatureObjet);
     }
 
+    private float CalculerFacteurChauffeBolArgileRendu(SlotInventaire slot)
+    {
+        if (slot.EstVide || slot.ID != IdObjetBolArgile)
+            return 0f;
+        if (FourTorchieOuvert == null || !GodotObject.IsInstanceValid(FourTorchieOuvert))
+            return 0f;
+        float temp = FourTorchieOuvert.ObtenirTemperatureFourTorchie();
+        float prog = 0f;
+        if (FourTorchieOuvert.GrilleFourTorchie != null)
+        {
+            for (int c = 0; c < ItemPhysique.FourTorchieNbCuisson; c++)
+            {
+                SlotInventaire s = FourTorchieOuvert.GrilleFourTorchie[ItemPhysique.FourTorchiePremierSlotCuisson + c];
+                if (!s.EstVide && s.ID == IdObjetBolArgile)
+                {
+                    float p = FourTorchieOuvert.ObtenirProgressionCuissonFourTorchie(c);
+                    if (p > prog)
+                        prog = Mathf.Max(0f, p);
+                }
+            }
+        }
+        return FourTorchieThermodynamique.ObtenirFacteurTeinteChauffeBolArgile(temp, prog);
+    }
+
+    private static int SignatureTeinteBolArgile(int idObjet, float facteurChauffe)
+        => HashCode.Combine(idObjet, Mathf.RoundToInt(facteurChauffe * 80f));
+
+    private static int SignatureTeinteBolCeramique(int idObjet, int indexChimique, float facteurChaleur)
+        => HashCode.Combine(idObjet, indexChimique, Mathf.RoundToInt(facteurChaleur * 80f));
+
     private static void InstancierModeleGlbLootSimple(Node3D parent, SlotInventaire slot, int signatureObjet, float tailleMetres)
     {
         if (!DoitReconstruireModeleGlbLootSimple(parent, signatureObjet))
@@ -99,6 +129,9 @@ public partial class Joueur
         if (node.HasMeta(MetaSignatureAllumeFeu121)) node.RemoveMeta(MetaSignatureAllumeFeu121);
         if (node.HasMeta(MetaSignatureMailletBois128)) node.RemoveMeta(MetaSignatureMailletBois128);
         if (node.HasMeta(MetaSignatureBolBois129)) node.RemoveMeta(MetaSignatureBolBois129);
+        if (node.HasMeta(MetaSignatureBolArgile158)) node.RemoveMeta(MetaSignatureBolArgile158);
+        if (node.HasMeta(MetaSignatureBolCeramique159)) node.RemoveMeta(MetaSignatureBolCeramique159);
+        if (node.HasMeta(MetaSignaturePinceOs160)) node.RemoveMeta(MetaSignaturePinceOs160);
         if (node.HasMeta(MetaSignatureMortierPilon130)) node.RemoveMeta(MetaSignatureMortierPilon130);
         if (node.HasMeta(MetaSignatureFenetreBois146)) node.RemoveMeta(MetaSignatureFenetreBois146);
         if (node.HasMeta(MetaSignatureAtelleJambe133)) node.RemoveMeta(MetaSignatureAtelleJambe133);
@@ -610,6 +643,96 @@ public partial class Joueur
             _objetEnMain.RotationDegrees = new Vector3(-6f + _rotationManuelleX, 40f + _rotationManuelleY, 2f + _rotationManuelleZ);
             return;
         }
+        if (main.ID == IdObjetArgileHumidifiee)
+        {
+            _objetEnMain.Mesh = null;
+            _objetEnMain.MaterialOverride = null;
+            int sig = main.ID;
+            int prev = _objetEnMain.HasMeta(MetaSignatureArgileHumid155) ? (int)_objetEnMain.GetMeta(MetaSignatureArgileHumid155).AsInt32() : int.MinValue;
+            bool manqueModele = _objetEnMain.FindChild("ModeleArme", true, false) == null;
+            if (manqueModele || sig != prev)
+            {
+                NettoyerModelesEnfants(_objetEnMain);
+                InstancierModeleArgileHumidifiee(_objetEnMain, main, 0.26f, false);
+                _objetEnMain.SetMeta(MetaSignatureArgileHumid155, sig);
+            }
+            _objetEnMain.Scale = Vector3.One;
+            _objetEnMain.RotationDegrees = new Vector3(-4f + _rotationManuelleX, 36f + _rotationManuelleY, 3f + _rotationManuelleZ);
+            return;
+        }
+        if (main.ID == IdObjetBolArgile)
+        {
+            _objetEnMain.Mesh = null;
+            _objetEnMain.MaterialOverride = null;
+            float facteurChauffe = CalculerFacteurChauffeBolArgileRendu(main);
+            int sig = SignatureTeinteBolArgile(main.ID, facteurChauffe);
+            int prev = _objetEnMain.HasMeta(MetaSignatureBolArgile158) ? (int)_objetEnMain.GetMeta(MetaSignatureBolArgile158).AsInt32() : int.MinValue;
+            bool manqueModele = _objetEnMain.FindChild("ModeleArme", true, false) == null;
+            if (manqueModele || sig != prev)
+            {
+                NettoyerModelesEnfants(_objetEnMain);
+                InstancierModeleBolArgile(_objetEnMain, main, 0.24f, false, facteurChauffe);
+                _objetEnMain.SetMeta(MetaSignatureBolArgile158, sig);
+            }
+            _objetEnMain.Scale = Vector3.One;
+            _objetEnMain.RotationDegrees = new Vector3(-6f + _rotationManuelleX, 40f + _rotationManuelleY, 2f + _rotationManuelleZ);
+            return;
+        }
+        if (main.ID == IdObjetBolCeramique)
+        {
+            _objetEnMain.Mesh = null;
+            _objetEnMain.MaterialOverride = null;
+            float facteurChaleur = FourTorchieThermodynamique.ObtenirFacteurChaleurBolCeramiqueSlot(main);
+            int sig = SignatureTeinteBolCeramique(main.ID, main.IndexChimique, facteurChaleur);
+            int prev = _objetEnMain.HasMeta(MetaSignatureBolCeramique159) ? (int)_objetEnMain.GetMeta(MetaSignatureBolCeramique159).AsInt32() : int.MinValue;
+            bool manqueModele = _objetEnMain.FindChild("ModeleArme", true, false) == null;
+            if (manqueModele || sig != prev)
+            {
+                NettoyerModelesEnfants(_objetEnMain);
+                InstancierModeleBolCeramique(_objetEnMain, main, 0.24f, false, facteurChaleur);
+                _objetEnMain.SetMeta(MetaSignatureBolCeramique159, sig);
+            }
+            _objetEnMain.Scale = Vector3.One;
+            _objetEnMain.RotationDegrees = new Vector3(-6f + _rotationManuelleX, 40f + _rotationManuelleY, 2f + _rotationManuelleZ);
+            return;
+        }
+        if (main.ID == IdObjetPinceOs)
+        {
+            _objetEnMain.Mesh = null;
+            _objetEnMain.MaterialOverride = null;
+            float facteurBolPince = 0f;
+            if (ItemPhysique.EssayerLireObjetPortePinceOs(main, out SlotInventaire bolPince))
+                facteurBolPince = FourTorchieThermodynamique.ObtenirFacteurChaleurBolCeramiqueSlot(bolPince);
+            int sig = HashCode.Combine(main.ID, main.GenomeAssemblage ?? "", Mathf.RoundToInt(facteurBolPince * 80f));
+            int prev = _objetEnMain.HasMeta(MetaSignaturePinceOs160) ? (int)_objetEnMain.GetMeta(MetaSignaturePinceOs160).AsInt32() : int.MinValue;
+            bool manqueModele = _objetEnMain.FindChild("ModeleArme", true, false) == null;
+            if (manqueModele || sig != prev)
+            {
+                NettoyerModelesEnfants(_objetEnMain);
+                InstancierModelePinceOs(_objetEnMain, main, 0.32f, false);
+                _objetEnMain.SetMeta(MetaSignaturePinceOs160, sig);
+            }
+            _objetEnMain.Scale = Vector3.One;
+            _objetEnMain.RotationDegrees = new Vector3(-10f + _rotationManuelleX, 48f + _rotationManuelleY, 8f + _rotationManuelleZ);
+            return;
+        }
+        if (main.ID == IdObjetTorchie)
+        {
+            _objetEnMain.Mesh = null;
+            _objetEnMain.MaterialOverride = null;
+            int sig = HashCode.Combine(main.ID, RevisionRenduTorchie);
+            int prev = _objetEnMain.HasMeta(MetaSignatureTorchie156) ? (int)_objetEnMain.GetMeta(MetaSignatureTorchie156).AsInt32() : int.MinValue;
+            bool manqueModele = _objetEnMain.FindChild("ModeleArme", true, false) == null;
+            if (manqueModele || sig != prev)
+            {
+                NettoyerModelesEnfants(_objetEnMain);
+                InstancierModeleTorchie(_objetEnMain, main, 0.28f, false);
+                _objetEnMain.SetMeta(MetaSignatureTorchie156, sig);
+            }
+            _objetEnMain.Scale = Vector3.One;
+            _objetEnMain.RotationDegrees = new Vector3(-2f + _rotationManuelleX, 34f + _rotationManuelleY, 2f + _rotationManuelleZ);
+            return;
+        }
         if (main.ID == IdObjetMortierPilonBois)
         {
             _objetEnMain.Mesh = null;
@@ -675,7 +798,7 @@ public partial class Joueur
             _objetEnMain.RotationDegrees = new Vector3(-6f + _rotationManuelleX, 25f + _rotationManuelleY, 0f + _rotationManuelleZ);
             return;
         }
-        if (main.ID == 200 || main.ID == IdObjetTableBoisDecorative || main.ID == IdObjetTableArtisanaTier1 || main.ID == IdObjetTableAnalyseTier1 || main.ID == IdObjetRackBatons || main.ID == IdObjetRackBuches || main.ID == IdObjetCoffreBoisTier0 || main.ID == IdObjetPitFeu || main.ID == IdObjetPitFeuRoche || EstIdFondation(main.ID) || EstIdPlancher(main.ID) || EstIdMuret(main.ID) || EstIdMurBois(main.ID) || EstIdPorteBois(main.ID) || EstIdToitChaume(main.ID) || EstIdTorche(main.ID))
+        if (main.ID == 200 || main.ID == IdObjetTableBoisDecorative || main.ID == IdObjetTableArtisanaTier1 || main.ID == IdObjetTableAnalyseTier1 || main.ID == IdObjetRackBatons || main.ID == IdObjetRackBuches || main.ID == IdObjetCoffreBoisTier0 || main.ID == IdObjetPitFeu || main.ID == IdObjetPitFeuRoche || main.ID == IdObjetFourTorchie || EstIdFondation(main.ID) || EstIdPlancher(main.ID) || EstIdMuret(main.ID) || EstIdMurBois(main.ID) || EstIdPorteBois(main.ID) || EstIdToitChaume(main.ID) || EstIdTorche(main.ID))
         {
             _objetEnMain.Mesh = null;
             _objetEnMain.MaterialOverride = null;
@@ -695,14 +818,14 @@ public partial class Joueur
                 ? SignatureSlotAtelier200(main)
                 : (main.ID == IdObjetCoffreBoisTier0
                 ? SignatureSlotCoffre113(main)
-                : ((main.ID == IdObjetPitFeu || main.ID == IdObjetPitFeuRoche || EstIdFondation(main.ID) || EstIdPlancher(main.ID) || EstIdMuret(main.ID) || EstIdMurBois(main.ID) || EstIdPorteBois(main.ID) || EstIdToitChaume(main.ID) || EstIdTorche(main.ID))
+                : ((main.ID == IdObjetPitFeu || main.ID == IdObjetPitFeuRoche || main.ID == IdObjetFourTorchie || EstIdFondation(main.ID) || EstIdPlancher(main.ID) || EstIdMuret(main.ID) || EstIdMurBois(main.ID) || EstIdPorteBois(main.ID) || EstIdToitChaume(main.ID) || EstIdTorche(main.ID))
                 ? HashCode.Combine(main.ID, main.IndexBotanique, main.IndexChimique, main.IndexMorphologique, main.NiveauFracture, main.GenomeAssemblage ?? "")
                 : SignatureSlotRack109(main)));
             string cleSig = (main.ID == 200 || main.ID == IdObjetTableBoisDecorative || main.ID == IdObjetTableArtisanaTier1 || main.ID == IdObjetTableAnalyseTier1)
                 ? ((main.ID == 200 || main.ID == IdObjetTableBoisDecorative || main.ID == IdObjetTableArtisanaTier1) ? MetaSignatureAtelier200 : MetaSignatureTableAnalyse131)
                 : (main.ID == IdObjetCoffreBoisTier0
                 ? MetaSignatureCoffre113
-                : (main.ID == IdObjetPitFeu ? MetaSignaturePitFeu120 : (main.ID == IdObjetPitFeuRoche ? MetaSignaturePitFeuRoche122 : (EstIdFondation(main.ID) ? MetaSignatureFondation : ((EstIdSolBois(main.ID) || EstIdMuretBois(main.ID) || EstIdMurBois(main.ID) || EstIdPorteBois(main.ID) || EstIdToitChaume(main.ID) || EstIdTorche(main.ID)) ? MetaSignatureSolBois136 : ((EstIdSolRoche(main.ID) || EstIdMuretPierre(main.ID)) ? MetaSignatureSolRoche137 : MetaSignatureRack109))))));
+                : (main.ID == IdObjetPitFeu ? MetaSignaturePitFeu120 : (main.ID == IdObjetPitFeuRoche ? MetaSignaturePitFeuRoche122 : (main.ID == IdObjetFourTorchie ? MetaSignatureFourTorchie157 : (EstIdFondation(main.ID) ? MetaSignatureFondation : ((EstIdSolBois(main.ID) || EstIdMuretBois(main.ID) || EstIdMurBois(main.ID) || EstIdPorteBois(main.ID) || EstIdToitChaume(main.ID) || EstIdTorche(main.ID)) ? MetaSignatureSolBois136 : ((EstIdSolRoche(main.ID) || EstIdMuretPierre(main.ID)) ? MetaSignatureSolRoche137 : MetaSignatureRack109)))))));
             int prev = _objetEnMain.HasMeta(cleSig) ? (int)_objetEnMain.GetMeta(cleSig).AsInt32() : -1;
             RetirerMetaSiDifferente(_objetEnMain, MetaSignatureAtelier200, cleSig);
             RetirerMetaSiDifferente(_objetEnMain, MetaSignatureTableAnalyse131, cleSig);
@@ -710,6 +833,7 @@ public partial class Joueur
             RetirerMetaSiDifferente(_objetEnMain, MetaSignatureCoffre113, cleSig);
             RetirerMetaSiDifferente(_objetEnMain, MetaSignaturePitFeu120, cleSig);
             RetirerMetaSiDifferente(_objetEnMain, MetaSignaturePitFeuRoche122, cleSig);
+            RetirerMetaSiDifferente(_objetEnMain, MetaSignatureFourTorchie157, cleSig);
             RetirerMetaSiDifferente(_objetEnMain, MetaSignatureFondation, cleSig);
             RetirerMetaSiDifferente(_objetEnMain, MetaSignatureSolBois136, cleSig);
             RetirerMetaSiDifferente(_objetEnMain, MetaSignatureSolRoche137, cleSig);
@@ -725,6 +849,7 @@ public partial class Joueur
                 else if (main.ID == IdObjetRackBuches) InstancierModeleRackBuches(_objetEnMain, main);
                 else if (main.ID == IdObjetCoffreBoisTier0) InstancierModeleCoffreBoisTier0(_objetEnMain, main, 0.72f, false);
                 else if (main.ID == IdObjetPitFeuRoche) InstancierModelePitFeuRoche(_objetEnMain, main, 0.70f, false);
+                else if (main.ID == IdObjetFourTorchie) InstancierModeleFourTorchie(_objetEnMain, main, 0.72f, false);
                 else if (EstIdFondation(main.ID)) InstancierModeleFondation(_objetEnMain, main, 0.74f, false);
                 else if (EstIdSolBois(main.ID)) InstancierModeleSolBois(_objetEnMain, main, false);
                 else if (EstIdSolRoche(main.ID)) InstancierModeleSolRoche(_objetEnMain, main, false);
@@ -741,7 +866,7 @@ public partial class Joueur
                 else InstancierModelePitFeu(_objetEnMain, main, 0.66f, false);
                 _objetEnMain.SetMeta(cleSig, sig);
             }
-            _objetEnMain.Scale = Vector3.One * ((main.ID == 200 || main.ID == IdObjetTableBoisDecorative || main.ID == IdObjetTableArtisanaTier1 || main.ID == IdObjetTableAnalyseTier1) ? 0.35f : (main.ID == IdObjetCoffreBoisTier0 ? 0.38f : ((main.ID == IdObjetPitFeu || main.ID == IdObjetPitFeuRoche) ? 0.40f : (EstIdFondation(main.ID) ? 0.40f : ((EstIdPlancher(main.ID) || EstIdMuret(main.ID) || EstIdMurBois(main.ID) || EstIdPorteBois(main.ID) || EstIdToitChaume(main.ID) || EstIdTorche(main.ID)) ? 0.38f : 0.42f)))));
+            _objetEnMain.Scale = Vector3.One * ((main.ID == 200 || main.ID == IdObjetTableBoisDecorative || main.ID == IdObjetTableArtisanaTier1 || main.ID == IdObjetTableAnalyseTier1) ? 0.35f : (main.ID == IdObjetCoffreBoisTier0 ? 0.38f : ((main.ID == IdObjetPitFeu || main.ID == IdObjetPitFeuRoche || main.ID == IdObjetFourTorchie) ? 0.40f : (EstIdFondation(main.ID) ? 0.40f : ((EstIdPlancher(main.ID) || EstIdMuret(main.ID) || EstIdMurBois(main.ID) || EstIdPorteBois(main.ID) || EstIdToitChaume(main.ID) || EstIdTorche(main.ID)) ? 0.38f : 0.42f)))));
             _objetEnMain.RotationDegrees = new Vector3(0 + _rotationManuelleX, 90 + _rotationManuelleY, 0 + _rotationManuelleZ);
             return;
         }
@@ -1322,6 +1447,96 @@ public partial class Joueur
             meshNode.RotationDegrees = new Vector3(-4f, 48f, 4f);
             return;
         }
+        if (slot.ID == IdObjetArgileHumidifiee)
+        {
+            meshNode.Mesh = null;
+            meshNode.MaterialOverride = null;
+            int sig = slot.ID;
+            int prev = meshNode.HasMeta(MetaSignatureArgileHumid155) ? (int)meshNode.GetMeta(MetaSignatureArgileHumid155).AsInt32() : int.MinValue;
+            bool manqueModele = meshNode.FindChild("ModeleArme", true, false) == null;
+            if (manqueModele || sig != prev)
+            {
+                NettoyerModelesEnfants(meshNode);
+                InstancierModeleArgileHumidifiee(meshNode, slot, 0.22f, false);
+                meshNode.SetMeta(MetaSignatureArgileHumid155, sig);
+            }
+            meshNode.Scale = Vector3.One;
+            meshNode.RotationDegrees = new Vector3(-4f, 44f, 4f);
+            return;
+        }
+        if (slot.ID == IdObjetBolArgile)
+        {
+            meshNode.Mesh = null;
+            meshNode.MaterialOverride = null;
+            float facteurChauffe = CalculerFacteurChauffeBolArgileRendu(slot);
+            int sig = SignatureTeinteBolArgile(slot.ID, facteurChauffe);
+            int prev = meshNode.HasMeta(MetaSignatureBolArgile158) ? (int)meshNode.GetMeta(MetaSignatureBolArgile158).AsInt32() : int.MinValue;
+            bool manqueModele = meshNode.FindChild("ModeleArme", true, false) == null;
+            if (manqueModele || sig != prev)
+            {
+                NettoyerModelesEnfants(meshNode);
+                InstancierModeleBolArgile(meshNode, slot, 0.20f, false, facteurChauffe);
+                meshNode.SetMeta(MetaSignatureBolArgile158, sig);
+            }
+            meshNode.Scale = Vector3.One;
+            meshNode.RotationDegrees = new Vector3(-6f, 48f, 2f);
+            return;
+        }
+        if (slot.ID == IdObjetBolCeramique)
+        {
+            meshNode.Mesh = null;
+            meshNode.MaterialOverride = null;
+            float facteurChaleur = FourTorchieThermodynamique.ObtenirFacteurChaleurBolCeramiqueSlot(slot);
+            int sigCer = SignatureTeinteBolCeramique(slot.ID, slot.IndexChimique, facteurChaleur);
+            int prevCer = meshNode.HasMeta(MetaSignatureBolCeramique159) ? (int)meshNode.GetMeta(MetaSignatureBolCeramique159).AsInt32() : int.MinValue;
+            bool manqueCer = meshNode.FindChild("ModeleArme", true, false) == null;
+            if (manqueCer || sigCer != prevCer)
+            {
+                NettoyerModelesEnfants(meshNode);
+                InstancierModeleBolCeramique(meshNode, slot, 0.20f, false, facteurChaleur);
+                meshNode.SetMeta(MetaSignatureBolCeramique159, sigCer);
+            }
+            meshNode.Scale = Vector3.One;
+            meshNode.RotationDegrees = new Vector3(-6f, 48f, 2f);
+            return;
+        }
+        if (slot.ID == IdObjetPinceOs)
+        {
+            meshNode.Mesh = null;
+            meshNode.MaterialOverride = null;
+            float facteurBolPince = 0f;
+            if (ItemPhysique.EssayerLireObjetPortePinceOs(slot, out SlotInventaire bolPince))
+                facteurBolPince = FourTorchieThermodynamique.ObtenirFacteurChaleurBolCeramiqueSlot(bolPince);
+            int sig = HashCode.Combine(slot.ID, slot.GenomeAssemblage ?? "", Mathf.RoundToInt(facteurBolPince * 80f));
+            int prev = meshNode.HasMeta(MetaSignaturePinceOs160) ? (int)meshNode.GetMeta(MetaSignaturePinceOs160).AsInt32() : int.MinValue;
+            bool manqueModele = meshNode.FindChild("ModeleArme", true, false) == null;
+            if (manqueModele || sig != prev)
+            {
+                NettoyerModelesEnfants(meshNode);
+                InstancierModelePinceOs(meshNode, slot, 0.28f, false);
+                meshNode.SetMeta(MetaSignaturePinceOs160, sig);
+            }
+            meshNode.Scale = Vector3.One;
+            meshNode.RotationDegrees = new Vector3(-10f, 50f, 8f);
+            return;
+        }
+        if (slot.ID == IdObjetTorchie)
+        {
+            meshNode.Mesh = null;
+            meshNode.MaterialOverride = null;
+            int sig = HashCode.Combine(slot.ID, RevisionRenduTorchie);
+            int prev = meshNode.HasMeta(MetaSignatureTorchie156) ? (int)meshNode.GetMeta(MetaSignatureTorchie156).AsInt32() : int.MinValue;
+            bool manqueModele = meshNode.FindChild("ModeleArme", true, false) == null;
+            if (manqueModele || sig != prev)
+            {
+                NettoyerModelesEnfants(meshNode);
+                InstancierModeleTorchie(meshNode, slot, 0.24f, false);
+                meshNode.SetMeta(MetaSignatureTorchie156, sig);
+            }
+            meshNode.Scale = Vector3.One;
+            meshNode.RotationDegrees = new Vector3(-2f, 42f, 3f);
+            return;
+        }
         if (slot.ID == IdObjetMortierPilonBois)
         {
             meshNode.Mesh = null;
@@ -1387,7 +1602,7 @@ public partial class Joueur
             meshNode.RotationDegrees = new Vector3(0f, 28f, 0f);
             return;
         }
-        if (slot.ID == 200 || slot.ID == IdObjetTableBoisDecorative || slot.ID == IdObjetTableArtisanaTier1 || slot.ID == IdObjetTableAnalyseTier1 || slot.ID == IdObjetRackBatons || slot.ID == IdObjetRackBuches || slot.ID == IdObjetCoffreBoisTier0 || slot.ID == IdObjetPitFeu || slot.ID == IdObjetPitFeuRoche || EstIdFondation(slot.ID) || EstIdPlancher(slot.ID) || EstIdMuret(slot.ID) || EstIdMurBois(slot.ID) || EstIdPorteBois(slot.ID) || EstIdToitChaume(slot.ID) || EstIdTorche(slot.ID))
+        if (slot.ID == 200 || slot.ID == IdObjetTableBoisDecorative || slot.ID == IdObjetTableArtisanaTier1 || slot.ID == IdObjetTableAnalyseTier1 || slot.ID == IdObjetRackBatons || slot.ID == IdObjetRackBuches || slot.ID == IdObjetCoffreBoisTier0 || slot.ID == IdObjetPitFeu || slot.ID == IdObjetPitFeuRoche || slot.ID == IdObjetFourTorchie || EstIdFondation(slot.ID) || EstIdPlancher(slot.ID) || EstIdMuret(slot.ID) || EstIdMurBois(slot.ID) || EstIdPorteBois(slot.ID) || EstIdToitChaume(slot.ID) || EstIdTorche(slot.ID))
         {
             meshNode.Mesh = null;
             meshNode.MaterialOverride = null;
@@ -1407,14 +1622,14 @@ public partial class Joueur
                 ? SignatureSlotAtelier200(slot)
                 : (slot.ID == IdObjetCoffreBoisTier0
                 ? SignatureSlotCoffre113(slot)
-                : ((slot.ID == IdObjetPitFeu || slot.ID == IdObjetPitFeuRoche || EstIdFondation(slot.ID) || EstIdPlancher(slot.ID) || EstIdMuret(slot.ID) || EstIdMurBois(slot.ID) || EstIdPorteBois(slot.ID) || EstIdToitChaume(slot.ID) || EstIdTorche(slot.ID))
+                : ((slot.ID == IdObjetPitFeu || slot.ID == IdObjetPitFeuRoche || slot.ID == IdObjetFourTorchie || EstIdFondation(slot.ID) || EstIdPlancher(slot.ID) || EstIdMuret(slot.ID) || EstIdMurBois(slot.ID) || EstIdPorteBois(slot.ID) || EstIdToitChaume(slot.ID) || EstIdTorche(slot.ID))
                 ? HashCode.Combine(slot.ID, slot.IndexBotanique, slot.IndexChimique, slot.IndexMorphologique, slot.NiveauFracture, slot.GenomeAssemblage ?? "")
                 : SignatureSlotRack109(slot)));
             string cleSig = (slot.ID == 200 || slot.ID == IdObjetTableBoisDecorative || slot.ID == IdObjetTableArtisanaTier1 || slot.ID == IdObjetTableAnalyseTier1)
                 ? ((slot.ID == 200 || slot.ID == IdObjetTableBoisDecorative || slot.ID == IdObjetTableArtisanaTier1) ? MetaSignatureAtelier200 : MetaSignatureTableAnalyse131)
                 : (slot.ID == IdObjetCoffreBoisTier0
                 ? MetaSignatureCoffre113
-                : (slot.ID == IdObjetPitFeu ? MetaSignaturePitFeu120 : (slot.ID == IdObjetPitFeuRoche ? MetaSignaturePitFeuRoche122 : (EstIdFondation(slot.ID) ? MetaSignatureFondation : ((EstIdSolBois(slot.ID) || EstIdMuretBois(slot.ID) || EstIdMurBois(slot.ID) || EstIdPorteBois(slot.ID) || EstIdToitChaume(slot.ID) || EstIdTorche(slot.ID)) ? MetaSignatureSolBois136 : ((EstIdSolRoche(slot.ID) || EstIdMuretPierre(slot.ID)) ? MetaSignatureSolRoche137 : MetaSignatureRack109))))));
+                : (slot.ID == IdObjetPitFeu ? MetaSignaturePitFeu120 : (slot.ID == IdObjetPitFeuRoche ? MetaSignaturePitFeuRoche122 : (slot.ID == IdObjetFourTorchie ? MetaSignatureFourTorchie157 : (EstIdFondation(slot.ID) ? MetaSignatureFondation : ((EstIdSolBois(slot.ID) || EstIdMuretBois(slot.ID) || EstIdMurBois(slot.ID) || EstIdPorteBois(slot.ID) || EstIdToitChaume(slot.ID) || EstIdTorche(slot.ID)) ? MetaSignatureSolBois136 : ((EstIdSolRoche(slot.ID) || EstIdMuretPierre(slot.ID)) ? MetaSignatureSolRoche137 : MetaSignatureRack109)))))));
             int prev = meshNode.HasMeta(cleSig) ? (int)meshNode.GetMeta(cleSig).AsInt32() : -1;
             RetirerMetaSiDifferente(meshNode, MetaSignatureAtelier200, cleSig);
             RetirerMetaSiDifferente(meshNode, MetaSignatureTableAnalyse131, cleSig);
@@ -1437,6 +1652,7 @@ public partial class Joueur
                 else if (slot.ID == IdObjetRackBuches) InstancierModeleRackBuches(meshNode, slot);
                 else if (slot.ID == IdObjetCoffreBoisTier0) InstancierModeleCoffreBoisTier0(meshNode, slot, 0.78f, false);
                 else if (slot.ID == IdObjetPitFeuRoche) InstancierModelePitFeuRoche(meshNode, slot, 0.80f, false);
+                else if (slot.ID == IdObjetFourTorchie) InstancierModeleFourTorchie(meshNode, slot, 0.82f, false);
                 else if (EstIdFondation(slot.ID)) InstancierModeleFondation(meshNode, slot, 0.82f, false);
                 else if (EstIdSolBois(slot.ID)) InstancierModeleSolBois(meshNode, slot, false);
                 else if (EstIdSolRoche(slot.ID)) InstancierModeleSolRoche(meshNode, slot, false);
@@ -1453,7 +1669,7 @@ public partial class Joueur
                 else InstancierModelePitFeu(meshNode, slot, 0.76f, false);
                 meshNode.SetMeta(cleSig, sig);
             }
-            meshNode.Scale = Vector3.One * ((slot.ID == 200 || slot.ID == IdObjetTableBoisDecorative || slot.ID == IdObjetTableArtisanaTier1 || slot.ID == IdObjetTableAnalyseTier1) ? 0.8f : (slot.ID == IdObjetCoffreBoisTier0 ? 0.82f : ((slot.ID == IdObjetPitFeu || slot.ID == IdObjetPitFeuRoche) ? 0.86f : (EstIdFondation(slot.ID) ? 0.86f : ((EstIdPlancher(slot.ID) || EstIdMuret(slot.ID) || EstIdMurBois(slot.ID) || EstIdPorteBois(slot.ID) || EstIdToitChaume(slot.ID) || EstIdTorche(slot.ID)) ? 0.84f : 0.92f)))));
+            meshNode.Scale = Vector3.One * ((slot.ID == 200 || slot.ID == IdObjetTableBoisDecorative || slot.ID == IdObjetTableArtisanaTier1 || slot.ID == IdObjetTableAnalyseTier1) ? 0.8f : (slot.ID == IdObjetCoffreBoisTier0 ? 0.82f : ((slot.ID == IdObjetPitFeu || slot.ID == IdObjetPitFeuRoche || slot.ID == IdObjetFourTorchie) ? 0.86f : (EstIdFondation(slot.ID) ? 0.86f : ((EstIdPlancher(slot.ID) || EstIdMuret(slot.ID) || EstIdMurBois(slot.ID) || EstIdPorteBois(slot.ID) || EstIdToitChaume(slot.ID) || EstIdTorche(slot.ID)) ? 0.84f : 0.92f)))));
             meshNode.RotationDegrees = new Vector3(0f, 45f, 0f);
             return;
         }

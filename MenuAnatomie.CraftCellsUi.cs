@@ -1,4 +1,4 @@
-﻿using Godot;
+using Godot;
 using System;
 using System.Collections.Generic;
 
@@ -129,8 +129,9 @@ public partial class MenuAnatomie : Control
 		{
 			bool modeRack = _joueurRef.StockageRackBatonsOuvert;
 			bool modeCoffre = _joueurRef.StockageCoffreOuvert;
-			SlotResultatCraft.Visible = !modeRack && !modeCoffre;
-			if (modeRack || modeCoffre)
+			bool modeFour = _joueurRef.StockageFourTorchieOuvert;
+			SlotResultatCraft.Visible = !modeRack && !modeCoffre && !modeFour;
+			if (modeRack || modeCoffre || modeFour)
 			{
 				_empreinteResultatCraftLast = 0UL;
 				if (_meshPreviewResultatCraft != null)

@@ -206,6 +206,22 @@ public partial class Joueur : CharacterBody3D
     public const int IdObjetCharbonAntracite = 153;
     /// <summary>Bol en bois rempli d'eau (obtenu en remplissant un bol vide dans l'eau). Garde l'essence du bois.</summary>
     public const int IdObjetBolEau = 154;
+    /// <summary>Argile humidifiée (craft : bol d'eau + voxel argile). Matériau intermédiaire, stack 20.</summary>
+    public const int IdObjetArgileHumidifiee = 155;
+    /// <summary>Torchie (craft : argile humidifiée + brin d'herbe + voxel boue). Matériau intermédiaire, stack 24.</summary>
+    public const int IdObjetTorchie = 156;
+    /// <summary>Four en torchie (craft 3×3 torchies, posable au sol direct uniquement). Stack 1.</summary>
+    public const int IdObjetFourTorchie = 157;
+    /// <summary>Bol en argile (craft établi 3×3, argile humidifiée). Matériau intermédiaire, stack 10.</summary>
+    public const int IdObjetBolArgile = 158;
+    /// <summary>Bol en céramique (four 500–700 °C, 2 min 30). Chaud après cuisson : refroidir 1 min au soleil.</summary>
+    public const int IdObjetBolCeramique = 159;
+    /// <summary>Pince en os vide (craft établi 3×3, 4 os). Outil, stack 1.</summary>
+    public const int IdObjetPinceOs = 160;
+    /// <summary>Taille monde du four posé au sol (plus grande dimension du mesh normalisé).</summary>
+    public const float TailleFourTorchiePoseMetres = 3.0f;
+    /// <summary>Incrémenter pour régénérer texture / réinstancier les modèles torchie (GLB sans UVs).</summary>
+    public const int RevisionRenduTorchie = 4;
 
     public static bool EstIdCharbonRecolte(int id) =>
         id == IdObjetCharbonBasseQualite
@@ -314,6 +330,7 @@ public partial class Joueur : CharacterBody3D
     }
 
     private static bool EstIdPitFeu(int id) => id == IdObjetPitFeu || id == IdObjetPitFeuRoche;
+    private static bool EstIdFourTorchie(int id) => id == IdObjetFourTorchie;
     private static bool EstIdFondation(int id) => id == IdObjetFondationBois
         || id == IdObjetFondationRoche
         || id == IdObjetFondationBoisSoleRoche
@@ -474,6 +491,8 @@ public partial class Joueur : CharacterBody3D
     public ItemPhysique RackBatonsOuvert;
     /// <summary>Coffre en bois (113) ouvert : stockage 10 cases dans le menu Q.</summary>
     public ItemPhysique CoffreOuvert;
+    /// <summary>Four en torchie (157) ouvert : interface cuisson dans le menu Q.</summary>
+    public ItemPhysique FourTorchieOuvert;
 
     /// <summary>True si le menu a Ã©tÃ© ouvert depuis lâ€™atelier posÃ© : recettes et UI en 3Ã—3. False aprÃ¨s Q ou fermeture du menu.</summary>
     public bool CraftGrille3x3AuTable { get; set; }
@@ -483,6 +502,8 @@ public partial class Joueur : CharacterBody3D
     public bool StockageRackBatonsOuvert { get; set; }
     /// <summary>True si le panneau stockage 10 slots du coffre en bois est actif.</summary>
     public bool StockageCoffreOuvert { get; set; }
+    /// <summary>True si le panneau four en torchie (combustible / cuisson / rÃ©sultats) est actif.</summary>
+    public bool StockageFourTorchieOuvert { get; set; }
 
     /// <summary>Slot contenant le rÃ©sultat d'une recette valide.</summary>
     public SlotInventaire SlotResultatCraft = new SlotInventaire();
@@ -718,6 +739,12 @@ public partial class Joueur : CharacterBody3D
     private const string MetaSignatureMailletBois128 = "SigMailletBois128";
     private const string MetaSignatureBolBois129 = "SigBolBois129";
     private const string MetaSignatureBolEau154 = "SigBolEau154";
+    private const string MetaSignatureArgileHumid155 = "SigArgileHumid155";
+    private const string MetaSignatureTorchie156 = "SigTorchie156";
+    private const string MetaSignatureFourTorchie157 = "SigFourTorchie157";
+    private const string MetaSignatureBolArgile158 = "SigBolArgile158";
+    private const string MetaSignatureBolCeramique159 = "SigBolCeramique159";
+    private const string MetaSignaturePinceOs160 = "SigPinceOs160";
     private const string MetaSignatureMortierPilon130 = "SigMortierPilon130";
     private const string MetaSignatureFenetreBois146 = "SigFenetreBois146";
     private const string MetaSignatureTableAnalyse131 = "SigTableAnalyse131";
@@ -1217,6 +1244,8 @@ public partial class Joueur : CharacterBody3D
             RackBatonsOuvert = null;
             StockageCoffreOuvert = false;
             CoffreOuvert = null;
+            StockageFourTorchieOuvert = false;
+            FourTorchieOuvert = null;
             _menuAnatomie.BasculerVisibilite();
             RafraichirHUD();
             Input.MouseMode = Input.MouseModeEnum.Captured;

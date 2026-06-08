@@ -5,19 +5,17 @@ using System.Globalization;
 
 public partial class Joueur
 {
-    /// <summary>Ouvre le conteneur/station sous visée (atelier 200, table structures 148, table analyse 131, racks 109/110, coffre 113, pit roche 122).</summary>
+    /// <summary>Ouvre le conteneur/station sous visée (atelier 200, table structures 148, table analyse 131, racks 109/110, coffre 113, pit roche 122, four torchie 157).</summary>
     private bool EssayerOuvrirAtelierSousVisee()
     {
         _rayon.ForceRaycastUpdate();
         if (!_rayon.IsColliding()) return false;
         Node objetTouche = NoeudDepuisColliderRaycast(_rayon.GetCollider());
-        var itemTouche = objetTouche as ItemPhysique
-            ?? (objetTouche as Node)?.GetParent() as ItemPhysique
-            ?? (objetTouche as Node)?.GetNodeOrNull<ItemPhysique>("ItemPhysique");
+        var itemTouche = ObtenirItemPhysiqueDepuisNoeud(objetTouche);
         if (itemTouche == null || _menuAnatomie == null)
             return false;
         int idT = itemTouche.ID_Objet;
-        if (idT != 200 && idT != IdObjetTableArtisanaTier1 && idT != IdObjetTableAnalyseTier1 && idT != IdObjetRackBatons && idT != IdObjetRackBuches && idT != IdObjetCoffreBoisTier0 && idT != IdObjetPitFeuRoche)
+        if (idT != 200 && idT != IdObjetTableArtisanaTier1 && idT != IdObjetTableAnalyseTier1 && idT != IdObjetRackBatons && idT != IdObjetRackBuches && idT != IdObjetCoffreBoisTier0 && idT != IdObjetPitFeuRoche && idT != IdObjetFourTorchie)
             return false;
 
         if (idT == IdObjetTableAnalyseTier1)
@@ -29,6 +27,8 @@ public partial class Joueur
             RackBatonsOuvert = null;
             StockageCoffreOuvert = false;
             CoffreOuvert = null;
+            StockageFourTorchieOuvert = false;
+            FourTorchieOuvert = null;
 
             _menuAnatomie.OuvrirAnalyseurDepuisMonde(tier1: true, itemTouche);
             GetViewport().SetInputAsHandled();
@@ -36,6 +36,8 @@ public partial class Joueur
             return true;
         }
         OuvrirAnalyseurManuel();
+        StockageFourTorchieOuvert = false;
+        FourTorchieOuvert = null;
         if (idT == 200 || idT == IdObjetTableArtisanaTier1)
         {
             AtelierPlanTravailOuvert = itemTouche;
@@ -55,6 +57,18 @@ public partial class Joueur
             AtelierPlanTravailOuvert = null;
             StockageRackBatonsOuvert = false;
             RackBatonsOuvert = null;
+        }
+        else if (idT == IdObjetFourTorchie)
+        {
+            FourTorchieOuvert = itemTouche;
+            StockageFourTorchieOuvert = true;
+            CraftGrille3x3AuTable = false;
+            IdStationCraftOuverte = 0;
+            AtelierPlanTravailOuvert = null;
+            StockageRackBatonsOuvert = false;
+            RackBatonsOuvert = null;
+            StockageCoffreOuvert = false;
+            CoffreOuvert = null;
         }
         else
         {
@@ -81,7 +95,9 @@ public partial class Joueur
                 ? "ZERO-K : Table artisanat structures T1 ouverte."
             : (idT == IdObjetRackBatons ? "ZERO-K : Rack à bâtons ouvert."
                 : (idT == IdObjetRackBuches ? "ZERO-K : Rack à bûches ouvert."
-                    : (idT == IdObjetPitFeuRoche ? "ZERO-K : Pit à feu roche ouvert." : "ZERO-K : Coffre en bois ouvert.")))));
+                    : (idT == IdObjetPitFeuRoche ? "ZERO-K : Pit à feu roche ouvert."
+                        : (idT == IdObjetFourTorchie ? "SEROKA : Four en torchie ouvert."
+                            : "ZERO-K : Coffre en bois ouvert."))))));
         return true;
     }
 
@@ -95,11 +111,33 @@ public partial class Joueur
         if (!_rayon.IsColliding())
             return false;
         Node objetTouche = NoeudDepuisColliderRaycast(_rayon.GetCollider());
-        var itemTouche = objetTouche as ItemPhysique
-            ?? (objetTouche as Node)?.GetParent() as ItemPhysique
-            ?? (objetTouche as Node)?.GetNodeOrNull<ItemPhysique>("ItemPhysique");
-        if (itemTouche == null || (itemTouche.ID_Objet != IdObjetPitFeu && itemTouche.ID_Objet != IdObjetPitFeuRoche && !EstIdTorche(itemTouche.ID_Objet)))
+        var itemTouche = ObtenirItemPhysiqueDepuisNoeud(objetTouche);
+        if (itemTouche == null || (itemTouche.ID_Objet != IdObjetPitFeu && itemTouche.ID_Objet != IdObjetPitFeuRoche && itemTouche.ID_Objet != IdObjetFourTorchie && !EstIdTorche(itemTouche.ID_Objet)))
             return false;
+        if (itemTouche.ID_Objet == IdObjetFourTorchie)
+        {
+            if (itemTouche.EstFourTorchieAllume() && itemTouche.ObtenirProgressionCombustionFourTorchie() >= 0f)
+            {
+                GD.Print("SEROKA : Le four en torchie est déjà allumé.");
+                return false;
+            }
+            if (!itemTouche.ActiverFourTorchieAllume())
+            {
+                GD.Print("SEROKA : Four en torchie — mettez du combustible (bois sec, charbon) dans le slot combustible avant d'allumer.");
+                return false;
+            }
+            mainActive.DurabiliteOutilActuelle = Mathf.Max(0f, mainActive.DurabiliteOutilActuelle - 1f);
+            if (mainActive.DurabiliteOutilActuelle <= 0.001f)
+            {
+                GD.Print("ZERO-K : L'allume-feu s'est brisé.");
+                mainActive = new SlotInventaire();
+            }
+            if (!Engine.IsEditorHint())
+                SauvegarderEtatPersistantMonde(GetTree());
+            GetViewport().SetInputAsHandled();
+            GD.Print("SEROKA : Four en torchie allumé.");
+            return true;
+        }
         if (EstIdTorche(itemTouche.ID_Objet))
         {
             if (itemTouche.EstTorcheAllumee())
@@ -154,7 +192,7 @@ public partial class Joueur
         return true;
     }
 
-    /// <summary>Clic gauche avec pelle : éteint immédiatement un pit à feu roche allumé.</summary>
+    /// <summary>Clic gauche avec pelle : éteint un pit à feu roche ou un four en torchie allumé.</summary>
     private bool EssayerEteindrePitFeuRocheSousVisee(SlotInventaire mainActive)
     {
         if (mainActive.EstVide || mainActive.ID != IdObjetPellePierreTier0)
@@ -163,10 +201,22 @@ public partial class Joueur
         if (!_rayon.IsColliding())
             return false;
         Node objetTouche = NoeudDepuisColliderRaycast(_rayon.GetCollider());
-        var itemTouche = objetTouche as ItemPhysique
-            ?? (objetTouche as Node)?.GetParent() as ItemPhysique
-            ?? (objetTouche as Node)?.GetNodeOrNull<ItemPhysique>("ItemPhysique");
-        if (itemTouche == null || itemTouche.ID_Objet != IdObjetPitFeuRoche || !itemTouche.EstPitFeuRocheAllume())
+        var itemTouche = ObtenirItemPhysiqueDepuisNoeud(objetTouche);
+        if (itemTouche == null)
+            return false;
+        if (itemTouche.ID_Objet == IdObjetFourTorchie)
+        {
+            if (!itemTouche.EstFourTorchieAllume() && itemTouche.ObtenirTemperatureFourTorchie() <= FourTorchieThermodynamique.TempAmbianteC + 5f)
+                return false;
+            if (!itemTouche.EteindreFourTorchie())
+                return false;
+            if (!Engine.IsEditorHint())
+                SauvegarderEtatPersistantMonde(GetTree());
+            GD.Print("SEROKA : Four en torchie éteint à la pelle.");
+            GetViewport().SetInputAsHandled();
+            return true;
+        }
+        if (itemTouche.ID_Objet != IdObjetPitFeuRoche || !itemTouche.EstPitFeuRocheAllume())
             return false;
         if (!itemTouche.EteindrePitFeuRoche())
             return false;

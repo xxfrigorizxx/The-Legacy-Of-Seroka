@@ -584,6 +584,8 @@ public partial class Joueur
             return new Vector3(0.95f, 0.72f, 0.62f);
         if (idObjet == IdObjetCoffreBoisTier0)
             return new Vector3(0.58f, 0.42f, 0.48f);
+        if (EstIdFourTorchie(idObjet))
+            return new Vector3(TailleFourTorchiePoseMetres, TailleFourTorchiePoseMetres * 0.55f, TailleFourTorchiePoseMetres);
         if (EstIdPitFeu(idObjet))
             return new Vector3(0.98f, 0.45f, 0.98f);
         return new Vector3(0.8f, 0.8f, 0.8f);
@@ -735,7 +737,9 @@ public partial class Joueur
         bool estRackBatons = slot.ID == IdObjetRackBatons || slot.ID == IdObjetRackBuches;
         bool estBuisson = slot.ID == 10 || slot.ID == 11;
         bool estCoffre = slot.ID == IdObjetCoffreBoisTier0;
-        bool estPitFeu = EstIdPitFeu(slot.ID) || EstIdFondation(slot.ID) || EstIdPlancher(slot.ID) || EstIdMuret(slot.ID) || EstIdMurBois(slot.ID) || EstIdPorteBois(slot.ID) || EstIdToitChaume(slot.ID);
+        bool estPitFeu = EstIdPitFeu(slot.ID) || EstIdFourTorchie(slot.ID) || EstIdFondation(slot.ID) || EstIdPlancher(slot.ID) || EstIdMuret(slot.ID) || EstIdMurBois(slot.ID) || EstIdPorteBois(slot.ID) || EstIdToitChaume(slot.ID);
+        if (ItemPhysique.EstPinceOsPorteObjet(slot))
+            return false;
         return !estTerrainVoxel && !estAtelier && !estTableAnalyse && !estRackBatons && !estBuisson && !estCoffre && !estPitFeu;
     }
 
@@ -826,5 +830,18 @@ public partial class Joueur
         if (collider is CollisionShape3D sh)
             return sh.GetParent() as Node ?? sh;
         return collider as Node;
+    }
+
+    /// <summary>Remonte l'arbre depuis un collider ou mesh jusqu'à l'<see cref="ItemPhysique"/> posé.</summary>
+    private static ItemPhysique ObtenirItemPhysiqueDepuisNoeud(Node noeud)
+    {
+        Node courant = noeud;
+        while (courant != null)
+        {
+            if (courant is ItemPhysique item)
+                return item;
+            courant = courant.GetParent();
+        }
+        return null;
     }
 }

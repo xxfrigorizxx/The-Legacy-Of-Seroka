@@ -5,7 +5,7 @@ using System.Reflection;
 /// <summary>Construction du catalogue inventaire créatif/admin (variantes + IDs objets manquants).</summary>
 public static class CreatifCatalogueService
 {
-    public const int VersionCatalogue = 19;
+    public const int VersionCatalogue = 22;
 
     public enum CategorieCreatif
     {
@@ -153,7 +153,7 @@ public static class CreatifCatalogueService
             return CategorieCreatif.Bois;
         if (id == 200 || id == Joueur.IdObjetTableBoisDecorative || id == Joueur.IdObjetTableArtisanaTier1 || id == Joueur.IdObjetTableAnalyseTier1 || id == Joueur.IdObjetRackBatons
             || id == Joueur.IdObjetRackBuches || id == Joueur.IdObjetCoffreBoisTier0
-            || id == Joueur.IdObjetPitFeu || id == Joueur.IdObjetPitFeuRoche
+            || id == Joueur.IdObjetPitFeu || id == Joueur.IdObjetPitFeuRoche || id == Joueur.IdObjetFourTorchie
             || id == Joueur.IdObjetFondationBois || id == Joueur.IdObjetFondationRoche
             || id == Joueur.IdObjetFondationBoisSoleRoche || id == Joueur.IdObjetFondationRocheSoleBois
             || id == Joueur.IdObjetSolBois || id == Joueur.IdObjetSolRoche || id == Joueur.IdObjetMuretBois || id == Joueur.IdObjetMuretPierre || id == Joueur.IdObjetMurBois || id == Joueur.IdObjetMurBoisFenetre || id == Joueur.IdObjetMurBoisCadrePorte || id == Joueur.IdObjetPorteBois || id == Joueur.IdObjetToitChaume || id == Joueur.IdObjetMailletBois
@@ -162,7 +162,8 @@ public static class CreatifCatalogueService
             return CategorieCreatif.Structures;
         if (id == 105 || id == 106 || id == Joueur.IdObjetHachePierreTier1
             || id == Joueur.IdObjetPellePierreTier0 || id == Joueur.IdObjetPiochePierreTier0
-            || id == Joueur.IdObjetLancePierreTier0 || id == Joueur.IdObjetFauxPierreTier0)
+            || id == Joueur.IdObjetLancePierreTier0 || id == Joueur.IdObjetFauxPierreTier0
+            || id == Joueur.IdObjetPinceOs)
             return CategorieCreatif.Outils;
         if (id == Joueur.IdObjetBaie || id == Joueur.IdObjetSteakCru || id == Joueur.IdObjetSteakCuit
             || id == Joueur.IdObjetAtelleJambe || id == Joueur.IdObjetAtelleBras || id == Joueur.IdObjetBandageTier1)

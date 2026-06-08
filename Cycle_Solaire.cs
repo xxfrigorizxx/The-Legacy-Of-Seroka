@@ -34,6 +34,7 @@ public partial class Cycle_Solaire : Node
 	private float _energieLuneEditeur = 0.055f;
 	/// <summary>Évite l'oscillation jour/nuit autour de l'horizon (pompage lumineux).</summary>
 	private bool _modeNuitActif = true;
+	private float _hauteurSoleilCourante;
 
 	private const float SeuilEntreeModeNuit = -0.03f;
 	private const float SeuilSortieModeNuit = 0.02f;
@@ -60,6 +61,10 @@ public partial class Cycle_Solaire : Node
 		if (_chargementMondeActif)
 			AppliquerEtatSansSoleilNiLune();
 	}
+
+	/// <summary>Vrai si le soleil est au-dessus de l'horizon (refroidissement céramique au sol).</summary>
+	public bool EstJourEnsoleille(float seuilHauteur = 0.12f) =>
+		!_chargementMondeActif && !_modeNuitActif && _hauteurSoleilCourante >= seuilHauteur;
 
 	private void AppliquerEtatSansSoleilNiLune()
 	{
@@ -225,6 +230,7 @@ public partial class Cycle_Solaire : Node
 		float angleX = 90f - (float)(pourcentageJournee * 360.0);
 		// Hauteur : 1 = Zénith (Midi), 0 = Horizon, -1 = Nadir (Minuit)
 		float hauteurSoleil = Mathf.Sin(Mathf.DegToRad(-angleX));
+		_hauteurSoleilCourante = hauteurSoleil;
 		if (_modeNuitActif)
 		{
 			if (hauteurSoleil >= SeuilSortieModeNuit)

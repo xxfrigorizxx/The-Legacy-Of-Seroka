@@ -1,4 +1,4 @@
-﻿using Godot;
+using Godot;
 using System;
 
 public partial class Joueur
@@ -403,55 +403,6 @@ public partial class Joueur
         rbCible.QueueFree();
     }
 
-    /// <summary>
-    /// Réduit la collision du cadavre d'arbre après retrait feuillage/branches.
-    /// Le mesh du "Bois" reste volontairement inchangé pour éviter des recooks lourds en plein combat;
-    /// on pilote donc la hitbox via une box dynamique qui suit l'état restant.
-    /// </summary>
-    private static void AjusterCollisionCadavreArbre(RigidBody3D cadavre, bool feuillagePresent, int branchesRestantes)
-    {
-        if (cadavre == null || !GodotObject.IsInstanceValid(cadavre))
-            return;
-
-        float hauteurTronc = cadavre.HasMeta("HauteurTronc") ? (float)cadavre.GetMeta("HauteurTronc").AsSingle() : 4.0f;
-        float rayonBase = cadavre.HasMeta("RayonTroncBase") ? (float)cadavre.GetMeta("RayonTroncBase").AsSingle() : 0.22f;
-        float rayonSommet = cadavre.HasMeta("RayonTroncSommet") ? (float)cadavre.GetMeta("RayonTroncSommet").AsSingle() : rayonBase * 0.65f;
-        float rayonTronc = Mathf.Max(0.12f, Mathf.Max(rayonBase, rayonSommet));
-        float ratioBranches = Mathf.Clamp(branchesRestantes / 10.0f, 0f, 1f);
-
-        // largeur supplémentaire "virtuelle" des branchages restants
-        float extraBranchage = feuillagePresent
-            ? Mathf.Clamp(rayonTronc * 2.3f, 0.65f, 2.0f)
-            : Mathf.Lerp(0.06f, Mathf.Clamp(rayonTronc * 1.3f, 0.18f, 0.9f), ratioBranches);
-
-        float largeur = Mathf.Max(0.42f, rayonTronc * 2f + extraBranchage);
-        float hauteur = Mathf.Clamp(Mathf.Max(hauteurTronc * 0.88f, 0.8f), 0.8f, 7.5f);
-
-        CollisionShape3D collisionDynamique = null;
-        foreach (Node enfant in cadavre.GetChildren())
-        {
-            if (enfant is not CollisionShape3D cs)
-                continue;
-            if (cs.Name == "CollisionCadavreDynamique")
-            {
-                collisionDynamique = cs;
-                continue;
-            }
-            // Désactive les anciennes collisions figées (convex + englobante initiales).
-            cs.Disabled = true;
-        }
-
-        if (collisionDynamique == null)
-        {
-            collisionDynamique = new CollisionShape3D { Name = "CollisionCadavreDynamique" };
-            cadavre.AddChild(collisionDynamique);
-        }
-
-        collisionDynamique.Disabled = false;
-        if (collisionDynamique.Shape is not BoxShape3D box)
-            box = new BoxShape3D();
-        box.Size = new Vector3(largeur, hauteur, largeur);
-        collisionDynamique.Shape = box;
-        collisionDynamique.Position = new Vector3(0f, hauteur * 0.5f, 0f);
-    }
+    private static void AjusterCollisionCadavreArbre(RigidBody3D cadavre, bool feuillagePresent, int branchesRestantes) =>
+        ArbreVivant.ConfigurerCollisionCadavreArbre(cadavre, feuillagePresent, branchesRestantes);
 }

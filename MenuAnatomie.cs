@@ -1,4 +1,4 @@
-﻿using Godot;
+using Godot;
 using System;
 using System.Collections.Generic;
 
@@ -287,10 +287,12 @@ public partial class MenuAnatomie : Control
 		Panel cadreCoffre = ObtenirCadreCoffreBois();
 		Control ligneCraft = GrilleAssemblage?.GetParent()?.GetParent() as Control;
 		bool coffre = _joueurRef.StockageCoffreOuvert;
+		bool four = _joueurRef.StockageFourTorchieOuvert;
+		MettreAJourVisibiliteFourTorchie();
 		if (cadreCoffre != null)
-			cadreCoffre.Visible = coffre;
+			cadreCoffre.Visible = coffre && !four;
 		if (ligneCraft != null)
-			ligneCraft.Visible = !coffre;
+			ligneCraft.Visible = !coffre && !four;
 	}
 
 	private Panel CreerCaseStockageSupplementaire(GridContainer grille, int idx)

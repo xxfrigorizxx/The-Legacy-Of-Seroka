@@ -27,6 +27,113 @@ public static partial class Atlas_Matiere
         if (ingredients.Count == 0)
             return new SlotInventaire();
 
+        if (ingredients.Count == 3)
+        {
+            bool argileHumid = false;
+            bool fibreHerbe = false;
+            bool boue = false;
+            bool invalide = false;
+            for (int i = 0; i < ingredients.Count; i++)
+            {
+                SlotInventaire s = ingredients[i];
+                if (s.ID == Joueur.IdObjetArgileHumidifiee) argileHumid = true;
+                else if (EstSlotBrinHerbe(s)) fibreHerbe = true;
+                else if (EstSlotVoxelBoue(s)) boue = true;
+                else invalide = true;
+            }
+            if (!invalide && argileHumid && fibreHerbe && boue)
+            {
+                return new SlotInventaire
+                {
+                    ID = Joueur.IdObjetTorchie,
+                    Quantite = 3,
+                    IndexChimique = 0,
+                    IndexMorphologique = 0,
+                    IndexTaille = 0,
+                    ScaleEclat = Vector3.One,
+                    EstUnEclat = false,
+                    MeshEclat = null,
+                    NiveauFracture = 0
+                };
+            }
+        }
+
+        static bool EstSlotTorchieCraft(SlotInventaire s) => !s.EstVide && s.ID == Joueur.IdObjetTorchie;
+        static bool EstSlotArgileHumidifieeCraft(SlotInventaire s) =>
+            !s.EstVide && s.ID == Joueur.IdObjetArgileHumidifiee;
+        static bool EstSlotOsBoeufCraft(SlotInventaire s) =>
+            !s.EstVide && s.ID == Joueur.IdObjetOsBoeuf;
+
+        // Pince en os (160) 3×3 — 4× os :
+        // ( )(O)( )
+        // ( )(O)( )
+        // (O)( )(O)
+        if (grilleCraft3x3Table && grille.Length >= 9
+            && grille[0].EstVide && EstSlotOsBoeufCraft(grille[1]) && grille[2].EstVide
+            && grille[3].EstVide && EstSlotOsBoeufCraft(grille[4]) && grille[5].EstVide
+            && EstSlotOsBoeufCraft(grille[6]) && grille[7].EstVide && EstSlotOsBoeufCraft(grille[8]))
+        {
+            return new SlotInventaire
+            {
+                ID = Joueur.IdObjetPinceOs,
+                Quantite = 1,
+                IndexChimique = 0,
+                IndexMorphologique = 0,
+                IndexTaille = 0,
+                ScaleEclat = Vector3.One,
+                EstUnEclat = false,
+                MeshEclat = null,
+                NiveauFracture = 0
+            };
+        }
+
+        // Bol en argile (158) 3×3 — 3× argile humidifiée en V :
+        // ( )( )( )
+        // (A)( )(A)
+        // ( )(A)( )
+        if (grilleCraft3x3Table && grille.Length >= 9
+            && grille[0].EstVide && grille[1].EstVide && grille[2].EstVide
+            && EstSlotArgileHumidifieeCraft(grille[3]) && grille[4].EstVide && EstSlotArgileHumidifieeCraft(grille[5])
+            && grille[6].EstVide && EstSlotArgileHumidifieeCraft(grille[7]) && grille[8].EstVide)
+        {
+            return new SlotInventaire
+            {
+                ID = Joueur.IdObjetBolArgile,
+                Quantite = 1,
+                IndexChimique = 0,
+                IndexMorphologique = 0,
+                IndexTaille = 0,
+                ScaleEclat = Vector3.One,
+                EstUnEclat = false,
+                MeshEclat = null,
+                NiveauFracture = 0
+            };
+        }
+
+        // Four en torchie (157) 3×3 :
+        // ( )(T)( )
+        // (T)(T)(T)
+        // (T)( )(T)
+        if (grilleCraft3x3Table && grille.Length >= 9
+            && grille[0].EstVide && EstSlotTorchieCraft(grille[1]) && grille[2].EstVide
+            && EstSlotTorchieCraft(grille[3]) && EstSlotTorchieCraft(grille[4]) && EstSlotTorchieCraft(grille[5])
+            && EstSlotTorchieCraft(grille[6]) && grille[7].EstVide && EstSlotTorchieCraft(grille[8]))
+        {
+            int nf = Mathf.Max(
+                Mathf.Max(Mathf.Max(grille[1].NiveauFracture, grille[3].NiveauFracture), Mathf.Max(grille[4].NiveauFracture, grille[5].NiveauFracture)),
+                Mathf.Max(grille[6].NiveauFracture, grille[8].NiveauFracture));
+            return new SlotInventaire
+            {
+                ID = Joueur.IdObjetFourTorchie,
+                Quantite = 1,
+                IndexChimique = 0,
+                IndexMorphologique = 0,
+                IndexTaille = 0,
+                NiveauFracture = nf,
+                EstUnEclat = false
+            };
+        }
+
         static bool EstSlotRocheVoxelBruteCraft(SlotInventaire s) => !s.EstVide && s.ID == 2;
         static SlotInventaire ConstruirePetiteRocheMarbre(int indexMorphologique)
         {
@@ -211,6 +318,26 @@ public static partial class Atlas_Matiere
                 {
                     ID = Joueur.IdObjetBolBois,
                     IndexBotanique = sourceBois.IndexBotanique,
+                    IndexChimique = 0,
+                    IndexMorphologique = 0,
+                    IndexTaille = 0,
+                    ScaleEclat = Vector3.One,
+                    EstUnEclat = false,
+                    MeshEclat = null,
+                    NiveauFracture = 0
+                };
+            }
+
+            bool aBolEau = sA.ID == Joueur.IdObjetBolEau;
+            bool bBolEau = sB.ID == Joueur.IdObjetBolEau;
+            bool aArgile = EstSlotVoxelArgile(sA);
+            bool bArgile = EstSlotVoxelArgile(sB);
+            if ((aBolEau && bArgile) || (bBolEau && aArgile))
+            {
+                return new SlotInventaire
+                {
+                    ID = Joueur.IdObjetArgileHumidifiee,
+                    Quantite = 1,
                     IndexChimique = 0,
                     IndexMorphologique = 0,
                     IndexTaille = 0,

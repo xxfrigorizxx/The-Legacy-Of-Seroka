@@ -1,4 +1,4 @@
-﻿using Godot;
+using Godot;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -103,17 +103,21 @@ public partial class Monde_Client : Node3D
 			return true;
 		if (_timerGraceStreamingBootstrap > 0f)
 			return true;
-		if (_chunksACharger.Count > 0)
+		bool joueurImmobile = EssayerObtenirJoueurDansArbre(out CharacterBody3D joueurImmo)
+			&& joueurImmo.Velocity.LengthSquared() < 0.25f;
+		bool fpsBasAuRepos = joueurImmobile && _fpsMoyenneAuto > 1f && _fpsMoyenneAuto < 55f;
+		if (_chunksACharger.Count > 0 && !fpsBasAuRepos)
 			return true;
-		if (_rayonRequetesActuel + 2 < RayonChargementChunksActif())
+		int gapRayon = RayonChargementChunksActif() - _rayonRequetesActuel;
+		if (gapRayon > 3 && !fpsBasAuRepos)
 			return true;
-		if (CompterBacklog() > SeuilBacklogBas)
+		if (CompterBacklog() > SeuilBacklogBas && !fpsBasAuRepos)
 			return true;
 		if (ModeProfondeurTranchesActif() && EssayerObtenirJoueurDansArbre(out CharacterBody3D joueurRef))
 		{
 			Vector2I c = Gestionnaire_Monde.WorldToChunkCoord(joueurRef.GlobalPosition, TailleChunk);
 			int cy = CoordYDepuisMondeY((int)Mathf.Floor(joueurRef.GlobalPosition.Y));
-			int demi = ConstantesProfondeurVerticale.DemiFenetreTranches;
+			int demi = DemiFenetreTranchesStreamingActif();
 			for (int dy = -demi; dy <= demi; dy++)
 			{
 				if (!TryGetChunkDataPourCoordY(c, cy + dy, out var data) || data == null
@@ -137,14 +141,17 @@ public partial class Monde_Client : Node3D
 	{
 		if (rayonDetail <= 0)
 			return 0;
-		int minAbsolu = Mathf.Max(1, RayonDormancePhysique + 1);
+		int minAbsolu = Mathf.Min(rayonDetail, Mathf.Max(1, RayonDormancePhysique + 1));
 		float frac = niveauUrgence >= 3
 			? Mathf.Clamp(FractionRayonMaxUrgenceExtreme, 0.15f, 0.95f)
 			: niveauUrgence >= 2
 				? Mathf.Clamp(FractionRayonMaxUrgenceCritique, 0.15f, 0.95f)
 				: Mathf.Clamp(FractionRayonMaxUrgenceForte, 0.15f, 0.95f);
 		int depuisFrac = Mathf.Max(minAbsolu, Mathf.RoundToInt(rayonDetail * frac));
-		return Mathf.Clamp(Mathf.Min(rayonDetail, depuisFrac), minAbsolu, rayonDetail);
+		int cible = Mathf.Min(rayonDetail, depuisFrac);
+		if (minAbsolu > rayonDetail)
+			return rayonDetail;
+		return Mathf.Clamp(cible, minAbsolu, rayonDetail);
 	}
 
 	private void AjusterFenetreRequetes(float dt)

@@ -149,7 +149,7 @@ public partial class Joueur
     /// <summary>Analyse la grille craft ; le détail des recettes est dans <see cref="Atlas_Matiere.EvaluerRecette"/>.</summary>
     public void VerifierRecettes()
     {
-        if (StockageRackBatonsOuvert || StockageCoffreOuvert)
+        if (StockageRackBatonsOuvert || StockageCoffreOuvert || StockageFourTorchieOuvert)
         {
             SlotResultatCraft = new SlotInventaire();
             return;
@@ -177,6 +177,30 @@ public partial class Joueur
         bool estCraftBolBois = false;
         if (CraftGrille3x3AuTable && SlotResultatCraft.ID == IdObjetBolBois)
             estCraftBolBois = TrouverIndexDagueRecetteBol(g, n, out indexDagueRecetteBol);
+
+        int indexBolEauArgileHumid = -1;
+        int indexArgileHumid = -1;
+        bool estCraftArgileHumidifiee = SlotResultatCraft.ID == IdObjetArgileHumidifiee;
+        if (estCraftArgileHumidifiee)
+        {
+            for (int i = 0; i < n && i < g.Length; i++)
+            {
+                SlotInventaire s = g[i];
+                if (s.EstVide) continue;
+                if (s.ID == IdObjetBolEau)
+                    indexBolEauArgileHumid = i;
+                else if (Atlas_Matiere.EstSlotVoxelArgile(s))
+                    indexArgileHumid = i;
+                else
+                {
+                    estCraftArgileHumidifiee = false;
+                    break;
+                }
+            }
+            if (indexBolEauArgileHumid < 0 || indexArgileHumid < 0)
+                estCraftArgileHumidifiee = false;
+        }
+
         for (int i = 0; i < n && i < g.Length; i++)
         {
             if (g[i].EstVide) continue;
@@ -187,6 +211,38 @@ public partial class Joueur
                 // La dague sert d'outil de sculpture: -2 de durabilité mais n'est jamais consommée comme ingrédient.
                 dague.DurabiliteOutilActuelle = Mathf.Max(1f, dague.DurabiliteOutilActuelle - 2f);
                 g[i] = dague;
+                continue;
+            }
+            if (estCraftArgileHumidifiee && i == indexBolEauArgileHumid)
+            {
+                SlotInventaire bolEau = g[i];
+                g[i] = new SlotInventaire
+                {
+                    ID = IdObjetBolBois,
+                    IndexBotanique = bolEau.IndexBotanique,
+                    IndexChimique = bolEau.IndexChimique,
+                    IndexMorphologique = bolEau.IndexMorphologique,
+                    Quantite = ObtenirQuantiteSlot(bolEau)
+                };
+                continue;
+            }
+            if (estCraftArgileHumidifiee && i == indexArgileHumid)
+            {
+                int qArgile = ObtenirQuantiteSlot(g[i]) - 1;
+                g[i] = qArgile <= 0 ? new SlotInventaire() : new SlotInventaire
+                {
+                    ID = g[i].ID,
+                    IndexBotanique = g[i].IndexBotanique,
+                    IndexChimique = g[i].IndexChimique,
+                    IndexMorphologique = g[i].IndexMorphologique,
+                    IndexTaille = g[i].IndexTaille,
+                    ScaleEclat = g[i].ScaleEclat,
+                    EstUnEclat = g[i].EstUnEclat,
+                    MeshEclat = g[i].MeshEclat,
+                    NiveauFracture = g[i].NiveauFracture,
+                    GenomeAssemblage = g[i].GenomeAssemblage,
+                    Quantite = qArgile
+                };
                 continue;
             }
             int q = ObtenirQuantiteSlot(g[i]) - 1;

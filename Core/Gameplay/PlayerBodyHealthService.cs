@@ -221,7 +221,7 @@ public partial class Joueur
         bool touche = false;
         foreach (Node enfant in GetChildren())
         {
-            if (enfant is not CollisionShape3D hitbox || hitbox.Shape == null)
+            if (enfant is not CollisionShape3D hitbox || hitbox.Shape == null || hitbox.Disabled)
                 continue;
             string cle = NormaliserCleSectionCorps(hitbox.Name);
             Transform3D xf = hitbox.GlobalTransform;
@@ -275,17 +275,134 @@ public partial class Joueur
         return sourceFeu != null;
     }
 
+    private static bool EstBolBrulantPorteParPince(SlotInventaire main) =>
+        !main.EstVide
+        && main.ID == IdObjetPinceOs
+        && ItemPhysique.EssayerLireObjetPortePinceOs(main, out SlotInventaire objet)
+        && FourTorchieThermodynamique.EstSlotBolBrulant(objet);
+
+    private bool EssayerTrouverBrulureBolChaudInventaireOuMains(out string sectionTouchee, out float facteurBrulure)
+    {
+        sectionTouchee = SectionCorpsTorse;
+        facteurBrulure = 0f;
+
+        if (FourTorchieThermodynamique.EstSlotBolBrulant(MainGauche) && !EstBolBrulantPorteParPince(MainGauche))
+        {
+            sectionTouchee = SectionCorpsBrasGauche;
+            facteurBrulure = 1f;
+            return true;
+        }
+        if (FourTorchieThermodynamique.EstSlotBolBrulant(MainDroite) && !EstBolBrulantPorteParPince(MainDroite))
+        {
+            sectionTouchee = SectionCorpsBrasDroit;
+            facteurBrulure = 1f;
+            return true;
+        }
+
+        for (int i = 0; i < GrilleCraftPoche.Length; i++)
+        {
+            if (!FourTorchieThermodynamique.EstSlotBolBrulant(GrilleCraftPoche[i]))
+                continue;
+            sectionTouchee = SectionCorpsTorse;
+            facteurBrulure = 1f;
+            return true;
+        }
+        for (int i = 0; i < GrilleCeintureStockage.Length; i++)
+        {
+            if (!FourTorchieThermodynamique.EstSlotBolBrulant(GrilleCeintureStockage[i]))
+                continue;
+            sectionTouchee = SectionCorpsTorse;
+            facteurBrulure = 1f;
+            return true;
+        }
+        for (int i = 0; i < GrilleSacStockage.Length; i++)
+        {
+            if (!FourTorchieThermodynamique.EstSlotBolBrulant(GrilleSacStockage[i]))
+                continue;
+            sectionTouchee = SectionCorpsTorse;
+            facteurBrulure = 1f;
+            return true;
+        }
+
+        return false;
+    }
+
+    private bool EssayerTrouverBolChaudAuSolAuContact(
+        out ItemPhysique sourceBol,
+        out Vector3 pointContact,
+        out string sectionTouchee,
+        out float facteurBrulure)
+    {
+        sourceBol = null;
+        pointContact = Vector3.Zero;
+        sectionTouchee = SectionCorpsJambeGauche;
+        facteurBrulure = 0f;
+        SceneTree arbre = GetTree();
+        if (arbre == null)
+            return false;
+
+        float meilleureDistance = float.MaxValue;
+        Godot.Collections.Array<Node> candidats = arbre.GetNodesInGroup("BlocsPoses");
+        for (int i = 0; i < candidats.Count; i++)
+        {
+            if (candidats[i] is not ItemPhysique item || item.ID_Objet != IdObjetBolCeramique)
+                continue;
+            float facteur = item.ObtenirFacteurBrulureBolCeramique();
+            if (!FourTorchieThermodynamique.EstFacteurBolAssezChaudPourBruler(facteur))
+                continue;
+            if (!item.EssayerObtenirZoneContactChaleurBolMonde(out Vector3 point, out float rayon))
+                continue;
+            Vector3 pieds = GlobalPosition;
+            float distHoriz = new Vector2(point.X - pieds.X, point.Z - pieds.Z).Length();
+            if (distHoriz > rayon + 0.14f)
+                continue;
+            float deltaY = point.Y - pieds.Y;
+            if (deltaY > 0.28f || deltaY < -0.18f)
+                continue;
+            float distanceCandidate = distHoriz * distHoriz;
+            if (distanceCandidate >= meilleureDistance)
+                continue;
+            meilleureDistance = distanceCandidate;
+            sourceBol = item;
+            pointContact = point;
+            sectionTouchee = pieds.X < point.X ? SectionCorpsJambeDroite : SectionCorpsJambeGauche;
+            facteurBrulure = facteur;
+        }
+
+        return sourceBol != null;
+    }
+
     private void MettreAJourDegatsBrulureFeu(float dt)
     {
         _cooldownDegatsBrulureFeuRestant = Mathf.Max(0f, _cooldownDegatsBrulureFeuRestant - dt);
         if (_cooldownDegatsBrulureFeuRestant > 0f)
             return;
 
-        if (!EssayerTrouverSourceFeuAuContact(out _, out _, out string sectionTouchee))
-            return;
+        string sectionTouchee = SectionCorpsTorse;
+        float facteur = 1f;
 
-        // Dégât feu = perte de PV max (brûlure) : non récupérable avec un bandage standard.
-        AjouterBrulureSectionCorps(sectionTouchee, PertePvMaxBrulureParImpact);
+        if (EssayerTrouverBolChaudAuSolAuContact(out _, out _, out string sectionSol, out float facteurSol))
+        {
+            sectionTouchee = sectionSol;
+            facteur = facteurSol;
+        }
+        else if (EssayerTrouverBrulureBolChaudInventaireOuMains(out string sectionInv, out float facteurInv))
+        {
+            sectionTouchee = sectionInv;
+            facteur = facteurInv;
+        }
+        else if (EssayerTrouverSourceFeuAuContact(out _, out _, out string sectionFeu))
+        {
+            sectionTouchee = sectionFeu;
+            facteur = 1f;
+        }
+        else
+        {
+            return;
+        }
+
+        float perte = PertePvMaxBrulureParImpact * Mathf.Clamp(facteur, 0.15f, 1f);
+        AjouterBrulureSectionCorps(sectionTouchee, perte);
         _cooldownDegatsBrulureFeuRestant = IntervalleDegatsBrulureFeuSec;
         RafraichirHUD();
         _menuAnatomie?.RafraichirSanteCorpsImmediate();
@@ -629,7 +746,7 @@ public partial class Joueur
         float meilleurScore = float.MaxValue;
         foreach (Node enfant in GetChildren())
         {
-            if (enfant is not CollisionShape3D hitbox || hitbox.Shape == null)
+            if (enfant is not CollisionShape3D hitbox || hitbox.Shape == null || hitbox.Disabled)
                 continue;
             string cle = NormaliserCleSectionCorps(hitbox.Name);
             Transform3D xf = hitbox.GlobalTransform;

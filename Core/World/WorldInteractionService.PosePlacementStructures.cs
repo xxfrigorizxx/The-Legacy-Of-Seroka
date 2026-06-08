@@ -56,6 +56,16 @@ public partial class Joueur
     private void ExecuterPlacementAvecOptions(SlotInventaire mainActive, bool depuisInteragir)
     {
         if (mainActive.EstVide) return;
+        if (ItemPhysique.EstPinceOsPorteObjet(mainActive)
+            && EssayerObtenirPinceOsEnMain(out bool mainGauchePince)
+            && EssayerDeposerChargePinceEnMain(mainGauchePince))
+        {
+            RafraichirHUD();
+            ReinitialiserRotationManuelle();
+            return;
+        }
+        if (ItemPhysique.EstPinceOsPorteObjet(mainActive))
+            return;
 
         _rayon.ForceRaycastUpdate();
         if (!_rayon.IsColliding()) return;
@@ -90,6 +100,9 @@ public partial class Joueur
         float distMin = flexOuCordeE ? 0.35f : (structureFixe ? 0.55f : 1.4f);
         if (!depuisInteragir && EstObjetLancableAuMaintien(mainActive))
             distMin = Mathf.Min(distMin, 0.55f);
+        // Four / pit à feu : sol direct, preview à 0,25 m — même marge à la pose réelle.
+        if (EstIdFourTorchie(mainActive.ID) || EstIdPitFeu(mainActive.ID))
+            distMin = Mathf.Min(distMin, 0.25f);
         if (distance < distMin) return;
 
         int id = mainActive.ID;
@@ -123,7 +136,7 @@ public partial class Joueur
 			}
 			GD.Print("ZERO-K : Buisson replanté.");
 		}
-        else if (id == 999 || id == BlocChutant.ID_BRANCHE || id == IdObjetBaie || ItemPhysique.EstIdRocheMatiere(id) || id == 15 || id == 16 || id == 17 || id == 20 || id == 21 || id == IdObjetCeinturePoches || id == IdObjetCeintureSacoches || id == IdObjetPochetteTier0 || id == IdObjetSacTier0 || id == IdObjetCarnetSavoir || id == 30 || id == 32 || id == 34 || id == 105 || id == 106 || id == IdObjetHachePierreTier1 || id == IdObjetAtelleJambe || id == IdObjetAtelleBras || id == IdObjetBandageTier1 || id == IdObjetPellePierreTier0 || id == IdObjetPiochePierreTier0 || id == IdObjetLancePierreTier0 || id == IdObjetFauxPierreTier0 || id == IdObjetAllumeFeu || id == IdObjetFenetreBois || id == 200 || id == IdObjetTableBoisDecorative || id == IdObjetTableArtisanaTier1 || id == IdObjetTableAnalyseTier1 || id == IdObjetRackBatons || id == IdObjetRackBuches || id == IdObjetCoffreBoisTier0 || EstIdPitFeu(id) || EstIdFondation(id) || EstIdPlancher(id) || EstIdMuret(id) || EstIdMurBois(id) || EstIdPorteBois(id) || EstIdToitChaume(id) || EstIdTorche(id))
+        else if (id == 999 || id == BlocChutant.ID_BRANCHE || id == IdObjetBaie || ItemPhysique.EstIdRocheMatiere(id) || id == 15 || id == 16 || id == 17 || id == 20 || id == 21 || id == IdObjetCeinturePoches || id == IdObjetCeintureSacoches || id == IdObjetPochetteTier0 || id == IdObjetSacTier0 || id == IdObjetCarnetSavoir || id == 30 || id == 32 || id == 34 || id == 105 || id == 106 || id == IdObjetHachePierreTier1 || id == IdObjetAtelleJambe || id == IdObjetAtelleBras || id == IdObjetBandageTier1 || id == IdObjetPellePierreTier0 || id == IdObjetPiochePierreTier0 || id == IdObjetLancePierreTier0 || id == IdObjetFauxPierreTier0 || id == IdObjetAllumeFeu || id == IdObjetFenetreBois || id == 200 || id == IdObjetTableBoisDecorative || id == IdObjetTableArtisanaTier1 || id == IdObjetTableAnalyseTier1 || id == IdObjetRackBatons || id == IdObjetRackBuches || id == IdObjetCoffreBoisTier0 || EstIdPitFeu(id) || EstIdFourTorchie(id) || EstIdFondation(id) || EstIdPlancher(id) || EstIdMuret(id) || EstIdMurBois(id) || EstIdPorteBois(id) || EstIdToitChaume(id) || EstIdTorche(id))
         {
             Vector3 pointSpawn = (structureFixe && (mainActive.ID == IdObjetTableBoisDecorative || mainActive.ID == IdObjetTableArtisanaTier1 || EstIdFondation(mainActive.ID) || EstIdPlancher(mainActive.ID) || EstIdMuret(mainActive.ID) || EstIdMurBois(mainActive.ID) || EstIdPorteBois(mainActive.ID) || EstIdToitChaume(mainActive.ID) || EstIdTorche(mainActive.ID)))
                 ? pointAligneStructure
@@ -204,6 +217,30 @@ public partial class Joueur
             return EssayerCalculerPoseToitChaume(mainActive.ID, depuisInteragir, out pointDeChute, out pointAligne, out rotationDeg, out poseValide);
         if (EstIdTorche(mainActive.ID))
             return EssayerCalculerPoseTorche(mainActive.ID, depuisInteragir, out pointDeChute, out pointAligne, out rotationDeg, out poseValide);
+        if (EstIdFourTorchie(mainActive.ID))
+        {
+            Node noeudColFour = NoeudDepuisColliderRaycast(_rayon.GetCollider());
+            if (!EstSolViseParRayon(_rayon, noeudColFour))
+            {
+                if (noeudColFour != null && EstNoeudSupportStructure(noeudColFour))
+                    GD.Print("SEROKA : Le four en torchie doit être posé sur le sol du monde (voxel/herbe), pas sur un plancher ou une structure.");
+                else
+                    GD.Print("SEROKA : Posez le four en torchie directement sur le sol (pas sur une structure).");
+                return false;
+            }
+            pointDeChute = _rayon.GetCollisionPoint();
+            pointAligne = pointDeChute;
+            rotationDeg = CalculerRotationStructureFixe(mainActive.ID);
+            if (!EssayerAjusterStructureSansChevauchement(mainActive.ID, ref pointDeChute, ref pointAligne))
+            {
+                GD.Print("SEROKA : Espace insuffisant pour poser le four en torchie ici.");
+                return false;
+            }
+            float distanceFour = GlobalPosition.DistanceTo(pointDeChute);
+            float distMinFour = 0.25f;
+            poseValide = distanceFour >= distMinFour;
+            return true;
+        }
 
         Node noeudCol = NoeudDepuisColliderRaycast(_rayon.GetCollider());
         if (!EstSurfaceSupportStructureVisee(_rayon, noeudCol))
@@ -268,6 +305,7 @@ public partial class Joueur
             || idObjet == IdObjetRackBuches
             || idObjet == IdObjetCoffreBoisTier0
             || EstIdPitFeu(idObjet)
+            || EstIdFourTorchie(idObjet)
             || EstIdFondation(idObjet)
             || EstIdPlancher(idObjet)
             || EstIdMuret(idObjet)

@@ -585,7 +585,9 @@ public partial class Gestionnaire_Monde : Node3D
 		if (_overlayChargement != null)
 		{
 			_overlayChargement.Visible = true;
-			_secondesOverlayChargement = 0.0;
+			// Ne pas remettre le compteur à zéro si le boot est déjà avancé (évite boucle overlay si TP répétés).
+			if (_secondesChargementMondeAbsolu < 2.0)
+				_secondesOverlayChargement = 0.0;
 		}
 		if (_labelChargementPrincipal != null)
 			_labelChargementPrincipal.Text = "Chargement du monde...";

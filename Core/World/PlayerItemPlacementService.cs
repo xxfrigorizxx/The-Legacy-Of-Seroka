@@ -47,6 +47,8 @@ public partial class Joueur
     {
         SlotInventaire mainActive = MainGaucheEstActive ? MainGauche : MainDroite;
         if (mainActive.EstVide) return;
+        if (ItemPhysique.EstPinceOsPorteObjet(mainActive))
+            return;
 
         Vector3 direction = -_camera.GlobalTransform.Basis.Z.Normalized();
         Vector3 pointDeSpawn = CalculerPointSpawnLancer(direction);
@@ -518,6 +520,60 @@ public partial class Joueur
             }
             corps = item;
         }
+        else if (id == IdObjetFourTorchie)
+        {
+            var item = new ItemPhysique
+            {
+                ID_Objet = id,
+                IndexBotanique = mainActive.IndexBotanique,
+                IndexChimique = mainActive.IndexChimique,
+                IndexCacheMemoire = mainActive.IndexMorphologique,
+                GenomeAssemblage = mainActive.GenomeAssemblage ?? "",
+                Name = "ItemPhysique",
+                ContinuousCd = true,
+                Freeze = true,
+                FreezeMode = RigidBody3D.FreezeModeEnum.Static
+            };
+            if (!string.IsNullOrEmpty(item.GenomeAssemblage))
+                item.SetMeta(MetaGenomeAssemblage, item.GenomeAssemblage);
+            var meshRoot = new Node3D { Name = "MeshInstance3D" };
+            InstancierModeleFourTorchie(meshRoot, mainActive, TailleFourTorchiePoseMetres, true);
+            item.AddChild(meshRoot);
+            var pileFour = new List<Node> { meshRoot };
+            for (int i = 0; i < pileFour.Count; i++)
+            {
+                foreach (Node c in pileFour[i].GetChildren())
+                {
+                    if (c is MeshInstance3D mi && mi.Mesh != null)
+                    {
+                        Shape3D shape = mi.Mesh.CreateTrimeshShape();
+                        if (shape != null)
+                        {
+                            Transform3D t = mi.Transform;
+                            Node parentNode = mi.GetParent();
+                            while (parentNode != null && parentNode != item && parentNode is Node3D n3d)
+                            {
+                                t = n3d.Transform * t;
+                                parentNode = parentNode.GetParent();
+                            }
+                            var colNode = new CollisionShape3D { Shape = shape, Transform = t };
+                            item.AddChild(colNode);
+                        }
+                    }
+                    pileFour.Add(c);
+                }
+            }
+            if (item.GetChildCount() <= 1)
+                item.AddChild(new CollisionShape3D
+                {
+                    Shape = new BoxShape3D
+                    {
+                        Size = new Vector3(TailleFourTorchiePoseMetres * 0.92f, TailleFourTorchiePoseMetres * 0.52f, TailleFourTorchiePoseMetres * 0.92f)
+                    },
+                    Position = new Vector3(0f, TailleFourTorchiePoseMetres * 0.26f, 0f)
+                });
+            corps = item;
+        }
         else if (id == IdObjetMailletBois)
         {
             var item = new ItemPhysique
@@ -588,6 +644,132 @@ public partial class Joueur
                     Name = "CollisionShape3D",
                     Shape = new BoxShape3D { Size = new Vector3(0.22f, 0.10f, 0.22f) },
                     Position = new Vector3(0f, 0.05f, 0f)
+                });
+            }
+            corps = item;
+        }
+        else if (id == IdObjetArgileHumidifiee)
+        {
+            var item = new ItemPhysique
+            {
+                ID_Objet = id,
+                IndexBotanique = mainActive.IndexBotanique,
+                IndexChimique = mainActive.IndexChimique,
+                IndexCacheMemoire = mainActive.IndexMorphologique,
+                Name = "ItemPhysique",
+                ContinuousCd = true
+            };
+            var meshRoot = new Node3D { Name = "MeshInstance3D" };
+            InstancierModeleArgileHumidifiee(meshRoot, mainActive, 0.58f, false);
+            item.AddChild(meshRoot);
+            if (AjouterCollisionsConvexesDepuisMeshesSousRacineItem(item, meshRoot) == 0)
+            {
+                item.AddChild(new CollisionShape3D
+                {
+                    Name = "CollisionShape3D",
+                    Shape = new SphereShape3D { Radius = 0.12f },
+                    Position = new Vector3(0f, 0.06f, 0f)
+                });
+            }
+            corps = item;
+        }
+        else if (id == IdObjetBolArgile)
+        {
+            var item = new ItemPhysique
+            {
+                ID_Objet = id,
+                IndexBotanique = mainActive.IndexBotanique,
+                IndexChimique = mainActive.IndexChimique,
+                IndexCacheMemoire = mainActive.IndexMorphologique,
+                Name = "ItemPhysique",
+                ContinuousCd = true
+            };
+            var meshRoot = new Node3D { Name = "MeshInstance3D" };
+            InstancierModeleBolArgile(meshRoot, mainActive, 0.42f, false);
+            item.AddChild(meshRoot);
+            if (AjouterCollisionsConvexesDepuisMeshesSousRacineItem(item, meshRoot) == 0)
+            {
+                item.AddChild(new CollisionShape3D
+                {
+                    Name = "CollisionShape3D",
+                    Shape = new BoxShape3D { Size = new Vector3(0.18f, 0.08f, 0.18f) },
+                    Position = new Vector3(0f, 0.04f, 0f)
+                });
+            }
+            corps = item;
+        }
+        else if (id == IdObjetBolCeramique)
+        {
+            var item = new ItemPhysique
+            {
+                ID_Objet = id,
+                IndexBotanique = mainActive.IndexBotanique,
+                IndexChimique = mainActive.IndexChimique,
+                IndexCacheMemoire = mainActive.IndexMorphologique,
+                Name = "ItemPhysique",
+                ContinuousCd = true,
+                GenomeAssemblage = mainActive.GenomeAssemblage
+            };
+            var meshRoot = new Node3D { Name = "MeshInstance3D" };
+            InstancierModeleBolCeramique(meshRoot, mainActive, 0.42f, false);
+            item.AddChild(meshRoot);
+            if (AjouterCollisionsConvexesDepuisMeshesSousRacineItem(item, meshRoot) == 0)
+            {
+                item.AddChild(new CollisionShape3D
+                {
+                    Name = "CollisionShape3D",
+                    Shape = new BoxShape3D { Size = new Vector3(0.18f, 0.08f, 0.18f) },
+                    Position = new Vector3(0f, 0.04f, 0f)
+                });
+            }
+            corps = item;
+        }
+        else if (id == IdObjetPinceOs)
+        {
+            var item = new ItemPhysique
+            {
+                ID_Objet = id,
+                IndexBotanique = mainActive.IndexBotanique,
+                IndexChimique = mainActive.IndexChimique,
+                IndexCacheMemoire = mainActive.IndexMorphologique,
+                Name = "ItemPhysique",
+                ContinuousCd = true
+            };
+            var meshRoot = new Node3D { Name = "MeshInstance3D" };
+            InstancierModelePinceOs(meshRoot, mainActive, 0.64f, false);
+            item.AddChild(meshRoot);
+            if (AjouterCollisionsConvexesDepuisMeshesSousRacineItem(item, meshRoot) == 0)
+            {
+                item.AddChild(new CollisionShape3D
+                {
+                    Name = "CollisionShape3D",
+                    Shape = new BoxShape3D { Size = new Vector3(0.14f, 0.04f, 0.22f) },
+                    Position = new Vector3(0f, 0.02f, 0f)
+                });
+            }
+            corps = item;
+        }
+        else if (id == IdObjetTorchie)
+        {
+            var item = new ItemPhysique
+            {
+                ID_Objet = id,
+                IndexBotanique = mainActive.IndexBotanique,
+                IndexChimique = mainActive.IndexChimique,
+                IndexCacheMemoire = mainActive.IndexMorphologique,
+                Name = "ItemPhysique",
+                ContinuousCd = true
+            };
+            var meshRoot = new Node3D { Name = "MeshInstance3D" };
+            InstancierModeleTorchie(meshRoot, mainActive, 0.56f, false);
+            item.AddChild(meshRoot);
+            if (AjouterCollisionsConvexesDepuisMeshesSousRacineItem(item, meshRoot) == 0)
+            {
+                item.AddChild(new CollisionShape3D
+                {
+                    Name = "CollisionShape3D",
+                    Shape = new BoxShape3D { Size = new Vector3(0.20f, 0.08f, 0.12f) },
+                    Position = new Vector3(0f, 0.04f, 0f)
                 });
             }
             corps = item;
@@ -1573,7 +1755,7 @@ public partial class Joueur
             AjouterXpMetier("Batisseur", 1UL);
         bool fondationSurSupportEleve = estFondationPose && !enChargementPersistant && !modeGhost
             && (FondationReposantSurFondationOuStructure(corps.GlobalPosition) || _offsetEtagesFondationManuel != 0);
-        if (!modeGhost && !EstIdPorteBois(id) && !EstIdToitChaume(id) && (id == IdObjetTableBoisDecorative || id == IdObjetTableArtisanaTier1 || id == IdObjetTableAnalyseTier1 || id == IdObjetRackBatons || id == IdObjetRackBuches || id == IdObjetCoffreBoisTier0 || EstIdPitFeu(id) || EstIdFondation(id) || EstIdMuret(id) || EstIdMurBois(id)))
+        if (!modeGhost && !EstIdPorteBois(id) && !EstIdToitChaume(id) && (id == IdObjetTableBoisDecorative || id == IdObjetTableArtisanaTier1 || id == IdObjetTableAnalyseTier1 || id == IdObjetRackBatons || id == IdObjetRackBuches || id == IdObjetCoffreBoisTier0 || EstIdPitFeu(id) || EstIdFourTorchie(id) || EstIdFondation(id) || EstIdMuret(id) || EstIdMurBois(id)))
         {
             // Snap sol robuste pour le rack: corrige les cas oÃ¹ le raycast vise une surface dÃ©calÃ©e.
             var espace = GetWorld3D()?.DirectSpaceState;
@@ -1668,7 +1850,7 @@ public partial class Joueur
                     rbPose.AngularDamp = 0.88f;
                 }
             }
-            else if (id == 30 || id == 32 || id == 200 || id == IdObjetTableBoisDecorative || id == IdObjetTableArtisanaTier1 || id == IdObjetTableAnalyseTier1 || id == IdObjetRackBatons || id == IdObjetRackBuches || id == IdObjetCoffreBoisTier0 || EstIdPitFeu(id) || EstIdFondation(id) || EstIdPlancher(id) || EstIdMuret(id) || EstIdMurBois(id) || EstIdPorteBois(id) || EstIdToitChaume(id) || EstIdTorche(id) || id == IdObjetFenetreBois)
+            else if (id == 30 || id == 32 || id == 200 || id == IdObjetTableBoisDecorative || id == IdObjetTableArtisanaTier1 || id == IdObjetTableAnalyseTier1 || id == IdObjetRackBatons || id == IdObjetRackBuches || id == IdObjetCoffreBoisTier0 || EstIdPitFeu(id) || EstIdFourTorchie(id) || EstIdFondation(id) || EstIdPlancher(id) || EstIdMuret(id) || EstIdMurBois(id) || EstIdPorteBois(id) || EstIdToitChaume(id) || EstIdTorche(id) || id == IdObjetFenetreBois)
             {
                 rbPose.PhysicsMaterialOverride = _physMatBois;
                 rbPose.LinearDampMode = RigidBody3D.DampMode.Replace;
@@ -1715,6 +1897,12 @@ public partial class Joueur
                 else if (EstIdPitFeu(id))
                 {
                     rbPose.Mass = id == IdObjetPitFeuRoche ? 34f : 26f;
+                    rbPose.GravityScale = 0f;
+                    rbPose.Sleeping = true;
+                }
+                else if (EstIdFourTorchie(id))
+                {
+                    rbPose.Mass = 28f;
                     rbPose.GravityScale = 0f;
                     rbPose.Sleeping = true;
                 }

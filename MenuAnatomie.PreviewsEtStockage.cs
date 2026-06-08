@@ -1,4 +1,4 @@
-﻿using Godot;
+using Godot;
 using System;
 using System.Collections.Generic;
 
@@ -397,6 +397,15 @@ public partial class MenuAnatomie : Control
 				{
 					_accumRafraichPitRoche = 0f;
 					RafraichirCellulesCraft();
+				}
+			}
+			if (_joueurRef != null && _joueurRef.StockageFourTorchieOuvert)
+			{
+				_accumRafraichFourTorchie += (float)delta;
+				if (_accumRafraichFourTorchie >= 0.35f)
+				{
+					_accumRafraichFourTorchie = 0f;
+					RafraichirCellulesFourTorchie();
 				}
 			}
 			_compteurFrameMenuProcess++;

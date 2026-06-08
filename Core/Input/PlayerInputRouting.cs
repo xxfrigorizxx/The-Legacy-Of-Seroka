@@ -191,17 +191,7 @@ public partial class Joueur
                     mouv = _mouvementSourisCumule.Y > 0 ? TypeMouvementFrappe.DeHautEnBas : TypeMouvementFrappe.DeBasEnHaut;
             }
 
-            if (!mainActive.EstVide && PeutUtiliserFrappe(mainActive))
-            {
-                if (EssayerEteindrePitFeuRocheSousVisee(mainActive))
-                {
-                    ReinitialiserMinageMainNueProgression();
-                    return;
-                }
-                ExecuterAction(1.0f, mouv);
-                JouerAnimationFrappe(mouv);
-            }
-            else if (!mainActive.EstVide && mainActive.ID == IdObjetAllumeFeu)
+            if (!mainActive.EstVide && mainActive.ID == IdObjetAllumeFeu)
             {
                 if (EssayerAllumerPitFeuSousVisee(ref mainActive))
                 {
@@ -211,6 +201,16 @@ public partial class Joueur
                     ReinitialiserMinageMainNueProgression();
                     return;
                 }
+            }
+            else if (!mainActive.EstVide && PeutUtiliserFrappe(mainActive))
+            {
+                if (EssayerEteindrePitFeuRocheSousVisee(mainActive))
+                {
+                    ReinitialiserMinageMainNueProgression();
+                    return;
+                }
+                ExecuterAction(1.0f, mouv);
+                JouerAnimationFrappe(mouv);
             }
             else if (!mainActive.EstVide && EstIdTorche(mainActive.ID))
             {
@@ -285,6 +285,19 @@ public partial class Joueur
 
             if (!mainActive.EstVide)
             {
+                if (ItemPhysique.EstPinceOsPorteObjet(mainActive)
+                    && EssayerObtenirPinceOsEnMain(out bool mainGauchePince))
+                {
+                    _forceLancer = 0f;
+                    if (EssayerDeposerChargePinceEnMain(mainGauchePince))
+                    {
+                        RafraichirHUD();
+                        ReinitialiserRotationManuelle();
+                    }
+                    GetViewport().SetInputAsHandled();
+                    return;
+                }
+
                 if (shiftMaintenu && EstObjetSoinPosableShift(mainActive.ID))
                 {
                     _forceLancer = 0f;
@@ -344,7 +357,7 @@ public partial class Joueur
                 bool estTableAnalyseEnMain = mainActive.ID == IdObjetTableAnalyseTier1;
                 bool estRackBatonsEnMain = mainActive.ID == IdObjetRackBatons || mainActive.ID == IdObjetRackBuches;
                 bool estCoffreEnMain = mainActive.ID == IdObjetCoffreBoisTier0;
-        bool estPitFeuEnMain = EstIdPitFeu(mainActive.ID) || EstIdFondation(mainActive.ID) || EstIdPlancher(mainActive.ID) || EstIdMuret(mainActive.ID) || EstIdMurBois(mainActive.ID) || EstIdPorteBois(mainActive.ID) || EstIdToitChaume(mainActive.ID) || EstIdTorche(mainActive.ID) || EstIdTableBoisDecorative(mainActive.ID);
+        bool estPitFeuEnMain = EstIdPitFeu(mainActive.ID) || EstIdFourTorchie(mainActive.ID) || EstIdFondation(mainActive.ID) || EstIdPlancher(mainActive.ID) || EstIdMuret(mainActive.ID) || EstIdMurBois(mainActive.ID) || EstIdPorteBois(mainActive.ID) || EstIdToitChaume(mainActive.ID) || EstIdTorche(mainActive.ID) || EstIdTableBoisDecorative(mainActive.ID);
                 bool estBuissonEnMain = mainActive.ID == 10 || mainActive.ID == 11;
                 if (shiftMaintenu && estObjetLancable)
                 {
@@ -392,9 +405,9 @@ public partial class Joueur
                     }
                     else if (mainActive.ID == IdObjetSteakCru || mainActive.ID == IdObjetSteakCuit)
                     {
-                        bool steakCuit = mainActive.ID == IdObjetSteakCuit;
+                        SlotInventaire steak = mainActive;
                         ConsommerUneUniteMainActive();
-                        AppliquerEffetsConsommationSteak(steakCuit);
+                        AppliquerEffetsConsommationSteak(steak);
                         RafraichirHUD();
                         ReinitialiserRotationManuelle();
                         GetViewport().SetInputAsHandled();

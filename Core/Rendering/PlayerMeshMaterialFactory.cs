@@ -105,6 +105,12 @@ public partial class Joueur
         else if (id == IdObjetMailletBois) return null; // GLB maillet via InstancierModeleMailletBois
         else if (id == IdObjetBolBois) return null; // GLB bol via InstancierModeleBolBois
         else if (id == IdObjetBolEau) return null; // GLB bol plein via InstancierModeleBolEau
+        else if (id == IdObjetArgileHumidifiee) return null; // GLB argile humidifiée via InstancierModeleArgileHumidifiee
+        else if (id == IdObjetBolArgile) return null; // GLB bol en argile via InstancierModeleBolArgile
+        else if (id == IdObjetBolCeramique) return null; // GLB bol céramique via InstancierModeleBolCeramique
+        else if (id == IdObjetPinceOs) return null; // GLB pince en os via InstancierModelePinceOs
+        else if (id == IdObjetTorchie) return null; // GLB torchie via InstancierModeleTorchie
+        else if (id == IdObjetFourTorchie) return null; // GLB four via InstancierModeleFourTorchie
         else if (id == IdObjetMortierPilonBois) return null; // GLB mortier+pilon via InstancierModeleMortierPilonBois
         else if (id == IdObjetAtelleJambe) return null; // GLB res://Modeles/soin/Atelle_jambe.glb via InstancierModeleAtelleJambe
         else if (id == IdObjetAtelleBras) return null; // GLB res://Modeles/soin/Atelle_Bras.glb via InstancierModeleAtelleBras

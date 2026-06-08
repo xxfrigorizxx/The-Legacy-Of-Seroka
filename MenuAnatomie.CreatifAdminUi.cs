@@ -223,8 +223,30 @@ public partial class MenuAnatomie : Control
 		foreach (int idCharbon in idsCharbonRecolte)
 			Ajouter(new SlotInventaire { ID = idCharbon, Quantite = 1 }, CategorieCreatifAdmin.Pierre);
 
+		(string nom, int idVoxel)[] voxelsTerrainBase =
+		{
+			("Herbe", 1), ("Roche", 2), ("Sable", 3), ("Eau", 4), ("Neige", 5),
+			("Terre aride", 6), ("Boue", 7), ("Argile", 8), ("Glace", 9),
+			("Tronc", 30), ("Feuillage", 31)
+		};
+		for (int i = 0; i < voxelsTerrainBase.Length; i++)
+		{
+			var v = voxelsTerrainBase[i];
+			Ajouter(new SlotInventaire { ID = v.idVoxel, Quantite = 1 }, CategorieCreatifAdmin.Consommables, $"Voxel terrain: {v.nom} (ID {v.idVoxel})");
+			Ajouter(new SlotInventaire
+			{
+				ID = 2,
+				GenomeAssemblage = $"VOXEL_TERRAIN:{v.idVoxel}",
+				Quantite = 1
+			}, CategorieCreatifAdmin.Consommables, $"Voxel terrain (pose): {v.nom} (ID {v.idVoxel})");
+		}
+
+		Ajouter(new SlotInventaire { ID = Joueur.IdObjetArgileHumidifiee, Quantite = 20 }, CategorieCreatifAdmin.Consommables, "Stack max");
+		Ajouter(new SlotInventaire { ID = Joueur.IdObjetBolArgile, Quantite = 10 }, CategorieCreatifAdmin.Consommables, "Stack max");
+		Ajouter(new SlotInventaire { ID = Joueur.IdObjetBolCeramique, Quantite = 10 }, CategorieCreatifAdmin.Consommables, "Stack max");
+		Ajouter(new SlotInventaire { ID = Joueur.IdObjetTorchie, Quantite = 24 }, CategorieCreatifAdmin.Consommables, "Stack max");
+
 		int[] idsConsommables = {
-			1,2,3,4,5,6,7,8,9,
 			Joueur.IdObjetSteakCru, Joueur.IdObjetSteakCuit, Joueur.IdObjetAtelleJambe, Joueur.IdObjetAtelleBras, Joueur.IdObjetBandageTier1
 		};
 		foreach (int id in idsConsommables)
@@ -312,6 +334,7 @@ public partial class MenuAnatomie : Control
 			Ajouter(new SlotInventaire { ID = Joueur.IdObjetTableAnalyseTier1, IndexBotanique = essence, Quantite = 1 }, CategorieCreatifAdmin.Structures, $"Table analyse T1 {NomEssence(essence)}");
 			Ajouter(new SlotInventaire { ID = Joueur.IdObjetPitFeu, IndexBotanique = essence, Quantite = 1 }, CategorieCreatifAdmin.Structures, $"Essence: {NomEssence(essence)}");
 			Ajouter(new SlotInventaire { ID = Joueur.IdObjetPitFeuRoche, IndexBotanique = essence, Quantite = 1 }, CategorieCreatifAdmin.Structures, $"Essence: {NomEssence(essence)}");
+			Ajouter(new SlotInventaire { ID = Joueur.IdObjetFourTorchie, Quantite = 1 }, CategorieCreatifAdmin.Structures, "Four en torchie");
 			Ajouter(new SlotInventaire { ID = Joueur.IdObjetCoffreBoisTier0, IndexBotanique = essence, Quantite = 1 }, CategorieCreatifAdmin.Structures, $"Coffre {NomEssence(essence)}");
 			Ajouter(new SlotInventaire { ID = Joueur.IdObjetRackBatons, IndexBotanique = essence, Quantite = 1 }, CategorieCreatifAdmin.Structures, $"Rack bâtons {NomEssence(essence)}");
 			Ajouter(new SlotInventaire { ID = Joueur.IdObjetRackBuches, IndexBotanique = essence, Quantite = 1 }, CategorieCreatifAdmin.Structures, $"Rack bûches {NomEssence(essence)}");
@@ -326,6 +349,7 @@ public partial class MenuAnatomie : Control
 				Ajouter(new SlotInventaire { ID = Joueur.IdObjetMurBoisFenetre, IndexBotanique = essence, IndexChimique = essenceFenetre, Quantite = 1 }, CategorieCreatifAdmin.Structures, $"Mur fenêtré {NomEssence(essence)} / {NomEssence(essenceFenetre)}");
 			Ajouter(new SlotInventaire { ID = Joueur.IdObjetMailletBois, IndexBotanique = essence, Quantite = 1 }, CategorieCreatifAdmin.Structures, $"Maillet {NomEssence(essence)}");
 			Ajouter(new SlotInventaire { ID = Joueur.IdObjetBolBois, IndexBotanique = essence, Quantite = 1 }, CategorieCreatifAdmin.Structures, $"Bol {NomEssence(essence)}");
+			Ajouter(new SlotInventaire { ID = Joueur.IdObjetBolEau, IndexBotanique = essence, Quantite = 1 }, CategorieCreatifAdmin.Structures, $"Bol d'eau {NomEssence(essence)}");
 		}
 		for (int chim = 0; chim < ItemPhysique.TableGeologique.Length; chim++)
 		{

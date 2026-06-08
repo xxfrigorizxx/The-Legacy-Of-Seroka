@@ -91,8 +91,9 @@ public partial class Gestionnaire_Monde : Node3D
 		}
 		var posSauvegardee = GameState.Instance?.ObtenirPositionJoueurSauvegardee();
 		bool positionPersistanteConnue = sessionSauvegardee.HasValue || posSauvegardee.HasValue;
-		_spawnDoitEtreAligneAuSol = !positionPersistanteConnue && ForcerAlignementSolAuChargement;
-		_spawnAligneAuSol = !_spawnDoitEtreAligneAuSol;
+		// Reconnexion : attendre collision + raycast sol (comme nouveau monde), pas seulement la position sauvegardée.
+		_spawnDoitEtreAligneAuSol = ForcerAlignementSolAuChargement;
+		_spawnAligneAuSol = false;
 		_ajusterPiedsJoueurSurSurfaceApresRestauration = positionPersistanteConnue;
 		if (sessionSauvegardee.HasValue)
 		{

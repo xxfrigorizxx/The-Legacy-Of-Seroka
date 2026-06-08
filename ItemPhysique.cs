@@ -1,4 +1,4 @@
-﻿using Godot;
+using Godot;
 using System;
 using System.Collections.Generic;
 
@@ -44,8 +44,9 @@ public partial class ItemPhysique : RigidBody3D
 		|| idObjet == Joueur.IdObjetRackBatons
 		|| idObjet == Joueur.IdObjetRackBuches
 		|| idObjet == Joueur.IdObjetCoffreBoisTier0
-		|| idObjet == Joueur.IdObjetPitFeu
-		|| idObjet == Joueur.IdObjetPitFeuRoche
+        || idObjet == Joueur.IdObjetPitFeu
+        || idObjet == Joueur.IdObjetPitFeuRoche
+        || idObjet == Joueur.IdObjetFourTorchie
 		|| idObjet == Joueur.IdObjetFondationBois
 		|| idObjet == Joueur.IdObjetFondationRoche
 		|| idObjet == Joueur.IdObjetFondationBoisSoleRoche
@@ -457,6 +458,16 @@ public partial class ItemPhysique : RigidBody3D
 				ActiverVisuelPitFeu(false);
 			return;
 		}
+		if (ID_Objet == Joueur.IdObjetFourTorchie)
+		{
+			InitialiserFourTorchiePose();
+			return;
+		}
+		if (ID_Objet == Joueur.IdObjetBolCeramique)
+		{
+			InitialiserBolCeramiquePose();
+			return;
+		}
 		if (ID_Objet == Joueur.IdObjetFondationBois
 			|| ID_Objet == Joueur.IdObjetFondationRoche
 			|| ID_Objet == Joueur.IdObjetFondationBoisSoleRoche
@@ -789,6 +800,16 @@ public partial class ItemPhysique : RigidBody3D
 				_tempsImmersionIntestin = 0d;
 			if (_tempsImmersionIntestin >= 0.35d)
 				TransformerIntestinEnVersionNettoyee();
+			return;
+		}
+		if (ID_Objet == Joueur.IdObjetFourTorchie)
+		{
+			TraiterFourTorchie(delta);
+			return;
+		}
+		if (ID_Objet == Joueur.IdObjetBolCeramique)
+		{
+			TraiterRefroidissementBolCeramiqueAuSoleil(delta);
 			return;
 		}
 		if (ID_Objet == Joueur.IdObjetPitFeu || ID_Objet == Joueur.IdObjetPitFeuRoche)

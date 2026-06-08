@@ -165,6 +165,18 @@ public partial class MenuAnatomie : Control
 					Branche(cp, e => TraiterClicInventaire(e, 9, idx));
 			}
 		}
+		if (!_clicsGrilleFourTorchieConnectes)
+		{
+			AssurerCadreFourTorchie();
+			AssurerPreviewsFourTorchie();
+			for (int i = 0; i < ItemPhysique.FourTorchieNbSlots; i++)
+			{
+				int idx = i;
+				if (ObtenirPanelFourTorchieIndex(i) is Panel cp)
+					Branche(cp, e => TraiterClicInventaire(e, 11, idx));
+			}
+			_clicsGrilleFourTorchieConnectes = true;
+		}
 		AssurerPanneauAnalyseur();
 		if (!_clicsGrilleAnalyseurConnectes && _slotsAnalyseur != null && _slotsAnalyseur.Length > 0)
 		{
@@ -274,6 +286,15 @@ public partial class MenuAnatomie : Control
 				return;
 			InteragirCurseurAvecSlot(ref grilleAnalyse[craftIdx], clicGauche, clicDroit);
 		}
+		else if (mode == 11 && craftIdx >= 0)
+		{
+			if (!_joueurRef.StockageFourTorchieOuvert || craftIdx < 0 || craftIdx >= ItemPhysique.FourTorchieNbSlots)
+				return;
+			TraiterClicFourTorchie(ref _joueurRef.RefSlotFourTorchie(craftIdx), clicGauche, clicDroit, craftIdx);
+			if (_joueurRef.FourTorchieOuvert != null && GodotObject.IsInstanceValid(_joueurRef.FourTorchieOuvert))
+				_joueurRef.FourTorchieOuvert.NotifierCombustibleFourTorchieModifie();
+			_joueurRef.VerifierRecettes();
+		}
 		else
 			return;
 
@@ -342,6 +363,84 @@ public partial class MenuAnatomie : Control
 		destination.Quantite = qDst + moveStack;
 		if (qCur - moveStack <= 0) _curseurMenu = new SlotInventaire();
 		else _curseurMenu.Quantite = qCur - moveStack;
+	}
+
+	private void TraiterClicFourTorchie(ref SlotInventaire slotFour, bool clicGauche, bool clicDroit, int idx)
+	{
+		if (_joueurRef == null || !_joueurRef.FourTorchieOuvertValide())
+			return;
+
+		if (_curseurMenu.EstVide
+			&& _joueurRef.EssayerObtenirPinceOsEnMain(out bool mainGauchePince))
+		{
+			TraiterClicFourTorchieAvecPinceOs(ref slotFour, clicGauche, clicDroit, idx, mainGauchePince);
+			return;
+		}
+
+		if (clicGauche)
+		{
+			if (_curseurMenu.EstVide)
+			{
+				if (!slotFour.EstVide)
+				{
+					_curseurMenu = slotFour;
+					_curseurMenu.Quantite = Joueur.ObtenirQuantiteSlot(_curseurMenu);
+					slotFour = new SlotInventaire();
+				}
+			}
+			else
+			{
+				if (!_joueurRef.EstSlotStockableDansFourTorchieOuvertIndex(idx, _curseurMenu))
+					return;
+				DeposerDepuisCurseurVersSlotSimple(ref slotFour, int.MaxValue);
+			}
+			return;
+		}
+
+		if (clicDroit)
+		{
+			if (_curseurMenu.EstVide)
+			{
+				if (!slotFour.EstVide)
+				{
+					int q = Joueur.ObtenirQuantiteSlot(slotFour);
+					_curseurMenu = slotFour;
+					_curseurMenu.Quantite = 1;
+					if (q <= 1) slotFour = new SlotInventaire();
+					else slotFour.Quantite = q - 1;
+				}
+			}
+			else
+			{
+				if (!_joueurRef.EstSlotStockableDansFourTorchieOuvertIndex(idx, _curseurMenu))
+					return;
+				DeposerDepuisCurseurVersSlotSimple(ref slotFour, 1);
+			}
+		}
+	}
+
+	private void TraiterClicFourTorchieAvecPinceOs(ref SlotInventaire slotFour, bool clicGauche, bool clicDroit, int idx, bool mainGauchePince)
+	{
+		bool modifie = false;
+		if (clicGauche)
+		{
+			if (!ItemPhysique.EstIndexSlotResultatFourTorchie(idx))
+				return;
+			modifie = _joueurRef.EssayerSaisirResultatFourAvecPince(ref slotFour, mainGauchePince);
+		}
+		else if (clicDroit)
+		{
+			if (ItemPhysique.EstIndexSlotResultatFourTorchie(idx))
+				modifie = _joueurRef.EssayerDeposerBolDepuisPinceSurSlotFour(ref slotFour, mainGauchePince);
+			else
+				modifie = _joueurRef.EssayerDeposerDepuisPinceSurPremierSlotResultatFour(mainGauchePince);
+		}
+
+		if (modifie)
+		{
+			_joueurRef.RafraichirHUD();
+			RafraichirMenu();
+		}
 	}
 
 	private void TraiterClicRackBatons(ref SlotInventaire slotRack, bool clicGauche, bool clicDroit, int rackIdx)

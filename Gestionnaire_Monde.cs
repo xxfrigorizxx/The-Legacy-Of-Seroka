@@ -108,6 +108,13 @@ public partial class Gestionnaire_Monde : Node3D
 	private CanvasLayer _overlayEmerukedesiParotaromaStage1;
 	private ShaderMaterial _materiauEmerukedesiParotaromaStage1;
 	private double _secondesOverlayChargement;
+	/// <summary>Timer absolu depuis le boot de la scène — jamais réinitialisé (évite overlay infini si TP dimension remet <see cref="_secondesOverlayChargement"/> à 0 en boucle).</summary>
+	private double _secondesChargementMondeAbsolu;
+	private double _cooldownLogDiagnosticChargement;
+	private double _cooldownRenfortSpawnChunks;
+	private const double IntervalleLogDiagnosticChargementSec = 5.0;
+	private const double IntervalleRenfortSpawnChunksSec = 2.5;
+	private const double TimeoutAbsoluOverlayChargementSec = 30.0;
 	private float _dernierYRemonteeAbysse = float.NaN;
 	private float _yDepartMonteeAbysse = float.NaN;
 	private bool _monteeAbysseContinue;
@@ -347,8 +354,9 @@ public partial class Gestionnaire_Monde : Node3D
 			if (_mondeClient == null) return false;
 			if (_dimensionLocaleActive == (int)DimensionJeu.Abysse)
 				return _mondeClient.AbyssePretPourDeplacement(pos);
-			Vector2I cReseau = WorldToChunkCoord(pos, TailleChunk);
-			return _mondeClient.ChunkCollisionActive(cReseau);
+			if (_mondeClient.EstModeProfondeurTranchesActif())
+				return _mondeClient.ChunkSousPiedsAPret();
+			return ChunkEtVoisinsCardinauxPretsAuPoint(pos);
 		}
 		Vector2I c = WorldToChunkCoord(pos, TailleChunk);
 		if (!_chunks.TryGetValue(c, out var n)) return false;
@@ -962,8 +970,8 @@ public partial class Gestionnaire_Monde : Node3D
 		else
 		{
 			posSpawn = AssurerSpawnAuDessusDuSol(posSpawn, conserverHauteurSauvegardee: true);
-			_spawnDoitEtreAligneAuSol = false;
-			_spawnAligneAuSol = true;
+			_spawnDoitEtreAligneAuSol = ForcerAlignementSolAuChargement;
+			_spawnAligneAuSol = false;
 			_ajusterPiedsJoueurSurSurfaceApresRestauration = true;
 		}
 		_spawnInitialEnAttente = posSpawn;
@@ -985,6 +993,16 @@ public partial class Gestionnaire_Monde : Node3D
 	private bool FinaliserSpawnInitialAuSol(bool autoriserFallbackSansRaycast = false)
 	{
 		if (!_spawnDoitEtreAligneAuSol || _spawnAligneAuSol || _joueur == null) return true;
+
+		if (EssayerAjusterPiedsJoueurSurSurfaceProche(_spawnInitialEnAttente, out Vector3 posSurfaceProche))
+		{
+			_joueur.GlobalPosition = posSurfaceProche;
+			_joueur.Velocity = Vector3.Zero;
+			_joueur.Visible = true;
+			_spawnAligneAuSol = true;
+			GD.Print($"ZERO-K : Spawn finalisé au sol (surface proche) -> {posSurfaceProche}");
+			return true;
+		}
 
 		if (EssayerTrouverSolParRaycast(_spawnInitialEnAttente, out Vector3 pointSol))
 		{

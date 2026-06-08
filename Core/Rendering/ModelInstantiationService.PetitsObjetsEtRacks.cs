@@ -459,6 +459,7 @@ public partial class Joueur
         NettoyerModelesEnfants(parent);
         Node3D modele = scene.Instantiate<Node3D>();
         modele.Name = "ModeleArme";
+        AppliquerMateriauOsBoeufSurMeshes(modele);
         NormaliserEchelleEtCentrerModeleArme(modele, tailleMaxMetres);
         parent.AddChild(modele);
     }

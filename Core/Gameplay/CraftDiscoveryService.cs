@@ -5,39 +5,45 @@ using System.Collections.Generic;
 public partial class Joueur
 {
 	[Flags]
-	private enum CategorieAnalyse
+	private enum CategorieAnalyse : long
 	{
 		Aucune = 0,
-		Fibre = 1 << 0,
-		Ligature = 1 << 1,
-		Corde = 1 << 2,
-		Tissu = 1 << 3,
-		Baton = 1 << 4,
-		BatonFaconne = 1 << 5,
-		BatonEnT = 1 << 6,
-		RochePointe = 1 << 7,
-		RochePlate = 1 << 8,
-		RocheOvale = 1 << 9,
-		RocheRonde = 1 << 10,
-		BuchePleine = 1 << 11,
-		DemiBuche = 1 << 12,
-		Pochette = 1 << 13,
-		CeinturePoches = 1 << 14,
+		Fibre = 1L << 0,
+		Ligature = 1L << 1,
+		Corde = 1L << 2,
+		Tissu = 1L << 3,
+		Baton = 1L << 4,
+		BatonFaconne = 1L << 5,
+		BatonEnT = 1L << 6,
+		RochePointe = 1L << 7,
+		RochePlate = 1L << 8,
+		RocheOvale = 1L << 9,
+		RocheRonde = 1L << 10,
+		BuchePleine = 1L << 11,
+		DemiBuche = 1L << 12,
+		Pochette = 1L << 13,
+		CeinturePoches = 1L << 14,
 		/// <summary>Branche d'arbre / de buisson (ID 31) : manche hachette primitive, mais pas substitut du bâton brut (32) pour « bâton façonné » seul.</summary>
-		BrancheBrute = 1 << 15,
+		BrancheBrute = 1L << 15,
 		/// <summary>Roche voxel brute (ID 2), utilisée pour débloquer la recette de façonnage vers petite roche matière (ID 47).</summary>
-		RocheVoxelBrute = 1 << 16,
-		Silex = 1 << 17,
-		RocheSulfuree = 1 << 18,
-		PitFeu = 1 << 19,
-		RocheMatiere = 1 << 20,
-		MiniBucheHuitieme = 1 << 21,
-		DaguePrimitive = 1 << 22,
-		MailletBois = 1 << 23,
-		BolBois = 1 << 24,
-		OsBoeuf = 1 << 25,
-		CuirBoeuf = 1 << 26,
-		MortierPilonBois = 1 << 27
+		RocheVoxelBrute = 1L << 16,
+		Silex = 1L << 17,
+		RocheSulfuree = 1L << 18,
+		PitFeu = 1L << 19,
+		RocheMatiere = 1L << 20,
+		MiniBucheHuitieme = 1L << 21,
+		DaguePrimitive = 1L << 22,
+		MailletBois = 1L << 23,
+		BolBois = 1L << 24,
+		OsBoeuf = 1L << 25,
+		CuirBoeuf = 1L << 26,
+		MortierPilonBois = 1L << 27,
+		BolEau = 1L << 28,
+		VoxelArgile = 1L << 29,
+		ArgileHumidifiee = 1L << 30,
+		VoxelBoue = 1L << 31,
+		Torchie = 1L << 32,
+		PinceOs = 1L << 33
 	}
 
 	private sealed class RecetteAnalysable
@@ -271,6 +277,51 @@ public partial class Joueur
 			Titre = "Mortier avec pilon",
 			LegendeSymboles = new[] { "B = Bol en bois", "P = Pilon/Maillet en bois" },
 			PatronCraft = new[] { "Établi 3x3 : 1 B + 1 P, positions libres." }
+		},
+		new RecetteAnalysable
+		{
+			CleCraft = "id_155",
+			IdResultat = IdObjetArgileHumidifiee,
+			Masque = CategorieAnalyse.BolEau | CategorieAnalyse.VoxelArgile,
+			Titre = "Argile humidifiee",
+			LegendeSymboles = new[] { "Be = Bol rempli d'eau", "A = Voxel argile (ID terrain 8)" },
+			PatronCraft = new[] { "Grille craft : 1 Be + 1 A (le bol est vide apres craft)." }
+		},
+		new RecetteAnalysable
+		{
+			CleCraft = "id_156",
+			IdResultat = IdObjetTorchie,
+			Masque = CategorieAnalyse.ArgileHumidifiee | CategorieAnalyse.Fibre | CategorieAnalyse.VoxelBoue,
+			Titre = "Torchie",
+			LegendeSymboles = new[] { "Ah = Argile humidifiee", "H = Brin d'herbe (fibre)", "B = Voxel boue (ID terrain 7)" },
+			PatronCraft = new[] { "Grille craft : 1 Ah + 1 H + 1 B -> 3 torchies." }
+		},
+		new RecetteAnalysable
+		{
+			CleCraft = "id_157",
+			IdResultat = IdObjetFourTorchie,
+			Masque = CategorieAnalyse.Torchie,
+			Titre = "Four en Torchie",
+			LegendeSymboles = new[] { "T = Torchie" },
+			PatronCraft = new[] { "( )(T)( )", "(T)(T)(T)", "(T)( )(T)" }
+		},
+		new RecetteAnalysable
+		{
+			CleCraft = "id_158",
+			IdResultat = IdObjetBolArgile,
+			Masque = CategorieAnalyse.ArgileHumidifiee,
+			Titre = "Bol en argile",
+			LegendeSymboles = new[] { "A = Argile humidifiee" },
+			PatronCraft = new[] { "( )( )( )", "(A)( )(A)", "( )(A)( )" }
+		},
+		new RecetteAnalysable
+		{
+			CleCraft = "id_160",
+			IdResultat = IdObjetPinceOs,
+			Masque = CategorieAnalyse.OsBoeuf,
+			Titre = "Pince en os",
+			LegendeSymboles = new[] { "O = Os de boeuf" },
+			PatronCraft = new[] { "( )(O)( )", "( )(O)( )", "(O)( )(O)" }
 		},
 		new RecetteAnalysable
 		{
@@ -1059,8 +1110,15 @@ public partial class Joueur
 		if (s.ID == 105) c |= CategorieAnalyse.DaguePrimitive;
 		if (s.ID == IdObjetMailletBois) c |= CategorieAnalyse.MailletBois;
 		if (s.ID == IdObjetBolBois) c |= CategorieAnalyse.BolBois;
+		if (s.ID == IdObjetBolEau) c |= CategorieAnalyse.BolEau;
+		if (s.ID == IdObjetArgileHumidifiee) c |= CategorieAnalyse.ArgileHumidifiee;
+		if (s.ID == IdObjetBolArgile) c |= CategorieAnalyse.ArgileHumidifiee;
+		if (s.ID == IdObjetTorchie) c |= CategorieAnalyse.Torchie;
+		if (Atlas_Matiere.EstSlotVoxelArgile(s)) c |= CategorieAnalyse.VoxelArgile;
+		if (Atlas_Matiere.EstSlotVoxelBoue(s)) c |= CategorieAnalyse.VoxelBoue;
 		if (s.ID == IdObjetMortierPilonBois) c |= CategorieAnalyse.MortierPilonBois;
 		if (s.ID == IdObjetOsBoeuf) c |= CategorieAnalyse.OsBoeuf;
+		if (s.ID == IdObjetPinceOs) c |= CategorieAnalyse.PinceOs;
 		if (s.ID == IdObjetCuirBoeuf) c |= CategorieAnalyse.CuirBoeuf;
 		if (s.ID == IdObjetPochetteTier0) c |= CategorieAnalyse.Pochette;
 		if (s.ID == IdObjetCeinturePoches) c |= CategorieAnalyse.CeinturePoches;
@@ -1145,6 +1203,69 @@ public partial class Joueur
 					nbIntestins++;
 			}
 			return nbIntestins >= 2;
+		}
+		if (r.CleCraft == "id_155" && grilleAnalyse != null)
+		{
+			bool bolEau = false, argile = false;
+			for (int i = 0; i < grilleAnalyse.Length; i++)
+			{
+				SlotInventaire s = grilleAnalyse[i];
+				if (s.EstVide) continue;
+				if (s.ID == IdObjetBolEau) bolEau = true;
+				else if (Atlas_Matiere.EstSlotVoxelArgile(s)) argile = true;
+				else return false;
+			}
+			return bolEau && argile;
+		}
+		if (r.CleCraft == "id_156" && grilleAnalyse != null)
+		{
+			bool argileHumid = false, fibreHerbe = false, boue = false;
+			for (int i = 0; i < grilleAnalyse.Length; i++)
+			{
+				SlotInventaire s = grilleAnalyse[i];
+				if (s.EstVide) continue;
+				if (s.ID == IdObjetArgileHumidifiee) argileHumid = true;
+				else if (Atlas_Matiere.EstSlotBrinHerbe(s)) fibreHerbe = true;
+				else if (Atlas_Matiere.EstSlotVoxelBoue(s)) boue = true;
+				else return false;
+			}
+			return argileHumid && fibreHerbe && boue;
+		}
+		if (r.CleCraft == "id_157" && grilleAnalyse != null)
+		{
+			bool aTorchie = false;
+			for (int i = 0; i < grilleAnalyse.Length; i++)
+			{
+				SlotInventaire s = grilleAnalyse[i];
+				if (s.EstVide) continue;
+				if (s.ID == IdObjetTorchie) aTorchie = true;
+				else return false;
+			}
+			return aTorchie;
+		}
+		if (r.CleCraft == "id_158" && grilleAnalyse != null)
+		{
+			bool aArgileHumid = false;
+			for (int i = 0; i < grilleAnalyse.Length; i++)
+			{
+				SlotInventaire s = grilleAnalyse[i];
+				if (s.EstVide) continue;
+				if (s.ID == IdObjetArgileHumidifiee) aArgileHumid = true;
+				else return false;
+			}
+			return aArgileHumid;
+		}
+		if (r.CleCraft == "id_160" && grilleAnalyse != null)
+		{
+			bool aOs = false;
+			for (int i = 0; i < grilleAnalyse.Length; i++)
+			{
+				SlotInventaire s = grilleAnalyse[i];
+				if (s.EstVide) continue;
+				if (s.ID == IdObjetOsBoeuf) aOs = true;
+				else return false;
+			}
+			return aOs;
 		}
 		if (r.CleCraft is "id_147" or "id_148" or "id_124" or "id_125" or "id_126" or "id_127" or "id_136" or "id_137" or "id_138" or "id_139" or "id_140" or "id_141" or "id_142" or "id_143" or "id_144")
 			return grilleAnalyse != null && AnalyseurTableT1SatisfaitFondationPlancher(r, grilleAnalyse);

@@ -1,4 +1,4 @@
-﻿using Godot;
+using Godot;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -101,6 +101,13 @@ public partial class Monde_Client : Node3D
 
 		if (_timerGraceStreamingBootstrap > 0f)
 			_timerGraceStreamingBootstrap = Mathf.Max(0f, _timerGraceStreamingBootstrap - dt);
+
+		_cooldownLogPerfFps = Mathf.Max(0f, _cooldownLogPerfFps - dt);
+		if (_cooldownLogPerfFps <= 0f && _fpsMoyenneAuto > 1f && _fpsMoyenneAuto < 52f)
+		{
+			_cooldownLogPerfFps = 8f;
+			GD.Print($"ZERO-K PERF: fpsMoy={_fpsMoyenneAuto:0} gate={_gateStreamingGele} graceBootstrap={_timerGraceStreamingBootstrap:0.0}s urgence={_niveauUrgencePerf}");
+		}
 
 		// === Gate FPS strict : ralentit le lointain si FPS bas — pas pendant bootstrap / monde incomplet. ===
 		if (ActiverGateFpsStrict && _timerGraceStreamingReglageUtilisateur <= 0f && _timerGraceStreamingBootstrap <= 0f)
@@ -269,9 +276,7 @@ public partial class Monde_Client : Node3D
 		{
 			if (!EssayerObtenirJoueurDansArbre(out CharacterBody3D joueurRef))
 				return false;
-			Vector2I c = Gestionnaire_Monde.WorldToChunkCoord(joueurRef.GlobalPosition, TailleChunk);
-			if (!ChunkCollisionActive(c))
-				return false;
+			return ChunkSousPiedsAPret();
 		}
 		else if (!ChunkSousPiedsAPret())
 			return false;

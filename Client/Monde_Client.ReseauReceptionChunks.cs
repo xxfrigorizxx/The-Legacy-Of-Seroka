@@ -1038,11 +1038,11 @@ public partial class Monde_Client : Node3D
 			if (existing.CoordChunkY != coordY)
 			{
 				if (coordY == 0)
-				{
-					existing.LibérerRids();
-					existing.EmpreinteDonneesServeur = 0;
-					existing.CoordChunkY = coordY;
-					EnqueueChunkGeneration(existing, donnees);
+			{
+				existing.LibérerRids();
+				existing.EmpreinteDonneesServeur = 0;
+				existing.CoordChunkY = coordY;
+				EnqueueChunkGeneration(existing, donnees);
 				}
 				else
 				{

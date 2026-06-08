@@ -19,17 +19,36 @@ public static partial class Atlas_Matiere
         return int.TryParse(brut, out idVoxel);
     }
 
+    /// <summary>Voxel argile (ID terrain 8), en inventaire direct ou via tag VOXEL_TERRAIN.</summary>
+    public static bool EstSlotVoxelArgile(in SlotInventaire slot)
+    {
+        if (slot.EstVide) return false;
+        if (slot.ID == 8) return true;
+        return EssayerLireIdVoxelTerrain(slot, out int idVoxel) && idVoxel == 8;
+    }
+
+    /// <summary>Voxel boue (ID terrain 7), en inventaire direct ou via tag VOXEL_TERRAIN.</summary>
+    public static bool EstSlotVoxelBoue(in SlotInventaire slot)
+    {
+        if (slot.EstVide) return false;
+        if (slot.ID == 7) return true;
+        return EssayerLireIdVoxelTerrain(slot, out int idVoxel) && idVoxel == 7;
+    }
+
+    /// <summary>Brin / fibre d'herbe (ID objet 15).</summary>
+    public static bool EstSlotBrinHerbe(in SlotInventaire slot) => !slot.EstVide && slot.ID == 15;
+
     public static string ObtenirNomVoxelTerrain(int idVoxel) => idVoxel switch
     {
-        1 => "Voxel terrain: Terre",
+        1 => "Voxel terrain: Herbe",
         2 => "Voxel terrain: Roche",
         3 => "Voxel terrain: Sable",
-        4 => "Voxel terrain: Neige",
-        5 => "Voxel terrain: Neige glacée",
+        4 => "Voxel terrain: Eau",
+        5 => "Voxel terrain: Neige",
         6 => "Voxel terrain: Terre aride",
         7 => "Voxel terrain: Boue",
-        8 => "Voxel terrain: Herbe",
-        9 => "Voxel terrain: Terre gelée",
+        8 => "Voxel terrain: Argile",
+        9 => "Voxel terrain: Glace",
         10 => "Voxel minerai: Charbon",
         11 => "Voxel minerai: Jade",
         12 => "Voxel minerai: Opale",
@@ -505,6 +524,25 @@ public static partial class Atlas_Matiere
             string essence = slot.IndexBotanique switch { 0 => "Chêne", 1 => "Bouleau", 2 => "Pin", 3 => "Sapin", 4 => "Fromager", _ => "Bois" };
             return $"Bol d'eau ({essence})";
         }
+        if (id == Joueur.IdObjetArgileHumidifiee)
+            return "Argile humidifiée";
+        if (id == Joueur.IdObjetBolArgile)
+        {
+            int q = Joueur.ObtenirQuantiteSlot(slot);
+            return q > 1 ? $"Bol en argile x{q}" : "Bol en argile";
+        }
+        if (id == Joueur.IdObjetBolCeramique)
+        {
+            int q = Joueur.ObtenirQuantiteSlot(slot);
+            string etat = FourTorchieThermodynamique.ObtenirFacteurChaleurBolCeramiqueSlot(slot) > 0.04f ? " (chaud)" : "";
+            return q > 1 ? $"Bol en céramique x{q}{etat}" : $"Bol en céramique{etat}";
+        }
+        if (id == Joueur.IdObjetTorchie)
+            return "Torchie";
+        if (id == Joueur.IdObjetFourTorchie)
+            return "Four en Torchie";
+        if (id == Joueur.IdObjetPinceOs)
+            return "Pince en os";
         if (id == Joueur.IdObjetMortierPilonBois)
         {
             string EssenceBois(byte idx) => idx switch { 0 => "Chêne", 1 => "Bouleau", 2 => "Pin", 3 => "Sapin", 4 => "Fromager", _ => "Bois" };
@@ -546,7 +584,8 @@ public static partial class Atlas_Matiere
         {
             int q = Joueur.ObtenirQuantiteSlot(slot);
             string nom = id == Joueur.IdObjetSteakCru ? "Steak cru"
-                : (id == Joueur.IdObjetSteakCuit ? "Steak cuit"
+                : (id == Joueur.IdObjetSteakCuit
+                    ? (FourTorchieThermodynamique.EstSteakBrule(slot) ? "Steak cuit (brûlé)" : "Steak cuit")
                 : (id == Joueur.IdObjetOsBoeuf ? "Os"
                 : (id == Joueur.IdObjetCuirBoeuf ? "Cuir"
                 : (id == Joueur.IdObjetIntestinBoeufNettoye ? "Intestin propre" : "Intestin"))));
@@ -565,17 +604,10 @@ public static partial class Atlas_Matiere
             };
             return q > 1 ? $"{nom} x{q}" : nom;
         }
+        if (id >= 1 && id <= 9)
+            return ObtenirNomCourtVoxelTerrain(id);
         return id switch
         {
-            1 => "Terre",
-            2 => "Roche",
-            3 => "Sable",
-            4 => "Neige",
-            5 => "Neige glacee",
-            6 => "Terre aride",
-            7 => "Boue",
-            8 => "Herbe",
-            9 => "Terre gelée",
             10 => "Buisson plein",
             11 => "Buisson vide",
             34 => "Feuillage",
@@ -583,4 +615,19 @@ public static partial class Atlas_Matiere
             _ => $"Objet #{id}"
         };
     }
+
+    /// <summary>Nom inventaire / HUD pour un voxel terrain de base (IDs 1–9, aligné sur les textures terrain).</summary>
+    public static string ObtenirNomCourtVoxelTerrain(int idVoxel) => idVoxel switch
+    {
+        1 => "Herbe",
+        2 => "Roche",
+        3 => "Sable",
+        4 => "Eau",
+        5 => "Neige",
+        6 => "Terre aride",
+        7 => "Boue",
+        8 => "Argile",
+        9 => "Glace",
+        _ => $"Voxel #{idVoxel}"
+    };
 }

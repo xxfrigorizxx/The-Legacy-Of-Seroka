@@ -50,8 +50,8 @@ public static class GraphicsOptionsService
 		if (options == null)
 			return new GraphicsOptionsData();
 
-		options.RenderDistance = Mathf.Clamp(options.RenderDistance, 6, 64);
-		options.RenderDistanceDetailChunks = Mathf.Clamp(options.RenderDistanceDetailChunks, 6, options.RenderDistance);
+		options.RenderDistance = Mathf.Clamp(options.RenderDistance, 2, 64);
+		options.RenderDistanceDetailChunks = Mathf.Clamp(options.RenderDistanceDetailChunks, 2, options.RenderDistance);
 		options.RayonQualiteProcheChunks = Mathf.Clamp(options.RayonQualiteProcheChunks, 1, 24);
 		options.RayonGazonVisibleChunks = Mathf.Clamp(options.RayonGazonVisibleChunks, 1, 24);
 		options.RayonBuissonsVisibleChunks = Mathf.Clamp(options.RayonBuissonsVisibleChunks, 2, 32);

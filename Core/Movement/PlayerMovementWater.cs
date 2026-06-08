@@ -144,7 +144,8 @@ public partial class Joueur
         if (!uiBloquanteOuverte)
         {
             bool bloquerChargePlacement = EstModePlacementGhostActifPourSlot(mainActive);
-            if (!mainActive.EstVide && Input.IsActionPressed("clic_droit") && !bloquerChargePlacement)
+            if (!mainActive.EstVide && Input.IsActionPressed("clic_droit") && !bloquerChargePlacement
+                && !ItemPhysique.EstPinceOsPorteObjet(mainActive))
             {
                 bool shiftDeclenchePlacementLancer = Input.IsPhysicalKeyPressed(Key.Shift) && EstObjetLancableAuMaintien(mainActive);
                 if (!shiftDeclenchePlacementLancer)

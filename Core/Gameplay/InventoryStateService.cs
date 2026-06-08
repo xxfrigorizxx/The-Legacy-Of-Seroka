@@ -17,6 +17,12 @@ public partial class Joueur
         if (s.EstVide) return 0;
         if (s.ID >= 1 && s.ID <= 9) return 5;
         if (s.ID == Joueur.IdObjetBaie) return 20;
+        if (s.ID == Joueur.IdObjetArgileHumidifiee) return 20;
+        if (s.ID == Joueur.IdObjetBolArgile) return 10;
+        if (s.ID == Joueur.IdObjetBolCeramique) return 10;
+        if (s.ID == Joueur.IdObjetTorchie) return 24;
+        if (s.ID == Joueur.IdObjetFourTorchie) return 1;
+        if (s.ID == Joueur.IdObjetPinceOs) return 1;
         if (s.ID == BlocChutant.ID_FEUILLE_ARRACHEE) return PileMaxFeuillesArrachees;
         if (s.ID == 30 || s.ID == 32 || s.ID == BlocChutant.ID_BRANCHE) return 30;
         if (s.ID is 15 or 16 or 17 or 20 or 21) return 15;
@@ -250,6 +256,11 @@ public partial class Joueur
             StockageCoffreOuvert = false;
             CoffreOuvert = null;
         }
+        if (StockageFourTorchieOuvert && (FourTorchieOuvert == null || !GodotObject.IsInstanceValid(FourTorchieOuvert)))
+        {
+            StockageFourTorchieOuvert = false;
+            FourTorchieOuvert = null;
+        }
         if (StockageRackBatonsOuvert && (RackBatonsOuvert == null || !GodotObject.IsInstanceValid(RackBatonsOuvert)))
         {
             StockageRackBatonsOuvert = false;
@@ -261,6 +272,28 @@ public partial class Joueur
             CraftGrille3x3AuTable = false;
             IdStationCraftOuverte = 0;
         }
+    }
+
+    /// <summary>9 slots du four en torchie ouvert (combustible + 4 cuisson + 4 résultats).</summary>
+    public ref SlotInventaire RefSlotFourTorchie(int idx)
+    {
+        if (!StockageFourTorchieOuvert || FourTorchieOuvert == null || !GodotObject.IsInstanceValid(FourTorchieOuvert))
+            return ref GrilleCraftPoche[0];
+        idx = Mathf.Clamp(idx, 0, ItemPhysique.FourTorchieNbSlots - 1);
+        return ref FourTorchieOuvert.GrilleFourTorchie[idx];
+    }
+
+    public bool FourTorchieOuvertValide() =>
+        StockageFourTorchieOuvert
+        && FourTorchieOuvert != null
+        && GodotObject.IsInstanceValid(FourTorchieOuvert)
+        && FourTorchieOuvert.ID_Objet == IdObjetFourTorchie;
+
+    public bool EstSlotStockableDansFourTorchieOuvertIndex(int idx, SlotInventaire s)
+    {
+        if (!FourTorchieOuvertValide())
+            return false;
+        return FourTorchieOuvert.EstSlotStockableDansFourTorchieIndex(idx, s);
     }
 
     /// <summary>10 slots du coffre ouvert (menu Q). Garde-fou : index 0–9.</summary>
@@ -297,7 +330,7 @@ public partial class Joueur
     public static bool EstObjetInterditDansCoffre(SlotInventaire s)
     {
         if (s.EstVide) return false;
-        return s.ID == 200 || s.ID == IdObjetTableAnalyseTier1 || s.ID == IdObjetRackBatons || s.ID == IdObjetRackBuches || s.ID == IdObjetCoffreBoisTier0;
+        return s.ID == 200 || s.ID == IdObjetTableAnalyseTier1 || s.ID == IdObjetRackBatons || s.ID == IdObjetRackBuches || s.ID == IdObjetCoffreBoisTier0 || s.ID == IdObjetFourTorchie;
     }
 
     public static bool EstSlotStockableRackBatons(SlotInventaire s) =>

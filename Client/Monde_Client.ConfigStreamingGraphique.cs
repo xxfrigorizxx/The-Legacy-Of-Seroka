@@ -1,4 +1,4 @@
-﻿using Godot;
+using Godot;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -9,15 +9,18 @@ public partial class Monde_Client : Node3D
 {
 	private int RayonDetailChunksActif()
 	{
-		int max = Mathf.Max(6, RenderDistance);
-		int detail = Mathf.Clamp(RenderDistanceDetailChunks, 6, max);
+		int max = Mathf.Max(2, RenderDistance);
+		int detail = Mathf.Clamp(RenderDistanceDetailChunks, 2, max);
 		return Mathf.Min(detail, max);
 	}
 
 	/// <summary>Rayon de chargement réseau/terrain réel. Indépendant du rayon de détail visuel.</summary>
 	private int RayonChargementChunksActif()
 	{
-		int rendu = Mathf.Max(RayonDormancePhysique + 1, RenderDistance);
+		// Respecte le slider (jusqu'à 2 chunks) : la dormance physique ne doit pas forcer 6+ chunks de visuel.
+		int rendu = Mathf.Max(2, RenderDistance);
+		if (!ModeSurvieFpsAgressif && RenderDistance > RayonDormancePhysique)
+			rendu = Mathf.Max(rendu, RayonDormancePhysique + 1);
 		if (_dimensionReseauActive == (int)DimensionJeu.Abysse)
 			rendu = Mathf.Min(rendu, JoueurEnModeVolCreatif() ? 6 : 10);
 		else if (ModeProfondeurTranchesActif())
@@ -49,14 +52,9 @@ public partial class Monde_Client : Node3D
 		return ConstantesProfondeurVerticale.DemiFenetreTranchesStreaming(vy);
 	}
 
-	/// <summary>Demi-côté (chunks) du disque « toujours visible » pour le culling caméra. Hors mode FPS : suit entièrement <see cref="RenderDistance"/> (panneau graphismes).</summary>
+	/// <summary>Demi-côté (chunks) du disque « toujours visible » pour le culling caméra. Suit strictement le slider <see cref="RenderDistance"/> (2–64).</summary>
 	private int DisqueToujoursVisibleChunksCulling()
-	{
-		if (!ModeSurvieFpsAgressif)
-			return Mathf.Max(RayonDormancePhysique + 1, Mathf.Max(MargeChunksToujoursVisibles, RenderDistance));
-		int disque = Mathf.Max(MargeChunksToujoursVisibles, Mathf.Min(RenderDistance, PlafondDisqueToujoursVisibleChunks));
-		return Mathf.Max(RayonDormancePhysique + 1, disque);
-	}
+		=> Mathf.Max(2, RenderDistance);
 
 	/// <summary>
 	/// Rayon (chunks) pour construire la file radar / purge : toujours la distance de chargement utilisateur (<see cref="RayonChargementChunksActif"/>).
@@ -264,6 +262,10 @@ public partial class Monde_Client : Node3D
 		Chunk_Client.RayonQualiteMaxChunks = Mathf.Max(1, RayonQualiteMaxChunks);
 		AppliquerLimitesVisibiliteFloreDimension();
 		_rayonRequetesActuel = Mathf.Max(RayonDormancePhysique + 1, RayonInitialRequetesChunks);
+		// Grâce bootstrap courte au démarrage (débloque le gate FPS sans saturer 50 s en mode chargement collision).
+		_timerGraceStreamingBootstrap = Mathf.Max(_timerGraceStreamingBootstrap, 18f);
+		_gateStreamingGele = false;
+		_tempsDepuisDegel = DureeRampUpPostDegel + 1f;
 		if (ModeSurvieFpsAgressif)
 			DemarrerGraceStreamingBootstrapNouveauMonde();
 		_timerExpansionRequetes = IntervalleExpansionRequetesSec;

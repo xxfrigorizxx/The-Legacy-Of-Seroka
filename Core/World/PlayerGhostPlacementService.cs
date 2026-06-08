@@ -1,4 +1,4 @@
-﻿using Godot;
+using Godot;
 using System;
 using System.Collections.Generic;
 
@@ -24,6 +24,7 @@ public partial class Joueur
             || id == IdObjetCoffreBoisTier0
             || id == IdObjetPitFeu
             || id == IdObjetPitFeuRoche
+            || id == IdObjetFourTorchie
             || EstIdFondation(id)
             || EstIdPlancher(id)
             || EstIdMuret(id)
@@ -143,6 +144,8 @@ public partial class Joueur
                 InstancierModelePitFeuRoche(meshRoot, mainActive, 0.96f, true);
             else if (mainActive.ID == IdObjetPitFeu)
                 InstancierModelePitFeu(meshRoot, mainActive, 0.92f, true);
+            else if (mainActive.ID == IdObjetFourTorchie)
+                InstancierModeleFourTorchie(meshRoot, mainActive, TailleFourTorchiePoseMetres, true);
             else if (EstIdFondation(mainActive.ID))
                 InstancierModeleFondation(meshRoot, mainActive, 4.0f, true);
             else if (EstIdSolBois(mainActive.ID))

@@ -48,7 +48,8 @@ public partial class Monde_Serveur : Node
 	/// <summary>Résurrection : chargement binaire via BinaryReader. Si fichier absent ou corrompu → régénération procédurale.</summary>
 	internal Chunk_Serveur ChargerChunkDepuisDisque(Vector2I coord, int coordY)
 	{
-		GD.Print($"ZERO-K DIAG : Tentative chargement Chunk {coord}...");
+		if (OS.IsDebugBuild())
+			GD.Print($"ZERO-K DIAG : Tentative chargement Chunk {coord} couche {coordY}...");
 		string cheminGodot = ObtenirCheminSauvegarde(coord, coordY);
 		string cheminAbsolu = ProjectSettings.GlobalizePath(cheminGodot);
 		if (!File.Exists(cheminAbsolu))
@@ -105,7 +106,8 @@ public partial class Monde_Serveur : Node
 			JournalErreursZeroK.Erreur($"ZERO-K REJET : Chunk {coord} refusé ! Taille lue : {donneesVoxels?.Length ?? 0} | Attendue : {tailleAttendue} ({cheminGodot}).");
 			return null;
 		}
-		GD.Print($"ZERO-K SUCCÈS : Chunk {coord} chargé depuis le disque ({donneesVoxels.Length} bytes).");
+		if (OS.IsDebugBuild())
+			GD.Print($"ZERO-K SUCCÈS : Chunk {coord} couche {coordY} chargé depuis le disque ({donneesVoxels.Length} bytes).");
 		var chunk = CreerChunkServeur(coord, coordY);
 		if (!chunk.AppliquerTableauBytes(donneesVoxels))
 		{

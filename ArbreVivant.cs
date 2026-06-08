@@ -392,6 +392,17 @@ public partial class ArbreVivant : StaticBody3D
 	public override void _Process(double delta)
 	{
 		float dt = (float)delta;
+		float distanceObs = GlobalPosition.DistanceTo(PositionObservation());
+		float distMaxVisu = ObtenirDistanceMaxVisibiliteArbre();
+		if (distanceObs > distMaxVisu + 6f)
+		{
+			if (Visible)
+				Visible = false;
+			return;
+		}
+		if (!Visible)
+			Visible = true;
+
 		if (!_maillageInitialGenere)
 		{
 			_attenteGeneration -= dt;
@@ -409,7 +420,7 @@ public partial class ArbreVivant : StaticBody3D
 		_cooldownLod -= dt;
 		if (_cooldownLod <= 0f)
 		{
-			float distance = GlobalPosition.DistanceTo(PositionObservation());
+			float distance = distanceObs;
 			float intervalleLod = INTERVALLE_MAJ_LOD;
 			if (distance > DISTANCE_LOD1) intervalleLod = 1.20f;
 			if (distance > DISTANCE_LOD2) intervalleLod = 2.00f;
@@ -632,7 +643,7 @@ public partial class ArbreVivant : StaticBody3D
 		else
 		{
 			_coupesLocales.Add(hitLocal);
-			GenererMaillageArbre();
+			GenererMaillageArbre(_lodActuel);
 			DeclencherChuteBranche(pointImpactMonde, directionFrappe);
 			return 3;
 		}
@@ -686,43 +697,8 @@ public partial class ArbreVivant : StaticBody3D
 			cadavre.AddChild(feuillesCopy);
 		}
 
-		CollisionShape3D hitboxCopy = new CollisionShape3D();
-		Mesh meshArbre = meshBoisCad;
-
-		if (AgeEnJours > 10)
-		{
-			GD.Print("ZERO-K : Arbre titanesque détecté. Utilisation d'un cylindre de collision pour éviter l'effondrement quantique.");
-			var cylindreDeSecours = new CylinderShape3D
-			{
-				Radius = 0.2f + (AgeEnJours * 0.05f),
-				Height = 1.0f + (AgeEnJours * 0.5f)
-			};
-			hitboxCopy.Shape = cylindreDeSecours;
-			hitboxCopy.Position = new Vector3(0, cylindreDeSecours.Height / 2f, 0);
-		}
-		else
-		{
-			Shape3D choix = null;
-			if (meshArbre != null)
-			{
-				try
-				{
-					if (meshArbre.GetFaces().Length > 0)
-						choix = meshArbre.CreateConvexShape(true, true);
-				}
-				catch (Exception ex)
-				{
-					GD.PrintErr($"ZERO-K : Convex arbre échoué ({ex.Message}). Boîte englobante de secours.");
-					choix = null;
-				}
-			}
-			if (choix == null)
-				choix = ItemPhysique.CreerShapeCollisionConvexeRobuste(meshArbre);
-			hitboxCopy.Shape = choix;
-		}
-
-		cadavre.AddChild(hitboxCopy);
-		AjouterCollisionEnglobanteCadavre(cadavre, meshBoisCad, meshFeuCad, _hauteurTroncTotale, _rayonTroncBase);
+		// Collision dimensionnée sur le tronc (pas convex hull ni AABB feuillage — gonflent énormément le bouleau).
+		ConfigurerCollisionCadavreArbre(cadavre, !EssenceMorte && meshFeuCad != null, branchesRestantes);
 
 		cadavre.CanSleep = false;
 		cadavre.Sleeping = false;
@@ -736,23 +712,50 @@ public partial class ArbreVivant : StaticBody3D
 		QueueFree();
 	}
 
-	/// <summary>Hitbox large (feuillage souvent sans collider) pour que le raycast et la hachette atteignent le cadavre au sol.</summary>
-	private static void AjouterCollisionEnglobanteCadavre(RigidBody3D cadavre, Mesh meshBois, Mesh meshFeu, float hauteurTronc, float rayonBase)
+	/// <summary>Hitbox du cadavre calée sur tronc/branches (pas convex hull ni AABB feuillage).</summary>
+	public static void ConfigurerCollisionCadavreArbre(RigidBody3D cadavre, bool feuillagePresent, int branchesRestantes)
 	{
-		Aabb emprise = meshBois != null ? meshBois.GetAabb() : new Aabb(Vector3.Zero, Vector3.One * 0.2f);
-		if (meshFeu != null)
-			emprise = emprise.Merge(meshFeu.GetAabb());
-		Vector3 taille = emprise.Size;
-		taille = new Vector3(
-			Mathf.Max(taille.X, Mathf.Max(0.55f, rayonBase * 2.6f)),
-			Mathf.Max(taille.Y, Mathf.Max(0.85f, hauteurTronc * 0.72f)),
-			Mathf.Max(taille.Z, Mathf.Max(0.55f, rayonBase * 2.6f)));
-		cadavre.AddChild(new CollisionShape3D
+		if (cadavre == null || !GodotObject.IsInstanceValid(cadavre))
+			return;
+
+		float hauteurTronc = cadavre.HasMeta("HauteurTronc") ? (float)cadavre.GetMeta("HauteurTronc").AsSingle() : 4.0f;
+		float rayonBase = cadavre.HasMeta("RayonTroncBase") ? (float)cadavre.GetMeta("RayonTroncBase").AsSingle() : 0.22f;
+		float rayonSommet = cadavre.HasMeta("RayonTroncSommet") ? (float)cadavre.GetMeta("RayonTroncSommet").AsSingle() : rayonBase * 0.65f;
+		float rayonTronc = Mathf.Max(0.12f, Mathf.Max(rayonBase, rayonSommet));
+		float ratioBranches = Mathf.Clamp(branchesRestantes / 10.0f, 0f, 1f);
+
+		float extraBranchage = feuillagePresent
+			? Mathf.Clamp(rayonTronc * 2.3f, 0.65f, 2.0f)
+			: Mathf.Lerp(0.06f, Mathf.Clamp(rayonTronc * 1.3f, 0.18f, 0.9f), ratioBranches);
+
+		float largeur = Mathf.Max(0.42f, rayonTronc * 2f + extraBranchage);
+		float hauteur = Mathf.Clamp(Mathf.Max(hauteurTronc * 0.88f, 0.8f), 0.8f, 7.5f);
+
+		CollisionShape3D collisionDynamique = null;
+		foreach (Node enfant in cadavre.GetChildren())
 		{
-			Name = "CollisionEnglobanteCadavre",
-			Shape = new BoxShape3D { Size = taille },
-			Position = emprise.GetCenter()
-		});
+			if (enfant is not CollisionShape3D cs)
+				continue;
+			if (cs.Name == "CollisionCadavreDynamique")
+			{
+				collisionDynamique = cs;
+				continue;
+			}
+			cs.Disabled = true;
+		}
+
+		if (collisionDynamique == null)
+		{
+			collisionDynamique = new CollisionShape3D { Name = "CollisionCadavreDynamique" };
+			cadavre.AddChild(collisionDynamique);
+		}
+
+		collisionDynamique.Disabled = false;
+		if (collisionDynamique.Shape is not BoxShape3D box)
+			box = new BoxShape3D();
+		box.Size = new Vector3(largeur, hauteur, largeur);
+		collisionDynamique.Shape = box;
+		collisionDynamique.Position = new Vector3(0f, hauteur * 0.5f, 0f);
 	}
 
 	/// <summary>L’impact est souvent dans le volume du feuillage/tronc : repousser depuis la racine puis garder au-dessus du sol.</summary>
@@ -824,6 +827,19 @@ public partial class ArbreVivant : StaticBody3D
 		return gm != null && gm.ObtenirDimensionLocaleActiveId() == (int)DimensionJeu.Abysse;
 	}
 
+	private Gestionnaire_Monde ObtenirGestionnaireMonde()
+		=> GetTree()?.CurrentScene?.GetNodeOrNull<Gestionnaire_Monde>("Gestionnaire_Monde");
+
+	/// <summary>Distance max d'affichage des arbres = slider « distance de rendu » (+ 1 chunk de marge).</summary>
+	private float ObtenirDistanceMaxVisibiliteArbre()
+	{
+		var gm = ObtenirGestionnaireMonde();
+		if (gm == null)
+			return DISTANCE_LOD2;
+		int tc = Mathf.Max(8, gm.TailleChunk);
+		return (Mathf.Max(2, gm.RenderDistance) + 1) * tc;
+	}
+
 	private void ObtenirSeuilsLodLianes(out float lod0, out float lod1, out float lod2)
 	{
 		if (EstEnDimensionApisara())
@@ -833,9 +849,10 @@ public partial class ArbreVivant : StaticBody3D
 			lod2 = DISTANCE_LOD2_APISARA;
 			return;
 		}
-		lod0 = DISTANCE_LOD0;
-		lod1 = DISTANCE_LOD1;
-		lod2 = DISTANCE_LOD2;
+		float rayon = ObtenirDistanceMaxVisibiliteArbre();
+		lod0 = Mathf.Min(DISTANCE_LOD0, rayon * 0.85f);
+		lod1 = Mathf.Min(DISTANCE_LOD1, rayon * 1.02f);
+		lod2 = Mathf.Min(DISTANCE_LOD2, rayon * 1.15f);
 	}
 
 	private int EvaluerLodDistance(float distance)
@@ -1201,13 +1218,19 @@ public partial class ArbreVivant : StaticBody3D
 		_visuelFeuillage.Mesh = stFeuilles.Commit();
 		_visuelFeuillage.MaterialOverride = ObtenirMaterielFeuilles(IndexBotanique);
 
-		// LOD > 0 : le mesh bois est simplifié — si on régénère la hitbox dessus, le raycast tape surtout le fût
-		// et SubirDegats classe tout en « tronc » (roche plate ne peut plus ébrancher). On garde la collision LOD0.
-		if (lodNiveau == 0)
+		// LOD > 0 : mesh simplifié — on garde la collision LOD0 sauf si des branches ont été coupées.
+		bool hitboxDoitSuivreMesh = lodNiveau == 0 || _coupesLocales.Count > 0;
+		if (hitboxDoitSuivreMesh)
 		{
 			_hitbox.Shape = meshBois != null && meshBois.GetFaces().Length > 0
 				? meshBois.CreateTrimeshShape()
-				: new BoxShape3D { Size = Vector3.One };
+				: new BoxShape3D
+				{
+					Size = new Vector3(
+						Mathf.Max(0.35f, _rayonTroncBase * 2.2f),
+						Mathf.Max(0.5f, _hauteurTroncTotale),
+						Mathf.Max(0.35f, _rayonTroncBase * 2.2f))
+				};
 		}
 		else if (_hitbox.Shape == null)
 		{

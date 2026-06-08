@@ -162,6 +162,8 @@ public partial class Joueur
     {
         w.Write(!s.EstVide);
         if (s.EstVide) return;
+        if (s.ID == Joueur.IdObjetBolBois || s.ID == Joueur.IdObjetBolEau)
+            GD.Print($"SEROKA DIAG EcrireSlot bol: ID={s.ID} IndexBotanique={s.IndexBotanique} Qte={s.Quantite}");
         w.Write(s.ID);
         w.Write(s.IndexMorphologique);
         w.Write(s.IndexChimique);
@@ -224,6 +226,8 @@ public partial class Joueur
             s.Quantite = 1;
             s.CleConteneur = "";
         }
+        if (s.ID == Joueur.IdObjetBolBois || s.ID == Joueur.IdObjetBolEau)
+            GD.Print($"SEROKA DIAG LireSlot bol: ID={s.ID} IndexBotanique={s.IndexBotanique} Qte={s.Quantite}");
         // Les MeshEclat ne sont pas sérialisables facilement : repli propre vers un slot non-éclat.
         if (s.EstUnEclat && s.MeshEclat == null)
             s.EstUnEclat = false;
@@ -834,7 +838,9 @@ public partial class Joueur
             NiveauFracture = item?.NiveauFracture ?? 0,
             ScaleEclat = scaleSlot,
             IndexBotanique = item != null ? item.IndexBotanique : LSystem_Botanique.IndexChene,
-            GenomeAssemblage = item?.GenomeAssemblage ?? "",
+            GenomeAssemblage = item != null ? (string.IsNullOrEmpty(item.GenomeAssemblage) && item.HasMeta(MetaGenomeAssemblage)
+                ? item.GetMeta(MetaGenomeAssemblage).AsString()
+                : item.GenomeAssemblage) : "",
             CleConteneur = (item != null && item.HasMeta("CleConteneur")) ? item.GetMeta("CleConteneur").AsString() : "",
             DurabiliteOutilMax = (item != null && item.HasMeta(MetaDurabiliteOutilMax)) ? (float)item.GetMeta(MetaDurabiliteOutilMax).AsDouble() : 0f,
             DurabiliteOutilActuelle = (item != null && item.HasMeta(MetaDurabiliteOutilActuelle)) ? (float)item.GetMeta(MetaDurabiliteOutilActuelle).AsDouble() : 0f,
@@ -843,6 +849,8 @@ public partial class Joueur
         };
         if (slot.EstUnEclat)
             slot.EstUnEclat = false;
+        if (id == Joueur.IdObjetBolBois || id == Joueur.IdObjetBolEau)
+            GD.Print($"SEROKA DIAG ObjetPose bol (sauvegarde sol): ID={id} item.IndexBotanique={(item != null ? item.IndexBotanique : 255)} slot.IndexBotanique={slot.IndexBotanique}");
         return true;
     }
 
@@ -910,6 +918,12 @@ public partial class Joueur
         {
             if (!EstNoeudDansDimension(n, dimensionId))
                 continue;
+            if (n is Node3D n3Sync)
+            {
+                var itemSync = TrouverItemPhysiqueDansNoeud(n3Sync);
+                if (itemSync != null && itemSync.ID_Objet == IdObjetFourTorchie)
+                    itemSync.SynchroniserGenomeFourTorchie();
+            }
             if (!EssayerConstruireSlotObjetPose(n, out var s, out var p, out var r))
                 continue;
             SlotInventaire[] atelier = null;
@@ -1111,6 +1125,8 @@ public partial class Joueur
                     Vector3 rot = e.rot;
                     SlotInventaire[] grilleAtelier = e.atelier;
                     SlotInventaire[] grilleCoffre = e.coffre;
+                    if (s.ID == Joueur.IdObjetBolBois || s.ID == Joueur.IdObjetBolEau)
+                        GD.Print($"SEROKA DIAG ObjetPose bol (respawn sol): ID={s.ID} slot.IndexBotanique={s.IndexBotanique}");
                     Node3D n = CreerBlocPose(p, s);
                     if (n != null)
                     {

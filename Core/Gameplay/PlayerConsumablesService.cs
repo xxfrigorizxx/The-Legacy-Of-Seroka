@@ -1,4 +1,4 @@
-﻿using Godot;
+using Godot;
 using System;
 using System.Collections.Generic;
 
@@ -124,10 +124,18 @@ public partial class Joueur
         MettreAJourHudStatsSurvie();
     }
 
-    /// <summary>Effets d'un steak mangé : cru +5 faim, cuit +50 faim.</summary>
-    public void AppliquerEffetsConsommationSteak(bool cuit)
+    /// <summary>Effets d'un steak mangé : cru +5 faim, cuit +50 faim, brûlé +49 faim.</summary>
+    public void AppliquerEffetsConsommationSteak(SlotInventaire slot)
     {
-        float gain = cuit ? GainFaimConsommationSteakCuit : GainFaimConsommationSteakCru;
+        if (slot.EstVide)
+            return;
+        float gain;
+        if (FourTorchieThermodynamique.EstSteakBrule(slot))
+            gain = GainFaimConsommationSteakCuit - 1f;
+        else if (slot.ID == Joueur.IdObjetSteakCuit)
+            gain = GainFaimConsommationSteakCuit;
+        else
+            gain = GainFaimConsommationSteakCru;
         _faimJoueur = Mathf.Min(FaimMaxJoueur, _faimJoueur + gain);
         MettreAJourHudStatsSurvie();
     }

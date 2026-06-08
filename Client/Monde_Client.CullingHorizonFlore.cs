@@ -1,4 +1,4 @@
-﻿using Godot;
+using Godot;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -93,7 +93,7 @@ public partial class Monde_Client : Node3D
 		float nearRadius = (RayonDetailChunksActif() + 10) * TailleChunk;
 		float farRadiusCible = Mathf.Max(nearRadius + TailleChunk * 10f, RayonHorizonChunks * TailleChunk);
 		// Horizon borné par RenderDistance (+ marge) : évite des silhouettes à des distances non demandées par le joueur.
-		float limiteRender = Mathf.Max(nearRadius + TailleChunk * 2f, (Mathf.Max(6, RenderDistance) + 2) * TailleChunk);
+		float limiteRender = Mathf.Max(nearRadius + TailleChunk * 2f, (Mathf.Max(2, RenderDistance) + 1) * TailleChunk);
 		float farRadius = Mathf.Min(farRadiusCible, limiteRender);
 		if (farRadius <= nearRadius + pas) return;
 

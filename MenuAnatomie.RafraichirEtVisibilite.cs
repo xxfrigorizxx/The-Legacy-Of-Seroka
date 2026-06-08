@@ -1,4 +1,4 @@
-﻿using Godot;
+using Godot;
 using System;
 using System.Collections.Generic;
 
@@ -15,12 +15,16 @@ public partial class MenuAnatomie : Control
 			RestituerGrilleAnalyseurAvantFermeture();
 			if (_joueurRef != null)
 			{
+				if (_joueurRef.FourTorchieOuvert != null && GodotObject.IsInstanceValid(_joueurRef.FourTorchieOuvert))
+					_joueurRef.FourTorchieOuvert.SynchroniserFourTorchieDepuisGrille();
 				_joueurRef.CraftGrille3x3AuTable = false;
 				_joueurRef.AtelierPlanTravailOuvert = null;
 				_joueurRef.StockageRackBatonsOuvert = false;
 				_joueurRef.RackBatonsOuvert = null;
 				_joueurRef.StockageCoffreOuvert = false;
 				_joueurRef.CoffreOuvert = null;
+				_joueurRef.StockageFourTorchieOuvert = false;
+				_joueurRef.FourTorchieOuvert = null;
 			}
 		}
 
@@ -226,6 +230,8 @@ public partial class MenuAnatomie : Control
 		RafraichirGrillesStockageSacEtCeinture();
 
 		RafraichirCellulesCraft();
+		if (_joueurRef.StockageFourTorchieOuvert)
+			RafraichirCellulesFourTorchie();
 		RafraichirAffichageCurseurSouris();
 	}
 

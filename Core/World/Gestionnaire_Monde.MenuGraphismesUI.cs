@@ -156,9 +156,9 @@ public partial class Gestionnaire_Monde : Node3D
 		contenu.AddThemeConstantOverride("separation", 5);
 		scroll.AddChild(contenu);
 
-		(_sliderRenderDistance, _labelRenderDistanceValeur) = CreerLigneSlider(contenu, "Distance de rendu (chunks)", 6, 64, 1);
+		(_sliderRenderDistance, _labelRenderDistanceValeur) = CreerLigneSlider(contenu, "Distance de rendu (chunks)", 2, 64, 1);
 		(_sliderRayonQualiteProche, _labelRayonQualiteProcheValeur) = CreerLigneSlider(contenu, "Qualite proche chunks", 1, 24, 1);
-		(_sliderDetailChunks, _labelDetailChunksValeur) = CreerLigneSlider(contenu, "Distance detail (chunks)", 6, 64, 1);
+		(_sliderDetailChunks, _labelDetailChunksValeur) = CreerLigneSlider(contenu, "Distance detail (chunks)", 2, 64, 1);
 		(_sliderRayonGazon, _labelRayonGazonValeur) = CreerLigneSlider(contenu, "Visibilite gazon", 1, 24, 1);
 		(_sliderRayonBuissons, _labelRayonBuissonsValeur) = CreerLigneSlider(contenu, "Visibilite buissons", 2, 32, 1);
 		(_sliderRayonHorizon, _labelRayonHorizonValeur) = CreerLigneSlider(contenu, "Rayon horizon LOD", 24, 240, 1);
@@ -371,7 +371,7 @@ public partial class Gestionnaire_Monde : Node3D
 		_sliderRenderDistance.SetValueNoSignal(o.RenderDistance);
 		_sliderRayonQualiteProche.SetValueNoSignal(o.RayonQualiteProcheChunks);
 		_sliderDetailChunks.MaxValue = o.RenderDistance;
-		_sliderDetailChunks.SetValueNoSignal(Mathf.Clamp(o.RenderDistanceDetailChunks, 6, o.RenderDistance));
+		_sliderDetailChunks.SetValueNoSignal(Mathf.Clamp(o.RenderDistanceDetailChunks, 2, o.RenderDistance));
 		_sliderRayonGazon.SetValueNoSignal(o.RayonGazonVisibleChunks);
 		_sliderRayonBuissons.SetValueNoSignal(o.RayonBuissonsVisibleChunks);
 		_sliderRayonHorizon.SetValueNoSignal(o.RayonHorizonChunks);
