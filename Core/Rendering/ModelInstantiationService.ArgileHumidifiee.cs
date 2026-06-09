@@ -173,4 +173,51 @@ public partial class Joueur
             NormaliserEchelleEtCentrerModeleArme(modele, tailleMaxMetres);
         parent.AddChild(modele);
     }
+
+    /// <summary>Moule modelé en argile — teinte thermique progressive (0–1).</summary>
+    public static void InstancierModeleMouleArgile(Node3D parent, SlotInventaire slot, float tailleMaxMetres = 0.32f, bool ancrerBaseAuSol = false, float facteurChauffe = 0f)
+    {
+        Material mat = facteurChauffe <= 0.001f
+            ? ObtenirMaterielArgileHumidifiee()
+            : CreerMaterielBolTeinteProgressive(facteurChauffe, ceramique: false);
+        InstancierModeleMouleInterne(parent, tailleMaxMetres, ancrerBaseAuSol, mat);
+    }
+
+    /// <summary>Moule en céramique — teinte progressive (facteurChaleur 1 = chaud, 0 = refroidi ; -1 = auto depuis le slot).</summary>
+    public static void InstancierModeleMouleCeramique(Node3D parent, SlotInventaire slot, float tailleMaxMetres = 0.32f, bool ancrerBaseAuSol = false, float facteurChaleur = -1f)
+    {
+        if (facteurChaleur < 0f)
+            facteurChaleur = FourTorchieThermodynamique.ObtenirFacteurChaleurBolCeramiqueSlot(slot);
+        Material mat = facteurChaleur <= 0.001f
+            ? CreerMaterielBolTeinteProgressive(0f, ceramique: true)
+            : CreerMaterielBolTeinteProgressive(facteurChaleur, ceramique: true);
+        InstancierModeleMouleInterne(parent, tailleMaxMetres, ancrerBaseAuSol, mat);
+    }
+
+    private static void InstancierModeleMouleInterne(Node3D parent, float tailleMaxMetres, bool ancrerBaseAuSol, Material materiau)
+    {
+        const string cheminGlb = "res://Modeles/materials/travailler/Moule_lingo.glb";
+        PackedScene scene = GD.Load<PackedScene>(cheminGlb);
+        if (scene == null)
+        {
+            var fallback = new MeshInstance3D
+            {
+                Name = "ModeleArme",
+                Mesh = new BoxMesh { Size = new Vector3(0.14f, 0.06f, 0.22f) },
+                MaterialOverride = materiau
+            };
+            parent.AddChild(fallback);
+            return;
+        }
+
+        NettoyerModelesEnfants(parent);
+        Node3D modele = scene.Instantiate<Node3D>();
+        modele.Name = "ModeleArme";
+        AppliquerMateriauSurMeshes(modele, materiau);
+        if (ancrerBaseAuSol)
+            NormaliserEchelleTableAtelierAuSol(modele, tailleMaxMetres);
+        else
+            NormaliserEchelleEtCentrerModeleArme(modele, tailleMaxMetres);
+        parent.AddChild(modele);
+    }
 }

@@ -145,7 +145,7 @@ public static class CreatifCatalogueService
 
     private static CategorieCreatif InfererCategorie(int id)
     {
-        if (id >= 1 && id <= 9)
+        if (Atlas_Matiere.EstIdVoxelSurfaceTerrain(id))
             return CategorieCreatif.Consommables;
         if (ItemPhysique.EstIdRocheMatiere(id))
             return CategorieCreatif.Pierre;

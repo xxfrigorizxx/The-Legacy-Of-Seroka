@@ -316,6 +316,15 @@ public partial class Joueur
 		},
 		new RecetteAnalysable
 		{
+			CleCraft = "id_161",
+			IdResultat = IdObjetMouleArgile,
+			Masque = CategorieAnalyse.ArgileHumidifiee,
+			Titre = "Moule en argile",
+			LegendeSymboles = new[] { "A = Argile humidifiee" },
+			PatronCraft = new[] { "(A)( )(A)", "(A)(A)(A)" }
+		},
+		new RecetteAnalysable
+		{
 			CleCraft = "id_160",
 			IdResultat = IdObjetPinceOs,
 			Masque = CategorieAnalyse.OsBoeuf,
@@ -1113,6 +1122,7 @@ public partial class Joueur
 		if (s.ID == IdObjetBolEau) c |= CategorieAnalyse.BolEau;
 		if (s.ID == IdObjetArgileHumidifiee) c |= CategorieAnalyse.ArgileHumidifiee;
 		if (s.ID == IdObjetBolArgile) c |= CategorieAnalyse.ArgileHumidifiee;
+		if (s.ID == IdObjetMouleArgile) c |= CategorieAnalyse.ArgileHumidifiee;
 		if (s.ID == IdObjetTorchie) c |= CategorieAnalyse.Torchie;
 		if (Atlas_Matiere.EstSlotVoxelArgile(s)) c |= CategorieAnalyse.VoxelArgile;
 		if (Atlas_Matiere.EstSlotVoxelBoue(s)) c |= CategorieAnalyse.VoxelBoue;
@@ -1244,6 +1254,18 @@ public partial class Joueur
 			return aTorchie;
 		}
 		if (r.CleCraft == "id_158" && grilleAnalyse != null)
+		{
+			bool aArgileHumid = false;
+			for (int i = 0; i < grilleAnalyse.Length; i++)
+			{
+				SlotInventaire s = grilleAnalyse[i];
+				if (s.EstVide) continue;
+				if (s.ID == IdObjetArgileHumidifiee) aArgileHumid = true;
+				else return false;
+			}
+			return aArgileHumid;
+		}
+		if (r.CleCraft == "id_161" && grilleAnalyse != null)
 		{
 			bool aArgileHumid = false;
 			for (int i = 0; i < grilleAnalyse.Length; i++)

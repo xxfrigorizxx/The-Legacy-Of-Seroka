@@ -164,8 +164,19 @@ public static class FourTorchieThermodynamique
 		!s.EstVide && s.ID == Joueur.IdObjetBolCeramique
 		&& s.IndexChimique != FlagBolCeramiqueChaudIndexChimique;
 
-	public static bool EstSlotVoxelArgileEchecFour(SlotInventaire s) =>
-		!s.EstVide && (s.ID == 8 || (Atlas_Matiere.EssayerLireIdVoxelTerrain(s, out int v) && v == 8));
+	public static bool EstMouleCeramiqueChaud(SlotInventaire s) =>
+		!s.EstVide && s.ID == Joueur.IdObjetMouleCeramique
+		&& s.IndexChimique == FlagBolCeramiqueChaudIndexChimique;
+
+	public static bool EstMouleCeramiqueRefroidi(SlotInventaire s) =>
+		!s.EstVide && s.ID == Joueur.IdObjetMouleCeramique
+		&& s.IndexChimique != FlagBolCeramiqueChaudIndexChimique;
+
+	public static bool EstObjetArgileCuissableFour(int id) =>
+		id == Joueur.IdObjetBolArgile || id == Joueur.IdObjetMouleArgile;
+
+	public static bool EstSlotChamotteFour(SlotInventaire s) =>
+		!s.EstVide && s.ID == Joueur.IdObjetChamotte;
 
 	public static bool TemperatureDansPlageCuissonBolArgile(float tempC) =>
 		tempC >= SeuilCuissonBolArgileMinC && tempC <= SeuilCuissonBolArgileMaxC;
@@ -173,6 +184,8 @@ public static class FourTorchieThermodynamique
 	public static double ObtenirDureeCuissonFourPourSlot(SlotInventaire s)
 	{
 		if (!s.EstVide && s.ID == Joueur.IdObjetBolArgile)
+			return DureeCuissonBolArgileSec;
+		if (!s.EstVide && s.ID == Joueur.IdObjetMouleArgile)
 			return DureeCuissonBolArgileSec;
 		if (!s.EstVide && s.ID == Joueur.IdObjetSteakCru)
 			return DureeCuissonSteakSec;
@@ -195,7 +208,13 @@ public static class FourTorchieThermodynamique
 		=> facteurChaleur >= SeuilFacteurBrulureBolChaud;
 
 	public static float ObtenirFacteurChaleurBolCeramiqueSlot(SlotInventaire s)
-		=> ItemPhysique.ObtenirFacteurChaleurBolCeramiqueDepuisSlot(s);
+	{
+		if (s.ID == Joueur.IdObjetBolCeramique)
+			return ItemPhysique.ObtenirFacteurChaleurBolCeramiqueDepuisSlot(s);
+		if (s.ID == Joueur.IdObjetMouleCeramique)
+			return ItemPhysique.ObtenirFacteurChaleurMouleCeramiqueDepuisSlot(s);
+		return 0f;
+	}
 
 	public static bool EstSlotBolBrulant(SlotInventaire s)
 		=> EstFacteurBolAssezChaudPourBruler(ObtenirFacteurChaleurBolCeramiqueSlot(s));

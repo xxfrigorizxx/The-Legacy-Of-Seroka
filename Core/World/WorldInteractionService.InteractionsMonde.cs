@@ -20,6 +20,7 @@ public partial class Joueur
 
         if (idT == IdObjetTableAnalyseTier1)
         {
+            SynchroniserFourTorchieOuvertAvantFermeture();
             CraftGrille3x3AuTable = false;
             IdStationCraftOuverte = 0;
             AtelierPlanTravailOuvert = null;
@@ -36,6 +37,7 @@ public partial class Joueur
             return true;
         }
         OuvrirAnalyseurManuel();
+        SynchroniserFourTorchieOuvertAvantFermeture();
         StockageFourTorchieOuvert = false;
         FourTorchieOuvert = null;
         if (idT == 200 || idT == IdObjetTableArtisanaTier1)
@@ -419,7 +421,7 @@ public partial class Joueur
 
     private const string PrefixeGenomeVoxelTerrain = "VOXEL_TERRAIN:";
 
-    private static bool EstIdTerrainVoxelPosable(int id) => id >= 1 && id <= 9 && id != 4;
+    private static bool EstIdTerrainVoxelPosable(int id) => Atlas_Matiere.EstIdVoxelSurfacePosable(id);
 
     private static bool EstIdMineraiVoxelTerrain(int id) =>
         (id >= 10 && id <= 29) || (id >= 32 && id <= 48);

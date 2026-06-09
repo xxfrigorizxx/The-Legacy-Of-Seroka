@@ -1,4 +1,4 @@
-﻿using Godot;
+using Godot;
 using System;
 using System.Collections.Generic;
 
@@ -108,6 +108,9 @@ public partial class Joueur
         else if (id == IdObjetArgileHumidifiee) return null; // GLB argile humidifiée via InstancierModeleArgileHumidifiee
         else if (id == IdObjetBolArgile) return null; // GLB bol en argile via InstancierModeleBolArgile
         else if (id == IdObjetBolCeramique) return null; // GLB bol céramique via InstancierModeleBolCeramique
+        else if (id == IdObjetMouleArgile) return null; // GLB moule argile via InstancierModeleMouleArgile
+        else if (id == IdObjetMouleCeramique) return null; // GLB moule céramique via InstancierModeleMouleCeramique
+        else if (id == IdObjetChamotte) return null; // GLB chamotte via InstancierModeleChamotte
         else if (id == IdObjetPinceOs) return null; // GLB pince en os via InstancierModelePinceOs
         else if (id == IdObjetTorchie) return null; // GLB torchie via InstancierModeleTorchie
         else if (id == IdObjetFourTorchie) return null; // GLB four via InstancierModeleFourTorchie
@@ -127,7 +130,7 @@ public partial class Joueur
         }
         else if (id == 34) return new QuadMesh { Size = new Vector2(0.12f, 0.18f) }; // Feuilles (GLB bouleau/chêne via InstancierModeleFeuilleArrachee)
         else if (id == IdObjetBaie) return new SphereMesh { Radius = 0.05f, Height = 0.10f, RadialSegments = 10, Rings = 6 };
-        if (id >= 1 && id <= 9)
+        if (Atlas_Matiere.EstIdVoxelSurfaceTerrain(id))
             return new BoxMesh { Size = new Vector3(0.2f, 0.2f, 0.2f) };
         return null;
     }
@@ -224,9 +227,12 @@ public partial class Joueur
             visuel.MaterialOverride = new StandardMaterial3D { AlbedoColor = c, Roughness = 0.34f, Metallic = 0f, EmissionEnabled = true, Emission = c * 0.06f };
             return;
         }
-        if (idObjet >= 1 && idObjet <= 9)
+        if (Atlas_Matiere.EstIdVoxelSurfaceTerrain(idObjet))
         {
-            visuel.MaterialOverride = new StandardMaterial3D { AlbedoColor = new Color(0.42f, 0.3f, 0.2f), Roughness = 1f, Metallic = 0f };
+            Color albedo = idObjet == Atlas_Matiere.IdVoxelSableQuartz
+                ? new Color(0.92f, 0.90f, 0.87f)
+                : new Color(0.42f, 0.3f, 0.2f);
+            visuel.MaterialOverride = new StandardMaterial3D { AlbedoColor = albedo, Roughness = 1f, Metallic = 0f };
             return;
         }
         int chimique = Mathf.Clamp(indexChimique, 0, ItemPhysique.TableGeologique.Length - 1);

@@ -1,4 +1,4 @@
-﻿using Godot;
+using Godot;
 using System;
 
 public partial class Joueur
@@ -59,7 +59,8 @@ public partial class Joueur
     private static bool EstMatiereMinableMainNue(int idMatiere)
     {
         // Main nue : sable + terres + neige (ID 5).
-        return idMatiere == 1 || idMatiere == 3 || idMatiere == 5 || idMatiere == 6 || idMatiere == 7 || idMatiere == 8 || idMatiere == 9;
+        return idMatiere == 1 || idMatiere == 3 || idMatiere == Atlas_Matiere.IdVoxelSableQuartz
+            || idMatiere == 5 || idMatiere == 6 || idMatiere == 7 || idMatiere == 8 || idMatiere == 9;
     }
 
     private static bool EstMatiereMinablePioche(int idMatiere)
@@ -73,7 +74,8 @@ public partial class Joueur
         // Distribution métier basée sur la matière réellement modifiée.
         if (idMatiereExtraite == 2 || Atlas_Matiere.EstIdVoxelTerrainMinerai(idMatiereExtraite))
             AjouterXpMetier("Mineur", 1UL);
-        else if (idMatiereExtraite == 1 || idMatiereExtraite == 3 || idMatiereExtraite == 5 || idMatiereExtraite == 6 || idMatiereExtraite == 7 || idMatiereExtraite == 8 || idMatiereExtraite == 9)
+        else if (idMatiereExtraite == 1 || idMatiereExtraite == 3 || idMatiereExtraite == Atlas_Matiere.IdVoxelSableQuartz
+            || idMatiereExtraite == 5 || idMatiereExtraite == 6 || idMatiereExtraite == 7 || idMatiereExtraite == 8 || idMatiereExtraite == 9)
             AjouterXpMetier("Terrassier", 1UL);
         else
             return;

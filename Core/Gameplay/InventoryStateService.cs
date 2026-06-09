@@ -15,11 +15,14 @@ public partial class Joueur
     public static int ObtenirPileMax(SlotInventaire s)
     {
         if (s.EstVide) return 0;
-        if (s.ID >= 1 && s.ID <= 9) return 5;
+        if (Atlas_Matiere.EstIdVoxelSurfaceTerrain(s.ID)) return 5;
         if (s.ID == Joueur.IdObjetBaie) return 20;
         if (s.ID == Joueur.IdObjetArgileHumidifiee) return 20;
         if (s.ID == Joueur.IdObjetBolArgile) return 10;
         if (s.ID == Joueur.IdObjetBolCeramique) return 10;
+        if (s.ID == Joueur.IdObjetMouleArgile) return 10;
+        if (s.ID == Joueur.IdObjetMouleCeramique) return 10;
+        if (s.ID == Joueur.IdObjetChamotte) return 5;
         if (s.ID == Joueur.IdObjetTorchie) return 24;
         if (s.ID == Joueur.IdObjetFourTorchie) return 1;
         if (s.ID == Joueur.IdObjetPinceOs) return 1;
@@ -249,6 +252,13 @@ public partial class Joueur
     }
 
     /// <summary>Réinitialise les flags d’inventaire liés à un conteneur monde si le nœud a été libéré (chunk, minage, déchargement) — évite que <see cref="RefSlotCoffreStockage"/> retombe sur <c>GrilleCraftPoche[0]</c> pour tous les index.</summary>
+    public void SynchroniserFourTorchieOuvertAvantFermeture()
+    {
+        if (!FourTorchieOuvertValide())
+            return;
+        FourTorchieOuvert.SynchroniserFourTorchieDepuisGrille();
+    }
+
     public void ReinitialiserConteneurOuvertSiReferencePerdue()
     {
         if (StockageCoffreOuvert && (CoffreOuvert == null || !GodotObject.IsInstanceValid(CoffreOuvert)))

@@ -1,4 +1,4 @@
-﻿using Godot;
+using Godot;
 using System;
 using System.Collections.Generic;
 
@@ -345,12 +345,18 @@ public partial class Joueur
         Godot.Collections.Array<Node> candidats = arbre.GetNodesInGroup("BlocsPoses");
         for (int i = 0; i < candidats.Count; i++)
         {
-            if (candidats[i] is not ItemPhysique item || item.ID_Objet != IdObjetBolCeramique)
+            if (candidats[i] is not ItemPhysique item
+                || (item.ID_Objet != IdObjetBolCeramique && item.ID_Objet != IdObjetMouleCeramique))
                 continue;
-            float facteur = item.ObtenirFacteurBrulureBolCeramique();
+            float facteur = item.ID_Objet == IdObjetMouleCeramique
+                ? item.ObtenirFacteurBrulureMouleCeramique()
+                : item.ObtenirFacteurBrulureBolCeramique();
             if (!FourTorchieThermodynamique.EstFacteurBolAssezChaudPourBruler(facteur))
                 continue;
-            if (!item.EssayerObtenirZoneContactChaleurBolMonde(out Vector3 point, out float rayon))
+            bool zoneOk = item.ID_Objet == IdObjetMouleCeramique
+                ? item.EssayerObtenirZoneContactChaleurMouleMonde(out Vector3 point, out float rayon)
+                : item.EssayerObtenirZoneContactChaleurBolMonde(out point, out rayon);
+            if (!zoneOk)
                 continue;
             Vector3 pieds = GlobalPosition;
             float distHoriz = new Vector2(point.X - pieds.X, point.Z - pieds.Z).Length();

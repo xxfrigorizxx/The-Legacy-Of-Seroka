@@ -1,4 +1,4 @@
-﻿using Godot;
+using Godot;
 using System;
 
 public partial class Joueur
@@ -399,7 +399,7 @@ public partial class Joueur
         {
             Vector3 p = pointImpactVoxel - n * profondeurs[i];
             int id = _gestionnaireMonde.ObtenirMatiereExacte(p);
-            if (id >= 1 && id <= 9)
+            if (Atlas_Matiere.EstIdVoxelSurfaceTerrain(id))
                 return id;
             if (Atlas_Matiere.EstIdVoxelTerrainMinerai(id))
                 return id;
@@ -407,7 +407,7 @@ public partial class Joueur
 
         // Repli conservateur pour ne pas bloquer le minage si un cas limite est rencontré.
         int fallback = _gestionnaireMonde.ObtenirMatiereExacte(pointImpactVoxel - n * 0.5f);
-        if (fallback >= 1 && fallback <= 9)
+        if (Atlas_Matiere.EstIdVoxelSurfaceTerrain(fallback))
             return fallback;
         if (Atlas_Matiere.EstIdVoxelTerrainMinerai(fallback))
             return fallback;
@@ -612,6 +612,7 @@ public partial class Joueur
             7 => new Color(0.33f, 0.25f, 0.17f),
             8 => new Color(0.38f, 0.49f, 0.24f),
             9 => new Color(0.66f, 0.7f, 0.75f),
+            Atlas_Matiere.IdVoxelSableQuartz => new Color(0.92f, 0.90f, 0.87f),
             _ => new Color(0.42f, 0.34f, 0.24f)
         };
     }

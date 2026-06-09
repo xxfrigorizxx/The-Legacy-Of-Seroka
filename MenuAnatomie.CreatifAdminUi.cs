@@ -226,24 +226,28 @@ public partial class MenuAnatomie : Control
 		(string nom, int idVoxel)[] voxelsTerrainBase =
 		{
 			("Herbe", 1), ("Roche", 2), ("Sable", 3), ("Eau", 4), ("Neige", 5),
+			("Sable de quartz", Atlas_Matiere.IdVoxelSableQuartz),
 			("Terre aride", 6), ("Boue", 7), ("Argile", 8), ("Glace", 9),
 			("Tronc", 30), ("Feuillage", 31)
 		};
 		for (int i = 0; i < voxelsTerrainBase.Length; i++)
 		{
 			var v = voxelsTerrainBase[i];
-			Ajouter(new SlotInventaire { ID = v.idVoxel, Quantite = 1 }, CategorieCreatifAdmin.Consommables, $"Voxel terrain: {v.nom} (ID {v.idVoxel})");
-			Ajouter(new SlotInventaire
-			{
-				ID = 2,
-				GenomeAssemblage = $"VOXEL_TERRAIN:{v.idVoxel}",
-				Quantite = 1
-			}, CategorieCreatifAdmin.Consommables, $"Voxel terrain (pose): {v.nom} (ID {v.idVoxel})");
+			// IDs 1–9 : entrée directe. ID 49 (sable quartz) évite l'ID brut (collision roche matière 40–51).
+			if (v.idVoxel <= 9)
+				Ajouter(new SlotInventaire { ID = v.idVoxel, Quantite = 1 }, CategorieCreatifAdmin.Consommables, $"Voxel terrain: {v.nom} (ID {v.idVoxel})");
+			Ajouter(
+				Atlas_Matiere.ConstruireSlotInventaireVoxelSurface(v.idVoxel),
+				CategorieCreatifAdmin.Consommables,
+				v.idVoxel <= 9 ? $"Voxel terrain (pose): {v.nom} (ID {v.idVoxel})" : $"Voxel terrain: {v.nom} (ID {v.idVoxel})");
 		}
 
 		Ajouter(new SlotInventaire { ID = Joueur.IdObjetArgileHumidifiee, Quantite = 20 }, CategorieCreatifAdmin.Consommables, "Stack max");
 		Ajouter(new SlotInventaire { ID = Joueur.IdObjetBolArgile, Quantite = 10 }, CategorieCreatifAdmin.Consommables, "Stack max");
 		Ajouter(new SlotInventaire { ID = Joueur.IdObjetBolCeramique, Quantite = 10 }, CategorieCreatifAdmin.Consommables, "Stack max");
+		Ajouter(new SlotInventaire { ID = Joueur.IdObjetMouleArgile, Quantite = 10 }, CategorieCreatifAdmin.Consommables, "Stack max");
+		Ajouter(new SlotInventaire { ID = Joueur.IdObjetMouleCeramique, Quantite = 10 }, CategorieCreatifAdmin.Consommables, "Stack max");
+		Ajouter(new SlotInventaire { ID = Joueur.IdObjetChamotte, Quantite = 5 }, CategorieCreatifAdmin.Consommables, "Stack max");
 		Ajouter(new SlotInventaire { ID = Joueur.IdObjetTorchie, Quantite = 24 }, CategorieCreatifAdmin.Consommables, "Stack max");
 
 		int[] idsConsommables = {

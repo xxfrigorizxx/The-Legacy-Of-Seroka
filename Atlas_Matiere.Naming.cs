@@ -6,17 +6,67 @@ public static partial class Atlas_Matiere
 {
     private const string PrefixeGenomeVoxelTerrain = "VOXEL_TERRAIN:";
 
+    /// <summary>Sable de quartz (blanc) — même texture que le sable classique, teinte shader.</summary>
+    public const int IdVoxelSableQuartz = 49;
+
     public static bool EstIdVoxelTerrainMinerai(int idVoxel) =>
         (idVoxel >= 10 && idVoxel <= 29) || (idVoxel >= 32 && idVoxel <= 48);
+
+    /// <summary>Voxels de surface (herbe, sable, neige, sable quartz, etc.).</summary>
+    public static bool EstIdVoxelSurfaceTerrain(int idVoxel) =>
+        (idVoxel >= 1 && idVoxel <= 9) || idVoxel == IdVoxelSableQuartz;
+
+    /// <summary>Posable depuis l'inventaire (comme les voxels terrain 1–9, hors eau).</summary>
+    public static bool EstIdVoxelSurfacePosable(int idVoxel) =>
+        (idVoxel >= 1 && idVoxel <= 9 && idVoxel != 4) || idVoxel == IdVoxelSableQuartz;
 
     public static bool EssayerLireIdVoxelTerrain(in SlotInventaire slot, out int idVoxel)
     {
         idVoxel = 0;
-        string genome = slot.GenomeAssemblage ?? string.Empty;
-        if (!genome.StartsWith(PrefixeGenomeVoxelTerrain, StringComparison.OrdinalIgnoreCase))
+        return !slot.EstVide && EstGenomeVoxelTerrainValide(slot.GenomeAssemblage, out idVoxel);
+    }
+
+    /// <summary>Valide un tag VOXEL_TERRAIN (minerais, sable de quartz, etc.) pour injection RPC / persistance.</summary>
+    public static bool EstGenomeVoxelTerrainValide(string genome, out int idVoxel)
+    {
+        idVoxel = 0;
+        if (string.IsNullOrWhiteSpace(genome)) return false;
+        string g = genome.Trim();
+        if (!g.StartsWith(PrefixeGenomeVoxelTerrain, StringComparison.OrdinalIgnoreCase))
             return false;
-        string brut = genome.Substring(PrefixeGenomeVoxelTerrain.Length).Trim();
-        return int.TryParse(brut, out idVoxel);
+        string brut = g.Substring(PrefixeGenomeVoxelTerrain.Length).Trim();
+        if (!int.TryParse(brut, out idVoxel))
+            return false;
+        return EstIdVoxelSurfaceTerrain(idVoxel) || EstIdVoxelTerrainMinerai(idVoxel);
+    }
+
+    public static bool EstGenomeVoxelTerrainValide(string genome) =>
+        EstGenomeVoxelTerrainValide(genome, out _);
+
+    /// <summary>Slot inventaire pour un voxel de surface (IDs 1–9 directs ; 49+ via tag pour éviter collision roche matière 40–51).</summary>
+    public static SlotInventaire ConstruireSlotInventaireVoxelSurface(int idVoxelTerrain, int quantite = 1)
+    {
+        quantite = Mathf.Max(1, quantite);
+        if (idVoxelTerrain >= 1 && idVoxelTerrain <= 9)
+        {
+            return new SlotInventaire
+            {
+                ID = idVoxelTerrain,
+                Quantite = quantite,
+                IndexMorphologique = 0,
+                IndexChimique = 0
+            };
+        }
+        if (EstIdVoxelSurfaceTerrain(idVoxelTerrain))
+        {
+            return new SlotInventaire
+            {
+                ID = 2,
+                GenomeAssemblage = $"{PrefixeGenomeVoxelTerrain}{idVoxelTerrain}",
+                Quantite = quantite
+            };
+        }
+        return new SlotInventaire();
     }
 
     /// <summary>Voxel argile (ID terrain 8), en inventaire direct ou via tag VOXEL_TERRAIN.</summary>
@@ -49,6 +99,7 @@ public static partial class Atlas_Matiere
         7 => "Voxel terrain: Boue",
         8 => "Voxel terrain: Argile",
         9 => "Voxel terrain: Glace",
+        IdVoxelSableQuartz => "Voxel terrain: Sable de quartz",
         10 => "Voxel minerai: Charbon",
         11 => "Voxel minerai: Jade",
         12 => "Voxel minerai: Opale",
@@ -537,6 +588,22 @@ public static partial class Atlas_Matiere
             string etat = FourTorchieThermodynamique.ObtenirFacteurChaleurBolCeramiqueSlot(slot) > 0.04f ? " (chaud)" : "";
             return q > 1 ? $"Bol en céramique x{q}{etat}" : $"Bol en céramique{etat}";
         }
+        if (id == Joueur.IdObjetMouleArgile)
+        {
+            int q = Joueur.ObtenirQuantiteSlot(slot);
+            return q > 1 ? $"Moule en argile x{q}" : "Moule en argile";
+        }
+        if (id == Joueur.IdObjetMouleCeramique)
+        {
+            int q = Joueur.ObtenirQuantiteSlot(slot);
+            string etat = FourTorchieThermodynamique.ObtenirFacteurChaleurBolCeramiqueSlot(slot) > 0.04f ? " (chaud)" : "";
+            return q > 1 ? $"Moule en céramique x{q}{etat}" : $"Moule en céramique{etat}";
+        }
+        if (id == Joueur.IdObjetChamotte)
+        {
+            int q = Joueur.ObtenirQuantiteSlot(slot);
+            return q > 1 ? $"Chamotte x{q}" : "Chamotte";
+        }
         if (id == Joueur.IdObjetTorchie)
             return "Torchie";
         if (id == Joueur.IdObjetFourTorchie)
@@ -604,7 +671,7 @@ public static partial class Atlas_Matiere
             };
             return q > 1 ? $"{nom} x{q}" : nom;
         }
-        if (id >= 1 && id <= 9)
+        if (EstIdVoxelSurfaceTerrain(id))
             return ObtenirNomCourtVoxelTerrain(id);
         return id switch
         {
@@ -628,6 +695,7 @@ public static partial class Atlas_Matiere
         7 => "Boue",
         8 => "Argile",
         9 => "Glace",
+        IdVoxelSableQuartz => "Sable de quartz",
         _ => $"Voxel #{idVoxel}"
     };
 }

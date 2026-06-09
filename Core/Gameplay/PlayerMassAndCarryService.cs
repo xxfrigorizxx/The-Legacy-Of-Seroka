@@ -1,4 +1,4 @@
-﻿using Godot;
+using Godot;
 using System;
 using System.Collections.Generic;
 
@@ -76,6 +76,9 @@ public partial class Joueur
         IdObjetArgileHumidifiee => 0.32f,
         IdObjetBolArgile => 0.26f,
         IdObjetBolCeramique => 0.24f,
+        IdObjetMouleArgile => 0.28f,
+        IdObjetMouleCeramique => 0.26f,
+        IdObjetChamotte => 0.14f,
         IdObjetTorchie => 0.36f,
         IdObjetFourTorchie => 18f,
         IdObjetMortierPilonBois => 0.98f,

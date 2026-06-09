@@ -308,17 +308,8 @@ public partial class Gestionnaire_Monde : Node3D
 			Joueur.AlerteSqueletteBoiteNoire(messageServeur);
 	}
 
-	private static bool EstGenomeVoxelTerrainValide(string genome)
-	{
-		if (string.IsNullOrWhiteSpace(genome)) return false;
-		string g = genome.Trim();
-		if (!g.StartsWith("VOXEL_TERRAIN:", StringComparison.OrdinalIgnoreCase))
-			return false;
-		string brut = g.Substring("VOXEL_TERRAIN:".Length).Trim();
-		if (!int.TryParse(brut, out int idVoxel))
-			return false;
-		return (idVoxel >= 10 && idVoxel <= 29) || (idVoxel >= 32 && idVoxel <= 48);
-	}
+	private static bool EstGenomeVoxelTerrainValide(string genome) =>
+		Atlas_Matiere.EstGenomeVoxelTerrainValide(genome);
 
 	private void SurInjectionItemCreatifDemandee(int id, int indexMorphologique, int indexChimique, int indexTaille, int indexBotanique, string genomeAssemblage, long peerId)
 	{

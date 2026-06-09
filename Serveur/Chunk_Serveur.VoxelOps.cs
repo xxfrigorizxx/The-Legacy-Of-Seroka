@@ -1,4 +1,4 @@
-﻿using Godot;
+using Godot;
 using System;
 using System.Buffers.Binary;
 using System.Collections.Generic;
@@ -169,7 +169,7 @@ public partial class Chunk_Serveur : RefCounted
 
 	private static int ObtenirResistanceMateriau(byte id)
 	{
-		if (id == 3) return 0;
+		if (id == 3 || id == Atlas_Matiere.IdVoxelSableQuartz) return 0;
 		if (id == 2) return 2;
 		return 1;
 	}

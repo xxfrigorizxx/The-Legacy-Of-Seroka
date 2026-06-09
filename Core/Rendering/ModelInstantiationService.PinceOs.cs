@@ -61,10 +61,23 @@ public partial class Joueur
         Parcourir(racine);
     }
 
-    private static void AppliquerMateriauxPinceOsAvecBolOptionnel(Node3D racine, SlotInventaire bolPorte)
+    /// <summary>Seuls les meshes céramique (bol / moule) reçoivent la teinte chaude — le reste reste os.</summary>
+    private static bool EstMeshCeramiquePinceOs(string nomMesh, SlotInventaire objetPorte)
     {
-        float facteurChaleur = FourTorchieThermodynamique.ObtenirFacteurChaleurBolCeramiqueSlot(bolPorte);
-        Material matBol = facteurChaleur <= 0.001f
+        if (string.IsNullOrEmpty(nomMesh) || objetPorte.EstVide)
+            return false;
+        string nom = nomMesh.ToLowerInvariant();
+        if (objetPorte.ID == Joueur.IdObjetMouleCeramique)
+            return nom.Contains("tripo") || nom.Contains("moule") || nom.Contains("lingo");
+        if (objetPorte.ID == Joueur.IdObjetBolCeramique)
+            return nom.Contains("bowl") || nom.Contains("bol");
+        return false;
+    }
+
+    private static void AppliquerMateriauxPinceOsAvecObjetCeramique(Node3D racine, SlotInventaire objetPorte)
+    {
+        float facteurChaleur = FourTorchieThermodynamique.ObtenirFacteurChaleurBolCeramiqueSlot(objetPorte);
+        Material matCeramique = facteurChaleur <= 0.001f
             ? CreerMaterielBolTeinteProgressive(0f, ceramique: true)
             : CreerMaterielBolTeinteProgressive(facteurChaleur, ceramique: true);
         Material matOs = ObtenirMaterielOsBoeuf();
@@ -72,26 +85,31 @@ public partial class Joueur
         void Parcourir(Node n)
         {
             if (n is MeshInstance3D mi)
-            {
-                string nom = mi.Name.ToString().ToLowerInvariant();
-                bool estBol = nom.Contains("bowl") || nom.Contains("bol") || nom.Contains("ceram") || nom.Contains("pot");
-                mi.MaterialOverride = estBol ? matBol : matOs;
-            }
+                mi.MaterialOverride = EstMeshCeramiquePinceOs(mi.Name, objetPorte) ? matCeramique : matOs;
             foreach (Node enfant in n.GetChildren())
                 Parcourir(enfant);
         }
         Parcourir(racine);
     }
 
-    /// <summary>Pince en os — vide ou avec bol céramique (GLB + texture os / teinte bol).</summary>
+    private static string ObtenirCheminGlbPinceOs(SlotInventaire slot, out SlotInventaire objetPorte)
+    {
+        objetPorte = default;
+        if (!ItemPhysique.EstPinceOsPorteObjet(slot)
+            || !ItemPhysique.EssayerLireObjetPortePinceOs(slot, out objetPorte))
+            return "res://Modeles/materials/travailler/pince_os.glb";
+        if (objetPorte.ID == Joueur.IdObjetMouleCeramique)
+            return "res://Modeles/materials/travailler/pince_os_Moule_lingo.glb";
+        if (objetPorte.ID == Joueur.IdObjetBolCeramique)
+            return "res://Modeles/materials/travailler/pince_os_bowl.glb";
+        return "res://Modeles/materials/travailler/pince_os.glb";
+    }
+
+    /// <summary>Pince en os — vide, bol céramique (pince_os_bowl) ou moule céramique (pince_os_Moule_lingo).</summary>
     public static void InstancierModelePinceOs(Node3D parent, SlotInventaire slot, float tailleMaxMetres = 0.36f, bool ancrerBaseAuSol = false)
     {
-        SlotInventaire bolPorte = default;
-        bool porteBol = ItemPhysique.EstPinceOsPorteBol(slot)
-            && ItemPhysique.EssayerLireObjetPortePinceOs(slot, out bolPorte);
-        string cheminGlb = porteBol
-            ? "res://Modeles/materials/travailler/pince_os_bowl.glb"
-            : "res://Modeles/materials/travailler/pince_os.glb";
+        string cheminGlb = ObtenirCheminGlbPinceOs(slot, out SlotInventaire objetPorte);
+        bool porteObjetCeramique = !objetPorte.EstVide;
         PackedScene scene = GD.Load<PackedScene>(cheminGlb);
         if (scene == null)
         {
@@ -108,8 +126,8 @@ public partial class Joueur
         NettoyerModelesEnfants(parent);
         Node3D modele = scene.Instantiate<Node3D>();
         modele.Name = "ModeleArme";
-        if (porteBol)
-            AppliquerMateriauxPinceOsAvecBolOptionnel(modele, bolPorte);
+        if (porteObjetCeramique)
+            AppliquerMateriauxPinceOsAvecObjetCeramique(modele, objetPorte);
         else
             AppliquerMateriauOsBoeufSurMeshes(modele);
         if (ancrerBaseAuSol)

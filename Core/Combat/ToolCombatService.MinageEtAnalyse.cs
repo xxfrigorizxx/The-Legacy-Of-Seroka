@@ -1,4 +1,4 @@
-﻿using Godot;
+using Godot;
 using System;
 
 public partial class Joueur
@@ -326,6 +326,8 @@ public partial class Joueur
             int seed = _gestionnaireMonde?.SeedTerrain ?? 0;
             nouveauSlot = ConstruireSlotLootMineraiVoxel(idExtrait, pointImpactVoxel, seed);
         }
+        else if (Atlas_Matiere.EstIdVoxelSurfaceTerrain(idExtrait))
+            nouveauSlot = Atlas_Matiere.ConstruireSlotInventaireVoxelSurface(idExtrait);
         else
             nouveauSlot = new SlotInventaire { ID = idExtrait, IndexMorphologique = 0, IndexChimique = 0, Quantite = 1 };
 

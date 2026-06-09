@@ -1,4 +1,4 @@
-﻿using Godot;
+using Godot;
 using System;
 using System.Collections.Generic;
 
@@ -99,6 +99,28 @@ public static partial class Atlas_Matiere
             return new SlotInventaire
             {
                 ID = Joueur.IdObjetBolArgile,
+                Quantite = 1,
+                IndexChimique = 0,
+                IndexMorphologique = 0,
+                IndexTaille = 0,
+                ScaleEclat = Vector3.One,
+                EstUnEclat = false,
+                MeshEclat = null,
+                NiveauFracture = 0
+            };
+        }
+
+        // Moule en argile (161) 3×3 — 5× argile humidifiée :
+        // (A)( )(A)
+        // (A)(A)(A)
+        if (grilleCraft3x3Table && grille.Length >= 9
+            && EstSlotArgileHumidifieeCraft(grille[0]) && grille[1].EstVide && EstSlotArgileHumidifieeCraft(grille[2])
+            && EstSlotArgileHumidifieeCraft(grille[3]) && EstSlotArgileHumidifieeCraft(grille[4]) && EstSlotArgileHumidifieeCraft(grille[5])
+            && grille[6].EstVide && grille[7].EstVide && grille[8].EstVide)
+        {
+            return new SlotInventaire
+            {
+                ID = Joueur.IdObjetMouleArgile,
                 Quantite = 1,
                 IndexChimique = 0,
                 IndexMorphologique = 0,

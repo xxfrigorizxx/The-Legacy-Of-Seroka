@@ -92,13 +92,17 @@ void fragment() {
 	float edge_noise = (noise(world_pos.xz * 4.0) - 0.5) * 0.8 * detail_t;
 	float material_id = round(raw_id + edge_noise);
 	// Étendu à 48 pour supporter les minerais (10..29, 32..48) sans recâblage shader.
-	material_id = clamp(material_id, 0.0, 48.0);
+	material_id = clamp(material_id, 0.0, 49.0);
 
 	// Tronc (30) et Feuilles (31) : couleurs fixes.
 	// Important: test exact pour éviter que les IDs minerais >= 32 soient pris comme feuillage.
 	bool is_bois = abs(material_id - 30.0) < 0.5;
 	bool is_feuilles = abs(material_id - 31.0) < 0.5;
-	float tex_layer = clamp(material_id, 0.0, 48.0);
+	bool est_sable_quartz = (material_id == 49.0);
+	float tex_layer = clamp(material_id, 0.0, 49.0);
+	if (est_sable_quartz) {
+		tex_layer = 3.0; // Même grain que le sable classique
+	}
 
 	// Projection Triplanaire standard
 	vec2 uv_x = uv1_triplanar_pos.zy;
@@ -127,12 +131,19 @@ void fragment() {
 	bool est_aride = (material_id == 6.0);
 	bool est_sable = (material_id == 3.0);
 
-	// Sable: neutralise la dominante orange vers une teinte plus beige naturelle.
+	// Sable classique : neutralise la dominante orange vers une teinte plus beige naturelle.
 	if (est_sable) {
 		vec3 hsv_sable = rgb2hsv(final_color);
 		hsv_sable.y = clamp(hsv_sable.y * (1.0 - neutralisation_sable), 0.0, 1.0);
 		hsv_sable.x = mix(hsv_sable.x, 0.135, neutralisation_sable * 0.42);
 		final_color = hsv2rgb(hsv_sable);
+	}
+	// Sable de quartz (ID 49) : même texture, teinte blanche cassée pilotée par la luminosité du grain.
+	if (est_sable_quartz) {
+		float lum = dot(final_color, vec3(0.299, 0.587, 0.114));
+		float micro = noise(world_pos.xz * 0.11 + vec2(19.7, -8.4)) - 0.5;
+		vec3 teinte = vec3(0.94, 0.92, 0.89);
+		final_color = teinte * (0.70 + lum * 0.56 + micro * 0.04 * detail_t);
 	}
 
 	// Loin: on coupe presque tous les coûts de détail shader.

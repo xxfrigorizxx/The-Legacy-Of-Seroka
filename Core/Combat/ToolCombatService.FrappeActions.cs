@@ -263,7 +263,7 @@ public partial class Joueur
         {
             int idMatiereImpact = _gestionnaireMonde?.ObtenirMatiereExacte(pointImpact - (_rayon.GetCollisionNormal() * 0.45f)) ?? 0;
             // Pelle pierre tier0 : bonus sur terre/sable/terre aride/neige.
-            if (idMatiereImpact == 1 || idMatiereImpact == 3 || idMatiereImpact == 5 || idMatiereImpact == 6)
+            if (idMatiereImpact == 1 || idMatiereImpact == 3 || idMatiereImpact == Atlas_Matiere.IdVoxelSableQuartz || idMatiereImpact == 5 || idMatiereImpact == 6)
                 forceCreusage *= 1.05f;
         }
 

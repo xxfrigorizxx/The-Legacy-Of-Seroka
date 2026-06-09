@@ -6,7 +6,7 @@ public partial class ItemPhysique
 	public const string PrefixGenomePinceOsCharge = "PINCEOS:";
 
 	public static bool EstPinceOsPeutSaisirResultat(SlotInventaire s) =>
-		!s.EstVide && s.ID == Joueur.IdObjetBolCeramique;
+		!s.EstVide && (s.ID == Joueur.IdObjetBolCeramique || s.ID == Joueur.IdObjetMouleCeramique);
 
 	public static bool EstPinceOsPorteObjet(SlotInventaire pince) =>
 		!pince.EstVide
@@ -17,6 +17,11 @@ public partial class ItemPhysique
 		EstPinceOsPorteObjet(pince)
 		&& EssayerLireObjetPortePinceOs(pince, out SlotInventaire objet)
 		&& objet.ID == Joueur.IdObjetBolCeramique;
+
+	public static bool EstPinceOsPorteMouleCeramique(SlotInventaire pince) =>
+		EstPinceOsPorteObjet(pince)
+		&& EssayerLireObjetPortePinceOs(pince, out SlotInventaire objet)
+		&& objet.ID == Joueur.IdObjetMouleCeramique;
 
 	public static bool EssayerLireObjetPortePinceOs(SlotInventaire pince, out SlotInventaire objet)
 	{
@@ -74,6 +79,12 @@ public partial class ItemPhysique
 			&& string.IsNullOrEmpty(genome))
 		{
 			genome = $"{PrefixGenomeBolCeramique}{chi}:0";
+		}
+		if (id == Joueur.IdObjetMouleCeramique
+			&& chi == FourTorchieThermodynamique.FlagBolCeramiqueChaudIndexChimique
+			&& string.IsNullOrEmpty(genome))
+		{
+			genome = $"{PrefixGenomeMouleCeramique}{chi}:0";
 		}
 		return new SlotInventaire
 		{

@@ -8,7 +8,7 @@ using Godot.Collections;
 /// </summary>
 public static class TerrainMaterialFactory
 {
-    private const int CoucheTextureMaxTerrain = 48;
+    private const int CoucheTextureMaxTerrain = 49;
 
     private static readonly Dictionary<int, string> CheminsTexturesOverrides = new()
     {
@@ -60,6 +60,7 @@ public static class TerrainMaterialFactory
         [46] = "res://textures/terrain/minerais/46_minerai_calcaire.png",
         [47] = "res://textures/terrain/minerais/47_minerai_gypse.png",
         [48] = "res://textures/terrain/minerais/48_obsidienne.png",
+        [Atlas_Matiere.IdVoxelSableQuartz] = "res://textures/terrain/03_sable.png",
     };
 
     private static readonly string[] CheminsTexturesTerrain = ConstruireCheminsTexturesTerrain();

@@ -832,6 +832,9 @@ public partial class Generateur_Voxel : Node3D
 		bool fondEau = hauteurSurface <= NiveauEau - 1;
 		if (climatJungleArgile && bordEau && bruitArgileRive > 0.83f) return 8;
 		if (climatJungleArgile && fondEau && bruitArgileFond > 0.965f) return 8;
+		float bruitSableQuartz = _noiseHumidite.GetNoise2D(globalX * 2.75f + 5100f, globalZ * 2.75f - 3900f);
+		if (fondEau && bruitSableQuartz > 0.86f) return Atlas_Matiere.IdVoxelSableQuartz;
+		if (bordEau && bruitSableQuartz > 0.93f) return Atlas_Matiere.IdVoxelSableQuartz;
 		int deltaLittoral = hauteurSurface - NiveauPlage;
 		if (deltaLittoral <= LargeurTransitionLittorale)
 		{
@@ -1126,6 +1129,9 @@ public partial class Generateur_Voxel : Node3D
 		bool fondEau = hauteurSurface <= NiveauEau - 1;
 		if (climatJungleArgile && bordEau && bruitArgileRive > 0.83f) return 8;
 		if (climatJungleArgile && fondEau && bruitArgileFond > 0.965f) return 8;
+		float bruitSableQuartz = noiseNeige.GetNoise2D(globalX * 2.75f + 5100f, globalZ * 2.75f - 3900f);
+		if (fondEau && bruitSableQuartz > 0.86f) return Atlas_Matiere.IdVoxelSableQuartz;
+		if (bordEau && bruitSableQuartz > 0.93f) return Atlas_Matiere.IdVoxelSableQuartz;
 		int deltaLittoral = hauteurSurface - NiveauPlage;
 		if (deltaLittoral <= LargeurTransitionLittorale)
 		{

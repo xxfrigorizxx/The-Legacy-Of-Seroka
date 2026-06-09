@@ -60,7 +60,7 @@ public partial class ItemPhysique
 		double duree = FourTorchieThermodynamique.ObtenirDureeCuissonFourPourSlot(cuisson);
 		if (duree <= 0.001d)
 			return -1f;
-		if (cuisson.ID == Joueur.IdObjetBolArgile
+		if ((cuisson.ID == Joueur.IdObjetBolArgile || cuisson.ID == Joueur.IdObjetMouleArgile)
 			&& !FourTorchieThermodynamique.TemperatureDansPlageCuissonBolArgile(_fourTorchieTemperature))
 			return -1f;
 		if (cuisson.ID == Joueur.IdObjetSteakCru
@@ -73,7 +73,7 @@ public partial class ItemPhysique
 		FourTorchieThermodynamique.EstCombustibleFourTorchie(s);
 
 	public static bool EstObjetCuissableFourTorchie(SlotInventaire s) =>
-		!s.EstVide && (s.ID == Joueur.IdObjetSteakCru || s.ID == Joueur.IdObjetBolArgile);
+		!s.EstVide && (s.ID == Joueur.IdObjetSteakCru || FourTorchieThermodynamique.EstObjetArgileCuissableFour(s.ID));
 
 	public static bool EstSlotCuissonFourTorchie(SlotInventaire s) => EstObjetCuissableFourTorchie(s);
 
@@ -82,7 +82,9 @@ public partial class ItemPhysique
 			|| FourTorchieThermodynamique.EstSteakBrule(s)
 			|| FourTorchieThermodynamique.EstBolCeramiqueChaud(s)
 			|| FourTorchieThermodynamique.EstBolCeramiqueRefroidi(s)
-			|| FourTorchieThermodynamique.EstSlotVoxelArgileEchecFour(s));
+			|| FourTorchieThermodynamique.EstMouleCeramiqueChaud(s)
+			|| FourTorchieThermodynamique.EstMouleCeramiqueRefroidi(s)
+			|| FourTorchieThermodynamique.EstSlotChamotteFour(s));
 
 	public static bool SontResultatsFourTorchieCompatibles(SlotInventaire cuisson, SlotInventaire resultat)
 	{
@@ -96,7 +98,11 @@ public partial class ItemPhysique
 		if (cuisson.ID == Joueur.IdObjetBolArgile)
 			return FourTorchieThermodynamique.EstBolCeramiqueChaud(resultat)
 				|| FourTorchieThermodynamique.EstBolCeramiqueRefroidi(resultat)
-				|| FourTorchieThermodynamique.EstSlotVoxelArgileEchecFour(resultat);
+				|| FourTorchieThermodynamique.EstSlotChamotteFour(resultat);
+		if (cuisson.ID == Joueur.IdObjetMouleArgile)
+			return FourTorchieThermodynamique.EstMouleCeramiqueChaud(resultat)
+				|| FourTorchieThermodynamique.EstMouleCeramiqueRefroidi(resultat)
+				|| FourTorchieThermodynamique.EstSlotChamotteFour(resultat);
 		return false;
 	}
 
@@ -276,7 +282,7 @@ public partial class ItemPhysique
 			}
 			TraiterCuissonFourTorchie(delta);
 			if (_fourTorchieResteCombSec <= 0.001d)
-				EssayerDemarrerProchainCombustibleFourTorchie();
+				FinaliserUniteCombustibleFourTorchie();
 		}
 		else if (!_fourTorchieAllume || _fourTorchieResteCombSec <= 0.001d)
 		{
@@ -317,21 +323,33 @@ public partial class ItemPhysique
 		for (int i = 0; i < FourTorchieNbSlots; i++)
 		{
 			ref SlotInventaire slot = ref GrilleFourTorchie[i];
-			if (!FourTorchieThermodynamique.EstBolCeramiqueChaud(slot))
+			if (!FourTorchieThermodynamique.EstBolCeramiqueChaud(slot)
+				&& !FourTorchieThermodynamique.EstMouleCeramiqueChaud(slot))
 				continue;
 
-			EssayerLireEtatBolCeramiqueSlot(slot, out _, out double progSec);
-			progSec += dtBol;
-			if (progSec >= FourTorchieThermodynamique.DureeRefroidissementBolCeramiqueSec)
+			if (FourTorchieThermodynamique.EstBolCeramiqueChaud(slot))
 			{
-				EcrireEtatBolCeramiqueSlot(ref slot, 0, 0d);
+				EssayerLireEtatBolCeramiqueSlot(slot, out _, out double progSecBol);
+				progSecBol += dtBol;
+				if (progSecBol >= FourTorchieThermodynamique.DureeRefroidissementBolCeramiqueSec)
+					EcrireEtatBolCeramiqueSlot(ref slot, 0, 0d);
+				else
+					EcrireEtatBolCeramiqueSlot(
+						ref slot,
+						FourTorchieThermodynamique.FlagBolCeramiqueChaudIndexChimique,
+						progSecBol);
 			}
 			else
 			{
-				EcrireEtatBolCeramiqueSlot(
-					ref slot,
-					FourTorchieThermodynamique.FlagBolCeramiqueChaudIndexChimique,
-					progSec);
+				EssayerLireEtatMouleCeramiqueSlot(slot, out _, out double progSecMoule);
+				progSecMoule += dtBol;
+				if (progSecMoule >= FourTorchieThermodynamique.DureeRefroidissementBolCeramiqueSec)
+					EcrireEtatMouleCeramiqueSlot(ref slot, 0, 0d);
+				else
+					EcrireEtatMouleCeramiqueSlot(
+						ref slot,
+						FourTorchieThermodynamique.FlagBolCeramiqueChaudIndexChimique,
+						progSecMoule);
 			}
 			modifie = true;
 		}
@@ -363,6 +381,15 @@ public partial class ItemPhysique
 		GD.Print("SEROKA : ANTHRACITE dans le four — atrophie thermique ! Éloignez-vous !");
 		MettreAJourVisuelFourTorchie(true);
 		SynchroniserGenomeFourTorchie();
+	}
+
+	/// <summary>Fin d'une unité de combustible : enchaîne la suivante ou éteint le four sans consommer le stock au repos.</summary>
+	private void FinaliserUniteCombustibleFourTorchie()
+	{
+		if (!_fourTorchieAllume || _fourTorchieAnomalieAnthracite)
+			return;
+		if (!EssayerDemarrerProchainCombustibleFourTorchie())
+			_fourTorchieAllume = false;
 	}
 
 	private bool EssayerDemarrerProchainCombustibleFourTorchie()
@@ -454,8 +481,8 @@ public partial class ItemPhysique
 			}
 		}
 
-		if (cuisson.ID == Joueur.IdObjetBolArgile)
-			return EssayerAvancerCuissonBolArgileFourTorchie(indexCuisson, delta, ref cuisson, ref resultat);
+		if (FourTorchieThermodynamique.EstObjetArgileCuissableFour(cuisson.ID))
+			return EssayerAvancerCuissonArgileFourTorchie(indexCuisson, delta, ref cuisson, ref resultat);
 		return EssayerAvancerCuissonSteakFourTorchie(indexCuisson, delta, ref cuisson, ref resultat);
 	}
 
@@ -488,11 +515,11 @@ public partial class ItemPhysique
 		return modifie;
 	}
 
-	private bool EssayerAvancerCuissonBolArgileFourTorchie(int indexCuisson, double delta, ref SlotInventaire cuisson, ref SlotInventaire resultat)
+	private bool EssayerAvancerCuissonArgileFourTorchie(int indexCuisson, double delta, ref SlotInventaire cuisson, ref SlotInventaire resultat)
 	{
 		if (_fourTorchieTemperature > FourTorchieThermodynamique.SeuilCuissonBolArgileMaxC)
 		{
-			bool modifie = FinaliserEchecBolArgileFourTorchie(indexCuisson, ref cuisson, ref resultat);
+			bool modifie = FinaliserEchecArgileFourTorchie(indexCuisson, ref cuisson, ref resultat);
 			_fourTorchieProgressCuissonSec[indexCuisson] = 0d;
 			return modifie;
 		}
@@ -504,18 +531,21 @@ public partial class ItemPhysique
 		_fourTorchieProgressCuissonSec[indexCuisson] += delta;
 		bool modifieOk = false;
 		while (_fourTorchieProgressCuissonSec[indexCuisson] >= duree
-			&& EstSlotCuissonFourTorchie(cuisson) && cuisson.ID == Joueur.IdObjetBolArgile)
+			&& EstSlotCuissonFourTorchie(cuisson)
+			&& FourTorchieThermodynamique.EstObjetArgileCuissableFour(cuisson.ID))
 		{
 			if (_fourTorchieTemperature > FourTorchieThermodynamique.SeuilCuissonBolArgileMaxC)
 			{
-				modifieOk |= FinaliserEchecBolArgileFourTorchie(indexCuisson, ref cuisson, ref resultat);
+				modifieOk |= FinaliserEchecArgileFourTorchie(indexCuisson, ref cuisson, ref resultat);
 				_fourTorchieProgressCuissonSec[indexCuisson] = 0d;
 				break;
 			}
 			if (!FourTorchieThermodynamique.TemperatureDansPlageCuissonBolArgile(_fourTorchieTemperature))
 				break;
 
-			SlotInventaire produit = CreerSlotBolCeramiqueChaud();
+			SlotInventaire produit = cuisson.ID == Joueur.IdObjetMouleArgile
+				? CreerSlotMouleCeramiqueChaud()
+				: CreerSlotBolCeramiqueChaud();
 
 			if (!DeposerProduitCuissonFourTorchie(ref resultat, produit))
 				break;
@@ -546,16 +576,18 @@ public partial class ItemPhysique
 		return true;
 	}
 
-	private bool FinaliserEchecBolArgileFourTorchie(int indexCuisson, ref SlotInventaire cuisson, ref SlotInventaire resultat)
+	private bool FinaliserEchecArgileFourTorchie(int indexCuisson, ref SlotInventaire cuisson, ref SlotInventaire resultat)
 	{
-		var echec = new SlotInventaire { ID = 8, Quantite = 1 };
+		int idCuisson = cuisson.ID;
+		var echec = new SlotInventaire { ID = Joueur.IdObjetChamotte, Quantite = 1 };
 		if (!DeposerProduitCuissonFourTorchie(ref resultat, echec))
 			return false;
 		int qCru = Joueur.ObtenirQuantiteSlot(cuisson) - 1;
 		if (qCru <= 0) cuisson = new SlotInventaire();
 		else cuisson.Quantite = qCru;
 		_fourTorchieProgressCuissonSec[indexCuisson] = 0d;
-		GD.Print("SEROKA : Bol en argile brûlé dans le four — 1 voxel d'argile récupéré.");
+		string libelle = idCuisson == Joueur.IdObjetMouleArgile ? "Moule en argile" : "Bol en argile";
+		GD.Print($"SEROKA : {libelle} sur-cuit dans le four — 1 chamotte récupérée.");
 		return true;
 	}
 
@@ -608,6 +640,12 @@ public partial class ItemPhysique
 			&& string.IsNullOrEmpty(genome))
 		{
 			genome = $"{PrefixGenomeBolCeramique}{chi}:0";
+		}
+		if (id == Joueur.IdObjetMouleCeramique
+			&& chi == FourTorchieThermodynamique.FlagBolCeramiqueChaudIndexChimique
+			&& string.IsNullOrEmpty(genome))
+		{
+			genome = $"{PrefixGenomeMouleCeramique}{chi}:0";
 		}
 		return new SlotInventaire
 		{
@@ -694,6 +732,8 @@ public partial class ItemPhysique
 						SimulerRattrapageFourTorchie(tempsEcoule);
 				}
 
+				NormaliserEtatAllumageFourTorchieApresChargement();
+
 				if (_fourTorchieAnomalieAnthracite && !GodotObject.IsInstanceValid(this))
 					return;
 
@@ -759,7 +799,7 @@ public partial class ItemPhysique
 				_fourTorchieResteCombSec -= dt;
 				t -= dt;
 				if (_fourTorchieResteCombSec <= 0.001d)
-					EssayerDemarrerProchainCombustibleFourTorchie();
+					FinaliserUniteCombustibleFourTorchie();
 			}
 			else
 			{
@@ -768,9 +808,19 @@ public partial class ItemPhysique
 				_fourTorchieTemperature = Mathf.Max(FourTorchieThermodynamique.TempAmbianteC, _fourTorchieTemperature - deltaFroid);
 				TraiterRefroidissementBolsCeramiqueDansFour(dt);
 				t -= dt;
-				if (_fourTorchieAllume && _fourTorchieResteCombSec <= 0.001d)
-					EssayerDemarrerProchainCombustibleFourTorchie();
 			}
 		}
+	}
+
+	/// <summary>
+	/// Corrige l'état « allumé » sans combustion active (ex. four froid laissé en déco avec charbon) :
+	/// évite une consommation fantôme au prochain rattrapage hors ligne.
+	/// </summary>
+	private void NormaliserEtatAllumageFourTorchieApresChargement()
+	{
+		if (!_fourTorchieAllume || _fourTorchieAnomalieAnthracite || _fourTorchieResteCombSec > 0.001d)
+			return;
+		_fourTorchieAllume = false;
+		_fourTorchieProfilActifValide = false;
 	}
 }

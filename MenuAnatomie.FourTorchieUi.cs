@@ -240,7 +240,7 @@ public partial class MenuAnatomie : Control
 					if (vis)
 					{
 						ulong em = EmpreinteSlotPourPreviewMenu(s);
-						if (s.ID == Joueur.IdObjetBolArgile)
+						if (s.ID == Joueur.IdObjetBolArgile || s.ID == Joueur.IdObjetMouleArgile)
 						{
 							float prog = 0f;
 							if (ItemPhysique.EstIndexSlotCuissonFourTorchie(i))
@@ -252,7 +252,7 @@ public partial class MenuAnatomie : Control
 							float facteur = FourTorchieThermodynamique.ObtenirFacteurTeinteChauffeBolArgile(temp, prog);
 							em ^= (ulong)Mathf.RoundToInt(facteur * 80f) << 32;
 						}
-						else if (s.ID == Joueur.IdObjetBolCeramique)
+						else if (s.ID == Joueur.IdObjetBolCeramique || s.ID == Joueur.IdObjetMouleCeramique)
 						{
 							float facteurCer = FourTorchieThermodynamique.ObtenirFacteurChaleurBolCeramiqueSlot(s);
 							em ^= (ulong)Mathf.RoundToInt(facteurCer * 80f) << 32;

@@ -1,4 +1,4 @@
-﻿using Godot;
+using Godot;
 using System;
 using System.Buffers.Binary;
 using System.Collections.Generic;
@@ -1019,6 +1019,9 @@ public partial class Chunk_Serveur : RefCounted
 		bool fondEau = hauteurSurface <= NiveauEau - 1;
 		if (climatJungleArgile && bordEau && bruitArgileRive > 0.83f) return 8;
 		if (climatJungleArgile && fondEau && bruitArgileFond > 0.965f) return 8;
+		float bruitSableQuartz = _noiseHumiditeDetail.GetNoise2D(xGlobal * 2.75f + 5100f, zGlobal * 2.75f - 3900f);
+		if (fondEau && bruitSableQuartz > 0.86f) return Atlas_Matiere.IdVoxelSableQuartz;
+		if (bordEau && bruitSableQuartz > 0.93f) return Atlas_Matiere.IdVoxelSableQuartz;
 		if (globalY <= NiveauPlage) return (humidite > 0.2f) ? (byte)7 : (byte)3;  // Plage : seuil doux
 		// Pilotage climat demandé (température × humidité), avec une légère variation organique locale.
 		float detailHumide = _noiseHumiditeDetail.GetNoise2D(xGlobal * 1.55f + 1400f, zGlobal * 1.55f + 1400f);

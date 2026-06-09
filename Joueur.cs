@@ -1,4 +1,4 @@
-﻿using Godot;
+using Godot;
 using System;
 using System.Collections.Generic;
 
@@ -218,6 +218,12 @@ public partial class Joueur : CharacterBody3D
     public const int IdObjetBolCeramique = 159;
     /// <summary>Pince en os vide (craft établi 3×3, 4 os). Outil, stack 1.</summary>
     public const int IdObjetPinceOs = 160;
+    /// <summary>Moule modelé en argile (à cuire au four).</summary>
+    public const int IdObjetMouleArgile = 161;
+    /// <summary>Moule en céramique (chaud après cuisson, refroidissement au soleil).</summary>
+    public const int IdObjetMouleCeramique = 162;
+    /// <summary>Chamotte — céramique sur-cuite (échec four argile trop chaud).</summary>
+    public const int IdObjetChamotte = 163;
     /// <summary>Taille monde du four posé au sol (plus grande dimension du mesh normalisé).</summary>
     public const float TailleFourTorchiePoseMetres = 3.0f;
     /// <summary>Incrémenter pour régénérer texture / réinstancier les modèles torchie (GLB sans UVs).</summary>
@@ -745,6 +751,9 @@ public partial class Joueur : CharacterBody3D
     private const string MetaSignatureBolArgile158 = "SigBolArgile158";
     private const string MetaSignatureBolCeramique159 = "SigBolCeramique159";
     private const string MetaSignaturePinceOs160 = "SigPinceOs160";
+    private const string MetaSignatureMouleArgile161 = "SigMouleArgile161";
+    private const string MetaSignatureMouleCeramique162 = "SigMouleCeramique162";
+    private const string MetaSignatureChamotte163 = "SigChamotte163";
     private const string MetaSignatureMortierPilon130 = "SigMortierPilon130";
     private const string MetaSignatureFenetreBois146 = "SigFenetreBois146";
     private const string MetaSignatureTableAnalyse131 = "SigTableAnalyse131";
