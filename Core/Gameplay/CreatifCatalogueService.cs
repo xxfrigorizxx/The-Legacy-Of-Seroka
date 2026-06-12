@@ -170,7 +170,7 @@ public static class CreatifCatalogueService
             return CategorieCreatif.Consommables;
         if (id == Joueur.IdObjetOsBoeuf || id == Joueur.IdObjetCuirBoeuf || id == Joueur.IdObjetIntestinBoeuf || id == Joueur.IdObjetIntestinBoeufNettoye)
             return CategorieCreatif.Consommables;
-        if (Joueur.EstIdCharbonRecolte(id))
+        if (Joueur.EstIdCharbonRecolte(id) || Joueur.EstIdQuartzRecolte(id) || Joueur.EstIdEtainRecolte(id))
             return CategorieCreatif.Pierre;
         return CategorieCreatif.Admin;
     }

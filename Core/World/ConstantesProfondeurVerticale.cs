@@ -1,19 +1,16 @@
 using Godot;
 
 /// <summary>
-/// Découpage vertical du mode profondeur étendue (tranches de 100 m, fenêtre ±2 autour du joueur).
+/// Découpage vertical du mode profondeur étendue (tranches de 100 m, fenêtre ±1 autour du joueur : courante + dessus + dessous).
 /// L'Abysse et le legacy 720 m utilisent <see cref="Gestionnaire_Monde.HauteurMax"/> à part.
 /// </summary>
 public static class ConstantesProfondeurVerticale
 {
 	public const int HauteurTrancheMetres = 100;
 	public const int HauteurSectionMetres = 16;
-	public const int DemiFenetreTranches = 2;
-	/// <summary>
-	/// Fenêtre verticale des corps physiques Jolt (tranche courante ± n). Plus petite que le visuel (<see cref="DemiFenetreTranches"/>)
-	/// car les collisions ne servent qu'autour du joueur : ±1 = courante + dessus + dessous (≈300 m), suffisant pour marcher/tomber,
-	/// et divise par ~1,7 le nombre de trimesh Jolt actifs vs ±2. Les chemins anti-chute prioritaires forcent quand même la zone joueur.
-	/// </summary>
+	/// <summary>Tranches visuelles / réseau : courante ±1 (3 couches) — suit le joueur à chaque descente/remontée d'une tranche.</summary>
+	public const int DemiFenetreTranches = 1;
+	/// <summary>Fenêtre physique Jolt : alignée sur le visuel (±1 tranche, ≈300 m sous les pieds).</summary>
 	public const int DemiFenetrePhysiqueTranches = 1;
 	/// <summary>Voxels (~m) près d'une jonction Y=0, ±100… (streaming, chargement).</summary>
 	public const int MargeJonctionTrancheVoxels = 8;
@@ -134,7 +131,7 @@ public static class ConstantesProfondeurVerticale
 		return MondeYDepuisLocal(coordY, hauteurTranche, lyLocal) >= yJonction;
 	}
 
-	/// <summary>Fenêtre verticale client : ±2 tranches (≈500 m) pour coutures minage / grottes prêtes autour du joueur.</summary>
+	/// <summary>Fenêtre verticale client : ±1 tranche (courante + dessus + dessous).</summary>
 	public static int DemiFenetreTranchesStreaming(float vitesseYMonde)
 		=> DemiFenetreTranches;
 

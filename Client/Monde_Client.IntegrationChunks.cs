@@ -129,8 +129,14 @@ public partial class Monde_Client : Node3D
 		// RÈGLE CAS B (espace local) : les sommets du mesh sont en [0, TailleChunk] x [0, HauteurMax] x [0, TailleChunk].
 		// Une SEULE application du décalage chunk : position monde = origine parent + (coordChunk * TailleChunk).
 		// Pas de double translation (ne pas ajouter d'offset si les vertices étaient déjà en monde).
-		Vector3 positionVraie = GlobalPosition + data.ObtenirOrigineMonde(TailleChunk);
+		Vector3 origineChunkLocale = data.ObtenirOrigineMonde(TailleChunk);
+		Vector3 positionVraie = GlobalPosition + origineChunkLocale;
 		Transform3D transformChunk = new Transform3D(Basis.Identity, positionVraie);
+		if (ActiverOcclusionVisuelle)
+		{
+			data.BoiteMondeRendu = CalculerBoiteLocaleDepuisSommets(terrainVertices);
+			ConstruireOuMettreAJourOccludeurTerrainChunk(data, origineChunkLocale);
+		}
 
 		// 2. RenderingServer : remplacement in-place après minage (évite le « vide » d’une frame) ou nouvelle instance.
 		Rid meshRid = mergedMesh.GetRid();
@@ -176,7 +182,7 @@ public partial class Monde_Client : Node3D
 		else if (data._nodeFlore is Node3D floreExistante && GodotObject.IsInstanceValid(floreExistante))
 		{
 			Chunk_Client.MettreAJourFlorePourChunkData(data, posObsFlore, floreExistante);
-			floreExistante.Visible = data.CullingVisible;
+			floreExistante.Visible = data.CullingVisible && data.OcclusionVisible;
 			RetirerFloreDiffereePourChunk(data);
 		}
 		else
@@ -321,6 +327,8 @@ public partial class Monde_Client : Node3D
 		if (_voxelsModifiesEnAttente.Count > 0
 			&& EstRemeshPrioritaireMinage(new Vector3I(data.Coordonnees.X, data.CoordChunkY, data.Coordonnees.Y)))
 			AppliquerVoxelsEnAttente();
+		if (ActiverOcclusionVisuelle)
+			AppliquerVisibiliteRenduFinaleChunk(data, ObtenirPositionObservation(), replanifierFloreSiVisible: false);
 	}
 
 	/// <summary>Avance les fondus d'émergence. Appelé 1×/frame depuis _PhysicsProcess. Retire les anims terminées.</summary>
@@ -388,7 +396,7 @@ public partial class Monde_Client : Node3D
 			Vector3 posUrgence = EssayerObtenirJoueurDansArbre(out CharacterBody3D joueurSpawn)
 				? joueurSpawn.GlobalPosition
 				: ObtenirPositionObservation();
-			DemanderFenetreVerticaleUrgenteAutourPosition(posUrgence, rayonXZ: 1, demiFenetreY: ConstantesProfondeurVerticale.DemiFenetreTranches);
+			DemanderFenetreVerticaleUrgenteAutourPosition(posUrgence, rayonXZ: 1, demiFenetreY: DemiFenetreTranchesStreamingActif());
 		}
 	}
 

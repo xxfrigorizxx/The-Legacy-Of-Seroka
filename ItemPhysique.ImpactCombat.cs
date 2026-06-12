@@ -104,8 +104,8 @@ public partial class ItemPhysique : RigidBody3D
 		// pour éviter un blocage dur sur de petits objets au sol.
 		if (body is CharacterBody3D personnage && EstObjetLegerEtPetitReactif())
 		{
-			if (Freeze) Freeze = false;
-			if (Sleeping) Sleeping = false;
+			if (Freeze || EstEnReposAuSolOptimise)
+				ReveillerPhysiqueAuSol();
 			Vector3 dirPoussee = GlobalPosition - personnage.GlobalPosition;
 			dirPoussee.Y = 0f;
 			if (dirPoussee.LengthSquared() < 0.0001f)

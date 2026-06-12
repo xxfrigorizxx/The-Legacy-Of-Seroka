@@ -8,6 +8,29 @@ using System.Collections.Generic;
 /// </summary>
 public partial class Gestionnaire_Monde : Node3D
 {
+	/// <summary>Gèle en masse les objets posés au repos après chargement (évite 300+ corps Jolt actifs).</summary>
+	public void OptimiserPhysiqueObjetsPosesApresChargement()
+	{
+		if (_joueur == null || !IsInsideTree())
+			return;
+		int gelés = 0;
+		foreach (Node n in GetTree().GetNodesInGroup("BlocsPoses"))
+		{
+			if (n is not ItemPhysique ip || !GodotObject.IsInstanceValid(ip))
+				continue;
+			if (ItemPhysique.EstMeublePoseStatique(ip.ID_Objet) || ip.EstEnReposAuSolOptimise)
+				continue;
+			if (ip.LinearVelocity.LengthSquared() > 0.35f || ip.AngularVelocity.LengthSquared() > 0.35f)
+				continue;
+			ip.PasserEnReposAuSolOptimise();
+			gelés++;
+		}
+		if (gelés > 0)
+			GD.Print($"ZERO-K PERF : {gelés} objet(s) posé(s) passé(s) en repos optimisé après chargement.");
+		RafraichirCacheDormanceGroupes(0f, force: true);
+		InvaliderCacheLodObjetsAuSol();
+	}
+
 	private void MettreAJourDormanceObjetsPoses(float dt)
 	{
 		if (_joueur == null) return;
@@ -18,6 +41,11 @@ public partial class Gestionnaire_Monde : Node3D
 		int rayonSecuriteTerrain = Mathf.Clamp(RayonSecuriteTerrainObjetsChunks, 0, 2);
 
 		int budgetTotal = Mathf.Max(16, BudgetDormanceObjetsParCycle);
+		float fps = (float)Engine.GetFramesPerSecond();
+		if (fps < 18f)
+			budgetTotal = Mathf.Max(10, budgetTotal / 4);
+		else if (fps < 30f)
+			budgetTotal = Mathf.Max(14, budgetTotal / 2);
 		int budgetBlocs = Mathf.Max(1, Mathf.RoundToInt(budgetTotal * 0.65f));
 		int budgetDyn = Mathf.Max(1, budgetTotal - budgetBlocs);
 		int budgetFiletSecurite = ActiverFiletSecuriteObjetsDynamiques
@@ -39,8 +67,12 @@ public partial class Gestionnaire_Monde : Node3D
 		if (total == 0) { indexCurseur = 0; return; }
 		if (indexCurseur >= total) indexCurseur = 0;
 		int iterations = Math.Min(Mathf.Max(1, budget), total);
-		for (int i = 0; i < iterations; i++)
+		int traite = 0;
+		int securite = 0;
+		int limiteSecurite = Math.Max(iterations * 4, total * 2);
+		while (traite < iterations && securite < limiteSecurite)
 		{
+			securite++;
 			total = noeuds.Count;
 			if (total <= 0) { indexCurseur = 0; return; }
 			if (indexCurseur >= total) indexCurseur = 0;
@@ -55,19 +87,68 @@ public partial class Gestionnaire_Monde : Node3D
 				if (total == 0) { indexCurseur = 0; return; }
 				continue;
 			}
+			if (rb is ItemPhysique ipRepos && ipRepos.EstEnReposAuSolOptimise)
+				continue;
 			if (ignorerRacks && rb is ItemPhysique ip && ItemPhysique.EstMeublePoseStatique(ip.ID_Objet))
 				continue;
+			traite++;
 			AppliquerDormanceRigidBody(rb, chunkJoueur, rayon, useGardeTerrain, rayonSecuriteTerrain, ref budgetFiletSecurite);
 		}
 	}
 
+	private const float SeuilReposLineaireDormance2 = 0.12f;
+	private const float SeuilReposAngulaireDormance2 = 0.16f;
+
+	private static bool EstRigidBodyQuasiImmobile(RigidBody3D rb)
+	{
+		if (!GodotObject.IsInstanceValid(rb))
+			return false;
+		if (rb.Sleeping)
+			return true;
+		// Chute libre encore perceptible : ne pas geler (évite un corps figé en l'air au sommet d'un rebond).
+		if (rb.LinearVelocity.Y < -0.55f)
+			return false;
+		return rb.LinearVelocity.LengthSquared() <= SeuilReposLineaireDormance2
+			&& rb.AngularVelocity.LengthSquared() <= SeuilReposAngulaireDormance2;
+	}
+
+	/// <summary>Raycast vers le bas : sol ou autre objet posé (même couche 1) — piles d'os / butin.</summary>
+	private bool EstRigidBodyAppuyeSurSupport(RigidBody3D rb)
+	{
+		if (rb == null || !GodotObject.IsInstanceValid(rb) || !rb.IsInsideTree())
+			return false;
+		if (!EstCollisionTerrainChunkPretPourPoint(rb.GlobalPosition))
+			return false;
+		if (UseArchitectureReseau && _mondeClient != null
+			&& !_mondeClient.CollisionTerrainActiveAutourPoint(rb.GlobalPosition, 1))
+			return false;
+
+		PhysicsDirectSpaceState3D espace = rb.GetWorld3D()?.DirectSpaceState;
+		if (espace == null)
+			return true;
+
+		Vector3 pos = rb.GlobalPosition;
+		var requete = PhysicsRayQueryParameters3D.Create(pos + Vector3.Up * 0.25f, pos + Vector3.Down * 3.5f);
+		requete.CollisionMask = 1;
+		requete.CollideWithAreas = false;
+		requete.Exclude = new Godot.Collections.Array<Rid> { rb.GetRid() };
+		var impact = espace.IntersectRay(requete);
+		if (impact.Count == 0 || !impact.ContainsKey("position"))
+			return false;
+
+		float ySupport = ((Vector3)impact["position"]).Y;
+		float ecart = pos.Y - ySupport;
+		return ecart <= 2.5f && ecart >= -0.55f;
+	}
+
 	private void AppliquerDormanceRigidBody(RigidBody3D rb, Vector2I chunkJoueur, int rayon, bool useGardeTerrain, int rayonSecuriteTerrain, ref int budgetFiletSecurite)
 	{
-		Vector2I c = WorldToChunkCoord(rb.GlobalPosition, TailleChunk);
-		bool dansRayon = Mathf.Abs(c.X - chunkJoueur.X) <= rayon && Mathf.Abs(c.Y - chunkJoueur.Y) <= rayon;
+		if (rb is ItemPhysique ipDejaGele && ipDejaGele.EstEnReposAuSolOptimise)
+			return;
 		bool terrainPret = !useGardeTerrain || _mondeClient.CollisionTerrainActiveAutourPoint(rb.GlobalPosition, rayonSecuriteTerrain);
-		bool itemLegerPetit = ItemPhysique.EstRigidBodyLegerEtPetitReactif(rb);
 		bool structureStatique = rb is ItemPhysique ipStatique && ItemPhysique.EstMeublePoseStatique(ipStatique.ID_Objet);
+		if (structureStatique)
+			return;
 
 		if (!structureStatique && budgetFiletSecurite > 0
 			&& !_rigidBodiesAttenteCollisionSolRestauration.Contains(rb))
@@ -76,57 +157,45 @@ public partial class Gestionnaire_Monde : Node3D
 			EssayerRecalerRigidBodySousSol(rb, terrainPret);
 		}
 
-		if (itemLegerPetit && _joueur != null && GodotObject.IsInstanceValid(_joueur))
+		if (!terrainPret)
 		{
-			float dist2 = rb.GlobalPosition.DistanceSquaredTo(_joueur.GlobalPosition);
-			if (dist2 <= 6f * 6f)
-			{
-				if (!terrainPret)
-				{
-					EnregistrerRigidBodyRestaurationSolSiCollisionManquante(rb);
-					return;
-				}
-				if (_rigidBodiesAttenteCollisionSolRestauration.Contains(rb))
-					return;
-				// Dégeler seulement la dormance — ne pas réveiller un objet déjà au repos sur le sol.
-				if (rb.Freeze) rb.Freeze = false;
-				return;
-			}
-		}
-
-		// Priorité gameplay: un objet proche du joueur ne doit jamais rester figé en l'air.
-		if (dansRayon)
-		{
-			if (!terrainPret)
-			{
-				EnregistrerRigidBodyRestaurationSolSiCollisionManquante(rb);
-				return;
-			}
-			if (_rigidBodiesAttenteCollisionSolRestauration.Contains(rb))
-				return;
-			if (rb.Freeze) rb.Freeze = false;
+			EnregistrerRigidBodyRestaurationSolSiCollisionManquante(rb);
 			return;
 		}
-
-		if (itemLegerPetit && terrainPret)
-		{
-			if (rb.Freeze) rb.Freeze = false;
+		if (_rigidBodiesAttenteCollisionSolRestauration.Contains(rb))
 			return;
-		}
-		// Lointain : figer seulement si encore actif (évite de casser le repos naturel Sleeping au sol).
-		if (!terrainPret || rb.Freeze || !rb.Sleeping)
+
+		// Pile dense (os, intestins, cuir…) : une fois quasi immobile et appuyé, geler pour stopper la rotation infinie.
+		if (!structureStatique && EstRigidBodyQuasiImmobile(rb) && EstRigidBodyAppuyeSurSupport(rb))
 		{
-			if (!terrainPret || rb.LinearVelocity.LengthSquared() > 0.08f || rb.AngularVelocity.LengthSquared() > 0.08f || rb.Freeze)
+			if (!rb.Freeze)
 				FigerRigidBodyDormance(rb);
+			return;
+		}
+
+		// En mouvement : dégel dormance uniquement (le contact joueur/outil réveille aussi via ImpactCombat / combat).
+		if (rb.Freeze)
+		{
+			if (rb is ItemPhysique ip)
+				ip.ReveillerPhysiqueAuSol();
+			else
+				rb.Freeze = false;
 		}
 	}
 
 	private static void FigerRigidBodyDormance(RigidBody3D rb)
 	{
+		if (rb is ItemPhysique ip)
+		{
+			ip.PasserEnReposAuSolOptimise();
+			return;
+		}
 		rb.LinearVelocity = Vector3.Zero;
 		rb.AngularVelocity = Vector3.Zero;
 		rb.Sleeping = true;
 		rb.Freeze = true;
+		rb.FreezeMode = RigidBody3D.FreezeModeEnum.Static;
+		rb.ContinuousCd = false;
 	}
 
 	private void EssayerRecalerRigidBodySousSol(RigidBody3D rb, bool terrainPret)
@@ -171,20 +240,8 @@ public partial class Gestionnaire_Monde : Node3D
 			}
 		}
 
-		// Chute dans le vide (pas de sol raycast) : dernier recours procédural, puis attente collision.
-		int x = Mathf.FloorToInt(pos.X);
-		int z = Mathf.FloorToInt(pos.Z);
-		int h = _dimensionLocaleActive == (int)DimensionJeu.Abysse
-			? ApisaraHauteurTerrain.ObtenirHauteurSolMonde(x, z, SeedTerrain)
-			: Generateur_Voxel.ObtenirHauteurTerrainMonde(x, z, SeedTerrain);
-		float ySurface = h + 1.0f;
-		if (pos.Y >= ySurface - 0.6f)
-			return;
-
-		float yCorrigeProc = ySurface + Mathf.Max(0.02f, MargeRemonteeObjetsMetres);
-		rb.GlobalPosition = new Vector3(pos.X, yCorrigeProc, pos.Z);
-		rb.LinearVelocity = Vector3.Zero;
-		rb.AngularVelocity = Vector3.Zero;
+		// Pas de mesh collision encore (grotte, chunk en chargement) : attendre — ne jamais téléporter
+		// vers la surface procédurale (une grotte creusée est volontairement sous la surface du monde).
 		EnregistrerRigidBodyRestaurationSolSiCollisionManquante(rb);
 	}
 

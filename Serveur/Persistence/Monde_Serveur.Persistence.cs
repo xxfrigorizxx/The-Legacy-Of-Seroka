@@ -116,6 +116,8 @@ public partial class Monde_Serveur : Node
 		}
 		if (ActiverGenerationAbysse)
 			chunk.ReparerGeometrieExtrusionAbysseSiChargee();
+		else if (ModeProfondeurActive)
+			chunk.RetroAppliquerFilonsQuartzDepuisDisque();
 		ChargerFloreChunk(coord, chunk);
 		return chunk;
 	}

@@ -223,6 +223,10 @@ public partial class MenuAnatomie : Control
 		foreach (int idCharbon in idsCharbonRecolte)
 			Ajouter(new SlotInventaire { ID = idCharbon, Quantite = 1 }, CategorieCreatifAdmin.Pierre);
 
+		Ajouter(new SlotInventaire { ID = Joueur.IdObjetQuartz, Quantite = 1 }, CategorieCreatifAdmin.Pierre);
+		Ajouter(new SlotInventaire { ID = Joueur.IdObjetQuartzPur, Quantite = 1 }, CategorieCreatifAdmin.Pierre);
+		Ajouter(new SlotInventaire { ID = Joueur.IdObjetEtain, Quantite = 1 }, CategorieCreatifAdmin.Pierre);
+
 		(string nom, int idVoxel)[] voxelsTerrainBase =
 		{
 			("Herbe", 1), ("Roche", 2), ("Sable", 3), ("Eau", 4), ("Neige", 5),

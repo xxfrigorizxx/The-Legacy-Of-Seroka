@@ -31,6 +31,7 @@ public partial class Joueur
 		RocheSulfuree = 1L << 18,
 		PitFeu = 1L << 19,
 		RocheMatiere = 1L << 20,
+		/// <summary>Rondin court fendu en 8 (IndexTaille 3, IndexMorphologique 3) — maillet / pilon.</summary>
 		MiniBucheHuitieme = 1L << 21,
 		DaguePrimitive = 1L << 22,
 		MailletBois = 1L << 23,
@@ -43,7 +44,11 @@ public partial class Joueur
 		ArgileHumidifiee = 1L << 30,
 		VoxelBoue = 1L << 31,
 		Torchie = 1L << 32,
-		PinceOs = 1L << 33
+		PinceOs = 1L << 33,
+		/// <summary>Rondin court cylindre entier (IndexTaille 3, IndexMorphologique 0) — bol en bois.</summary>
+		BucheRondinCourt = 1L << 34,
+		/// <summary>Intestin de bœuf brut (118) ou nettoyé (119) — corde d'intestin (distinct de la fibre d'herbe).</summary>
+		IntestinBoeuf = 1L << 35
 	}
 
 	private sealed class RecetteAnalysable
@@ -118,12 +123,13 @@ public partial class Joueur
 		{
 			CleCraft = "corde_intestin",
 			IdResultat = 20,
-			Masque = CategorieAnalyse.Fibre,
+			Masque = CategorieAnalyse.IntestinBoeuf,
 			Titre = "Corde d'intestin",
 			LegendeSymboles = new[]
 			{
-				"I = Intestin (118 ou 119 nettoye) x2",
-				"Disposition : deux intestins cote a cote dans la grille craft (poche ou atelier)"
+				"I = Intestin (118 brut ou 119 nettoye dans l'eau)",
+				"Analyseur : un intestin suffit",
+				"Craft (poche Q ou atelier) : deux intestins, positions libres sur la grille 2x2"
 			},
 			PatronCraft = new[] { "(I)(I)" }
 		},
@@ -257,17 +263,17 @@ public partial class Joueur
 			IdResultat = IdObjetMailletBois,
 			Masque = CategorieAnalyse.MiniBucheHuitieme,
 			Titre = "Maillet en bois",
-			LegendeSymboles = new[] { "mB = Mini morceau de bûche (1/4 longueur + 1/8 cylindre)" },
+			LegendeSymboles = new[] { "mB = Rondin court fendu en 8 (standard → demi → rondin, puis 3 coupes dans le bois)" },
 			PatronCraft = new[] { "Établi 3x3 : placer 1 mB seul dans n'importe quelle case." }
 		},
 		new RecetteAnalysable
 		{
 			CleCraft = "id_129",
 			IdResultat = IdObjetBolBois,
-			Masque = CategorieAnalyse.MiniBucheHuitieme | CategorieAnalyse.DaguePrimitive,
+			Masque = CategorieAnalyse.BucheRondinCourt | CategorieAnalyse.DaguePrimitive,
 			Titre = "Bol en bois",
-			LegendeSymboles = new[] { "mB = Mini morceau de bûche (1/4 longueur + 1/8 cylindre)", "D = Dague (non consommée, -2 durabilité)" },
-			PatronCraft = new[] { "Établi 3x3 : 1 mB + 1 D, positions libres." }
+			LegendeSymboles = new[] { "rB = Rondin court (standard → demi → rondin, coupe transversale)", "D = Dague (non consommée, -2 durabilité)" },
+			PatronCraft = new[] { "Grille craft (Q) ou établi 3×3 : 1 rB + 1 D, positions libres." }
 		},
 		new RecetteAnalysable
 		{
@@ -1097,7 +1103,7 @@ public partial class Joueur
 			&& Atlas_Matiere.EstIdVoxelTerrainMinerai(idVoxelTerrain);
 		if (s.ID is 15 or 16 or 17) c |= CategorieAnalyse.Fibre;
 		if (s.ID == Joueur.IdObjetIntestinBoeufNettoye || s.ID == Joueur.IdObjetIntestinBoeuf)
-			c |= CategorieAnalyse.Fibre;
+			c |= CategorieAnalyse.IntestinBoeuf;
 		if (s.ID == 16 || s.ID == 20) c |= CategorieAnalyse.Ligature;
 		if (s.ID == 20) c |= CategorieAnalyse.Corde;
 		if (s.ID == 21) c |= CategorieAnalyse.Tissu;
@@ -1114,7 +1120,8 @@ public partial class Joueur
 		{
 			if (s.IndexMorphologique == 1) c |= CategorieAnalyse.DemiBuche;
 			if (s.IndexMorphologique == 0) c |= CategorieAnalyse.BuchePleine;
-			if (s.IndexMorphologique == 3 && s.IndexTaille == 3) c |= CategorieAnalyse.MiniBucheHuitieme;
+			if (s.IndexTaille == 3 && s.IndexMorphologique == 0) c |= CategorieAnalyse.BucheRondinCourt;
+			if (s.IndexTaille == 3 && s.IndexMorphologique == 3) c |= CategorieAnalyse.MiniBucheHuitieme;
 		}
 		if (s.ID == 105) c |= CategorieAnalyse.DaguePrimitive;
 		if (s.ID == IdObjetMailletBois) c |= CategorieAnalyse.MailletBois;
@@ -1207,12 +1214,18 @@ public partial class Joueur
 		if (r.CleCraft == "corde_intestin" && grilleAnalyse != null)
 		{
 			int nbIntestins = 0;
+			int nbAutres = 0;
 			for (int i = 0; i < grilleAnalyse.Length; i++)
 			{
-				if (EstIntestinUtilisablePourCraft(grilleAnalyse[i]))
+				SlotInventaire s = grilleAnalyse[i];
+				if (s.EstVide) continue;
+				if (EstIntestinUtilisablePourCraft(s))
 					nbIntestins++;
+				else
+					nbAutres++;
 			}
-			return nbIntestins >= 2;
+			// Un échantillon suffit à l'analyseur ; le craft exige deux intestins (EvaluerRecette).
+			return nbIntestins >= 1 && nbAutres == 0;
 		}
 		if (r.CleCraft == "id_155" && grilleAnalyse != null)
 		{

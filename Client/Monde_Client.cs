@@ -224,6 +224,7 @@ public partial class Monde_Client : Node3D
 	private volatile int _coordYJoueurProfondeurCache = int.MinValue;
 	private volatile bool _joueurPresentPourWorkers;
 	private Vector2I _ancienChunkJoueur = new Vector2I(-99999, -99999);
+	private int _ancienCoordYJoueur = int.MinValue;
 	private bool _modificationEnCours;
 	/// <summary>Mutations voxel reçues avant que la tranche/chunk soit en RAM client (minage sans trou visuel).</summary>
 	private readonly Dictionary<Vector3I, byte> _voxelsModifiesEnAttente = new Dictionary<Vector3I, byte>();
@@ -300,7 +301,13 @@ public partial class Monde_Client : Node3D
 	private readonly Dictionary<Vector3I, ulong> _demandesAbysseFrameDerniereEmission = new Dictionary<Vector3I, ulong>();
 	private readonly List<Vector3I> _clesDemandesAbysseExpireesTemp = new List<Vector3I>();
 	private readonly Dictionary<Vector3I, ulong> _demandesProfondeurFrameDerniereEmission = new Dictionary<Vector3I, ulong>();
+	/// <summary>Dernière émission réseau par couche (anti-spam temporel, complète le garde-fou par frame).</summary>
+	private readonly Dictionary<Vector3I, double> _demandesChunkTempsDerniereEmission = new Dictionary<Vector3I, double>();
 	private readonly List<Vector3I> _clesDemandesProfondeurExpireesTemp = new List<Vector3I>();
+	private const double IntervalleRedemandeChunkUrgentSec = 0.18;
+	private const double IntervalleRedemandeChunkProcheSec = 0.42;
+	private const double IntervalleRedemandeChunkDormanceSec = 0.30;
+	private const double IntervalleRedemandeChunkLointainSec = 1.15;
 	private float _timerTrimAbysse = 0f;
 	private const float IntervalleTrimAbysseSec = 0.50f;
 	private float _cooldownDiagCoherenceAbysse = 0f;
@@ -353,6 +360,23 @@ public partial class Monde_Client : Node3D
 		return false;
 	}
 
+	/// <summary>
+	/// Vol créatif en surface (maillage sous les pieds) : budgets réseau réduits.
+	/// Sous terre / grotte / vide : streaming normal pour explorer (spectateur noclip).
+	/// </summary>
+	private bool VolCreatifStreamingReduit()
+	{
+		if (!JoueurEnModeVolCreatif())
+			return false;
+		if (!EssayerObtenirJoueurDansArbre(out _))
+			return false;
+		Vector3 obs = ObtenirPositionObservation();
+		Vector2I chunkObs = Gestionnaire_Monde.WorldToChunkCoord(obs, TailleChunk);
+		if (!ChunkDisponiblePourObservation(chunkObs, obs))
+			return false;
+		return ChunkMeshGrilleSousPiedsPret();
+	}
+
 	private int ObtenirRayonSecuriteSolActif()
 	{
 		int rayon = Mathf.Max(1, RayonDormancePhysique);
@@ -360,7 +384,7 @@ public partial class Monde_Client : Node3D
 		Vector3 posJoueur = joueurValide ? joueurRef.GlobalPosition : Vector3.Zero;
 		if (_dimensionReseauActive == (int)DimensionJeu.Abysse)
 		{
-			if (JoueurEnModeVolCreatif())
+			if (VolCreatifStreamingReduit())
 				return 2;
 			if (joueurValide && ConstantesDimensionAbysse.EstDansTrouNoirXZ(posJoueur.X, posJoueur.Z))
 				return Mathf.Clamp(rayon, 2, 3);
@@ -401,7 +425,7 @@ public partial class Monde_Client : Node3D
 		}
 		if (_dimensionReseauActive == (int)DimensionJeu.Abysse)
 		{
-			if (JoueurEnModeVolCreatif())
+			if (VolCreatifStreamingReduit())
 				return 2;
 			if (joueurValide && ConstantesDimensionAbysse.EstDansTrouNoirXZ(posJoueur.X, posJoueur.Z))
 				return Mathf.Clamp(rayon, 2, 3);
@@ -436,6 +460,7 @@ public partial class Monde_Client : Node3D
 		_slotGauche = GetNode<Panel>("../HUD_Inventaire/Conteneur_Ancrage/Boite_Slots/Slot_Main_Gauche");
 		_slotDroite = GetNode<Panel>("../HUD_Inventaire/Conteneur_Ancrage/Boite_Slots/Slot_Main_Droite");
 		InitialiserHorizonLointain();
+		InitialiserOcclusionVisuelle();
 	}
 
 	public override void _ExitTree()
@@ -462,6 +487,19 @@ public partial class Monde_Client : Node3D
 		_coordYJoueurProfondeurCache = joueurValide
 			? CoordYDepuisMondeY((int)Mathf.Floor(positionJoueurSecurisee.Y))
 			: int.MinValue;
+		bool coordYJoueurChange = joueurValide
+			&& _coordYJoueurProfondeurCache != _ancienCoordYJoueur;
+		if (coordYJoueurChange)
+		{
+			_ancienCoordYJoueur = _coordYJoueurProfondeurCache;
+			if (ModeProfondeurTranchesActif())
+			{
+				DemanderFenetreVerticaleUrgenteAutourPosition(
+					positionJoueurSecurisee,
+					Mathf.Max(1, RayonGrilleMinSpawnPret));
+				_tempsDepuisNettoyage = IntervalleNettoyageChunks;
+			}
+		}
 		Vector3 directionJoueurSecurisee = joueurValide ? (-joueurRef.GlobalTransform.Basis.Z).Normalized() : Vector3.Forward;
 		Vector3 positionObservation = joueurValide ? positionJoueurSecurisee : Vector3.Zero;
 		Vector3 positionJoueur = joueurValide ? positionJoueurSecurisee : positionObservation;
@@ -498,10 +536,10 @@ public partial class Monde_Client : Node3D
 		}
 		_cooldownReservePrioritaireSec = Mathf.Max(0f, _cooldownReservePrioritaireSec - dt);
 		MettreAJourAutoDiagnostic(dt);
-		_remeshMinageSyncRestantFrame = _modificationEnCours ? 8 : 4;
+		_remeshMinageSyncRestantFrame = _modificationEnCours ? 14 : 4;
 		if (joueurValide && ModeProfondeurTranchesActif()
 			&& ConstantesProfondeurVerticale.EstProcheJonctionTrancheMonde(positionJoueurSecurisee.Y))
-			_remeshMinageSyncRestantFrame = Mathf.Max(_remeshMinageSyncRestantFrame, _modificationEnCours ? 12 : 8);
+			_remeshMinageSyncRestantFrame = Mathf.Max(_remeshMinageSyncRestantFrame, _modificationEnCours ? 18 : 8);
 		int niveauUrgence = _niveauUrgencePerf;
 		float budgetFrameMs = Mathf.Clamp(BudgetFrameCibleMs, 8f, 25f);
 		if (niveauUrgence >= 3) budgetFrameMs -= Mathf.Clamp(MargeBudgetUrgenceMs, 0.1f, 4f);
@@ -656,7 +694,7 @@ public partial class Monde_Client : Node3D
 			maxIntegrations = Mathf.Min(maxIntegrations, 1);
 			budgetVerticesDyn = Mathf.Min(budgetVerticesDyn, 14000);
 		}
-		if (JoueurEnModeVolCreatif())
+		if (VolCreatifStreamingReduit())
 		{
 			maxIntegrations = Mathf.Min(maxIntegrations, 1);
 			budgetVerticesDyn = Mathf.Min(budgetVerticesDyn, 10000);
@@ -1081,7 +1119,7 @@ public partial class Monde_Client : Node3D
 			if (prioriteJoueur && !enChargement)
 				budgetSectionsRemesh = Mathf.Min(budgetSectionsRemesh, 3);
 			if (_modificationEnCours)
-				budgetSectionsRemesh = Mathf.Max(budgetSectionsRemesh, ModeSurvieFpsAgressif ? 8 : 12);
+				budgetSectionsRemesh = Mathf.Max(budgetSectionsRemesh, ModeSurvieFpsAgressif ? 12 : 18);
 			else if (ModeSurvieFpsAgressif && _fpsMoyenneAuto < 45f)
 				budgetSectionsRemesh = 2;
 			else if (ModeSurvieFpsAgressif && _fpsMoyenneAuto < 55f)
@@ -1120,7 +1158,7 @@ public partial class Monde_Client : Node3D
 				}
 				if (batch.Count == 0)
 					continue;
-				if (EstRemeshPrioritaireMinage(cleChunk))
+				if (EstRemeshPrioritaireMinage(cleChunk) || _modificationEnCours)
 					ExecuterReconstructionPrioritaire(cleChunk, batch);
 				else
 					EnfilerRemeshSectionsEnArrierePlan(cleChunk, batch);
@@ -1211,6 +1249,8 @@ public partial class Monde_Client : Node3D
 
 			ulong debutCullingUs = ActiverProfilagePerfMondeClient ? PerfBudgetMonitor.Begin() : 0UL;
 			AppliquerCullingCameraChunks(positionObservation, directionObservation, dt);
+			if (ActiverOcclusionVisuelle)
+				MettreAJourOcclusionVisuelle(positionObservation, directionObservation, dt);
 			if (ActiverProfilagePerfMondeClient)
 				PerfBudgetMonitor.End("MondeClient/Culling", debutCullingUs);
 
@@ -1229,11 +1269,14 @@ public partial class Monde_Client : Node3D
 			_timerDormance = Mathf.Clamp(IntervalleDormanceSec * facteurDormance, 0.02f, 0.34f);
 		}
 
-		if (chunkObservationActuel != _ancienChunkJoueur)
+		if (chunkObservationActuel != _ancienChunkJoueur || coordYJoueurChange)
 		{
-			_ancienChunkJoueur = chunkObservationActuel;
-			// Replanifie les flores des chunks proches : sinon l'herbe générée quand le joueur était loin reste vide/pauvre.
-			ReplanifierFloreAutourJoueur(chunkObservationActuel);
+			if (chunkObservationActuel != _ancienChunkJoueur)
+			{
+				_ancienChunkJoueur = chunkObservationActuel;
+				// Replanifie les flores des chunks proches : sinon l'herbe générée quand le joueur était loin reste vide/pauvre.
+				ReplanifierFloreAutourJoueur(chunkObservationActuel);
+			}
 			float facteurPressionPerf = 1f;
 			if (ModeSurvieFpsAgressif)
 			{
@@ -1242,13 +1285,15 @@ public partial class Monde_Client : Node3D
 				if (urgencePerfExtreme)
 					facteurPressionPerf = Mathf.Max(facteurPressionPerf, 4.5f);
 			}
-			float cooldownRadar = Mathf.Clamp(
-				Mathf.Max(0.03f, IntervalleMinRebuildRadarSec)
-				* (ModeSurvieFpsAgressif && backlogCharge >= SeuilBacklogBas ? 1.6f : 1f)
-				* (prioriteJoueur ? 1.25f : 1f)
-				* facteurPressionPerf,
-				Mathf.Max(0.03f, IntervalleMinRebuildRadarSec),
-				1.4f);
+			float cooldownRadar = coordYJoueurChange && chunkObservationActuel == _ancienChunkJoueur
+				? 0.03f
+				: Mathf.Clamp(
+					Mathf.Max(0.03f, IntervalleMinRebuildRadarSec)
+					* (ModeSurvieFpsAgressif && backlogCharge >= SeuilBacklogBas ? 1.6f : 1f)
+					* (prioriteJoueur ? 1.25f : 1f)
+					* facteurPressionPerf,
+					Mathf.Max(0.03f, IntervalleMinRebuildRadarSec),
+					1.4f);
 			DemanderRafraichissementRadar(positionObservation, cooldownRadar);
 			_derniereDirectionRadar = directionObservation;
 			_timerRafraichissementRadarImmobile = _intervalleRadarImmobileDyn;
@@ -1298,12 +1343,12 @@ public partial class Monde_Client : Node3D
 		if (ActiverProfilagePerfMondeClient)
 			PerfBudgetMonitor.End("MondeClient/Flore", debutFloreUs);
 
-		// Priorité : couvrir RayonDormancePhysique + marge (l’ancien 9×9 était trop petit vs grille 17×17 pour R=8).
-		int rayonPriorite = RayonDormancePhysique + Mathf.Max(0, MargePreloadChunks);
+		// Priorité catch-up : suit RenderDistance en mode FPS bas (ex. R=3 ne doit pas charger 11 chunks).
+		int rayonPriorite = ObtenirRayonPrioriteCatchUp();
 		if (ModeSurvieFpsAgressif && urgencePerfExtreme)
-			rayonPriorite = Mathf.Max(RayonDormancePhysique + 1, rayonPriorite - 5);
+			rayonPriorite = Mathf.Max(RayonGrilleMinSpawnPret + 1, rayonPriorite - 1);
 		else if (ModeSurvieFpsAgressif && urgencePerfCritique)
-			rayonPriorite = Mathf.Max(RayonDormancePhysique + 2, rayonPriorite - 3);
+			rayonPriorite = Mathf.Max(RayonGrilleMinSpawnPret + 1, rayonPriorite);
 		_prioritaireSetTemp.Clear();
 		void AjouterAnneauManquant(Vector2I centre, int rayonDemi)
 		{
@@ -1345,14 +1390,15 @@ public partial class Monde_Client : Node3D
 		}
 		}
 
-		if (_modificationEnCours) return;
-
 		// 3. Requêtes : extraction radiale + purge obsolètes. Si le chunk sous les pieds n'est pas chargé, on demande plus de chunks (catch-up côté client).
 		PurgerChunksObsolètesDeLaFile(positionObservation);
 		bool chunkPiedsManquant = !ChunkDisponiblePourObservation(chunkPieds, positionObservation);
 		int backlog = CompterBacklog();
 		int rayonChargementCibleChunks = RayonChargementChunksActif();
 		int nbRequetes = chunkPiedsManquant ? Mathf.Min(_maxRequetesDyn * 2, 20) : _maxRequetesDyn;
+		// Pendant minage/remesh : réduire le débit mais ne pas couper le streaming (sinon trous aux frontières).
+		if (_modificationEnCours)
+			nbRequetes = Mathf.Max(chunkPiedsManquant ? 4 : 2, nbRequetes / 2);
 		if (ModeSurvieFpsAgressif)
 		{
 			if (backlog >= SeuilBacklogHaut) nbRequetes = Mathf.Max(1, nbRequetes / 3);
@@ -1379,19 +1425,19 @@ public partial class Monde_Client : Node3D
 		{
 			nbRequetes = Mathf.Max(nbRequetes, chunkPiedsManquant ? 8 : 4);
 		}
-		if (corridorStreamingEnRetard && !JoueurEnModeVolCreatif())
+		if (corridorStreamingEnRetard && !VolCreatifStreamingReduit())
 		{
 			if (solSecuriseSousPieds)
 				nbRequetes = Mathf.Max(nbRequetes, _fpsMoyenneAuto < 50f ? 1 : 2);
 			else
 				nbRequetes = Mathf.Max(nbRequetes, chunkPiedsManquant ? 10 : 6);
 		}
-		else if (corridorStreamingEnRetard && JoueurEnModeVolCreatif())
+		else if (corridorStreamingEnRetard && VolCreatifStreamingReduit())
 			nbRequetes = Mathf.Min(nbRequetes, chunkPiedsManquant ? 2 : 1);
-		if (JoueurEnModeVolCreatif())
+		if (VolCreatifStreamingReduit())
 			nbRequetes = Mathf.Min(nbRequetes, chunkPiedsManquant ? 2 : 1);
-		// Plancher dur : en situation de risque de chute, garantir au moins 4 requêtes par frame.
-		if (doitGarantirProcheJoueur && !JoueurEnModeVolCreatif())
+		// Plancher dur : en situation de risque de chute / exploration souterraine, garantir au moins 4 requêtes par frame.
+		if (doitGarantirProcheJoueur && !VolCreatifStreamingReduit())
 			nbRequetes = Mathf.Max(nbRequetes, 4);
 		// GATE FPS STRICT : aucune nouvelle requête hors zone critique si gelé, ramp-up ensuite.
 		nbRequetes = AppliquerGateEtRampUp(nbRequetes, doitGarantirProcheJoueur, 1);
@@ -1430,7 +1476,7 @@ public partial class Monde_Client : Node3D
 					// Si le plus proche en file est encore hors fenêtre, agrandir la fenêtre jusqu’à l’inclure (sinon on
 					// brûle nbRequetes itérations sans jamais appeler DemanderChunk → monde bloqué à quelques chunks malgré R=64).
 					int minRayonPourChunk = Mathf.Max(0, Mathf.CeilToInt(Mathf.Sqrt(distCarree)) - 1);
-					int minRayon = Mathf.Max(RayonDormancePhysique + 1, RayonInitialRequetesChunks);
+					int minRayon = ObtenirRayonMinRequetesReseau();
 					if (minRayonPourChunk > _rayonRequetesActuel)
 					{
 						int plafond = Mathf.Max(minRayon, rayonDetailStreaming);
@@ -1448,7 +1494,10 @@ public partial class Monde_Client : Node3D
 		}
 
 		_tempsDepuisNettoyage += dt;
-		if (_tempsDepuisNettoyage >= IntervalleNettoyageChunks)
+		float intervalleNettoyage = backlogCharge > SeuilBacklogHaut
+			? IntervalleNettoyageChunks * 0.5f
+			: IntervalleNettoyageChunks;
+		if (_tempsDepuisNettoyage >= intervalleNettoyage)
 		{
 			_tempsDepuisNettoyage = 0f;
 			NettoyerChunksObsoles(positionObservation);

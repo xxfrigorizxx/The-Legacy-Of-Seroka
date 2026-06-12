@@ -51,6 +51,14 @@ public class ChunkData
 	public bool Dormant { get; set; }
 	/// <summary>Etat de visibilité calculé par le culling caméra (évite de spammer InstanceSetVisible).</summary>
 	public bool CullingVisible { get; set; } = true;
+	/// <summary>False si un test d'occlusion (terrain / meuble) bloque la vue caméra.</summary>
+	public bool OcclusionVisible { get; set; } = true;
+	/// <summary>Dernière visibilité appliquée au RenderingServer (CullingVisible ∧ OcclusionVisible).</summary>
+	public bool RenduVisibleEffectif { get; set; } = true;
+	/// <summary>Boîte locale [0..TailleChunk]×[0..HauteurMax] pour occlusion / occludeur.</summary>
+	public Aabb BoiteMondeRendu { get; set; }
+	/// <summary>Occludeur Embree (faces extérieures) — enfant de <see cref="Monde_Client"/>.</summary>
+	internal OccluderInstance3D OccludeurTerrain { get; set; }
 	/// <summary>True tant que le chunk attend dans la file de solidification physique (évite doublons).</summary>
 	public bool EstEnFileSolidification { get; set; }
 	/// <summary>Chunk entièrement vide (aucun voxel solide). Utilisé pour éviter le mode panique dans le trou noir Abysse.</summary>
@@ -135,6 +143,11 @@ public class ChunkData
 	/// <summary>Libère les RIDs côté RenderingServer et PhysicsServer3D. À appeler quand le chunk sort du rayon (déchargement).</summary>
 	public void LibérerRids()
 	{
+		if (OccludeurTerrain != null && GodotObject.IsInstanceValid(OccludeurTerrain))
+		{
+			OccludeurTerrain.QueueFree();
+			OccludeurTerrain = null;
+		}
 		if (VisualInstanceRID.IsValid)
 		{
 			RenderingServer.Singleton.FreeRid(VisualInstanceRID);

@@ -22,34 +22,24 @@ public partial class Monde_Client : Node3D
 		if (!ModeSurvieFpsAgressif && RenderDistance > RayonDormancePhysique)
 			rendu = Mathf.Max(rendu, RayonDormancePhysique + 1);
 		if (_dimensionReseauActive == (int)DimensionJeu.Abysse)
-			rendu = Mathf.Min(rendu, JoueurEnModeVolCreatif() ? 6 : 10);
+			rendu = Mathf.Min(rendu, VolCreatifStreamingReduit() ? 6 : 10);
 		else if (ModeProfondeurTranchesActif())
 			rendu = Mathf.Min(rendu, Mathf.Max(RayonDormancePhysique + MargePreloadChunks + 2, PlafondRayonChargementProfondeurChunks));
-		if (JoueurEnModeVolCreatif() && ModeProfondeurTranchesActif())
+		if (VolCreatifStreamingReduit() && ModeProfondeurTranchesActif())
 			rendu = Mathf.Min(rendu, 8);
 		return Mathf.Max(rendu, RayonDetailChunksActif());
 	}
 
 	private int DemiFenetreTranchesStreamingActif()
 	{
-		if (EssayerObtenirJoueurDansArbre(out CharacterBody3D joueurRef)
-			&& ConstantesProfondeurVerticale.EstProcheJonctionTrancheMonde(joueurRef.GlobalPosition.Y))
-			return Mathf.Max(1, ConstantesProfondeurVerticale.DemiFenetreTranches);
-		// Noclip créatif : une tranche par défaut, sauf près d'une jonction (Y=100,200…) où ±1 est requis pour le voile MC.
-		if (JoueurEnModeVolCreatif())
+		// Noclip créatif en surface : une seule tranche. Sous terre / grotte : fenêtre ±1 standard.
+		if (VolCreatifStreamingReduit())
 		{
-			if (EssayerObtenirJoueurDansArbre(out CharacterBody3D joueurRefCreatif))
-			{
-				if (ConstantesProfondeurVerticale.EstProcheJonctionTrancheMonde(joueurRefCreatif.GlobalPosition.Y))
-					return 1;
-			}
-			return 0;
+			if (EssayerObtenirJoueurDansArbre(out CharacterBody3D joueurRefCreatif)
+				&& !ConstantesProfondeurVerticale.EstProcheJonctionTrancheMonde(joueurRefCreatif.GlobalPosition.Y))
+				return 0;
 		}
-		float vy = _joueur?.Velocity.Y ?? 0f;
-		// Survie : ±1 tranche (3 couches) au lieu de ±2 (5) — moins de chunks par colonne XZ.
-		if (ModeSurvieFpsAgressif)
-			return 1;
-		return ConstantesProfondeurVerticale.DemiFenetreTranchesStreaming(vy);
+		return ConstantesProfondeurVerticale.DemiFenetreTranches;
 	}
 
 	/// <summary>Demi-côté (chunks) du disque « toujours visible » pour le culling caméra. Suit strictement le slider <see cref="RenderDistance"/> (2–64).</summary>
@@ -62,10 +52,30 @@ public partial class Monde_Client : Node3D
 	/// (le panneau graphismes n’avait pas le contrôle absolu sur ce qui peut entrer en file).
 	/// Le débit réseau / intégration reste limité par <c>_rayonRequetesActuel</c>, le gate FPS et <c>nbRequetes</c>.
 	/// </summary>
+	/// <summary>Plancher requêtes réseau : si RenderDistance &lt; dormance physique (ex. R=3 + optimiseur FPS), suit le slider.</summary>
+	private int ObtenirRayonMinRequetesReseau()
+	{
+		int cible = RayonChargementChunksActif();
+		if (ModeSurvieFpsAgressif || cible < RayonDormancePhysique)
+			return Mathf.Max(RayonGrilleMinSpawnPret + 1, cible);
+		return Mathf.Max(RayonDormancePhysique + 1, RayonInitialRequetesChunks);
+	}
+
+	/// <summary>Zone catch-up prioritaire autour du joueur (ne dépasse pas RenderDistance en mode FPS bas).</summary>
+	private int ObtenirRayonPrioriteCatchUp()
+	{
+		int cible = RayonChargementChunksActif();
+		if (ModeSurvieFpsAgressif || cible <= RayonDormancePhysique)
+			return cible + 1;
+		return RayonDormancePhysique + Mathf.Max(0, MargePreloadChunks);
+	}
+
 	private int RayonRadarPreparationActif()
 	{
-		int minRadar = Mathf.Max(RayonDormancePhysique + 2, RayonInitialRequetesChunks);
 		int cible = RayonChargementChunksActif();
+		if (ModeSurvieFpsAgressif || cible < RayonDormancePhysique + 2)
+			return cible;
+		int minRadar = Mathf.Max(RayonDormancePhysique + 2, RayonInitialRequetesChunks);
 		return Mathf.Max(minRadar, cible);
 	}
 
@@ -137,6 +147,8 @@ public partial class Monde_Client : Node3D
 				ChunkData data = kv.Value;
 				if (data == null) continue;
 				data.CullingVisible = true;
+				data.OcclusionVisible = true;
+				data.RenduVisibleEffectif = true;
 				if (data.VisualInstanceRID.IsValid)
 					RenderingServer.Singleton.InstanceSetVisible(data.VisualInstanceRID, true);
 				if (data.WaterInstanceRID.IsValid)
@@ -166,8 +178,8 @@ public partial class Monde_Client : Node3D
 			_gateStreamingGele = false;
 			_tempsDepuisDegel = DureeRampUpPostDegel + 1f;
 			_tempsEtatGate = DureeMinEtatOuvertSec + 1f;
-			int minRayon = Mathf.Max(RayonDormancePhysique + 1, RayonInitialRequetesChunks);
-			int cible = Mathf.Max(minRayon, RayonChargementChunksActif());
+			int minRayon = ObtenirRayonMinRequetesReseau();
+			int cible = RayonChargementChunksActif();
 			_rayonRequetesActuel = Mathf.Clamp(Mathf.Max(_rayonRequetesActuel, cible - 1), minRayon, cible);
 		}
 
@@ -191,9 +203,9 @@ public partial class Monde_Client : Node3D
 		_timerGraceStreamingReglageUtilisateur = Mathf.Max(
 			_timerGraceStreamingReglageUtilisateur,
 			Mathf.Min(DureeGraceStreamingReglageUtilisateurSec, DureeGraceStreamingBootstrapNouveauMondeSec * 0.65f));
-		int minRayon = Mathf.Max(RayonDormancePhysique + 1, RayonInitialRequetesChunks);
-		int cible = Mathf.Max(minRayon, RayonChargementChunksActif());
-		_rayonRequetesActuel = Mathf.Clamp(Mathf.Max(_rayonRequetesActuel, minRayon + 6), minRayon, cible);
+		int minRayon = ObtenirRayonMinRequetesReseau();
+		int cible = RayonChargementChunksActif();
+		_rayonRequetesActuel = Mathf.Clamp(Mathf.Max(_rayonRequetesActuel, minRayon), minRayon, cible);
 		_timerExpansionRequetes = 0f;
 		_timerProgressionForceeRayon = 0f;
 	}
@@ -212,8 +224,8 @@ public partial class Monde_Client : Node3D
 	{
 		if (!ModeSurvieFpsAgressif)
 			return;
-		int minRayon = Mathf.Max(RayonDormancePhysique + 1, RayonInitialRequetesChunks);
-		int cible = Mathf.Max(minRayon, RayonChargementChunksActif());
+		int minRayon = ObtenirRayonMinRequetesReseau();
+		int cible = RayonChargementChunksActif();
 		int gap = Mathf.Max(0, cible - _rayonRequetesActuel);
 		if (gap <= 0)
 			return;
@@ -226,8 +238,8 @@ public partial class Monde_Client : Node3D
 	{
 		Vector3 positionObservation = ObtenirPositionObservation();
 
-		int minRayon = Mathf.Max(RayonDormancePhysique + 1, RayonInitialRequetesChunks);
-		int cible = Mathf.Max(minRayon, RayonChargementChunksActif());
+		int minRayon = ObtenirRayonMinRequetesReseau();
+		int cible = RayonChargementChunksActif();
 		_rayonRequetesActuel = Mathf.Clamp(Mathf.Max(_rayonRequetesActuel, cible - 1), minRayon, cible);
 		_timerExpansionRequetes = 0f;
 		_timerProgressionForceeRayon = 0f;
@@ -261,7 +273,7 @@ public partial class Monde_Client : Node3D
 		_demanderCreation = demanderCreation;
 		Chunk_Client.RayonQualiteMaxChunks = Mathf.Max(1, RayonQualiteMaxChunks);
 		AppliquerLimitesVisibiliteFloreDimension();
-		_rayonRequetesActuel = Mathf.Max(RayonDormancePhysique + 1, RayonInitialRequetesChunks);
+		_rayonRequetesActuel = ObtenirRayonMinRequetesReseau();
 		// Grâce bootstrap courte au démarrage (débloque le gate FPS sans saturer 50 s en mode chargement collision).
 		_timerGraceStreamingBootstrap = Mathf.Max(_timerGraceStreamingBootstrap, 18f);
 		_gateStreamingGele = false;
@@ -304,8 +316,11 @@ public partial class Monde_Client : Node3D
 		}
 		else
 		{
-			Chunk_Client.RayonVisibiliteGazonChunks = Mathf.Max(1, RayonGazonVisibleChunks);
-			Chunk_Client.RayonVisibiliteBuissonsChunks = Mathf.Max(2, RayonBuissonsVisibleChunks);
+			int plafondFlore = ModeSurvieFpsAgressif
+				? Mathf.Max(2, RenderDistance + 1)
+				: int.MaxValue;
+			Chunk_Client.RayonVisibiliteGazonChunks = Mathf.Min(Mathf.Max(1, RayonGazonVisibleChunks), plafondFlore);
+			Chunk_Client.RayonVisibiliteBuissonsChunks = Mathf.Min(Mathf.Max(2, RayonBuissonsVisibleChunks), plafondFlore + 1);
 		}
 	}
 }

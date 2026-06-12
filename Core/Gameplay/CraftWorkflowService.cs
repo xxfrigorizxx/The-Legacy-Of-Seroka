@@ -116,14 +116,8 @@ public partial class Joueur
         return aUnIngredient;
     }
 
-    private static bool EstMiniMorceauBucheBol(in SlotInventaire s)
-    {
-        return !s.EstVide
-            && s.ID == 30
-            && !s.EstUnEclat
-            && s.IndexTaille == 3
-            && s.IndexMorphologique == 3;
-    }
+    private static bool EstMiniMorceauBucheBol(in SlotInventaire s) =>
+        Atlas_Matiere.EstBucheRondinCourtPourBolBois(s);
 
     private bool TrouverIndexDagueRecetteBol(SlotInventaire[] grille, int nCases, out int indexDague)
     {
@@ -175,7 +169,7 @@ public partial class Joueur
         bool donneXpDextiriter = CraftDonneXpDextiriter(g, n);
         int indexDagueRecetteBol = -1;
         bool estCraftBolBois = false;
-        if (CraftGrille3x3AuTable && SlotResultatCraft.ID == IdObjetBolBois)
+        if (SlotResultatCraft.ID == IdObjetBolBois)
             estCraftBolBois = TrouverIndexDagueRecetteBol(g, n, out indexDagueRecetteBol);
 
         int indexBolEauArgileHumid = -1;

@@ -28,14 +28,12 @@ public partial class Monde_Client : Node3D
 			return;
 		if (CoucheChunkRenduPret(coord, coordY))
 			return;
+		Vector3 obs = ObtenirPositionObservation();
 		var cle = new Vector3I(coord.X, coordY, coord.Y);
-		ulong frame = Engine.GetProcessFrames();
-		if (!urgent
-			&& _demandesProfondeurFrameDerniereEmission.TryGetValue(cle, out ulong derniereFrame)
-			&& frame - derniereFrame < 6)
+		if (!PeutRedemanderCoucheChunk(cle, coord, obs, urgent))
 			return;
-		_demandesProfondeurFrameDerniereEmission[cle] = frame;
-		_networkManager.EnvoyerDemandeChunkDimensionAuServeur(coord, coordY, _dimensionReseauActive, ObtenirPositionObservation());
+		EnregistrerEmissionDemandeCoucheChunk(cle);
+		_networkManager.EnvoyerDemandeChunkDimensionAuServeur(coord, coordY, _dimensionReseauActive, obs);
 	}
 
 	private void DemanderChunk(Vector2I coord)
@@ -66,16 +64,14 @@ public partial class Monde_Client : Node3D
 					if (vitesseY > 0.25f) return b.CompareTo(a);
 					return a.CompareTo(b);
 				});
-				int delaiAntiSpamAbysse = JoueurEnModeVolCreatif() ? 24 : 8;
 				foreach (int coordYActif in _coordYActifsAbysseListeTravail)
 				{
 					if (ChunkDisponiblePourY(coord, coordYActif))
 						continue;
 					var cle = new Vector3I(coord.X, coordYActif, coord.Y);
-					if (_demandesAbysseFrameDerniereEmission.TryGetValue(cle, out ulong derniereFrame)
-						&& frame - derniereFrame < (ulong)delaiAntiSpamAbysse)
+					if (!PeutRedemanderCoucheChunk(cle, coord, obs, urgent: false))
 						continue;
-					_demandesAbysseFrameDerniereEmission[cle] = frame;
+					EnregistrerEmissionDemandeCoucheChunk(cle);
 					_networkManager.EnvoyerDemandeChunkDimensionAuServeur(coord, coordYActif, _dimensionReseauActive, obs);
 				}
 				// Purge incrémentale de l'anti-spam pour éviter une map de demandes infinie.
@@ -96,8 +92,13 @@ public partial class Monde_Client : Node3D
 				if (!ModeProfondeurTranchesActif())
 				{
 					int coordY = CoordYDepuisMondeY((int)Mathf.Floor(obs.Y));
-					if (!CoucheChunkRenduPret(coord, coordY))
+					var cleSimple = new Vector3I(coord.X, coordY, coord.Y);
+					if (!CoucheChunkRenduPret(coord, coordY)
+						&& PeutRedemanderCoucheChunk(cleSimple, coord, obs, urgent: false))
+					{
+						EnregistrerEmissionDemandeCoucheChunk(cleSimple);
 						_networkManager.EnvoyerDemandeChunkDimensionAuServeur(coord, coordY, _dimensionReseauActive, obs);
+					}
 					return;
 				}
 
@@ -122,17 +123,15 @@ public partial class Monde_Client : Node3D
 					if (CoucheChunkRenduPret(coord, coordYActif))
 						continue;
 					var cle = new Vector3I(coord.X, coordYActif, coord.Y);
-					float dist2 = DistanceCarreeAuJoueur(coord, obs);
-					int delaiAntiSpam = dist2 <= (RayonDormancePhysique + 2) * (RayonDormancePhysique + 2) ? 2 : 6;
-					if (_demandesProfondeurFrameDerniereEmission.TryGetValue(cle, out ulong derniereFrame)
-						&& frame - derniereFrame < (ulong)delaiAntiSpam)
+					if (!PeutRedemanderCoucheChunk(cle, coord, obs, urgent: false))
 						continue;
-					_demandesProfondeurFrameDerniereEmission[cle] = frame;
+					EnregistrerEmissionDemandeCoucheChunk(cle);
 					_networkManager.EnvoyerDemandeChunkDimensionAuServeur(coord, coordYActif, _dimensionReseauActive, obs);
 				}
 
-				// Purge incrémentale de l'anti-spam profondeur.
-				if (_demandesProfondeurFrameDerniereEmission.Count > 0 && frame % 45UL == 0UL)
+				if (_demandesProfondeurFrameDerniereEmission.Count > PlafondEntreesAntiSpamDemandeChunk)
+					PurgerMapsAntiSpamDemandeChunks(obs, force: true);
+				else if (_demandesProfondeurFrameDerniereEmission.Count > 0 && frame % 45UL == 0UL)
 				{
 					_clesDemandesProfondeurExpireesTemp.Clear();
 					foreach (var kv in _demandesProfondeurFrameDerniereEmission)
@@ -199,31 +198,12 @@ public partial class Monde_Client : Node3D
 		return true;
 	}
 
-	/// <summary>
-	/// Près du joueur : fenêtre ±2 tranches. Lointain : 1–3 tranches selon la hauteur terrain (évite 5× le travail sur tout le disque horizontal).
-	/// </summary>
+	/// <summary>Toujours la fenêtre verticale du joueur (courante ±1) — suit la descente/remontée sans empiler 4–5 tranches par colonne XZ.</summary>
 	private void RemplirCoordYDemandeChunkProfondeur(Vector2I coord, Vector3 obs, HashSet<int> sortie)
 	{
 		sortie.Clear();
-		float dist2 = DistanceCarreeAuJoueur(coord, obs);
-		int rayonPlein = Mathf.Max(RayonDormancePhysique + MargePreloadChunks, RayonGrilleMinSpawnPret + 2);
-		float seuilPlein2 = (rayonPlein + 1) * (rayonPlein + 1);
-		if (dist2 <= seuilPlein2)
-		{
-			ConstantesProfondeurVerticale.RemplirFenetreCoordYAutourJoueur(
-				obs.Y, ProfondeurMaxMetres, sortie, DemiFenetreTranchesStreamingActif());
-			return;
-		}
-		int gx = coord.X * TailleChunk + (TailleChunk / 2);
-		int gz = coord.Y * TailleChunk + (TailleChunk / 2);
-		int hSurf = Generateur_Voxel.ObtenirHauteurTerrainMonde(gx, gz, _seedTerrain);
-		int cySurf = ConstantesProfondeurVerticale.CoordYDepuisMondeY(hSurf);
-		for (int cy = cySurf - 1; cy <= cySurf + 1; cy++)
-			sortie.Add(ConstantesProfondeurVerticale.ClampCoordYProfond(cy, ProfondeurMaxMetres));
-		// Toujours inclure la fenêtre du joueur (évite de rater la tranche Y=103 sur le bord de falaise).
-		int cyObs = ConstantesProfondeurVerticale.CoordYDepuisMondeY((int)Mathf.Floor(obs.Y));
-		for (int d = -1; d <= 1; d++)
-			sortie.Add(ConstantesProfondeurVerticale.ClampCoordYProfond(cyObs + d, ProfondeurMaxMetres));
+		ConstantesProfondeurVerticale.RemplirFenetreCoordYAutourJoueur(
+			obs.Y, ProfondeurMaxMetres, sortie, DemiFenetreTranchesStreamingActif());
 	}
 
 	internal bool ModeProfondeurTranchesActif()
@@ -289,8 +269,6 @@ public partial class Monde_Client : Node3D
 			return false;
 		if (ConstantesDimensionAbysse.EstDansTrouNoirXZ(observation.X, observation.Z))
 			return true;
-		if (JoueurEnModeVolCreatif())
-			return true;
 		return false;
 	}
 
@@ -333,7 +311,7 @@ public partial class Monde_Client : Node3D
 		int palierCourant = ObtenirIndexPalierAbysse(observation.Y);
 		// Mode 2D par étages: fenêtre fixe courant ±N.
 		AjouterCoordYPalierAbysse(palierCourant, sortie);
-		int demiFenetre = JoueurEnModeVolCreatif() ? 0
+		int demiFenetre = VolCreatifStreamingReduit() ? 0
 			: Mathf.Max(0, ConstantesDimensionAbysse.ObtenirDemiFenetrePaliersActifs(observation.X, observation.Z));
 		for (int i = 1; i <= demiFenetre; i++)
 		{
@@ -358,7 +336,7 @@ public partial class Monde_Client : Node3D
 		int palierChunk = ConstantesDimensionAbysse.ObtenirIndexStageDepuisCoordYChunk(coordY, HauteurMax);
 		int palierObservation = ObtenirIndexPalierAbysse(observation.Y);
 		int ecart = Mathf.Abs(palierChunk - palierObservation);
-		int demiFenetre = JoueurEnModeVolCreatif()
+		int demiFenetre = VolCreatifStreamingReduit()
 			? 0
 			: ConstantesDimensionAbysse.ObtenirDemiFenetrePaliersActifs(observation.X, observation.Z);
 		return ecart <= Mathf.Max(0, demiFenetre);
@@ -409,7 +387,7 @@ public partial class Monde_Client : Node3D
 			return;
 
 		int rayonDetail = RayonChargementChunksActif();
-		float seuilEvictionCarree = (rayonDetail + 2) * (rayonDetail + 2);
+		CalculerSeuilsEvictionChunksXZ(rayonDetail, out float distConservationCarree, out float distEvictionCarree);
 		int rayonProtection = ObtenirRayonSecuriteSolActif();
 		float seuilProtectionCarree = rayonProtection * rayonProtection;
 		_coordYCollisionAbysseTravail.Clear();
@@ -424,7 +402,9 @@ public partial class Monde_Client : Node3D
 			bool yDansFenetre = EstCoordYDansFenetrePaliersAbysse(kv.Key.Y, positionObservation)
 				|| EstCoordYDansFenetrePaliersAbysse(kv.Key.Y, positionJoueur)
 				|| _coordYCollisionAbysseTravail.Contains(kv.Key.Y);
-			if (dist2 > seuilEvictionCarree || !yDansFenetre)
+			if (dist2 <= distConservationCarree)
+				continue;
+			if (dist2 > distEvictionCarree || !yDansFenetre)
 			{
 				if (ActiverDiagnosticCollisionAbysse && _coordYCollisionAbysseTravail.Contains(kv.Key.Y))
 					GD.Print($"ZERO-K ABYSSE DIAG PURGE: suppression potentielle couche collision y={kv.Key.Y} coord=({kv.Key.X},{kv.Key.Z}) dist2={dist2:F1}");
@@ -436,7 +416,10 @@ public partial class Monde_Client : Node3D
 		{
 			Vector3I cle = _clesChunksAbysseARetirerTemp[i];
 			if (_chunksDataAbysse3D.TryGetValue(cle, out var data) && data != null)
+			{
+				RetirerAntiSpamDemandeCoucheChunk(cle);
 				RetirerChunkDataAbysse(cle, data);
+			}
 		}
 	}
 
@@ -477,6 +460,10 @@ public partial class Monde_Client : Node3D
 		_indexDormanceScan = 0;
 		_timerTrimAbysse = 0f;
 		_demandesAbysseFrameDerniereEmission.Clear();
+		_demandesProfondeurFrameDerniereEmission.Clear();
+		_demandesChunkTempsDerniereEmission.Clear();
+		while (_fileIntegrationMainThread.TryDequeue(out _)) { }
+		Thread.VolatileWrite(ref _chunksEnCoursDeCalcul, 0);
 		DemarrerGraceStreamingBootstrapNouveauMonde();
 	}
 
@@ -486,8 +473,8 @@ public partial class Monde_Client : Node3D
 	/// </summary>
 	private void GarantirRequetesChunksProcheJoueur(Vector3 positionObservation, Vector2I chunkObservationActuel)
 	{
-		// Noclip créatif : pas d'urgence anti-chute ; évite les rafales réseau en vol rapide (surtout APISARA).
-		if (JoueurEnModeVolCreatif())
+		// Noclip créatif en surface : pas d'urgence anti-chute. Sous terre : charger les chunks autour de la caméra.
+		if (VolCreatifStreamingReduit())
 			return;
 		bool modeAbysse = _dimensionReseauActive == (int)DimensionJeu.Abysse;
 		bool zoneCritiqueAbysse = false;

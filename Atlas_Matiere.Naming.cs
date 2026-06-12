@@ -671,6 +671,17 @@ public static partial class Atlas_Matiere
             };
             return q > 1 ? $"{nom} x{q}" : nom;
         }
+        if (Joueur.EstIdQuartzRecolte(id))
+        {
+            int q = Joueur.ObtenirQuantiteSlot(slot);
+            string nom = id == Joueur.IdObjetQuartzPur ? "Quartz pur" : "Quartz";
+            return q > 1 ? $"{nom} x{q}" : nom;
+        }
+        if (Joueur.EstIdEtainRecolte(id))
+        {
+            int q = Joueur.ObtenirQuantiteSlot(slot);
+            return q > 1 ? $"Minerai d'étain x{q}" : "Minerai d'étain";
+        }
         if (EstIdVoxelSurfaceTerrain(id))
             return ObtenirNomCourtVoxelTerrain(id);
         return id switch

@@ -185,6 +185,7 @@ public partial class BoeufSauvage : CharacterBody3D
 			{ "cadavre_attend_depecage", _cadavreAttendDepecage },
 			{ "cadavre_loot_distribue", _cadavreLootDistribue },
 			{ "cadavre_coups_depecage", _coupsDepecageDagueValides },
+			{ "cadavre_heure_mort_unix", _horodatageMortUnixSec },
 			{ "x", GlobalPosition.X },
 			{ "y", GlobalPosition.Y },
 			{ "z", GlobalPosition.Z },
@@ -238,20 +239,36 @@ public partial class BoeufSauvage : CharacterBody3D
 		bool lootDistribue = data.TryGetValue("cadavre_loot_distribue", out Variant lootV) && lootV.AsBool();
 		bool attendDepecage = data.TryGetValue("cadavre_attend_depecage", out Variant attendV) ? attendV.AsBool() : true;
 		int coupsDepecage = data.TryGetValue("cadavre_coups_depecage", out Variant coupsV) ? Mathf.Max(0, coupsV.AsInt32()) : 0;
+		double horodatageMortUnix = data.TryGetValue("cadavre_heure_mort_unix", out Variant hmV) ? hmV.AsDouble() : 0.0;
 		if (data.TryGetValue("ancre_x", out Variant ax) && data.TryGetValue("ancre_y", out Variant ay) && data.TryGetValue("ancre_z", out Variant az))
 			_ancreTroupeau = new Vector3(ax.AsSingle(), ay.AsSingle(), az.AsSingle());
 		MettreAJourStatsDerivees();
 		bool etatMortSauvegarde = etatSauvegarde == (int)EtatBoeuf.Mort;
 		if (etatMortSauvegarde || _vieCourante <= 0.0001f)
-			RestaurerEtatMortPersistant(attendDepecage, lootDistribue, coupsDepecage);
+			RestaurerEtatMortPersistant(attendDepecage, lootDistribue, coupsDepecage, horodatageMortUnix);
 		else
 			_reconfigurationArbreAnimationEnAttente = false;
 		AppliquerGeneTailleVisuelleEtPhysique();
 		MettreAJourAffichageFaim3D();
 	}
 
-	private void RestaurerEtatMortPersistant(bool attendDepecage, bool lootDistribue, int coupsDepecage)
+	private void RestaurerEtatMortPersistant(bool attendDepecage, bool lootDistribue, int coupsDepecage, double horodatageMortUnix)
 	{
+		_horodatageMortUnixSec = horodatageMortUnix > 0.0
+			? horodatageMortUnix
+			: Time.GetUnixTimeFromSystem();
+		if (!lootDistribue && EstCadavreExpireParTempsReel())
+		{
+			_cadavreLootDistribue = true;
+			_cadavreAttendDepecage = false;
+			Callable.From(() =>
+			{
+				_gestionnaireFaune?.NotifierCadavreRetireDeLaPersistance(this);
+				if (IsInsideTree())
+					QueueFree();
+			}).CallDeferred();
+			return;
+		}
 		_etat = EtatBoeuf.Mort;
 		_vieCourante = 0f;
 		Velocity = Vector3.Zero;
@@ -273,7 +290,7 @@ public partial class BoeufSauvage : CharacterBody3D
 	{
 		if (_etat != EtatBoeuf.Mort || _cadavreLootDistribue || _animationPlayer == null)
 			return;
-		AppliquerAnimationMort();
+		AppliquerPoseCadavreFigee();
 	}
 
 	private void InitialiserGenesNavigationSiNecessaire()

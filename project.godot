@@ -138,3 +138,6 @@ jolt_physics_3d/limits/max_contact_constraints=131072
 [rendering]
 
 rendering_device/driver.windows="d3d12"
+occlusion_culling/use_occlusion_culling=false
+occlusion_culling/occlusion_rays_per_thread=512
+occlusion_culling/bvh_build_quality=1

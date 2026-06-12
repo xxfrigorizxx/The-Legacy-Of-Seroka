@@ -180,7 +180,9 @@ public partial class Gestionnaire_Monde : Node3D
 				}
 			}
 			const double timeoutOverlaySec = 45.0;
-			if (spawnPretEtAligne || secondesAttenteEffective >= timeoutOverlaySec || forcerMasquageAbsolu)
+			bool meshSousPiedsPret = UseArchitectureReseau && _mondeClient != null && _mondeClient.ChunkMeshGrilleSousPiedsPret();
+			bool peutMasquerOverlayVisuel = meshSousPiedsPret && secondesAttenteEffective >= 6.0;
+			if (spawnPretEtAligne || peutMasquerOverlayVisuel || secondesAttenteEffective >= timeoutOverlaySec || forcerMasquageAbsolu)
 			{
 				bool bootstrapClientStable = !UseArchitectureReseau
 					|| _mondeClient == null
@@ -188,6 +190,7 @@ public partial class Gestionnaire_Monde : Node3D
 					|| !ExigerBootstrapClientStableAvantMasquerOverlay
 					|| secondesAttenteEffective >= Math.Max(0.0f, DureeMaxAttenteBootstrapClientSec)
 					|| (spawnPretEtAligne && secondesAttenteEffective >= 4.0)
+					|| (peutMasquerOverlayVisuel && secondesAttenteEffective >= 8.0)
 					|| forcerMasquageAbsolu;
 				if (!bootstrapClientStable)
 				{
@@ -197,8 +200,11 @@ public partial class Gestionnaire_Monde : Node3D
 				if (!spawnPretEtAligne && (secondesAttenteEffective >= timeoutOverlaySec || forcerMasquageAbsolu))
 					GD.PrintErr($"ZERO-K : Timeout chargement monde ({secondesAttenteEffective:0.0} s) — overlay masqué. Vérifiez réseau / Monde_Client si le sol manque.");
 				if (_spawnDoitEtreAligneAuSol && !_spawnAligneAuSol)
-					FinaliserSpawnInitialAuSol(autoriserFallbackSansRaycast: secondesAttenteEffective >= 12.0 || forcerMasquageAbsolu);
+					FinaliserSpawnInitialAuSol(autoriserFallbackSansRaycast: secondesAttenteEffective >= 12.0 || forcerMasquageAbsolu || peutMasquerOverlayVisuel);
 				_overlayChargement.Visible = false;
+				// Reconnexion / reload : éviter l'écran gris vide si le raycast sol n'a pas encore de collision mais le monde charge.
+				if (_joueur != null && !_joueur.Visible)
+					_joueur.Visible = true;
 				if (_ajusterPiedsJoueurSurSurfaceApresRestauration)
 				{
 					_ajusterPiedsJoueurSurSurfaceApresRestauration = false;
@@ -233,11 +239,18 @@ FinBlocOverlay:
 		if (UseArchitectureReseau)
 		{
 			_secondesDormanceObjets += delta;
-			if (_secondesDormanceObjets >= 0.4)
+			float intervalleDormanceObjets = 0.4f;
+			if (_cacheRigidBodiesDormance.TryGetValue("BlocsPoses", out var listeBlocs) && listeBlocs.Count > 180)
+				intervalleDormanceObjets = 0.85f;
+			float fps = (float)Engine.GetFramesPerSecond();
+			if (fps < 22f)
+				intervalleDormanceObjets = Mathf.Max(intervalleDormanceObjets, 1.1f);
+			if (_secondesDormanceObjets >= intervalleDormanceObjets)
 			{
 				_secondesDormanceObjets = 0;
 				ulong debutDormanceUs = ActiverProfilagePerfGestionnaire ? PerfBudgetMonitor.Begin() : 0UL;
 				MettreAJourDormanceObjetsPoses((float)delta);
+				MettreAJourLodObjetsAuSol((float)delta);
 				if (ActiverProfilagePerfGestionnaire)
 					PerfBudgetMonitor.End("GestionnaireMonde/DormanceObjets", debutDormanceUs);
 			}

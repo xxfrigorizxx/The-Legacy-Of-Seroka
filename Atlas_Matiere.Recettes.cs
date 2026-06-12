@@ -256,12 +256,8 @@ public static partial class Atlas_Matiere
         if (ingredients.Count == 1)
         {
             var br = ingredients[0];
-            // Établi 3x3 uniquement : mini morceau de bûche (court + fendu en 8)
-            // => maillet bois (conserve l'essence source).
-            bool estMiniMorceauBucheMaillet = br.ID == 30
-                && !br.EstUnEclat
-                && br.IndexTaille == 3
-                && br.IndexMorphologique == 3;
+            // Établi 3x3 : rondin court fendu en 8 → maillet / pilon bois.
+            bool estMiniMorceauBucheMaillet = EstBucheRondinFendueEn8PourMaillet(br);
             if (grilleCraft3x3Table && estMiniMorceauBucheMaillet)
             {
                 return new SlotInventaire
@@ -322,18 +318,12 @@ public static partial class Atlas_Matiere
             SlotInventaire sA = ingredients[0];
             SlotInventaire sB = ingredients[1];
 
-            bool EstMiniMorceauBucheBol(SlotInventaire s) =>
-                !s.EstVide
-                && s.ID == 30
-                && !s.EstUnEclat
-                && s.IndexTaille == 3
-                && s.IndexMorphologique == 3;
-
-            bool aBucheBol = EstMiniMorceauBucheBol(sA);
-            bool bBucheBol = EstMiniMorceauBucheBol(sB);
+            bool aBucheBol = EstBucheRondinCourtPourBolBois(sA);
+            bool bBucheBol = EstBucheRondinCourtPourBolBois(sB);
             bool aDague = sA.ID == 105;
             bool bDague = sB.ID == 105;
-            if (grilleCraft3x3Table && ((aBucheBol && bDague) || (bBucheBol && aDague)))
+            // Grille inventaire 2×2 (Q) ou établi 3×3 : rondin court + dague, positions libres.
+            if ((aBucheBol && bDague) || (bBucheBol && aDague))
             {
                 SlotInventaire sourceBois = aBucheBol ? sA : sB;
                 return new SlotInventaire

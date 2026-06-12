@@ -806,7 +806,7 @@ public partial class Monde_Client : Node3D
 		}
 	}
 
-	/// <summary>Tranche dans la fenêtre verticale ±2 autour du joueur (couture prioritaire).</summary>
+	/// <summary>Tranche dans la fenêtre verticale ±1 autour du joueur (couture prioritaire).</summary>
 	private bool EstChunkProfondeurProcheJoueur(ChunkData chunk)
 	{
 		if (chunk == null || !ModeProfondeurTranchesActif() || !_joueurPresentPourWorkers)
@@ -991,8 +991,8 @@ public partial class Monde_Client : Node3D
 		Vector3I cle3DNormalisee = new Vector3I(coordChunk.X, coordYCle, coordChunk.Y);
 		if (modeAbysse)
 		{
-			_demandesAbysseFrameDerniereEmission.Remove(cle3D);
-			_demandesAbysseFrameDerniereEmission.Remove(cle3DNormalisee);
+			RetirerAntiSpamDemandeCoucheChunk(cle3D);
+			RetirerAntiSpamDemandeCoucheChunk(cle3DNormalisee);
 		}
 		// Architecture AAA : ChunkData (RID) uniquement, plus de Node.
 		ulong empreinte = CalculerEmpreinteDonneesChunk(donnees);
@@ -1011,7 +1011,8 @@ public partial class Monde_Client : Node3D
 		}
 		if (!modeAbysse && ModeProfondeurTranchesActif())
 		{
-			_demandesProfondeurFrameDerniereEmission.Remove(cle3D);
+			RetirerAntiSpamDemandeCoucheChunk(cle3D);
+			RetirerAntiSpamDemandeCoucheChunk(cle3DNormalisee);
 			IntegrerOuMettreAJourChunkProfondeur(coordChunk, donnees, coordY, coordYCle, cle3DNormalisee, empreinte);
 			return;
 		}
@@ -1064,6 +1065,7 @@ public partial class Monde_Client : Node3D
 			existing.CoordChunkY = coordY;
 			if (existing.VisualInstanceRID.IsValid && existing.EmpreinteDonneesServeur == empreinte && empreinte != 0)
 				return;
+			RetirerAntiSpamDemandeCoucheChunk(cle3DNormalisee);
 			EnqueueChunkGeneration(existing, donnees);
 			return;
 		}
@@ -1084,6 +1086,7 @@ public partial class Monde_Client : Node3D
 			_chunksDataProfondeur3D[cle3DNormalisee] = data;
 		if (!modeAbysse && coordY != 0)
 			SynchroniserProxyChunkProfondeur(coordChunk);
+		RetirerAntiSpamDemandeCoucheChunk(cle3DNormalisee);
 		EnqueueChunkGeneration(data, donnees);
 	}
 

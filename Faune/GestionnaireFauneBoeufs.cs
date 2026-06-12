@@ -39,6 +39,8 @@ public partial class GestionnaireFauneBoeufs : Node3D
 	[Export(PropertyHint.Range, "8,256,1")] public int BudgetChunksEvaluesParCycle = 64;
 	[Export(PropertyHint.Range, "1,64,1")] public int BudgetDechargementsFauneParCycle = 12;
 	[Export(PropertyHint.Range, "1,64,1")] public int BudgetRechargementsFauneParCycle = 10;
+	/// <summary>Cadavres non dépecés : disparition après ce délai (s) en temps réel, même hors ligne.</summary>
+	[Export(PropertyHint.Range, "60,172800,60")] public float DureeCadavreSecondesReel = 86400f;
 	[ExportGroup("Diagnostic performance")]
 	[Export] public bool ActiverProfilagePerfFaune = false;
 	[Export(PropertyHint.Range, "0.2,10,0.1")] public float IntervalleLogProfilageFauneSec = 2.0f;
@@ -50,6 +52,7 @@ public partial class GestionnaireFauneBoeufs : Node3D
 	private readonly HashSet<string> _idsActifs = new HashSet<string>();
 	private readonly List<BoeufSauvage> _scratchBoeufsADecharger = new List<BoeufSauvage>();
 	private readonly List<string> _scratchIdsARecharger = new List<string>();
+	private readonly List<string> _scratchIdsProfilsExpires = new List<string>();
 	private readonly RandomNumberGenerator _rng = new RandomNumberGenerator();
 	private readonly HashSet<Vector2I> _chunksEvaluesSpawnFaune = new HashSet<Vector2I>();
 	private float _cooldownVerification;
@@ -203,6 +206,8 @@ public partial class GestionnaireFauneBoeufs : Node3D
 			foreach (EntreeFaunePersistante entree in _banqueFaune.Values)
 			{
 				if (entree?.Profil == null) continue;
+				if (ProfilFauneDoitEtreIgnore(entree.Profil, DureeCadavreSecondesReel))
+					continue;
 				string id = ObtenirIdDepuisProfil(entree.Profil, true);
 				if (string.IsNullOrEmpty(id)) continue;
 				entreesValides.Add(entree);
@@ -276,6 +281,8 @@ public partial class GestionnaireFauneBoeufs : Node3D
 				var dict = v.AsGodotDictionary();
 				string id = ObtenirIdDepuisProfil(dict, true);
 				if (string.IsNullOrEmpty(id))
+					continue;
+				if (ProfilFauneDoitEtreIgnore(dict, DureeCadavreSecondesReel))
 					continue;
 				_banqueFaune[id] = new EntreeFaunePersistante
 				{
@@ -479,14 +486,32 @@ public partial class GestionnaireFauneBoeufs : Node3D
 		return nouveau;
 	}
 
+	/// <summary>Retire un individu de la banque (dépecage, expiration 24 h) pour qu'il ne réapparaisse jamais.</summary>
+	public void NotifierCadavreRetireDeLaPersistance(BoeufSauvage boeuf)
+	{
+		if (boeuf == null)
+			return;
+		string id = boeuf.ObtenirIdentifiantIndividu();
+		if (!string.IsNullOrEmpty(id))
+			_banqueFaune.Remove(id);
+		_boeufs.Remove(boeuf);
+	}
+
+	private static bool ProfilFauneDoitEtreIgnore(Godot.Collections.Dictionary profil, float dureeCadavreSec)
+	{
+		if (profil == null)
+			return true;
+		if (profil.TryGetValue("cadavre_loot_distribue", out Variant lootV) && lootV.AsBool())
+			return true;
+		return BoeufSauvage.EstProfilCadavreExpire(profil, dureeCadavreSec);
+	}
+
 	private void EnregistrerProfilActifDansBanque(BoeufSauvage boeuf)
 	{
 		if (boeuf == null || !IsInstanceValid(boeuf) || !boeuf.IsInsideTree()) return;
 		if (boeuf.DoitEtreExcluPersistanceFaune())
 		{
-			string idExistant = boeuf.ObtenirIdentifiantIndividu();
-			if (!string.IsNullOrEmpty(idExistant))
-				_banqueFaune.Remove(idExistant);
+			NotifierCadavreRetireDeLaPersistance(boeuf);
 			return;
 		}
 		Godot.Collections.Dictionary profil = boeuf.ExtraireProfilPersistant();
@@ -630,7 +655,16 @@ public partial class GestionnaireFauneBoeufs : Node3D
 				_idsActifs.Add(idActif);
 		}
 
+		_scratchIdsProfilsExpires.Clear();
 		_scratchIdsARecharger.Clear();
+		foreach (var kv in _banqueFaune)
+		{
+			if (ProfilFauneDoitEtreIgnore(kv.Value.Profil, DureeCadavreSecondesReel))
+				_scratchIdsProfilsExpires.Add(kv.Key);
+		}
+		for (int i = 0; i < _scratchIdsProfilsExpires.Count; i++)
+			_banqueFaune.Remove(_scratchIdsProfilsExpires[i]);
+
 		foreach (var kv in _banqueFaune)
 		{
 			if (_idsActifs.Contains(kv.Key)) continue;

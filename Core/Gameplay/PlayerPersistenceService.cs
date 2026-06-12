@@ -1189,6 +1189,7 @@ public partial class Joueur
             {
                 _chargementObjetsPosesMondeEnCours = false;
             }
+            Callable.From(FinaliserChargementObjetsPosesMonde).CallDeferred();
             if (_objetsPosesAttendusDernierChargement > 0 && _objetsPosesSpawnesDernierChargement == 0)
                 GD.PrintErr($"ZERO-K : Aucun objet posé respawné ({_objetsPosesAttendusDernierChargement} en fichier) — sauvegarde disque protégée tant que la scène reste vide.");
             if (lectureLegacy)
@@ -1197,6 +1198,23 @@ public partial class Joueur
         catch (Exception ex)
         {
             GD.PrintErr($"ZERO-K : Erreur chargement objets posés : {ex.Message}");
+        }
+    }
+
+    private void FinaliserChargementObjetsPosesMonde()
+    {
+        var gm = GetParent() as Gestionnaire_Monde;
+        gm?.OptimiserPhysiqueObjetsPosesApresChargement();
+        var arbre = GetTree();
+        if (arbre == null)
+            return;
+        foreach (Node n in arbre.GetNodesInGroup("MondeClient"))
+        {
+            if (n is Monde_Client mc)
+            {
+                mc.RestaurerVisibiliteForceeApresOcclusion();
+                break;
+            }
         }
     }
 

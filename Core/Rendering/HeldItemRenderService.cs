@@ -63,6 +63,10 @@ public partial class Joueur
         NettoyerModelesEnfants(parent);
         if (EstIdCharbonRecolte(slot.ID))
             InstancierModeleCharbon(parent, slot, tailleMetres);
+        else if (EstIdQuartzRecolte(slot.ID))
+            InstancierModeleQuartz(parent, slot, tailleMetres);
+        else if (EstIdEtainRecolte(slot.ID))
+            InstancierModeleEtain(parent, slot, tailleMetres);
         else if (slot.ID == IdObjetSteakCru)
             InstancierModeleSteakCru(parent, slot, tailleMetres);
         else if (slot.ID == IdObjetSteakCuit)
@@ -527,14 +531,16 @@ public partial class Joueur
             _objetEnMain.RotationDegrees = new Vector3(-8f + _rotationManuelleX, 28f + _rotationManuelleY, 4f + _rotationManuelleZ);
             return;
         }
-        if (main.ID == IdObjetSteakCru || EstIdCharbonRecolte(main.ID) || main.ID == IdObjetSteakCuit
+        if (main.ID == IdObjetSteakCru || EstIdCharbonRecolte(main.ID) || EstIdQuartzRecolte(main.ID) || EstIdEtainRecolte(main.ID) || main.ID == IdObjetSteakCuit
             || main.ID == IdObjetOsBoeuf || main.ID == IdObjetIntestinBoeuf || main.ID == IdObjetIntestinBoeufNettoye)
         {
             _objetEnMain.Mesh = null;
             _objetEnMain.MaterialOverride = null;
-            InstancierModeleGlbLootSimple(_objetEnMain, main, main.ID, main.ID == IdObjetOsBoeuf ? 0.28f : (EstIdCharbonRecolte(main.ID) ? 0.2f : 0.18f));
+            float tailleMain = main.ID == IdObjetOsBoeuf ? 0.28f
+                : (EstIdCharbonRecolte(main.ID) || EstIdQuartzRecolte(main.ID) || EstIdEtainRecolte(main.ID) ? 0.2f : 0.18f);
+            InstancierModeleGlbLootSimple(_objetEnMain, main, main.ID, tailleMain);
             _objetEnMain.Scale = Vector3.One;
-            if (EstIdCharbonRecolte(main.ID))
+            if (EstIdCharbonRecolte(main.ID) || EstIdQuartzRecolte(main.ID) || EstIdEtainRecolte(main.ID))
                 _objetEnMain.RotationDegrees = new Vector3(6f + _rotationManuelleX, 22f + _rotationManuelleY, -8f + _rotationManuelleZ);
             else if (main.ID == IdObjetOsBoeuf)
                 _objetEnMain.RotationDegrees = new Vector3(8f + _rotationManuelleX, 24f + _rotationManuelleY, -12f + _rotationManuelleZ);
@@ -1383,15 +1389,16 @@ public partial class Joueur
             meshNode.RotationDegrees = new Vector3(-4f, 32f, 2f);
             return;
         }
-        if (slot.ID == IdObjetSteakCru || EstIdCharbonRecolte(slot.ID) || slot.ID == IdObjetSteakCuit
+        if (slot.ID == IdObjetSteakCru || EstIdCharbonRecolte(slot.ID) || EstIdQuartzRecolte(slot.ID) || EstIdEtainRecolte(slot.ID) || slot.ID == IdObjetSteakCuit
             || slot.ID == IdObjetOsBoeuf || slot.ID == IdObjetIntestinBoeuf || slot.ID == IdObjetIntestinBoeufNettoye)
         {
             meshNode.Mesh = null;
             meshNode.MaterialOverride = null;
-            float taille = slot.ID == IdObjetOsBoeuf ? 0.252f : (EstIdCharbonRecolte(slot.ID) ? 0.18f : 0.16f);
+            float taille = slot.ID == IdObjetOsBoeuf ? 0.252f
+                : (EstIdCharbonRecolte(slot.ID) || EstIdQuartzRecolte(slot.ID) || EstIdEtainRecolte(slot.ID) ? 0.18f : 0.16f);
             InstancierModeleGlbLootSimple(meshNode, slot, slot.ID, taille);
             meshNode.Scale = Vector3.One;
-            if (EstIdCharbonRecolte(slot.ID))
+            if (EstIdCharbonRecolte(slot.ID) || EstIdQuartzRecolte(slot.ID) || EstIdEtainRecolte(slot.ID))
                 meshNode.RotationDegrees = new Vector3(4f, 26f, -6f);
             else if (slot.ID == IdObjetOsBoeuf)
                 meshNode.RotationDegrees = new Vector3(6f, 28f, -10f);

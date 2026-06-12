@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://bov3dvxx2uw3i"]
+
+[ext_resource type="Script" path="res://Tests/SmokeQuartzFilonRunner.cs" id="1_runner"]
+
+[node name="SmokeQuartzFilon" type="Node"]
+script = ExtResource("1_runner")

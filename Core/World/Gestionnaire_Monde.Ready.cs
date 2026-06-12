@@ -94,6 +94,7 @@ public partial class Gestionnaire_Monde : Node3D
 		// Reconnexion : attendre collision + raycast sol (comme nouveau monde), pas seulement la position sauvegardée.
 		_spawnDoitEtreAligneAuSol = ForcerAlignementSolAuChargement;
 		_spawnAligneAuSol = false;
+		_spawnConserverHauteurSauvegardee = positionPersistanteConnue;
 		_ajusterPiedsJoueurSurSurfaceApresRestauration = positionPersistanteConnue;
 		if (sessionSauvegardee.HasValue)
 		{
@@ -129,7 +130,15 @@ public partial class Gestionnaire_Monde : Node3D
 				_dimensionLocaleActive = dimensionReconnexion;
 			DemarrerArchitectureReseau();
 			if (sessionSauvegardee.HasValue && _mondeClient != null)
-				_mondeClient.ActiverGraceBootstrapReconnexion(20f);
+			{
+				_mondeClient.ActiverGraceBootstrapReconnexion(45f);
+				Vector2I chunkReconnexion = WorldToChunkCoord(posSpawn, TailleChunk);
+				Callable.From(() =>
+				{
+					if (_mondeClient != null && GodotObject.IsInstanceValid(_mondeClient))
+						_mondeClient.ReserverChunkSpawnPrioritaire(chunkReconnexion);
+				}).CallDeferred();
+			}
 			// Reconnexion : si la dernière dimension active n'est pas Alpha (déjà l'état par défaut au boot)
 			// et qu'elle existe bien dans nos serveurs, on bascule dessus à la même position. Couvre Abysse + Beta/Omega/Delta.
 			if (sessionSauvegardee.HasValue

@@ -31,6 +31,8 @@ public partial class Joueur
         if (s.ID is 15 or 16 or 17 or 20 or 21) return 15;
         if (s.ID == Joueur.IdObjetSteakCru || s.ID == Joueur.IdObjetSteakCuit || s.ID == Joueur.IdObjetOsBoeuf || s.ID == Joueur.IdObjetCuirBoeuf || s.ID == Joueur.IdObjetIntestinBoeuf || s.ID == Joueur.IdObjetIntestinBoeufNettoye) return 15;
         if (EstIdCharbonRecolte(s.ID)) return 10;
+        if (EstIdQuartzRecolte(s.ID)) return 10;
+        if (EstIdEtainRecolte(s.ID)) return 10;
         if (ItemPhysique.EstIdRocheMatiere(s.ID) && s.IndexTaille <= 1) return 5;
         return 1;
     }

@@ -1706,6 +1706,38 @@ public partial class Joueur
             item.AddChild(new CollisionShape3D { Shape = new BoxShape3D { Size = new Vector3(0.16f, 0.12f, 0.14f) } });
             corps = item;
         }
+        else if (EstIdQuartzRecolte(id))
+        {
+            var item = new ItemPhysique
+            {
+                ID_Objet = id,
+                IndexChimique = 0,
+                IndexCacheMemoire = 0,
+                Name = "ItemPhysique",
+                ContinuousCd = true
+            };
+            var meshRoot = new Node3D { Name = "MeshInstance3D" };
+            InstancierModeleQuartz(meshRoot, mainActive, 0.22f);
+            item.AddChild(meshRoot);
+            item.AddChild(new CollisionShape3D { Shape = new BoxShape3D { Size = new Vector3(0.14f, 0.14f, 0.14f) } });
+            corps = item;
+        }
+        else if (EstIdEtainRecolte(id))
+        {
+            var item = new ItemPhysique
+            {
+                ID_Objet = id,
+                IndexChimique = 0,
+                IndexCacheMemoire = 0,
+                Name = "ItemPhysique",
+                ContinuousCd = true
+            };
+            var meshRoot = new Node3D { Name = "MeshInstance3D" };
+            InstancierModeleEtain(meshRoot, mainActive, 0.22f);
+            item.AddChild(meshRoot);
+            item.AddChild(new CollisionShape3D { Shape = new BoxShape3D { Size = new Vector3(0.15f, 0.13f, 0.14f) } });
+            corps = item;
+        }
         else if (id == IdObjetSteakCuit)
         {
             var item = new ItemPhysique
@@ -2051,17 +2083,24 @@ public partial class Joueur
             }
             else if (id == 20 || id == 21 || id == IdObjetCeinturePoches || id == IdObjetCeintureSacoches || id == IdObjetPochetteTier0 || id == IdObjetSacTier0 || id == IdObjetCarnetSavoir
                 || id == IdObjetSteakCru || id == IdObjetSteakCuit || id == IdObjetOsBoeuf || id == IdObjetCuirBoeuf || id == IdObjetIntestinBoeuf || id == IdObjetIntestinBoeufNettoye
-                || EstIdCharbonRecolte(id))
+                || EstIdCharbonRecolte(id) || EstIdQuartzRecolte(id) || EstIdEtainRecolte(id))
             {
                 rbPose.PhysicsMaterialOverride = _physMatCorde;
                 rbPose.LinearDampMode = RigidBody3D.DampMode.Replace;
                 rbPose.AngularDampMode = RigidBody3D.DampMode.Replace;
                 rbPose.LinearDamp = 0.32f;
                 rbPose.AngularDamp = 0.95f;
-                if (EstIdCharbonRecolte(id))
+                if (EstIdQuartzRecolte(id))
+                    rbPose.Mass = id == IdObjetQuartzPur ? 0.13f : 0.11f;
+                else if (EstIdEtainRecolte(id))
+                    rbPose.Mass = 0.12f;
+                else if (EstIdCharbonRecolte(id))
                     rbPose.Mass = id == IdObjetCharbonAntracite ? 0.14f : 0.11f;
                 else if (id == IdObjetSteakCru || id == IdObjetSteakCuit || id == IdObjetOsBoeuf || id == IdObjetCuirBoeuf || id == IdObjetIntestinBoeuf || id == IdObjetIntestinBoeufNettoye)
+                {
                     rbPose.Mass = id == IdObjetOsBoeuf ? 0.55f : (id == IdObjetCuirBoeuf ? 0.25f : ((id == IdObjetIntestinBoeuf || id == IdObjetIntestinBoeufNettoye) ? 0.20f : 0.18f));
+                    rbPose.AngularDamp = 1.35f;
+                }
             }
             else if (id == 999)
             {

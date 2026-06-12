@@ -29,6 +29,36 @@ public partial class Monde_Client : Node3D
 		return Gestionnaire_Monde.WorldToChunkCoord(pos, TailleChunk);
 	}
 
+	/// <summary>Chunks XZ réellement prêts (mesh intégré + bonne tranche Y) — pas seulement présents dans le cache.</summary>
+	private HashSet<Vector2I> ConstruireChunksPretPourObservation(Vector3 positionObservation)
+	{
+		var pret = new HashSet<Vector2I>();
+		foreach (var kv in _chunksData)
+		{
+			if (ChunkDisponiblePourObservation(kv.Key, positionObservation))
+				pret.Add(kv.Key);
+		}
+		if (_dimensionReseauActive == (int)DimensionJeu.Abysse)
+		{
+			foreach (var kv in _chunksDataAbysse3D)
+			{
+				var xz = new Vector2I(kv.Key.X, kv.Key.Z);
+				if (ChunkDisponiblePourObservation(xz, positionObservation))
+					pret.Add(xz);
+			}
+		}
+		else if (ModeProfondeurTranchesActif())
+		{
+			foreach (var kv in _chunksDataProfondeur3D)
+			{
+				var xz = new Vector2I(kv.Key.X, kv.Key.Z);
+				if (ChunkDisponiblePourObservation(xz, positionObservation))
+					pret.Add(xz);
+			}
+		}
+		return pret;
+	}
+
 	private void ActualiserVisibiliteEtTriChunks(Vector3 positionObservation)
 	{
 		if (_radarEnCours) return;
@@ -40,13 +70,12 @@ public partial class Monde_Client : Node3D
 		int cjX = chunkCentreRadar.X;
 		int cjZ = chunkCentreRadar.Y;
 		int rayonRadar = RayonRadarPreparationActif();
-		HashSet<Vector2I> chunksCharges = new HashSet<Vector2I>(_chunksData.Keys);
+		HashSet<Vector2I> chunksPret = ConstruireChunksPretPourObservation(positionObservation);
 		List<Vector2I> copieChunksACharger = new List<Vector2I>(_chunksACharger);
 
 		Task.Run(() =>
 		{
 			HashSet<Vector2I> dejaVu = new HashSet<Vector2I>(copieChunksACharger);
-			foreach (var c in chunksCharges) dejaVu.Add(c);
 			int rayonInterieur = Mathf.Max(0, rayonRadar - EpaisseurAnneauRadar);
 			int ajoutes = 0;
 			// Anneaux du centre vers l'extérieur : si le budget d'ajouts est saturé, on garde les cases proches en file.
@@ -62,7 +91,8 @@ public partial class Monde_Client : Node3D
 						int adz = Mathf.Abs(dz);
 						Vector2I coord = new Vector2I(cjX + dx, cjZ + dz);
 						bool dansCoeur = adx < rayonInterieur && adz < rayonInterieur;
-						if (dansCoeur && dejaVu.Contains(coord))
+						// Ne pas ignorer un chunk « en cache » mais sans mesh / mauvaise tranche Y (trous aux frontières).
+						if (dansCoeur && chunksPret.Contains(coord))
 							continue;
 						if (dejaVu.Add(coord))
 						{
@@ -94,24 +124,45 @@ public partial class Monde_Client : Node3D
 	private void AppliquerNouveauTriRadar(List<Vector2I> nouvelleListeTriee)
 	{
 		ulong debutApplyRadarUs = ActiverProfilagePerfMondeClient ? PerfBudgetMonitor.Begin() : 0UL;
-		if (nouvelleListeTriee == null || nouvelleListeTriee.Count == 0)
+		Vector3 obs = ObtenirPositionObservation();
+		float ox = obs.X / TailleChunk, oz = obs.Z / TailleChunk;
+		var fusion = new List<Vector2I>();
+		var vus = new HashSet<Vector2I>();
+		// Conserver en tête les coordonnées encore manquantes (le rebuild radar ne doit pas les effacer).
+		for (int i = 0; i < _chunksACharger.Count; i++)
 		{
-			_chunksACharger.Clear();
-			_radarEnCours = false;
-			if (ActiverProfilagePerfMondeClient)
-				PerfBudgetMonitor.End("MondeClient/RadarApply", debutApplyRadarUs);
-			return;
+			Vector2I c = _chunksACharger[i];
+			if (ChunkDisponiblePourObservation(c, obs) || !vus.Add(c))
+				continue;
+			fusion.Add(c);
 		}
-		int rayonRadar = RayonRadarPreparationActif();
-		int cap = ModeProfondeurTranchesActif()
-			? Mathf.Clamp((2 * rayonRadar + 1) * (2 * rayonRadar + 1), 64, 2048)
-			: Mathf.Clamp((2 * rayonRadar + 1) * (2 * rayonRadar + 1), 256, 65536);
-		int n = Mathf.Min(cap, nouvelleListeTriee.Count);
+		if (nouvelleListeTriee != null && nouvelleListeTriee.Count > 0)
+		{
+			int rayonRadar = RayonRadarPreparationActif();
+			int cap = ModeProfondeurTranchesActif()
+				? Mathf.Clamp((2 * rayonRadar + 1) * (2 * rayonRadar + 1), 64, 2048)
+				: Mathf.Clamp((2 * rayonRadar + 1) * (2 * rayonRadar + 1), 256, 65536);
+			int n = Mathf.Min(cap, nouvelleListeTriee.Count);
+			for (int i = 0; i < n; i++)
+			{
+				Vector2I c = nouvelleListeTriee[i];
+				if (vus.Add(c))
+					fusion.Add(c);
+			}
+		}
+		if (fusion.Count > 1)
+		{
+			fusion.Sort((a, b) =>
+			{
+				float da = (a.X - ox) * (a.X - ox) + (a.Y - oz) * (a.Y - oz);
+				float db = (b.X - ox) * (b.X - ox) + (b.Y - oz) * (b.Y - oz);
+				return da.CompareTo(db);
+			});
+		}
 		_chunksACharger.Clear();
-		if (_chunksACharger.Capacity < n)
-			_chunksACharger.Capacity = n;
-		for (int i = 0; i < n; i++)
-			_chunksACharger.Add(nouvelleListeTriee[i]);
+		if (_chunksACharger.Capacity < fusion.Count)
+			_chunksACharger.Capacity = fusion.Count;
+		_chunksACharger.AddRange(fusion);
 		_radarEnCours = false;
 		if (ActiverProfilagePerfMondeClient)
 			PerfBudgetMonitor.End("MondeClient/RadarApply", debutApplyRadarUs);

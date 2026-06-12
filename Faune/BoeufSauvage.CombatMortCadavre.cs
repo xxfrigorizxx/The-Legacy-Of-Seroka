@@ -12,9 +12,35 @@ public partial class BoeufSauvage : CharacterBody3D
 		_cadavreLootDistribue = false;
 		_coupsDepecageDagueValides = 0;
 		_tempsMort = float.MaxValue;
+		_horodatageMortUnixSec = Time.GetUnixTimeFromSystem();
 		Velocity = Vector3.Zero;
 		EmitSignal(SignalName.EvolutionEvenement, "mort_faim", 1f, _niveau, _ageSecondes / 3600f);
 		AppliquerAnimationMort();
+	}
+
+	/// <summary>True si le cadavre a dépassé <see cref="DureeCadavreAvantSuppression"/> depuis la mort (temps réel).</summary>
+	public bool EstCadavreExpireParTempsReel()
+	{
+		if (_horodatageMortUnixSec <= 0.0)
+			return false;
+		return Time.GetUnixTimeFromSystem() - _horodatageMortUnixSec >= DureeCadavreAvantSuppression;
+	}
+
+	public static bool EstProfilCadavreExpire(Godot.Collections.Dictionary profil, float dureeCadavreSec)
+	{
+		if (profil == null)
+			return false;
+		if (profil.TryGetValue("cadavre_loot_distribue", out Variant lootV) && lootV.AsBool())
+			return true;
+		int etat = profil.TryGetValue("etat", out Variant etatV) ? etatV.AsInt32() : -1;
+		if (etat != (int)EtatBoeuf.Mort)
+			return false;
+		if (!profil.TryGetValue("cadavre_heure_mort_unix", out Variant hmV))
+			return false;
+		double horodatage = hmV.AsDouble();
+		if (horodatage <= 0.0)
+			return false;
+		return Time.GetUnixTimeFromSystem() - horodatage >= dureeCadavreSec;
 	}
 
 	/// <summary>Pose mort (clip direct uniquement) sans réactiver l'AnimationTree — évite cadavre debout / replay Mort / dépeçage infini.</summary>
@@ -89,11 +115,24 @@ public partial class BoeufSauvage : CharacterBody3D
 	{
 		if (_cadavreLootDistribue)
 			return;
-		if (_cadavreAttendDepecage)
+		if (EstCadavreExpireParTempsReel())
+		{
+			SupprimerCadavreApresExpiration();
 			return;
+		}
 		_tempsMort -= dt;
-		if (_tempsMort <= 0f)
-			QueueFree();
+		if (!_cadavreAttendDepecage && _tempsMort <= 0f)
+			SupprimerCadavreApresExpiration();
+	}
+
+	private void SupprimerCadavreApresExpiration()
+	{
+		if (_cadavreLootDistribue)
+			return;
+		_cadavreLootDistribue = true;
+		_cadavreAttendDepecage = false;
+		_gestionnaireFaune?.NotifierCadavreRetireDeLaPersistance(this);
+		RetirerCadavreDeLaScene();
 	}
 
 	/// <summary>Cadavre encore présent (pas looté).</summary>
@@ -130,7 +169,29 @@ public partial class BoeufSauvage : CharacterBody3D
 		DesactiverAnimationTreePourCadavre();
 		if (_animationPlayer != null && GodotObject.IsInstanceValid(_animationPlayer))
 			_animationPlayer.Stop();
+		_gestionnaireFaune?.NotifierCadavreRetireDeLaPersistance(this);
 		RetirerCadavreDeLaScene();
+	}
+
+	/// <summary>Pose mort figée au dernier frame — rechargement chunk / sauvegarde sans rejouer l'animation.</summary>
+	private void AppliquerPoseCadavreFigee()
+	{
+		if (_cadavreLootDistribue || !IsInsideTree() || IsQueuedForDeletion())
+			return;
+		_animationMortDoitEtreFigee = true;
+		_animationMortFigee = true;
+		_reconfigurationArbreAnimationEnAttente = false;
+		DesactiverAnimationTreePourCadavre();
+		if (string.IsNullOrEmpty(_clipMort) || _animationPlayer == null || !_animationPlayer.HasAnimation(_clipMort))
+			return;
+		ConfigurerClipMortEnOneShot();
+		Animation animMort = _animationPlayer.GetAnimation(_clipMort);
+		double positionFinale = animMort != null && animMort.Length > 0.0
+			? Math.Max(0.0, animMort.Length - 0.001)
+			: 0.0;
+		_animationPlayer.Play(ObtenirStringNameAnimation(_clipMort), -1.0);
+		_animationPlayer.Seek(positionFinale, true);
+		_animationPlayer.Pause();
 	}
 
 	private void RetirerCadavreDeLaScene()

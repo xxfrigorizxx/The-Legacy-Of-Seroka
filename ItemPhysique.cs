@@ -79,6 +79,42 @@ public partial class ItemPhysique : RigidBody3D
 		return Mass <= SeuilMasseObjetLegerKg && ObtenirHauteurApproxObjetMetres() <= SeuilHauteurObjetPetitMetres;
 	}
 
+	/// <summary>Butin au sol en repos : mesh + collision pour le raycast E, mais corps figé « statique » (coût Jolt minimal).</summary>
+	public bool EstEnReposAuSolOptimise { get; private set; }
+	private bool _continuousCdAvantRepos = true;
+
+	/// <summary>Passe en mode décoratif au repos : visible et ramassable, sans simulation dynamique continue.</summary>
+	public void PasserEnReposAuSolOptimise()
+	{
+		if (!GodotObject.IsInstanceValid(this) || EstMeublePoseStatique(ID_Objet))
+			return;
+		_continuousCdAvantRepos = ContinuousCd;
+		LinearVelocity = Vector3.Zero;
+		AngularVelocity = Vector3.Zero;
+		Sleeping = true;
+		Freeze = true;
+		FreezeMode = FreezeModeEnum.Static;
+		ContinuousCd = false;
+		EstEnReposAuSolOptimise = true;
+		ActualiserBoiteOcclusionLocale();
+		GererOccludeurStatiqueObjet(true);
+	}
+
+	/// <summary>Réactive la physique (frappe, poussée joueur, lancer) après un repos optimisé.</summary>
+	public void ReveillerPhysiqueAuSol()
+	{
+		if (!GodotObject.IsInstanceValid(this))
+			return;
+		if (!Freeze && !EstEnReposAuSolOptimise)
+			return;
+		Freeze = false;
+		Sleeping = false;
+		ContinuousCd = _continuousCdAvantRepos;
+		EstEnReposAuSolOptimise = false;
+		GererOccludeurStatiqueObjet(false);
+		ActualiserBoiteOcclusionLocale();
+	}
+
 	private float ObtenirHauteurApproxObjetMetres()
 	{
 		foreach (Node c in GetChildren())
@@ -365,6 +401,9 @@ public partial class ItemPhysique : RigidBody3D
 
 	public override void _Ready()
 	{
+		if (IsInGroup("BlocsPoses"))
+			Callable.From(NotifierEnregistrementOcclusionObjetPose).CallDeferred();
+
 		// CORRECTION CRITIQUE : Chercher dans THIS, pas dans GetParent()
 		MeshInstance3D visuel = null;
 		CollisionShape3D hitbox = null;

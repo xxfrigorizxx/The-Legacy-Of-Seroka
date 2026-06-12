@@ -276,16 +276,19 @@ public partial class Monde_Client : Node3D
 		{
 			if (!EssayerObtenirJoueurDansArbre(out CharacterBody3D joueurRef))
 				return false;
-			return ChunkSousPiedsAPret();
+			if (ChunkSousPiedsAPret())
+				return true;
+			// Reconnexion : mesh visible sous les pieds suffit pour débloquer l'overlay (collision suit ensuite).
+			if (_timerGraceStreamingBootstrap > 0f && ChunkMeshGrilleSousPiedsPret())
+				return CompterBacklog() <= Mathf.Max(SeuilBacklogBootstrapStable, 384);
+			return false;
 		}
 		else if (!ChunkSousPiedsAPret())
 			return false;
-		int seuilBacklog = ModeProfondeurTranchesActif()
-			? Mathf.Max(SeuilBacklogBootstrapStable, 96)
-			: SeuilBacklogBootstrapStable;
+		int seuilBacklog = SeuilBacklogBootstrapStable;
 		// Reconnexion / reload : ne pas bloquer l'overlay indéfiniment si le sol local est prêt.
 		if (_timerGraceStreamingBootstrap > 0f)
-			seuilBacklog = Mathf.Max(seuilBacklog, 256);
+			seuilBacklog = Mathf.Max(seuilBacklog, 384);
 		if (CompterBacklog() > Mathf.Max(0, seuilBacklog))
 			return false;
 		if (ExigerSolidificationVidePourBootstrap
@@ -297,5 +300,7 @@ public partial class Monde_Client : Node3D
 	internal void ActiverGraceBootstrapReconnexion(float dureeSec = 20f)
 	{
 		_timerGraceStreamingBootstrap = Mathf.Max(_timerGraceStreamingBootstrap, Mathf.Max(5f, dureeSec));
+		DemarrerGraceStreamingBootstrapNouveauMonde();
+		PurgerMapsAntiSpamDemandeChunks(ObtenirPositionObservation(), force: true);
 	}
 }

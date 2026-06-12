@@ -89,7 +89,7 @@ public partial class Joueur
         else if (id == 21) return null; // GLB res://Modeles/materials/tissu_tier0.glb via InstancierModeleTissuTier0
         else if (id == IdObjetSacTier0) return null; // GLB res://Modeles/Equipable/Sac_Tiere0.glb via InstancierModeleSacTier0
         else if (id == IdObjetCarnetSavoir) return null; // modèle procédural via InstancierModeleCarnetSavoir
-        else if (id == IdObjetSteakCru || id == IdObjetSteakCuit || id == IdObjetOsBoeuf || id == IdObjetCuirBoeuf || id == IdObjetIntestinBoeuf || id == IdObjetIntestinBoeufNettoye || EstIdCharbonRecolte(id)) return null; // GLB via InstancierModele* dans ModelInstantiationService
+        else if (id == IdObjetSteakCru || id == IdObjetSteakCuit || id == IdObjetOsBoeuf || id == IdObjetCuirBoeuf || id == IdObjetIntestinBoeuf || id == IdObjetIntestinBoeufNettoye || EstIdCharbonRecolte(id) || EstIdQuartzRecolte(id) || EstIdEtainRecolte(id)) return null; // GLB via InstancierModele* dans ModelInstantiationService
         else if (id == IdObjetCeinturePoches || id == IdObjetCeintureSacoches) return null; // GLB ceinture / ceinture+pochettes via instanciation dÃ©diÃ©e
         else if (id == IdObjetPochetteTier0) return null; // GLB res://Modeles/materials/Pochette_Tiere0.glb via InstancierModelePochetteTier0
         else if (id == IdObjetPellePierreTier0) return null; // GLB res://Modeles/Equipements/Pelle_Pierre_tier0.glb via InstancierModeleArme

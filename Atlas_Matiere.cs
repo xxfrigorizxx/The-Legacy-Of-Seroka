@@ -124,6 +124,20 @@ public static partial class Atlas_Matiere
         }
     }
 
+    /// <summary>Bûche (30) au plus court par coupes transversales : standard → demi → rondin, cylindre entier — bol en bois.</summary>
+    public static bool EstBucheRondinCourtPourBolBois(in SlotInventaire s) =>
+        !s.EstVide
+        && s.ID == 30
+        && !s.EstUnEclat
+        && s.IndexTaille == 3
+        && s.IndexMorphologique == 0;
 
+    /// <summary>Rondin court puis fendu en 8 (coupe longitudinale ×3) — maillet / pilon en bois.</summary>
+    public static bool EstBucheRondinFendueEn8PourMaillet(in SlotInventaire s) =>
+        !s.EstVide
+        && s.ID == 30
+        && !s.EstUnEclat
+        && s.IndexTaille == 3
+        && s.IndexMorphologique == 3;
 
 }

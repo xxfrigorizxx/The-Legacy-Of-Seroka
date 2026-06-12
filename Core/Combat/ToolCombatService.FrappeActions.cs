@@ -150,6 +150,13 @@ public partial class Joueur
             0.76f,
             0.88f);
         intensiteRigid *= multiplicateurDegatsBras;
+        if (rbCible is ItemPhysique ipCible && (ipCible.Freeze || ipCible.EstEnReposAuSolOptimise))
+            ipCible.ReveillerPhysiqueAuSol();
+        else if (rbCible.Freeze)
+        {
+            rbCible.Freeze = false;
+            rbCible.Sleeping = false;
+        }
         rbCible.ApplyCentralImpulse(dirFrappeObj.Normalized() * Mathf.Clamp(intensiteRigid * 0.16f, 0.35f, 4.6f));
 
         var item = rbCible as ItemPhysique ?? rbCible.GetNodeOrNull<ItemPhysique>("ItemPhysique");
@@ -378,24 +385,34 @@ public partial class Joueur
             ScaleEclat = new Vector3(1, 1, scaleZ)
         };
 
-        CalculerDimensionsBoisPose(30, 0, 0, out float rayonTroncSpawn, out _, out _, out _);
-        Vector3 refSpawn = rbCible.GlobalPosition;
-        Vector3 posTronc = CalculerPointAuDessusSol(refSpawn, Mathf.Clamp(rayonTroncSpawn * 0.35f, 0.12f, 0.38f));
+        CalculerDimensionsBoisPose(30, 0, 0, out float rayonTroncSpawn, out float longueurBaseTronc, out _, out _);
+        float longueurTroncMetres = longueurBaseTronc * scaleZ;
+        float clearanceSol = Mathf.Max(rayonTroncSpawn * 0.9f, 0.28f);
+        Vector3 anchor = pointImpact;
+        if (anchor.DistanceSquaredTo(rbCible.GlobalPosition) > 9f)
+            anchor = rbCible.GlobalPosition.Lerp(pointImpact, 0.55f);
+        float lift = Mathf.Clamp(longueurTroncMetres * 0.18f, 0.55f, 1.8f);
+        Vector3 posTronc = CalculerPointAuDessusSol(anchor + Vector3.Up * lift, clearanceSol);
         Node3D leTronc = CreerBlocPose(posTronc, slotTroncLong);
         if (leTronc != null)
         {
             leTronc.GlobalRotation = rbCible.GlobalRotation;
-            leTronc.GlobalPosition = refSpawn;
+            leTronc.GlobalPosition = posTronc;
             if (leTronc is RigidBody3D rbTronc)
             {
+                // Arbre couché : le centre du cadavre est au niveau du sol — relever la bûche pour qu'elle ne traverse pas l'établi / le terrain.
+                Vector3 axeLongueur = rbTronc.GlobalTransform.Basis.Z.Normalized();
+                if (1f - Mathf.Abs(axeLongueur.Dot(Vector3.Up)) > 0.6f)
+                    rbTronc.GlobalPosition += Vector3.Up * clearanceSol;
+                rbTronc.GlobalPosition = CalculerPointAuDessusSol(rbTronc.GlobalPosition, clearanceSol);
                 // Bûche de cadavre : objet lâché, pas un bloc posé figé dans les airs.
                 rbTronc.RemoveFromGroup("BlocsPoses");
                 rbTronc.Freeze = false;
                 rbTronc.GravityScale = 1f;
                 rbTronc.Sleeping = false;
                 Vector3 impulsion = directionFrappe.LengthSquared() > 1e-6f
-                    ? directionFrappe.Normalized() * 2.4f + Vector3.Down * 1.8f
-                    : Vector3.Down * 3.2f;
+                    ? directionFrappe.Normalized() * 1.6f + Vector3.Up * 1.0f
+                    : Vector3.Up * 1.2f;
                 rbTronc.ApplyCentralImpulse(impulsion);
             }
         }

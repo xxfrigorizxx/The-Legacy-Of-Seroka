@@ -54,12 +54,122 @@ public partial class Monde_Client : Node3D
 		return unchecked((ulong)(uint)hc.ToHashCode());
 	}
 
+	private const int PlafondEntreesAntiSpamDemandeChunk = 6000;
+
+	/// <summary>XZ : conserver tout chunk dans RenderDistance ; éviction seulement au-delà + marge (évite reload en boucle).</summary>
+	private void CalculerSeuilsEvictionChunksXZ(int rayonDetail, out float distConservationCarree, out float distEvictionCarree)
+	{
+		distConservationCarree = rayonDetail * (float)rayonDetail;
+		int marge = ModeSurvieFpsAgressif || rayonDetail < RayonDormancePhysique
+			? Mathf.Clamp(MargePreloadChunks, 2, Mathf.Max(2, rayonDetail + 1))
+			: Mathf.Max(4, MargePreloadChunks);
+		int rayonEvict = rayonDetail + marge;
+		distEvictionCarree = rayonEvict * (float)rayonEvict;
+	}
+
+	private bool PeutRedemanderCoucheChunk(Vector3I cle, Vector2I coordXZ, Vector3 obs, bool urgent)
+	{
+		if (urgent)
+		{
+			if (!_demandesChunkTempsDerniereEmission.TryGetValue(cle, out double tUrgent))
+				return true;
+			return (Time.GetTicksMsec() / 1000.0 - tUrgent) >= IntervalleRedemandeChunkUrgentSec;
+		}
+		ulong frame = Engine.GetProcessFrames();
+		if (_demandesProfondeurFrameDerniereEmission.TryGetValue(cle, out ulong derniereFrame)
+			&& frame - derniereFrame < 4UL)
+			return false;
+		if (_demandesAbysseFrameDerniereEmission.TryGetValue(cle, out ulong derniereFrameAbysse)
+			&& frame - derniereFrameAbysse < 4UL)
+			return false;
+		if (!_demandesChunkTempsDerniereEmission.TryGetValue(cle, out double t0))
+			return true;
+		double ecoule = Time.GetTicksMsec() / 1000.0 - t0;
+		int rayonDetail = RayonChargementChunksActif();
+		float dist2 = DistanceCarreeAuJoueur(coordXZ, obs);
+		if (dist2 <= rayonDetail * rayonDetail)
+			return ecoule >= IntervalleRedemandeChunkProcheSec;
+		int dormance = RayonDormancePhysique + 2;
+		if (dist2 <= dormance * dormance)
+			return ecoule >= IntervalleRedemandeChunkDormanceSec;
+		return ecoule >= IntervalleRedemandeChunkLointainSec;
+	}
+
+	private void EnregistrerEmissionDemandeCoucheChunk(Vector3I cle)
+	{
+		_demandesProfondeurFrameDerniereEmission[cle] = Engine.GetProcessFrames();
+		_demandesAbysseFrameDerniereEmission[cle] = Engine.GetProcessFrames();
+		_demandesChunkTempsDerniereEmission[cle] = Time.GetTicksMsec() / 1000.0;
+	}
+
+	private void RetirerAntiSpamDemandeCoucheChunk(Vector3I cle)
+	{
+		_demandesProfondeurFrameDerniereEmission.Remove(cle);
+		_demandesAbysseFrameDerniereEmission.Remove(cle);
+		_demandesChunkTempsDerniereEmission.Remove(cle);
+	}
+
+	/// <summary>Évite que les dictionnaires anti-spam grossissent sans borne (ralentit DemanderChunk au fil des heures).</summary>
+	private void PurgerMapsAntiSpamDemandeChunks(Vector3 positionObservation, bool force = false)
+	{
+		ulong frame = Engine.GetProcessFrames();
+		Vector2I obs = Gestionnaire_Monde.WorldToChunkCoord(positionObservation, TailleChunk);
+		int coordYObs = CoordYDepuisMondeY((int)Mathf.Floor(positionObservation.Y));
+		int rayonGarder = ModeSurvieFpsAgressif || RayonChargementChunksActif() < RayonDormancePhysique
+			? RayonChargementChunksActif() + 2
+			: Mathf.Max(RayonDormancePhysique + 2, _rayonRequetesActuel + 4);
+		float gardeCarre = rayonGarder * rayonGarder;
+		bool tropPlein = _demandesProfondeurFrameDerniereEmission.Count > PlafondEntreesAntiSpamDemandeChunk
+			|| _demandesAbysseFrameDerniereEmission.Count > PlafondEntreesAntiSpamDemandeChunk;
+		if (!force && !tropPlein && frame % 90UL != 0UL)
+			return;
+
+		_clesDemandesProfondeurExpireesTemp.Clear();
+		foreach (var kv in _demandesProfondeurFrameDerniereEmission)
+		{
+			bool expire = frame - kv.Value > 240UL;
+			int dx = kv.Key.X - obs.X;
+			int dz = kv.Key.Z - obs.Y;
+			float dist2 = dx * dx + dz * dz;
+			int dy = Mathf.Abs(kv.Key.Y - coordYObs);
+			if (expire || dist2 > gardeCarre + 16f || dy > DemiFenetreTranchesStreamingActif() + 1 || tropPlein)
+				_clesDemandesProfondeurExpireesTemp.Add(kv.Key);
+		}
+		for (int i = 0; i < _clesDemandesProfondeurExpireesTemp.Count; i++)
+		{
+			Vector3I cle = _clesDemandesProfondeurExpireesTemp[i];
+			_demandesProfondeurFrameDerniereEmission.Remove(cle);
+			_demandesChunkTempsDerniereEmission.Remove(cle);
+		}
+
+		_clesDemandesAbysseExpireesTemp.Clear();
+		foreach (var kv in _demandesAbysseFrameDerniereEmission)
+		{
+			bool expire = frame - kv.Value > 240UL;
+			int dx = kv.Key.X - obs.X;
+			int dz = kv.Key.Z - obs.Y;
+			float dist2 = dx * dx + dz * dz;
+			if (expire || dist2 > gardeCarre + 16f || tropPlein)
+				_clesDemandesAbysseExpireesTemp.Add(kv.Key);
+		}
+		for (int i = 0; i < _clesDemandesAbysseExpireesTemp.Count; i++)
+		{
+			Vector3I cle = _clesDemandesAbysseExpireesTemp[i];
+			_demandesAbysseFrameDerniereEmission.Remove(cle);
+			_demandesChunkTempsDerniereEmission.Remove(cle);
+		}
+	}
+
 	/// <summary>Évite que les files de streaming grossissent sans borne pendant une longue marche (lag croissant).</summary>
 	private void EpurerBacklogsChunkLointains(Vector3 positionObservation)
 	{
 		Vector2I obs = Gestionnaire_Monde.WorldToChunkCoord(positionObservation, TailleChunk);
-		int rayonGarder = Mathf.Max(RayonDormancePhysique + 1, _rayonRequetesActuel + 3);
+		int rayonGarder = ModeSurvieFpsAgressif || RayonChargementChunksActif() < RayonDormancePhysique
+			? RayonChargementChunksActif() + 1
+			: Mathf.Max(RayonDormancePhysique + 1, _rayonRequetesActuel + 3);
 		float gardeCarre = rayonGarder * rayonGarder;
+
+		PurgerMapsAntiSpamDemandeChunks(positionObservation);
 
 		lock (_lockFileAttenteMaths)
 		{
@@ -81,6 +191,12 @@ public partial class Monde_Client : Node3D
 					break;
 				_fileAttenteMathsData.RemoveAt(pire);
 			}
+		}
+
+		int surplusIntegration = _fileIntegrationMainThread.Count - MaxFileIntegrationEnAttente;
+		for (int i = 0; i < surplusIntegration && _fileIntegrationMainThread.TryDequeue(out _); i++)
+		{
+			// Intégrations lointaines abandonnées : le radar les remettra en file si nécessaire.
 		}
 	}
 
@@ -141,7 +257,7 @@ public partial class Monde_Client : Node3D
 	{
 		if (rayonDetail <= 0)
 			return 0;
-		int minAbsolu = Mathf.Min(rayonDetail, Mathf.Max(1, RayonDormancePhysique + 1));
+		int minAbsolu = Mathf.Min(rayonDetail, ObtenirRayonMinRequetesReseau());
 		float frac = niveauUrgence >= 3
 			? Mathf.Clamp(FractionRayonMaxUrgenceExtreme, 0.15f, 0.95f)
 			: niveauUrgence >= 2
@@ -159,7 +275,7 @@ public partial class Monde_Client : Node3D
 		if (_timerGraceStreamingReglageUtilisateur > 0f)
 			_timerGraceStreamingReglageUtilisateur = Mathf.Max(0f, _timerGraceStreamingReglageUtilisateur - dt);
 		int rayonDetail = RayonChargementChunksActif();
-		int minRayonRequetes = Mathf.Max(RayonDormancePhysique + 1, RayonInitialRequetesChunks);
+		int minRayonRequetes = ObtenirRayonMinRequetesReseau();
 		// Plafond valide pour Clamp : si RenderDistance est basse, rayonDetail peut être < RayonInitialRequetesChunks.
 		int plafondFenetreRequetes = Mathf.Max(minRayonRequetes, rayonDetail);
 		int backlog = CompterBacklog();
@@ -187,7 +303,7 @@ public partial class Monde_Client : Node3D
 		_timerProgressionForceeRayon -= dt;
 		if (backlog >= SeuilBacklogHaut)
 		{
-			_rayonRequetesActuel = Mathf.Max(Mathf.Max(RayonDormancePhysique + 1, RayonInitialRequetesChunks), _rayonRequetesActuel - 1);
+			_rayonRequetesActuel = Mathf.Max(ObtenirRayonMinRequetesReseau(), _rayonRequetesActuel - 1);
 			_timerExpansionRequetes = Mathf.Max(0.1f, IntervalleExpansionRequetesSec * 0.6f);
 		}
 		else if (_timerExpansionRequetes <= 0f && backlog <= SeuilBacklogBas)
@@ -311,7 +427,16 @@ public partial class Monde_Client : Node3D
 			return coord.Y == CoordYStageAbysseDepuisYMonde(joueurRef.GlobalPosition.Y);
 		if (ModeProfondeurTranchesActif())
 			return Mathf.Abs(coord.Y - CoordYDepuisMondeY((int)Mathf.Floor(joueurRef.GlobalPosition.Y))) <= 1;
-		return coord.X == cJoueur.X && coord.Z == cJoueur.Y;
+		// Déjà dans le carré ±1 XZ : voisins de bordure minés doivent remesher tout de suite (pas file arrière-plan).
+		return true;
+	}
+
+	/// <summary>Garde anti-remesh « vide » accidentel — ne doit pas bloquer un vrai creusement (moins de sommets).</summary>
+	private static bool DoitRejeterRemeshSommetsTropFaible(bool modificationMinageActive, int sommetsCache, int totalSommets)
+	{
+		if (modificationMinageActive || totalSommets < sommetsCache)
+			return false;
+		return sommetsCache >= 512 && totalSommets < sommetsCache / 4;
 	}
 
 	/// <summary>Marching cubes remesh hors thread principal (intégration GPU reste sur la frame suivante).</summary>
@@ -363,7 +488,7 @@ public partial class Monde_Client : Node3D
 						if (p?.SommetsVisuels != null)
 							sommetsCache += p.SommetsVisuels.Length;
 				}
-				if (sommetsCache >= 512 && totalSommets < sommetsCache / 4)
+				if (DoitRejeterRemeshSommetsTropFaible(mondeRef._modificationEnCours, sommetsCache, totalSommets))
 					return;
 				int coutVertices = totalSommets;
 				enqueueIntegration(() =>
@@ -421,7 +546,7 @@ public partial class Monde_Client : Node3D
 				if (p?.SommetsVisuels != null)
 					sommetsCache += p.SommetsVisuels.Length;
 		}
-		if (sommetsCache >= 512 && totalSommets < sommetsCache / 4)
+		if (DoitRejeterRemeshSommetsTropFaible(_modificationEnCours, sommetsCache, totalSommets))
 			return;
 		IntegrerChunkDataRIDs(data, payloads, recoudreVoisinsVertical: false);
 		RestaurerCollisionImmediateSiSousJoueur(data);
@@ -544,8 +669,7 @@ public partial class Monde_Client : Node3D
 	private void NettoyerChunksObsoles(Vector3 positionObservation)
 	{
 		int rayonDetail = RayonChargementChunksActif();
-		// Seuil unique : libère la mémoire de façon homogène (l’ancien écart avant/arrière gardait trop longtemps l’arc avant).
-		float seuilEvictionCarree = (rayonDetail + 2) * (rayonDetail + 2);
+		CalculerSeuilsEvictionChunksXZ(rayonDetail, out float distConservationCarree, out float distEvictionCarree);
 		if (_dimensionReseauActive == (int)DimensionJeu.Abysse)
 		{
 			// IMPORTANT : en Abysse, le lifecycle est piloté par la map 3D.
@@ -568,9 +692,13 @@ public partial class Monde_Client : Node3D
 				int dx = kv.Key.X - obs2D.X;
 				int dz = kv.Key.Z - obs2D.Y;
 				float dist2 = dx * dx + dz * dz;
+				if (dist2 <= distConservationCarree)
+					continue;
 				int dy = Mathf.Abs(kv.Key.Y - coordYCourant);
 				int demiFenetre = DemiFenetreTranchesStreamingActif();
-				if (dist2 > seuilEvictionCarree || dy > demiFenetre)
+				bool horsXZ = dist2 > distEvictionCarree;
+				bool horsY = dy > demiFenetre + 1;
+				if (horsXZ || horsY)
 					clesProfondesARetirer.Add(kv.Key);
 			}
 			for (int i = 0; i < clesProfondesARetirer.Count; i++)
@@ -579,6 +707,7 @@ public partial class Monde_Client : Node3D
 				if (!_chunksDataProfondeur3D.TryGetValue(cle, out var data) || data == null)
 					continue;
 				_chunksDataProfondeur3D.Remove(cle);
+				RetirerAntiSpamDemandeCoucheChunk(cle);
 				RetirerDeFileSolidification(data);
 				_setSolidificationUrgente.Remove(data);
 				Vector3I cleFlore = CleFlorePourChunkData(data);
@@ -594,7 +723,9 @@ public partial class Monde_Client : Node3D
 		foreach (var kv in _chunksData)
 		{
 			float dist2 = DistanceCarreeAuJoueur(kv.Key, positionObservation);
-			if (dist2 > seuilEvictionCarree)
+			if (dist2 <= distConservationCarree)
+				continue;
+			if (dist2 > distEvictionCarree)
 				_chunksATuerTemp.Add(kv.Key);
 		}
 		foreach (Vector2I coord in _chunksATuerTemp)
@@ -602,6 +733,7 @@ public partial class Monde_Client : Node3D
 			if (_chunksData.TryGetValue(coord, out var data))
 			{
 				_chunksData.Remove(coord);
+				RetirerAntiSpamDemandeCoucheChunk(new Vector3I(coord.X, data.CoordChunkY, coord.Y));
 				RetirerDeFileSolidification(data);
 				_setSolidificationUrgente.Remove(data);
 				Vector3I cleFlore = CleFlorePourChunkData(data);

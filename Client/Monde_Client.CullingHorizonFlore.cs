@@ -188,34 +188,37 @@ public partial class Monde_Client : Node3D
 	/// <summary>Applique la visibilité culling terrain/eau/flore. Si passage à visible, peut ré-enfiler la flore (densité vue de près).</summary>
 	private void AppliquerVisibiliteCullingSurChunk(ChunkData data, bool visible, Vector3 positionObservation, bool replanifierFloreSiVisible)
 	{
-		if (data == null || data.CullingVisible == visible) return;
-		bool etaitVisible = data.CullingVisible;
+		if (data == null || data.CullingVisible == visible)
+			return;
 		data.CullingVisible = visible;
-		if (data.VisualInstanceRID.IsValid)
-			RenderingServer.Singleton.InstanceSetVisible(data.VisualInstanceRID, visible);
-		if (data.WaterInstanceRID.IsValid)
-			RenderingServer.Singleton.InstanceSetVisible(data.WaterInstanceRID, visible);
-		if (data._nodeFlore is Node3D flore && flore.Visible != visible)
-			flore.Visible = visible;
-		if (replanifierFloreSiVisible && visible && !etaitVisible && data.InventaireFlore != null && data.InventaireFlore.Count > 0)
-		{
-			if (data._nodeFlore is Node3D floreVisible && GodotObject.IsInstanceValid(floreVisible))
-				Chunk_Client.MettreAJourFlorePourChunkData(data, positionObservation, floreVisible);
-			else
-				EnfilerFloreChunk(data, positionObservation);
-		}
+		AppliquerVisibiliteRenduFinaleChunk(data, positionObservation, replanifierFloreSiVisible);
 	}
 
 	/// <summary>Remet tout le terrain déjà chargé en visible (anti-trous après changement d’options / désactivation « Sauver les FPS »).</summary>
 	private void ReinitialiserVisibiliteCullingTousLesChunksCharges(Vector3 positionObservation)
 	{
-		foreach (var kv in _chunksData)
+		void Reinit(ChunkData data)
 		{
-			ChunkData data = kv.Value;
-			if (data == null) continue;
+			if (data == null) return;
+			data.OcclusionVisible = true;
 			AppliquerVisibiliteCullingSurChunk(data, true, positionObservation, replanifierFloreSiVisible: false);
 		}
+		foreach (var kv in _chunksData)
+			Reinit(kv.Value);
+		foreach (var kv in _chunksDataProfondeur3D)
+			Reinit(kv.Value);
+		foreach (var kv in _chunksDataAbysse3D)
+			Reinit(kv.Value);
 		_timerCullingCamera = 0f;
+		_timerOcclusion = 0f;
+		for (int i = 0; i < _objetsPosesOcclusion.Count; i++)
+		{
+			ItemPhysique item = _objetsPosesOcclusion[i];
+			if (!EstObjetPoseOcclusionValide(item))
+				continue;
+			item.OcclusionVisible = true;
+			item.AppliquerVisibiliteRenduObjetPose();
+		}
 	}
 
 	/// <summary>Rétablit la visibilité dans un disque autour du point d’observation (marge + dormance) après rotation caméra.</summary>
@@ -360,7 +363,7 @@ public partial class Monde_Client : Node3D
 		if (data._nodeFlore is Node3D existant && GodotObject.IsInstanceValid(existant))
 		{
 			Chunk_Client.MettreAJourFlorePourChunkData(data, positionObservation, existant);
-			existant.Visible = data.CullingVisible;
+			existant.Visible = data.CullingVisible && data.OcclusionVisible;
 			RetirerFloreDiffereePourChunk(data);
 			return;
 		}
@@ -390,7 +393,7 @@ public partial class Monde_Client : Node3D
 		}
 		var node = Chunk_Client.CreerNoeudFlorePourChunkData(data, positionObservation, TailleChunk);
 		if (node == null) return;
-		node.Visible = data.CullingVisible;
+		node.Visible = data.CullingVisible && data.OcclusionVisible;
 		AddChild(node);
 		data._nodeFlore = node;
 	}

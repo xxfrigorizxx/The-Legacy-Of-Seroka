@@ -50,7 +50,8 @@ public partial class BoeufSauvage : CharacterBody3D
 	[Export(PropertyHint.Range, "2,40,0.5")] public float RayonRechercheHerbeVisible = 14f;
 	[Export(PropertyHint.Range, "4,64,1")] public int EssaisRechercheHerbe = 20;
 	[Export(PropertyHint.Range, "0.1,2,0.05")] public float DureeImmobilePendantMorsure = 0.6f;
-	[Export] public float DureeCadavreAvantSuppression = 18f;
+	/// <summary>Durée réelle (secondes) avant disparition d'un cadavre non dépecé — 24 h par défaut, compte hors ligne.</summary>
+	[Export] public float DureeCadavreAvantSuppression = 86400f;
 	[Export] public float ForceBase = 10f;
 	[Export] public float ConstitutionBase = 10f;
 	[Export] public float VitesseBase = 10f;
@@ -292,6 +293,8 @@ public partial class BoeufSauvage : CharacterBody3D
 	private float _vieCourante = 50f;
 	private float _vieMaxActuelle = 50f;
 	private float _tempsMort;
+	/// <summary>Horodatage Unix (s) au moment de la mort — persistance du délai 24 h hors ligne.</summary>
+	private double _horodatageMortUnixSec;
 	/// <summary>Cadavre : attend <see cref="CoupsDagueRequisPourFinDepecage"/> coups de dague avant disparition ; pas de décompte timer tant que vrai.</summary>
 	private bool _cadavreAttendDepecage;
 	/// <summary>True après distribution du loot (QueueFree côté joueur ou filet).</summary>

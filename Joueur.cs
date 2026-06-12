@@ -224,10 +224,20 @@ public partial class Joueur : CharacterBody3D
     public const int IdObjetMouleCeramique = 162;
     /// <summary>Chamotte — céramique sur-cuite (échec four argile trop chaud).</summary>
     public const int IdObjetChamotte = 163;
+    /// <summary>Morceau de quartz miné (drop ~90 % du voxel 19).</summary>
+    public const int IdObjetQuartz = 164;
+    /// <summary>Quartz pur — variante rare (~10 % du voxel 19).</summary>
+    public const int IdObjetQuartzPur = 165;
+    /// <summary>Morceau de minerai d'étain miné (drop du voxel 37).</summary>
+    public const int IdObjetEtain = 166;
     /// <summary>Taille monde du four posé au sol (plus grande dimension du mesh normalisé).</summary>
     public const float TailleFourTorchiePoseMetres = 3.0f;
     /// <summary>Incrémenter pour régénérer texture / réinstancier les modèles torchie (GLB sans UVs).</summary>
     public const int RevisionRenduTorchie = 4;
+    /// <summary>Incrémenter après changement shader/textures quartz miné.</summary>
+    public const int RevisionRenduQuartz = 2;
+    /// <summary>Incrémenter après changement texture/matériau étain miné.</summary>
+    public const int RevisionRenduEtain = 1;
 
     public static bool EstIdCharbonRecolte(int id) =>
         id == IdObjetCharbonBasseQualite
@@ -235,8 +245,15 @@ public partial class Joueur : CharacterBody3D
         || id == IdObjetCharbonBonneQualite
         || id == IdObjetCharbonAntracite;
 
+    public static bool EstIdQuartzRecolte(int id) =>
+        id == IdObjetQuartz || id == IdObjetQuartzPur;
+
+    public static bool EstIdEtainRecolte(int id) => id == IdObjetEtain;
+
     private const int SeuilHauteurMontagneCharbonRecolte = 150;
     private const int IdVoxelMineraiCharbon = 10;
+    private const int IdVoxelMineraiQuartz = 19;
+    private const int IdVoxelMineraiEtain = 37;
 
     /// <summary>Loot charbon miné (voxel 10) selon Y monde et biome montagne (aligné filons serveur).</summary>
     public static int ObtenirIdObjetCharbonRecolteDepuisPositionMonde(Vector3 positionMonde, int seedTerrain)
@@ -261,6 +278,16 @@ public partial class Joueur : CharacterBody3D
         return IdObjetCharbonBasseQualite;
     }
 
+    /// <summary>Loot quartz miné (voxel 19) : ~90 % quartz, ~10 % quartz pur (déterministe par position).</summary>
+    public static int ObtenirIdObjetQuartzRecolteDepuisPositionMonde(Vector3 positionMonde, int seedTerrain)
+    {
+        int gx = Mathf.FloorToInt(positionMonde.X);
+        int gy = Mathf.FloorToInt(positionMonde.Y);
+        int gz = Mathf.FloorToInt(positionMonde.Z);
+        float r = RandDeterministeUnitaireCharbon(gx, gy, gz, seedTerrain ^ 0x51A7C919);
+        return r < 0.10f ? IdObjetQuartzPur : IdObjetQuartz;
+    }
+
     public static SlotInventaire ConstruireSlotLootMineraiVoxel(int idVoxelMinerai, Vector3 positionMonde, int seedTerrain)
     {
         if (idVoxelMinerai == IdVoxelMineraiCharbon)
@@ -268,6 +295,22 @@ public partial class Joueur : CharacterBody3D
             return new SlotInventaire
             {
                 ID = ObtenirIdObjetCharbonRecolteDepuisPositionMonde(positionMonde, seedTerrain),
+                Quantite = 1
+            };
+        }
+        if (idVoxelMinerai == IdVoxelMineraiQuartz)
+        {
+            return new SlotInventaire
+            {
+                ID = ObtenirIdObjetQuartzRecolteDepuisPositionMonde(positionMonde, seedTerrain),
+                Quantite = 1
+            };
+        }
+        if (idVoxelMinerai == IdVoxelMineraiEtain)
+        {
+            return new SlotInventaire
+            {
+                ID = IdObjetEtain,
                 Quantite = 1
             };
         }
@@ -293,9 +336,9 @@ public partial class Joueur : CharacterBody3D
     public const float PlancherEmpriseMetres = 4.1f;
     /// <summary>Épaisseur des planchers bois / roche.</summary>
     public const float PlancherEpaisseurMetres = 0.08f;
-    /// <summary>Maillet en bois (outil simple, craft établi avec mini morceau de bûche).</summary>
+    /// <summary>Maillet / pilon en bois (établi 3×3 : rondin court fendu en 8).</summary>
     public const int IdObjetMailletBois = 128;
-    /// <summary>Bol en bois (artisanat établi, sculpté avec dague).</summary>
+    /// <summary>Bol en bois (établi 3×3 : bûche la plus courte + dague pour sculpter).</summary>
     public const int IdObjetBolBois = 129;
     /// <summary>Mortier avec pilon (assemblage bol + pilon, essences séparées par mesh).</summary>
     public const int IdObjetMortierPilonBois = 130;

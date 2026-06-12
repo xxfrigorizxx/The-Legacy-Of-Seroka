@@ -162,6 +162,7 @@ public partial class Gestionnaire_Monde : Node3D
 	private Vector3 _spawnInitialEnAttente;
 	private bool _spawnDoitEtreAligneAuSol;
 	private bool _spawnAligneAuSol;
+	private bool _spawnConserverHauteurSauvegardee;
 	private bool _ajusterPiedsJoueurSurSurfaceApresRestauration;
 	/// <summary>Phase A (inventaire, progression, carnet) déjà restaurée depuis le disque.</summary>
 	private bool _restaurationPersistantPhaseJoueurFaite;
@@ -566,6 +567,8 @@ public partial class Gestionnaire_Monde : Node3D
 					ipFigé.FreezeMode = RigidBody3D.FreezeModeEnum.Static;
 					ipFigé.Sleeping = true;
 				}
+				else if (rb is ItemPhysique ipRepos)
+					ipRepos.PasserEnReposAuSolOptimise();
 				else
 				{
 					rb.Freeze = false;
@@ -832,6 +835,19 @@ public partial class Gestionnaire_Monde : Node3D
 		return pos;
 	}
 
+	/// <summary>True si le Y est sous la surface procédurale (grotte, base creusée juste sous la terre).</summary>
+	private bool EstPositionProbablementSousSurface(Vector3 pos)
+	{
+		int hauteurTerrain = _dimensionLocaleActive == (int)DimensionJeu.Abysse
+			? ApisaraHauteurTerrain.ObtenirHauteurSolMonde((int)pos.X, (int)pos.Z, SeedTerrain)
+			: Generateur_Voxel.ObtenirHauteurTerrainMonde((int)pos.X, (int)pos.Z, SeedTerrain);
+		float ySurfaceApprox = hauteurTerrain + 1.02f;
+		if (pos.Y < ySurfaceApprox - 1.2f)
+			return true;
+		// Reconnexion dans une base creusée juste sous la surface (Y proche du terrain procédural).
+		return _spawnConserverHauteurSauvegardee && pos.Y < ySurfaceApprox + 5f;
+	}
+
 	/// <summary>Raycast court sous la position sauvegardée : pieds sur fondation / plancher / sol proche, sans ramener au terrain lointain.</summary>
 	private bool EssayerAjusterPiedsJoueurSurSurfaceProche(Vector3 positionApprox, out Vector3 positionAjustee)
 	{
@@ -845,16 +861,71 @@ public partial class Gestionnaire_Monde : Node3D
 		return true;
 	}
 
+	/// <summary>Plancher sous les pieds uniquement (grotte / base creusée) — n'accroche pas le toit du monde à la surface.</summary>
+	private bool EssayerTrouverPlancherSousPieds(Vector3 positionApprox, out Vector3 positionAjustee)
+	{
+		positionAjustee = positionApprox;
+		World3D world = GetWorld3D();
+		if (world?.DirectSpaceState == null)
+			return false;
+		Vector3 debut = positionApprox + Vector3.Up * 0.25f;
+		Vector3 fin = positionApprox - Vector3.Up * 7.5f;
+		var query = PhysicsRayQueryParameters3D.Create(debut, fin);
+		query.CollisionMask = 1;
+		query.CollideWithAreas = false;
+		query.CollideWithBodies = true;
+		if (_joueur != null && _joueur.GetRid().IsValid)
+			query.Exclude = new Godot.Collections.Array<Rid> { _joueur.GetRid() };
+		Godot.Collections.Array<Rid> excludes = query.Exclude ?? new Godot.Collections.Array<Rid>();
+		const int maxEssais = 8;
+		for (int essai = 0; essai < maxEssais; essai++)
+		{
+			var hit = world.DirectSpaceState.IntersectRay(query);
+			if (hit.Count == 0 || !hit.ContainsKey("position"))
+				return false;
+			if (EstImpactToitChaume(hit))
+			{
+				if (hit.ContainsKey("rid"))
+				{
+					excludes.Add((Rid)hit["rid"]);
+					query.Exclude = excludes;
+				}
+				continue;
+			}
+			Vector3 pointSol = (Vector3)hit["position"];
+			if (pointSol.Y > positionApprox.Y + 0.55f)
+			{
+				if (hit.ContainsKey("rid"))
+				{
+					excludes.Add((Rid)hit["rid"]);
+					query.Exclude = excludes;
+				}
+				continue;
+			}
+			if (_joueur is Joueur jo)
+				positionAjustee = new Vector3(positionApprox.X, jo.CalculerYOriginePourPiedsSurSurface(pointSol.Y), positionApprox.Z);
+			else
+				positionAjustee = new Vector3(positionApprox.X, pointSol.Y + 1.2f, positionApprox.Z);
+			return true;
+		}
+		return false;
+	}
+
 	private void AjusterJoueurPositionRestaureeSurSurfaceProche()
 	{
 		if (_joueur == null || !GodotObject.IsInstanceValid(_joueur))
 			return;
 		Vector3 avant = _joueur.GlobalPosition;
-		if (!EssayerAjusterPiedsJoueurSurSurfaceProche(avant, out Vector3 apres))
+		if (EssayerTrouverPlancherSousPieds(avant, out Vector3 apres))
+		{
+			_joueur.GlobalPosition = apres;
+			_joueur.Velocity = Vector3.Zero;
+			GD.Print($"ZERO-K : Position restaurée (plancher local) {avant} -> {apres}");
 			return;
-		_joueur.GlobalPosition = apres;
+		}
+		_joueur.GlobalPosition = avant;
 		_joueur.Velocity = Vector3.Zero;
-		GD.Print($"ZERO-K : Position restaurée ajustée sur surface proche {avant} -> {apres}");
+		GD.Print($"ZERO-K : Position restaurée conservée (sous-sol / collision en attente) -> {avant}");
 	}
 
 	private bool EssayerTrouverSolParRaycastCourt(Vector3 positionApprox, float hauteurAuDessus, float profondeurMax, out Vector3 pointSol)
@@ -896,6 +967,9 @@ public partial class Gestionnaire_Monde : Node3D
 	private bool EssayerTrouverSolParRaycast(Vector3 positionApprox, out Vector3 pointSol)
 	{
 		pointSol = Vector3.Zero;
+		// Grotte / sous-sol : d'abord un raycast local vers le bas (évite d'accrocher le toit du monde à +900 m).
+		if (EssayerTrouverSolParRaycastCourt(positionApprox, 10f, 72f, out pointSol))
+			return true;
 		World3D world = GetWorld3D();
 		if (world == null || world.DirectSpaceState == null) return false;
 		Vector3 debut = positionApprox + Vector3.Up * 900f;
@@ -972,6 +1046,7 @@ public partial class Gestionnaire_Monde : Node3D
 			posSpawn = AssurerSpawnAuDessusDuSol(posSpawn, conserverHauteurSauvegardee: true);
 			_spawnDoitEtreAligneAuSol = ForcerAlignementSolAuChargement;
 			_spawnAligneAuSol = false;
+			_spawnConserverHauteurSauvegardee = true;
 			_ajusterPiedsJoueurSurSurfaceApresRestauration = true;
 		}
 		_spawnInitialEnAttente = posSpawn;
@@ -993,6 +1068,33 @@ public partial class Gestionnaire_Monde : Node3D
 	private bool FinaliserSpawnInitialAuSol(bool autoriserFallbackSansRaycast = false)
 	{
 		if (!_spawnDoitEtreAligneAuSol || _spawnAligneAuSol || _joueur == null) return true;
+
+		bool sousSurface = EstPositionProbablementSousSurface(_spawnInitialEnAttente);
+		bool reconnexionOuSousSol = _spawnConserverHauteurSauvegardee || sousSurface;
+
+		if (EssayerTrouverPlancherSousPieds(_spawnInitialEnAttente, out Vector3 posPlancher))
+		{
+			_joueur.GlobalPosition = posPlancher;
+			_joueur.Velocity = Vector3.Zero;
+			_joueur.Visible = true;
+			_spawnAligneAuSol = true;
+			GD.Print($"ZERO-K : Spawn finalisé sur plancher local -> {posPlancher}");
+			return true;
+		}
+
+		if (reconnexionOuSousSol)
+		{
+			_joueur.GlobalPosition = _spawnInitialEnAttente;
+			_joueur.Velocity = Vector3.Zero;
+			if (autoriserFallbackSansRaycast)
+			{
+				_joueur.Visible = true;
+				_spawnAligneAuSol = true;
+				GD.Print($"ZERO-K : Spawn reconnexion/sous-sol (Y sauvegardé, collision en attente) -> {_spawnInitialEnAttente}");
+				return true;
+			}
+			return false;
+		}
 
 		if (EssayerAjusterPiedsJoueurSurSurfaceProche(_spawnInitialEnAttente, out Vector3 posSurfaceProche))
 		{
@@ -1022,14 +1124,12 @@ public partial class Gestionnaire_Monde : Node3D
 
 		if (!autoriserFallbackSansRaycast)
 		{
-			// Pas encore de collision : pose procédurale (surface ~h+1) pour éviter chute dans le vide.
-			Vector3 posProc = AssurerSpawnAuDessusDuSol(_spawnInitialEnAttente);
-			_joueur.GlobalPosition = posProc;
+			_joueur.GlobalPosition = AssurerSpawnAuDessusDuSol(_spawnInitialEnAttente);
 			_joueur.Velocity = Vector3.Zero;
 			return false;
 		}
 
-		Vector3 posFallback = AssurerSpawnAuDessusDuSol(_spawnInitialEnAttente);
+		Vector3 posFallback = AssurerSpawnAuDessusDuSol(_spawnInitialEnAttente, conserverHauteurSauvegardee: reconnexionOuSousSol);
 		_joueur.GlobalPosition = posFallback;
 		_joueur.Velocity = Vector3.Zero;
 		_joueur.Visible = true;
@@ -1515,8 +1615,16 @@ public partial class Gestionnaire_Monde : Node3D
 			var noeuds = GetTree().GetNodesInGroup(nomGroupe);
 			for (int i = 0; i < noeuds.Count; i++)
 			{
-				if (noeuds[i] is RigidBody3D rb && rb.IsInsideTree() && GodotObject.IsInstanceValid(rb))
-					liste.Add(rb);
+				if (noeuds[i] is not RigidBody3D rb || !rb.IsInsideTree() || !GodotObject.IsInstanceValid(rb))
+					continue;
+				if (rb is ItemPhysique ip)
+				{
+					if (ItemPhysique.EstMeublePoseStatique(ip.ID_Objet))
+						continue;
+					if (ip.EstEnReposAuSolOptimise)
+						continue;
+				}
+				liste.Add(rb);
 			}
 		}
 		Remplir("BlocsPoses");
