@@ -360,6 +360,14 @@ public static partial class Atlas_Matiere
                 };
             }
 
+            // Boue : bol rempli d'eau + voxel terre aride (ID terrain 6) -> 1 voxel boue (ID terrain 7).
+            bool aTerreAride = EstSlotVoxelTerreAride(sA);
+            bool bTerreAride = EstSlotVoxelTerreAride(sB);
+            if ((aBolEau && bTerreAride) || (bBolEau && aTerreAride))
+            {
+                return ConstruireSlotInventaireVoxelSurface(7);
+            }
+
             bool aBol = sA.ID == Joueur.IdObjetBolBois;
             bool bBol = sB.ID == Joueur.IdObjetBolBois;
             bool aMaillet = sA.ID == Joueur.IdObjetMailletBois;
@@ -697,26 +705,12 @@ public static partial class Atlas_Matiere
         static bool EstSlotBatonCraft(SlotInventaire s) => !s.EstVide && s.ID == 32;
         /// <summary>Manche de hachette primitive : bâton brut (32) ou branche (31), même essence <see cref="SlotInventaire.IndexBotanique"/>.</summary>
         static bool EstSlotMancheHachettePrimitive(SlotInventaire s) => !s.EstVide && (s.ID == 32 || s.ID == BlocChutant.ID_BRANCHE);
-        // B1 = bûche standard (taille 1) fendue en 4 (morph 2). La longueur « standard » est surtout dans IndexTaille, pas ScaleEclat.
-        static bool EstSlotBucheQuartB1RackCraft(SlotInventaire s)
-        {
-            if (s.EstVide || s.ID != 30) return false;
-            if (s.IndexMorphologique != 2) return false;
-            if (s.IndexTaille != 1) return false;
-            float z = s.ScaleEclat.Z;
-            if (z <= 1e-4f) return true;
-            return z >= 0.72f;
-        }
-        // B2 = demi-bûche courte (taille 2) fendue en 4, ou bûche standard avec longueur réellement réduite via ScaleEclat.
-        static bool EstSlotBucheQuartB2RackCraft(SlotInventaire s)
-        {
-            if (s.EstVide || s.ID != 30) return false;
-            if (s.IndexMorphologique != 2) return false;
-            if (s.IndexTaille == 2) return true;
-            if (s.IndexTaille != 1) return false;
-            float z = s.ScaleEclat.Z;
-            return z > 0.18f && z < 0.72f;
-        }
+        // D = demi-bûche standard fendue en 2 (ID 30, morph 1, taille 1) — comme l'analyseur « Rack à bûches ».
+        static bool EstSlotBucheQuartB1RackCraft(SlotInventaire s) =>
+            !s.EstVide && s.ID == 30 && s.IndexMorphologique == 1 && s.IndexTaille == 1;
+        // d = demi-bûche courte (taille 2), pleine ou fendue en 2 (morph 0 ou 1).
+        static bool EstSlotBucheQuartB2RackCraft(SlotInventaire s) =>
+            !s.EstVide && s.ID == 30 && s.IndexTaille == 2 && s.IndexMorphologique is 0 or 1;
         static bool EstSlotPochetteTier0Craft(SlotInventaire s) => !s.EstVide && s.ID == Joueur.IdObjetPochetteTier0;
 
         SlotInventaire c0, c1, c2, c3;
@@ -1287,9 +1281,9 @@ public static partial class Atlas_Matiere
         if (grilleCraft3x3Table && grille.Length >= 9)
         {
             // RECETTE ATELIER : Rack à bûches (110), patron strict.
-            // (B1) ( ) (B1)
-            // (B1) ( ) (B1)
-            // ( C) (B2) ( C)
+            // (D) ( ) (D)   D = demi-bûche standard fendue en 2
+            // (D) ( ) (D)
+            // (L) (d) (L)   d = demi-bûche courte (même essence)
             bool rackBuchesPatron =
                 EstSlotBucheQuartB1RackCraft(grille[0]) && grille[1].EstVide && EstSlotBucheQuartB1RackCraft(grille[2]) &&
                 EstSlotBucheQuartB1RackCraft(grille[3]) && grille[4].EstVide && EstSlotBucheQuartB1RackCraft(grille[5]) &&
@@ -1301,9 +1295,8 @@ public static partial class Atlas_Matiere
                     && Joueur.SontEmpilables(grille[0], grille[3])
                     && Joueur.SontEmpilables(grille[0], grille[5]);
                 bool b2Compatible = grille[7].ID == bRef.ID
-                    && grille[7].IndexMorphologique == bRef.IndexMorphologique
-                    && grille[7].IndexChimique == bRef.IndexChimique
-                    && grille[7].IndexBotanique == bRef.IndexBotanique;
+                    && grille[7].IndexBotanique == bRef.IndexBotanique
+                    && EstSlotBucheQuartB2RackCraft(grille[7]);
                 bool ligaturesUniformes = MemeVarianteLigature(grille[6], grille[8]);
                 if (memesB1 && b2Compatible && ligaturesUniformes)
                 {

@@ -1,4 +1,4 @@
-﻿using Godot;
+using Godot;
 using System;
 using System.Collections.Generic;
 
@@ -125,6 +125,7 @@ public partial class BoeufSauvage : CharacterBody3D
 	{
 		if (node is MeshInstance3D mesh)
 		{
+			mesh.CastShadow = GeometryInstance3D.ShadowCastingSetting.On;
 			if (UtiliserShaderPelageProcedural && shaderPelage != null)
 			{
 				var mat = new ShaderMaterial

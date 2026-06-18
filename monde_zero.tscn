@@ -28,24 +28,21 @@ sky_material = SubResource("ProceduralSkyMaterial_osye3")
 [sub_resource type="Environment" id="Environment_vtxml"]
 background_mode = 2
 sky = SubResource("Sky_main")
+ambient_light_source = 3
 ambient_light_sky_contribution = 0.75
-ambient_light_energy = 0.0
+ambient_light_energy = 0.08
+tonemap_mode = 2
+tonemap_exposure = 1.05
 fog_sun_scatter = 0.09
 fog_density = 0.2702
 fog_sky_affect = 0.116
-volumetric_fog_enabled = true
-volumetric_fog_density = 0.0128
-volumetric_fog_albedo = Color(0.21025047, 0.21025047, 0.21025047, 1)
-volumetric_fog_detail_spread = 6.0
-volumetric_fog_ambient_inject = 1.74
-volumetric_fog_sky_affect = 0.116
-volumetric_fog_temporal_reprojection_enabled = false
 adjustment_contrast = 1.25
 
 [node name="Monde_Zero" type="Node3D" unique_id=1323649165]
 
 [node name="Gestionnaire_Monde" type="Node3D" parent="." unique_id=1912975737]
 script = ExtResource("1_gestionnaire_monde")
+FuseauHoraireHeures = -7.0
 
 [node name="Joueur" parent="." unique_id=1690833917 instance=ExtResource("2_joueur_scene")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 8, 125, -8)
@@ -69,15 +66,20 @@ TexturesInput = [ExtResource("4_k5uh1"), ExtResource("5_7pjmi"), ExtResource("6_
 transform = Transform3D(0.7959773, 0.5956492, -0.10780654, 0.029654216, 0.1395121, 0.98977625, 0.6045997, -0.79103637, 0.09338495, 0, 13.034424, 0)
 light_color = Color(0.99999887, 0.99166626, 0.6266634, 1)
 light_energy = 2.355
-light_angular_distance = 2.54
+light_angular_distance = 0.5
 light_specular = 1.194
+shadow_enabled = true
+shadow_bias = 0.02
+directional_shadow_max_distance = 200.0
 
 [node name="Lune" type="DirectionalLight3D" parent="." unique_id=545490241]
 transform = Transform3D(0.79597723, -0.5956493, -0.10780642, 0.02965417, -0.13951197, 0.98977625, -0.6045998, -0.7910363, -0.09338486, 0, 13.034426, 0)
 light_color = Color(0.070774086, 0.07914794, 0.15849811, 1)
 light_energy = 0.29
-light_angular_distance = 2.53
+light_angular_distance = 1.0
 shadow_enabled = true
+shadow_bias = 0.03
+directional_shadow_max_distance = 200.0
 sky_mode = 1
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=1714865845]

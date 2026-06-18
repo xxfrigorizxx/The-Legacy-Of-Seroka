@@ -254,6 +254,13 @@ public partial class Joueur
         // FIX CRITIQUE : On supprime la lecture du voxel hSurf + 1f.
         // L'objet se pose EXACTEMENT sur le point du raycast, ancré par son pivot.
         pointDeChute = _rayon.GetCollisionPoint();
+        // Sous terre : si la visée accroche la surface au-dessus, recaler sur le plancher local sous le joueur.
+        if (pointDeChute.Y > GlobalPosition.Y + 0.55f)
+        {
+            Vector3 refSousSol = new Vector3(pointDeChute.X, GlobalPosition.Y, pointDeChute.Z);
+            if (EssayerTrouverPlancherPourPose(refSousSol, null, out float yPlancherLocal))
+                pointDeChute = new Vector3(pointDeChute.X, yPlancherLocal, pointDeChute.Z);
+        }
         ItemPhysique structureSupport = ResoudreStructureSupportDepuisNoeud(noeudCol);
         if (structureSupport != null && !EstIdFondation(mainActive.ID))
         {
@@ -872,6 +879,7 @@ public partial class Joueur
 
         NettoyerModelesEnfants(meshRoot);
         InstancierModeleToitChaume(meshRoot, slot, variante, true, facteurEchelleXZ, decalageLocal, rotationLocaleY);
+        ActiverOmbresMeshes(meshRoot);
         SupprimerCollisionsToitChaume(toit);
         AjouterCollisionToitChaume(toit, meshRoot);
         DefinirCollisionToitActive(toit, true);

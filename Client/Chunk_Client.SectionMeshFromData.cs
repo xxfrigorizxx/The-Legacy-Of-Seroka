@@ -1,4 +1,4 @@
-﻿using Godot;
+using Godot;
 using System;
 using System.Buffers;
 using System.Collections.Generic;
@@ -256,11 +256,15 @@ public partial class Chunk_Client : Node3D
 						float xGlobal = baseX + x, zGlobal = baseZ + z;
 						float temp = noiseT?.GetNoise2D(xGlobal, zGlobal) ?? 0f;
 						float hum = data.NoiseHumidite != null ? CalculerHumiditeGlobaleDepuisChunkData(data, xGlobal, zGlobal) : 0f;
-						Color couleurId = new Color(idMat / 255f, (temp + 1f) * 0.5f, (hum + 1f) * 0.5f, 1f);
+						float tempA = (temp + 1f) * 0.5f;
+						float humA = (hum + 1f) * 0.5f;
+						float idA = idMat / 255f;
+						// COLOR.a = 1.0 : éclairage PBR natif Godot (soleil + ombres shadow map), pas de skylight voxel.
+						Color couleurId = new Color(idA, tempA, humA, 1f);
 						for (int i = 0; triTable[cubeIndex, i] != -1; i += 3)
 						{
 							Vector3 v0 = vertList[triTable[cubeIndex, i]], v1 = vertList[triTable[cubeIndex, i + 1]], v2 = vertList[triTable[cubeIndex, i + 2]];
-							Vector3 n = (v1 - v0).Cross(v2 - v0).Normalized();
+							Vector3 n = (v2 - v0).Cross(v1 - v0).Normalized();
 							vertsT.Add(v0); vertsT.Add(v1); vertsT.Add(v2);
 							normsT.Add(n); normsT.Add(n); normsT.Add(n);
 							colsT.Add(couleurId); colsT.Add(couleurId); colsT.Add(couleurId);
@@ -313,7 +317,7 @@ public partial class Chunk_Client : Node3D
 							for (int i = 0; triTable[ci, i] != -1; i += 3)
 							{
 								Vector3 v0 = vertList[triTable[ci, i]], v1 = vertList[triTable[ci, i + 1]], v2 = vertList[triTable[ci, i + 2]];
-								Vector3 n = (v1 - v0).Cross(v2 - v0).Normalized();
+								Vector3 n = (v2 - v0).Cross(v1 - v0).Normalized();
 								vertsE.Add(v0); vertsE.Add(v1); vertsE.Add(v2);
 								normsE.Add(n); normsE.Add(n); normsE.Add(n);
 							}

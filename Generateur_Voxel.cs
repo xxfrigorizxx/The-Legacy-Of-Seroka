@@ -1400,7 +1400,7 @@ public partial class Generateur_Voxel : Node3D
 						Vector3 v1 = vertList[TriTable[cubeIndex, i + 1]];
 						Vector3 v2 = vertList[TriTable[cubeIndex, i + 2]];
 
-						Vector3 n = (v1 - v0).Cross(v2 - v0).Normalized();
+						Vector3 n = (v2 - v0).Cross(v1 - v0).Normalized();
 						st.SetNormal(n);
 						st.SetColor(couleurId);
 						st.AddVertex(v0);
@@ -1480,7 +1480,7 @@ public partial class Generateur_Voxel : Node3D
 							Vector3 v0 = vertList[TriTable[cubeIndex, i]];
 							Vector3 v1 = vertList[TriTable[cubeIndex, i + 1]];
 							Vector3 v2 = vertList[TriTable[cubeIndex, i + 2]];
-							Vector3 n = (v1 - v0).Cross(v2 - v0).Normalized();
+							Vector3 n = (v2 - v0).Cross(v1 - v0).Normalized();
 							stEau.SetNormal(n);
 							stEau.AddVertex(v0);
 							stEau.SetNormal(n);

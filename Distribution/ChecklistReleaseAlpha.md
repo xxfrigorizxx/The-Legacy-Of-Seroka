@@ -18,10 +18,9 @@
 
 ## 2) Build jeu
 
-- Export Godot **Windows release** (pas debug):
-  - `godot --path . --export-release "Windows Desktop" "..\\SEROKAFrozenLegacy.exe"`
+- Le script `Publish-AlphaRelease.ps1` compile le C# en **Release** (`dotnet build -c Release`), exporte Godot en **release** (`--export-release`), aligne la DLL Release dans `data_*` et **exclut les .pdb** du payload joueur.
 - Verifier qu'aucun suffixe `(debug)` n'apparait dans la fenetre du jeu apres installation.
-- Ne pas utiliser `--export-debug` pour le payload distribution.
+- Ne pas utiliser `--export-debug` ni copier la sortie `bin/Debug` pour le payload distribution.
 - Renommer sortie jeu en:
   - `SEROKAFrozenLegacy.exe`
   - `SEROKAFrozenLegacy.pck`

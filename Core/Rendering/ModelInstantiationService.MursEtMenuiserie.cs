@@ -487,7 +487,7 @@ public partial class Joueur
     }
 
     /// <summary>Torche: bâton bois + tissu, avec option visuelle allumée via <c>GenomeAssemblage=TORCHE:1</c>.</summary>
-    public static void InstancierModeleTorche(Node3D parent, SlotInventaire slot, bool ancrerBaseAuSol = true)
+    public static void InstancierModeleTorche(Node3D parent, SlotInventaire slot, bool ancrerBaseAuSol = true, bool attacherVisuelAllume = true)
     {
         const string cheminGlb = "res://Modeles/Equipements/torch.glb";
         const float largeur = 0.16f;
@@ -528,32 +528,45 @@ public partial class Joueur
             NormaliserEchelleEtCentrerModeleArme(modele, 0.58f);
         parent.AddChild(modele);
 
-        if (allumee)
+        if (allumee && attacherVisuelAllume)
             ItemPhysique.AttacherVisuelFlammeTorche(parent);
     }
 
     private static Material ObtenirMaterielBoisPorteCoffre(byte essenceBois)
     {
-        var src = ArbreVivant.ObtenirMaterielBoisTriplanar(essenceBois) as StandardMaterial3D;
-        if (src == null)
-            return ArbreVivant.ObtenirMaterielBoisTriplanar(essenceBois);
+        if (essenceBois == LSystem_Botanique.IndexCheneMort)
+            essenceBois = LSystem_Botanique.IndexChene;
+        else if (essenceBois == LSystem_Botanique.IndexBouleauMort)
+            essenceBois = LSystem_Botanique.IndexBouleau;
 
-        var mat = (StandardMaterial3D)src.Duplicate(true);
-        mat.NormalEnabled = false;
-        mat.CullMode = BaseMaterial3D.CullModeEnum.Disabled;
-        mat.Roughness = 0.88f;
-        mat.SpecularMode = BaseMaterial3D.SpecularModeEnum.Disabled;
-        Color baseC = mat.AlbedoColor;
+        Color baseC = essenceBois switch
+        {
+            LSystem_Botanique.IndexBouleau => new Color(0.82f, 0.78f, 0.65f),
+            LSystem_Botanique.IndexPin => new Color(0.46f, 0.34f, 0.25f),
+            LSystem_Botanique.IndexSapin => new Color(0.52f, 0.40f, 0.32f),
+            LSystem_Botanique.IndexJungle => new Color(0.66f, 0.50f, 0.33f),
+            _ => new Color(0.65f, 0.45f, 0.25f)
+        };
         const float boostLuminosite = 1.20f;
-        mat.AlbedoColor = new Color(
-            Mathf.Min(baseC.R * boostLuminosite, 1.25f),
-            Mathf.Min(baseC.G * boostLuminosite, 1.25f),
-            Mathf.Min(baseC.B * boostLuminosite, 1.25f),
-            baseC.A);
-        mat.EmissionEnabled = true;
-        mat.Emission = new Color(0.18f, 0.14f, 0.09f);
-        mat.EmissionEnergyMultiplier = 0.12f;
-        return mat;
+        // Couleur plate uniquement : évite NoiseTexture2D pas encore prête en export (crash texture_replace null).
+        return new StandardMaterial3D
+        {
+            AlbedoColor = new Color(
+                Mathf.Min(baseC.R * boostLuminosite, 1.25f),
+                Mathf.Min(baseC.G * boostLuminosite, 1.25f),
+                Mathf.Min(baseC.B * boostLuminosite, 1.25f)),
+            Roughness = 0.88f,
+            Metallic = 0f,
+            NormalEnabled = false,
+            SpecularMode = BaseMaterial3D.SpecularModeEnum.Disabled,
+            RimEnabled = false,
+            Uv1Triplanar = false,
+            Uv1WorldTriplanar = false,
+            CullMode = BaseMaterial3D.CullModeEnum.Disabled,
+            EmissionEnabled = true,
+            Emission = new Color(0.18f, 0.14f, 0.09f),
+            EmissionEnergyMultiplier = 0.12f
+        };
     }
 
     public enum ToitChaumeVarianteVisuelle

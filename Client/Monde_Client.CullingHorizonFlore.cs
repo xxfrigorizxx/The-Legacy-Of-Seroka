@@ -357,13 +357,26 @@ public partial class Monde_Client : Node3D
 		_frameEnqueueFlore.Remove(cle);
 	}
 
-	private void EnfilerFloreChunk(ChunkData data, Vector3 positionObservation)
+	private void EnfilerFloreChunk(ChunkData data, Vector3 positionObservation, bool forcerDiffere = false)
 	{
 		if (data == null || data.InventaireFlore == null || data.InventaireFlore.Count == 0) return;
 		if (data._nodeFlore is Node3D existant && GodotObject.IsInstanceValid(existant))
 		{
-			Chunk_Client.MettreAJourFlorePourChunkData(data, positionObservation, existant);
+			// La visibilité est peu coûteuse : on la garde à jour immédiatement.
 			existant.Visible = data.CullingVisible && data.OcclusionVisible;
+			if (forcerDiffere)
+			{
+				// Reconstruction lourde (gazon/buissons) routée vers la file budgetée : évite la saccade au
+				// passage d'une frontière de chunk (sinon toutes les flores proches se reconstruisent en 1 frame).
+				Vector3I cleMaj = CleFlorePourChunkData(data);
+				if (_setFloreDifferee.Add(cleMaj))
+				{
+					_fileFloreDifferee.Add(cleMaj);
+					_frameEnqueueFlore[cleMaj] = Engine.GetPhysicsFrames();
+				}
+				return;
+			}
+			Chunk_Client.MettreAJourFlorePourChunkData(data, positionObservation, existant);
 			RetirerFloreDiffereePourChunk(data);
 			return;
 		}
@@ -420,7 +433,11 @@ public partial class Monde_Client : Node3D
 				ChunkData data = kv.Value;
 				if (data?.InventaireFlore == null || data.InventaireFlore.Count == 0)
 					continue;
-				EnfilerFloreChunk(data, posObs);
+				// Chunk masqué (culling/occlusion) : inutile de reconstruire sa flore — elle sera refaite
+				// quand il redeviendra visible (AppliquerVisibiliteRenduFinaleChunk).
+				if (!(data.CullingVisible && data.OcclusionVisible))
+					continue;
+				EnfilerFloreChunk(data, posObs, forcerDiffere: true);
 			}
 			return;
 		}
@@ -440,7 +457,9 @@ public partial class Monde_Client : Node3D
 				ChunkData data = kv.Value;
 				if (data?.InventaireFlore == null || data.InventaireFlore.Count == 0)
 					continue;
-				EnfilerFloreChunk(data, posObs);
+				if (!(data.CullingVisible && data.OcclusionVisible))
+					continue;
+				EnfilerFloreChunk(data, posObs, forcerDiffere: true);
 			}
 			return;
 		}
@@ -451,7 +470,8 @@ public partial class Monde_Client : Node3D
 				Vector2I coord = new Vector2I(chunkCentre.X + dx, chunkCentre.Y + dz);
 				if (!_chunksData.TryGetValue(coord, out var data)) continue;
 				if (data.InventaireFlore == null || data.InventaireFlore.Count == 0) continue;
-				EnfilerFloreChunk(data, posObs);
+				if (!(data.CullingVisible && data.OcclusionVisible)) continue;
+				EnfilerFloreChunk(data, posObs, forcerDiffere: true);
 			}
 		}
 	}

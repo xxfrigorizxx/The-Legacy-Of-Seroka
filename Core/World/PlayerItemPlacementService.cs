@@ -1169,7 +1169,7 @@ public partial class Joueur
             if (!string.IsNullOrEmpty(item.GenomeAssemblage))
                 item.SetMeta(MetaGenomeAssemblage, item.GenomeAssemblage);
             var meshRoot = new Node3D { Name = "MeshInstance3D" };
-            InstancierModeleTorche(meshRoot, mainActive, true);
+            InstancierModeleTorche(meshRoot, mainActive, true, attacherVisuelAllume: false);
             item.AddChild(meshRoot);
             AjouterCollisionTorche(item, meshRoot);
             corps = item;
@@ -1865,61 +1865,8 @@ public partial class Joueur
             && (FondationReposantSurFondationOuStructure(corps.GlobalPosition) || _offsetEtagesFondationManuel != 0);
         if (!modeGhost && !EstIdPorteBois(id) && !EstIdToitChaume(id) && (id == IdObjetTableBoisDecorative || id == IdObjetTableArtisanaTier1 || id == IdObjetTableAnalyseTier1 || id == IdObjetRackBatons || id == IdObjetRackBuches || id == IdObjetCoffreBoisTier0 || EstIdPitFeu(id) || EstIdFourTorchie(id) || EstIdFondation(id) || EstIdMuret(id) || EstIdMurBois(id)))
         {
-            // Snap sol robuste pour le rack: corrige les cas oÃ¹ le raycast vise une surface dÃ©calÃ©e.
-            var espace = GetWorld3D()?.DirectSpaceState;
-            if (espace != null && !enChargementPersistant && !(estFondationPose && fondationSurSupportEleve))
-            {
-                Vector3 origine = corps.GlobalPosition + Vector3.Up * 4f;
-                Vector3 dest = corps.GlobalPosition + Vector3.Down * 8f;
-                var q = PhysicsRayQueryParameters3D.Create(origine, dest);
-                var excludes = new Godot.Collections.Array<Rid>();
-                if (corps is CollisionObject3D coRack)
-                    excludes.Add(coRack.GetRid());
-                q.Exclude = excludes;
-                q.CollideWithAreas = false;
-
-                bool EstImpactToitChaume(Godot.Collections.Dictionary hitRay)
-                {
-                    if (hitRay == null || !hitRay.ContainsKey("collider"))
-                        return false;
-                    Node n = NoeudDepuisColliderRaycast(hitRay["collider"].AsGodotObject());
-                    for (Node cur = n; cur != null; cur = cur.GetParent())
-                    {
-                        if (cur is ItemPhysique ip && ip.IsInGroup("BlocsPoses"))
-                            return EstIdToitChaume(ip.ID_Objet);
-                    }
-                    return false;
-                }
-
-                Godot.Collections.Dictionary hit = null;
-                const int maxEssaisSnap = 6;
-                for (int essai = 0; essai < maxEssaisSnap; essai++)
-                {
-                    hit = espace.IntersectRay(q);
-                    if (hit.Count == 0 || !hit.ContainsKey("position"))
-                        break;
-                    if (!EstImpactToitChaume(hit))
-                        break;
-                    if (hit.ContainsKey("rid"))
-                        excludes.Add((Rid)hit["rid"]);
-                    q.Exclude = excludes;
-                    hit = null;
-                }
-
-                if (hit != null && hit.Count > 0 && hit.ContainsKey("position"))
-                {
-                    Aabb? box = null;
-                    AccumulerAabbMeshes(corps, Transform3D.Identity, ref box);
-                    if (box.HasValue)
-                    {
-                        float minY = box.Value.Position.Y;
-                        float hitY = ((Vector3)hit["position"]).Y;
-                        corps.GlobalPosition += Vector3.Up * (hitY - minY + 0.005f);
-                        if (EstIdFondation(id))
-                            corps.GlobalPosition += Vector3.Down * 0.02f;
-                    }
-                }
-            }
+            if (!enChargementPersistant && !(estFondationPose && fondationSurSupportEleve))
+                AppliquerSnapPlancherLocalStructure(corps, pointDeChute, decalFondation: estFondationPose);
         }
         // MÃªme calque que le terrain PhysicsServer3D / StaticBody (bit 1) : collision fiable au sol.
         if (corps is RigidBody3D rbPose)

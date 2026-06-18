@@ -85,6 +85,14 @@ public static partial class Atlas_Matiere
         return EssayerLireIdVoxelTerrain(slot, out int idVoxel) && idVoxel == 7;
     }
 
+    /// <summary>Voxel terre aride (ID terrain 6), en inventaire direct ou via tag VOXEL_TERRAIN.</summary>
+    public static bool EstSlotVoxelTerreAride(in SlotInventaire slot)
+    {
+        if (slot.EstVide) return false;
+        if (slot.ID == 6) return true;
+        return EssayerLireIdVoxelTerrain(slot, out int idVoxel) && idVoxel == 6;
+    }
+
     /// <summary>Brin / fibre d'herbe (ID objet 15).</summary>
     public static bool EstSlotBrinHerbe(in SlotInventaire slot) => !slot.EstVide && slot.ID == 15;
 

@@ -1,4 +1,4 @@
-﻿using Godot;
+using Godot;
 using System;
 using System.Collections.Generic;
 using System.Text.Json;
@@ -314,6 +314,10 @@ public partial class BoeufSauvage : CharacterBody3D
 	private float _cooldownCohesionAnimation;
 	private float _cohesionAnimationCache = 0f;
 	private bool _dansEau;
+	/// <summary>Throttle des raycasts de détection d'eau (EstDansEau) : ~14 Hz au lieu de chaque frame (anti-lag faune).</summary>
+	private float _cooldownDetectionEau;
+	/// <summary>Throttle des 3 raycasts d'escalade (PeutSauterObstacleDevant via DoitTenterSautEscalade) : ~7 Hz (anti-lag faune).</summary>
+	private float _cooldownVerifEscalade;
 	/// <summary>Aligné sur le joueur : remontée uniquement si « nage vers le haut » (rive / profondeur), pas dès qu’il reste du stamina.</summary>
 	private bool _eauIntentionRemonter;
 	private Vector3 _directionNageEau = Vector3.Zero;
@@ -708,6 +712,8 @@ public partial class BoeufSauvage : CharacterBody3D
 		_cooldownControleSol -= dt;
 		_cooldownAntiBlocage -= dt;
 		_cooldownEnjambementObstacle -= dt;
+		_cooldownDetectionEau -= dt;
+		_cooldownVerifEscalade -= dt;
 		_cooldownEvaluationVisionTerrain -= dt;
 		_cooldownSautStrategique -= dt;
 		_cooldownVerificationVisionJoueur -= dt;
@@ -784,7 +790,13 @@ public partial class BoeufSauvage : CharacterBody3D
 		Vector3 direction = (_cibleCourante - GlobalPosition);
 		direction.Y = 0f;
 		direction = direction.LengthSquared() > 0.0001f ? direction.Normalized() : Vector3.Zero;
-		_dansEau = EstDansEau();
+		// Détection d'eau throttlée (~14 Hz) : EstDansEau lance un raycast + des requêtes voxel chaque frame sur terre.
+		// Une latence de ~70 ms sur l'entrée/sortie d'eau est invisible pour un bovin et supprime un raycast/frame/bovin.
+		if (_cooldownDetectionEau <= 0f)
+		{
+			_cooldownDetectionEau = 0.07f;
+			_dansEau = EstDansEau();
+		}
 		if (_dansEau)
 			direction = CalculerDirectionNage(direction, dt);
 		bool demandeSautStrategique = false;

@@ -56,11 +56,13 @@ public partial class GestionnaireFauneBoeufs : Node3D
 	private readonly RandomNumberGenerator _rng = new RandomNumberGenerator();
 	private readonly HashSet<Vector2I> _chunksEvaluesSpawnFaune = new HashSet<Vector2I>();
 	private float _cooldownVerification;
+	private float _cooldownStreamingFaune;
 	private bool _premierTroupeauForce;
 	private bool _fauneChargeeDepuisSauvegarde;
 	private int _curseurEvaluationChunks;
 	private float _cooldownDrainProfilage;
-	private const int VersionPersistanceFaune = 1;
+	// v1 : entrées faune seules. v2 : + liste des chunks déjà évalués (anti-respawn au rechargement).
+	private const int VersionPersistanceFaune = 2;
 	private int _dimensionFauneChargee = int.MinValue;
 
 	public override void _Ready()
@@ -103,7 +105,14 @@ public partial class GestionnaireFauneBoeufs : Node3D
 			ChargerFauneMonde();
 			_fauneChargeeDepuisSauvegarde = true;
 		}
-		SynchroniserStreamingFaune();
+		// Streaming faune ~5 Hz : charger/décharger des bovins selon la distance n'a pas besoin de tourner à 60 fps.
+		// Évite de reconstruire la banque (allocation Dictionary par bovin) chaque frame → moins de pression GC.
+		_cooldownStreamingFaune -= (float)delta;
+		if (_cooldownStreamingFaune <= 0f)
+		{
+			_cooldownStreamingFaune = 0.2f;
+			SynchroniserStreamingFaune();
+		}
 
 		_cooldownVerification -= (float)delta;
 		if (_cooldownVerification > 0f)
@@ -222,6 +231,14 @@ public partial class GestionnaireFauneBoeufs : Node3D
 				w.Write(entree.EstFemelle);
 				w.Write(Json.Stringify(entree.Profil));
 			}
+			// v2 : mémorise les chunks dont le dé de spawn a déjà été lancé.
+			// Sans ça, le tirage déterministe relance un troupeau dans les mêmes plaines à chaque rechargement (accumulation).
+			w.Write(_chunksEvaluesSpawnFaune.Count);
+			foreach (Vector2I c in _chunksEvaluesSpawnFaune)
+			{
+				w.Write(c.X);
+				w.Write(c.Y);
+			}
 		}
 		catch (Exception ex)
 		{
@@ -289,6 +306,24 @@ public partial class GestionnaireFauneBoeufs : Node3D
 					EstFemelle = estFemelle,
 					Profil = dict
 				};
+			}
+			// v2 : restaure les chunks déjà évalués → empêche un nouveau tirage de troupeau au rechargement.
+			_chunksEvaluesSpawnFaune.Clear();
+			if (version >= 2)
+			{
+				int nbChunks = Mathf.Max(0, r.ReadInt32());
+				for (int i = 0; i < nbChunks; i++)
+				{
+					int cx = r.ReadInt32();
+					int cy = r.ReadInt32();
+					_chunksEvaluesSpawnFaune.Add(new Vector2I(cx, cy));
+				}
+			}
+			else
+			{
+				// Migration v1 → v2 : les chunks des animaux déjà persistés sont considérés « évalués »
+				// pour ne pas re-spawner un troupeau par-dessus eux au premier rechargement.
+				MarquerChunksDesProfilsCommeEvalues();
 			}
 			SynchroniserStreamingFaune();
 			_fauneChargeeDepuisSauvegarde = true;
@@ -529,6 +564,20 @@ public partial class GestionnaireFauneBoeufs : Node3D
 		NettoyerBoeufsActifsInvalides();
 		foreach (BoeufSauvage boeuf in _boeufs)
 			EnregistrerProfilActifDansBanque(boeuf);
+	}
+
+	/// <summary>Migration v1 → v2 : marque comme « déjà évalués » les chunks des animaux persistés (best-effort anti-respawn).</summary>
+	private void MarquerChunksDesProfilsCommeEvalues()
+	{
+		if (_gestionnaireMonde == null)
+			return;
+		int tc = Mathf.Max(1, _gestionnaireMonde.TailleChunk);
+		foreach (EntreeFaunePersistante entree in _banqueFaune.Values)
+		{
+			if (!EssayerLirePositionProfil(entree?.Profil, out Vector3 pos))
+				continue;
+			_chunksEvaluesSpawnFaune.Add(Gestionnaire_Monde.WorldToChunkCoord(pos, tc));
+		}
 	}
 
 	private int CalculerRayonActivationFauneChunks()

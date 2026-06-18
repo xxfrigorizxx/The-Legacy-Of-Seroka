@@ -1,4 +1,4 @@
-﻿using Godot;
+using Godot;
 using System;
 using System.Collections.Generic;
 
@@ -283,20 +283,62 @@ public partial class ItemPhysique : RigidBody3D
 		}
 		racine.Visible = true;
 
-		OmniLight3D light = parent.GetNodeOrNull<OmniLight3D>("TorcheLumiere");
+		// Lumière calée sur la flamme (pas sur la racine du corps) pour éviter le décalage en main / au sol.
+		OmniLight3D light = racine.GetNodeOrNull<OmniLight3D>("TorcheLumiere");
+		if (light == null)
+			light = parent.GetNodeOrNull<OmniLight3D>("TorcheLumiere");
 		if (light == null)
 		{
 			light = new OmniLight3D
 			{
 				Name = "TorcheLumiere",
-				Position = new Vector3(0f, 0.90f, 0f)
+				Position = new Vector3(0f, 0.06f, 0f)
 			};
 			ConfigurerLumiereTorche(light);
-			parent.AddChild(light);
+			racine.AddChild(light);
 		}
 		else
+		{
+			light.Position = new Vector3(0f, 0.06f, 0f);
+			if (light.GetParent() != racine)
+			{
+				light.Reparent(racine);
+				light.Position = new Vector3(0f, 0.06f, 0f);
+			}
 			ConfigurerLumiereTorche(light);
+		}
 		light.Visible = true;
+	}
+
+	private static void AppliquerEtatVisuelTorcheSurNoeud(Node noeud, bool actif, ref Node3D premiereFlamme, ref OmniLight3D premiereLumiere)
+	{
+		if (noeud == null || !GodotObject.IsInstanceValid(noeud))
+			return;
+		var pile = new List<Node> { noeud };
+		for (int i = 0; i < pile.Count; i++)
+		{
+			Node courant = pile[i];
+			if (courant.Name == "TorcheFlamme" && courant is Node3D flamme)
+			{
+				flamme.Visible = actif;
+				foreach (Node enfant in flamme.GetChildren())
+				{
+					if (enfant is GpuParticles3D particles)
+					{
+						particles.Emitting = actif;
+						particles.Visible = actif;
+					}
+				}
+				premiereFlamme ??= flamme;
+			}
+			if (courant.Name == "TorcheLumiere" && courant is OmniLight3D lumiere)
+			{
+				lumiere.Visible = actif;
+				premiereLumiere ??= lumiere;
+			}
+			foreach (Node enfant in courant.GetChildren())
+				pile.Add(enfant);
+		}
 	}
 
 	private void ActiverVisuelTorche(bool actif)
@@ -305,26 +347,11 @@ public partial class ItemPhysique : RigidBody3D
 			return;
 		if (actif)
 			AttacherVisuelFlammeTorche(this);
-		_torcheFlamme = GetNodeOrNull<Node3D>("TorcheFlamme");
-		_torcheLight = GetNodeOrNull<OmniLight3D>("TorcheLumiere");
-		if (_torcheFlamme != null)
-		{
-			_torcheFlamme.Visible = actif;
-			GpuParticles3D flammes = _torcheFlamme.GetNodeOrNull<GpuParticles3D>("TorcheFlammesParticles");
-			GpuParticles3D fumee = _torcheFlamme.GetNodeOrNull<GpuParticles3D>("TorcheFumeeParticles");
-			if (flammes != null)
-			{
-				flammes.Emitting = actif;
-				flammes.Visible = actif;
-			}
-			if (fumee != null)
-			{
-				fumee.Emitting = actif;
-				fumee.Visible = actif;
-			}
-		}
-		if (_torcheLight != null)
-			_torcheLight.Visible = actif;
+		Node3D premiereFlamme = null;
+		OmniLight3D premiereLumiere = null;
+		AppliquerEtatVisuelTorcheSurNoeud(this, actif, ref premiereFlamme, ref premiereLumiere);
+		_torcheFlamme = actif ? premiereFlamme : null;
+		_torcheLight = actif ? premiereLumiere : null;
 	}
 
 	private void SynchroniserGenomeTorche(bool allumee)

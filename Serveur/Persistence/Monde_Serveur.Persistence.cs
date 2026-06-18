@@ -8,6 +8,14 @@ using System.IO;
 /// </summary>
 public partial class Monde_Serveur : Node
 {
+	/// <summary>
+	/// Journalisation verbeuse par chunk (chargement/sauvegarde). DÉSACTIVÉE par défaut :
+	/// ces <c>GD.Print</c> se déclenchaient à chaque chunk via <c>OS.IsDebugBuild()</c> (= vrai dans l'éditeur),
+	/// inondant la console de l'éditeur (des milliers de lignes) → ralentissement progressif en cours de partie.
+	/// Repasser à <c>true</c> ponctuellement pour diagnostiquer la persistance des chunks.
+	/// </summary>
+	public static readonly bool JournaliserChunksVerbeux = false;
+
 	private string ObtenirNomDimensionNormalise()
 	{
 		string brut = string.IsNullOrWhiteSpace(NomDimension) ? "ARAPA" : NomDimension.Trim();
@@ -48,7 +56,7 @@ public partial class Monde_Serveur : Node
 	/// <summary>Résurrection : chargement binaire via BinaryReader. Si fichier absent ou corrompu → régénération procédurale.</summary>
 	internal Chunk_Serveur ChargerChunkDepuisDisque(Vector2I coord, int coordY)
 	{
-		if (OS.IsDebugBuild())
+		if (JournaliserChunksVerbeux)
 			GD.Print($"ZERO-K DIAG : Tentative chargement Chunk {coord} couche {coordY}...");
 		string cheminGodot = ObtenirCheminSauvegarde(coord, coordY);
 		string cheminAbsolu = ProjectSettings.GlobalizePath(cheminGodot);
@@ -106,7 +114,7 @@ public partial class Monde_Serveur : Node
 			JournalErreursZeroK.Erreur($"ZERO-K REJET : Chunk {coord} refusé ! Taille lue : {donneesVoxels?.Length ?? 0} | Attendue : {tailleAttendue} ({cheminGodot}).");
 			return null;
 		}
-		if (OS.IsDebugBuild())
+		if (JournaliserChunksVerbeux)
 			GD.Print($"ZERO-K SUCCÈS : Chunk {coord} couche {coordY} chargé depuis le disque ({donneesVoxels.Length} bytes).");
 		var chunk = CreerChunkServeur(coord, coordY);
 		if (!chunk.AppliquerTableauBytes(donneesVoxels))

@@ -24,8 +24,8 @@ public partial class Cycle_Solaire : Node
 	private double _pourcentageJourneePrecedent = -1.0;
 	/// <summary>Vrai pendant le chargement initial du terrain autour du joueur (cache soleil/lune pour éviter le "flash" avant stabilité).</summary>
 	private bool _chargementMondeActif;
-	/// <summary>Référence jour pour <c>volumetric_fog_ambient_inject</c> (scène).</summary>
-	private float _injectAmbiantVolBrouillardJour = 1.74f;
+	/// <summary>Référence jour pour inject brouillard vol. (désactivé en surface — évite luminosité liée à la caméra).</summary>
+	private float _injectAmbiantVolBrouillardJour = 0.08f;
 	/// <summary>Texture ciel étoilé générée une fois (ProceduralSkyMaterial.SkyCover).</summary>
 	private bool _textureEtoilesAppliquee;
 	/// <summary>Évite de spammer la console si le matériau de ciel n’est pas procédural (scène modifiée / upgrade moteur).</summary>
@@ -111,10 +111,40 @@ public partial class Cycle_Solaire : Node
 		}
 
 		AppliquerDistanceBrouillardProgressive();
+		ConfigurerOmbresDirectionnelles();
 		if (_environnement?.Environment != null)
-			_injectAmbiantVolBrouillardJour = Mathf.Max(0.01f, _environnement.Environment.VolumetricFogAmbientInject);
+		{
+			var env = _environnement.Environment;
+			// Brouillard volumétrique = calculé le long du regard → désactivé surface (monde_zero).
+			if (env.VolumetricFogEnabled)
+				_injectAmbiantVolBrouillardJour = Mathf.Max(0.01f, env.VolumetricFogAmbientInject);
+		}
 		AppliquerTextureEtoilesSiPossible();
 		GD.Print("Moteur Thermodynamique : EN LIGNE.");
+	}
+
+	/// <summary>Ombres directionnelles soleil/lune (shadow maps natives Godot — PBR standard sur le terrain).</summary>
+	private void ConfigurerOmbresDirectionnelles()
+	{
+		// normalBias modéré : trop élevé = ombres des arbres/roches invisibles sur le sol.
+		// Distance courte (200 m) = forte densité de texels = ombres nettes près du joueur.
+		AppliquerProfilOmbresDirectionnelles(_soleil, distanceMax: 200f, bias: 0.02f, normalBias: 0.6f);
+		AppliquerProfilOmbresDirectionnelles(_lune, distanceMax: 200f, bias: 0.03f, normalBias: 0.7f);
+	}
+
+	private static void AppliquerProfilOmbresDirectionnelles(DirectionalLight3D lumiere, float distanceMax, float bias, float normalBias)
+	{
+		if (lumiere == null)
+			return;
+		lumiere.ShadowEnabled = true;
+		lumiere.ShadowReverseCullFace = false;
+		lumiere.DirectionalShadowMode = DirectionalLight3D.ShadowMode.Parallel4Splits;
+		lumiere.DirectionalShadowBlendSplits = true;
+		lumiere.DirectionalShadowMaxDistance = distanceMax;
+		lumiere.ShadowBias = bias;
+		lumiere.ShadowNormalBias = normalBias;
+		// Pénombre douce (bords d'ombre non crénelés), indépendante de la caméra.
+		lumiere.ShadowBlur = 1.0f;
 	}
 
 	/// <summary>Sans texture <see cref="ProceduralSkyMaterial.SkyCover"/>, les étoiles du ciel procédural ne s’affichent pas.</summary>
@@ -271,28 +301,35 @@ public partial class Cycle_Solaire : Node
 		{
 			// Crépuscule/aurore: même en mode nuit on garde une faible projection lumineuse
 			// pour éviter la coupure brutale "soleil visible mais monde noir".
-			float energieCrepuscule = Mathf.Clamp((hauteurSoleil + 0.12f) * 1.35f, 0f, 0.36f);
+			float energieCrepuscule = Mathf.Clamp((hauteurSoleil + 0.12f) * 1.65f, 0f, 0.55f);
 			_soleil.LightEnergy = LisserVers(_soleil.LightEnergy, energieCrepuscule, delta, VitesseLissageLumiere);
+			// Soleil éteint sous l'horizon : on coupe sa shadow map (Godot rendait 4 splits d'ombre pour une lumière nulle).
+			// Aucun effet visuel (une lumière à énergie ~0 ne projette aucune ombre visible), gros gain GPU nocturne.
+			_soleil.ShadowEnabled = _soleil.LightEnergy > 0.01f;
 			_soleil.Set("sky_mode", hauteurSoleil > 0f ? 0 : 1); // Disque visible seulement quand au-dessus de l'horizon.
 			if (_lune != null)
 			{
 				_lune.Visible = true;
 				float energieLuneCible = CalculerEnergieLuneNuit(hauteurSoleil);
 				_lune.LightEnergy = LisserVers(_lune.LightEnergy, energieLuneCible, delta, VitesseLissageLumiere);
+				// Idem pour la lune quand elle se couche / lune absente : pas de shadow map pour une énergie nulle.
+				_lune.ShadowEnabled = _lune.LightEnergy > 0.01f;
 				_lune.Set("sky_mode", 1); // LightOnly : pas de disque blanc parasite.
 				_lune.Set("light_volumetric_fog_energy", 0.0f);
 			}
 		}
 		else
 		{
-			// Midi : moins agressif qu’avant (soleil « brûlé » + ciel trop dur).
-			float energieSoleilCible = Mathf.Clamp(hauteurSoleil * 1.15f, 0f, 1.05f);
+			// Jour : soleil fort, lune éteinte (sinon elle remplit les ombres du soleil).
+			float energieSoleilCible = Mathf.Clamp(hauteurSoleil * 2.4f, 0.25f, 2.35f);
 			_soleil.LightEnergy = LisserVers(_soleil.LightEnergy, energieSoleilCible, delta, VitesseLissageLumiere);
+			_soleil.ShadowEnabled = true; // Jour : soleil dominant, ombres directionnelles actives.
 			_soleil.Set("sky_mode", 0); // LightAndSky (soleil visible via les nodes existants)
 			if (_lune != null)
 			{
 				_lune.Visible = false;
-				_lune.LightEnergy = LisserVers(_lune.LightEnergy, 0f, delta, VitesseLissageLumiere);
+				_lune.ShadowEnabled = false;
+				_lune.LightEnergy = 0f;
 				_lune.Set("sky_mode", 1); // CRITIQUE : LightOnly = pas de disque dans le ciel
 				_lune.Set("light_volumetric_fog_energy", 0.0f);
 			}
@@ -325,13 +362,18 @@ public partial class Cycle_Solaire : Node
 		Color couleurBrouillardJour = new Color(0.6f, 0.7f, 0.8f);
 		Color couleurBrouillardNuit = new Color(0.01f, 0.01f, 0.03f);
 
-		float ambientEnergyCible = intensiteJourLisse;
-		float ambientSkyCible = intensiteJourLisse;
-		float fogAmbientInjectCible = Mathf.Lerp(0.015f, _injectAmbiantVolBrouillardJour, intensiteJourLisse);
+		// Ambiance ciel = fill léger (pas un second soleil qui efface les ombres directionnelles).
+		envGlobal.AmbientLightSource = Godot.Environment.AmbientSource.Sky;
+		float ambientEnergyCible = Mathf.Lerp(0.03f, 0.14f, intensiteJourLisse);
+		float ambientSkyCible = Mathf.Lerp(0.55f, 0.82f, intensiteJourLisse);
 		envGlobal.AmbientLightEnergy = LisserVers(envGlobal.AmbientLightEnergy, ambientEnergyCible, delta, VitesseLissageLumiere);
 		envGlobal.AmbientLightSkyContribution = LisserVers(envGlobal.AmbientLightSkyContribution, ambientSkyCible, delta, VitesseLissageLumiere);
-		envGlobal.VolumetricFogAmbientInject =
-			LisserVers(envGlobal.VolumetricFogAmbientInject, fogAmbientInjectCible, delta, VitesseLissageLumiere);
+		if (envGlobal.VolumetricFogEnabled)
+		{
+			float fogAmbientInjectCible = Mathf.Lerp(0.015f, _injectAmbiantVolBrouillardJour, intensiteJourLisse);
+			envGlobal.VolumetricFogAmbientInject =
+				LisserVers(envGlobal.VolumetricFogAmbientInject, fogAmbientInjectCible, delta, VitesseLissageLumiere);
+		}
 
 		if (envGlobal.FogEnabled)
 		{

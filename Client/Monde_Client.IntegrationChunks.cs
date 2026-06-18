@@ -1,4 +1,4 @@
-﻿using Godot;
+using Godot;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -144,6 +144,10 @@ public partial class Monde_Client : Node3D
 		{
 			RenderingServer.Singleton.InstanceSetBase(data.VisualInstanceRID, meshRid);
 			RenderingServer.Singleton.InstanceSetTransform(data.VisualInstanceRID, transformChunk);
+			RenderingServer.InstanceGeometrySetCastShadowsSetting(
+				data.VisualInstanceRID, RenderingServer.ShadowCastingSetting.On);
+			if (matTerrain != null)
+				RenderingServer.Singleton.InstanceGeometrySetMaterialOverride(data.VisualInstanceRID, matTerrain.GetRid());
 			if (data._meshRef != null && !ReferenceEquals(data._meshRef, mergedMesh))
 				data._meshRef.Dispose();
 			data._meshRef = mergedMesh;
@@ -154,6 +158,10 @@ public partial class Monde_Client : Node3D
 			RenderingServer.Singleton.InstanceSetBase(instanceRid, meshRid);
 			RenderingServer.Singleton.InstanceSetScenario(instanceRid, world.Scenario);
 			RenderingServer.Singleton.InstanceSetTransform(instanceRid, transformChunk);
+			RenderingServer.InstanceGeometrySetCastShadowsSetting(
+				instanceRid, RenderingServer.ShadowCastingSetting.On);
+			if (matTerrain != null)
+				RenderingServer.Singleton.InstanceGeometrySetMaterialOverride(instanceRid, matTerrain.GetRid());
 			data.VisualInstanceRID = instanceRid;
 			data._meshRef = mergedMesh;
 		}

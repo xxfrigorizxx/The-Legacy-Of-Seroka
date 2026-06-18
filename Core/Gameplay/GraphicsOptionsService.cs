@@ -33,6 +33,8 @@ public sealed class GraphicsOptionsData
 	public int SeuilFpsUrgenceCritique = 30;
 	public int SeuilFpsUrgenceExtreme = 24;
 	public int SeuilFpsSortieUrgenceExtreme = 56;
+	/// <summary>Qualité image (SSAO / SSIL / SDFGI). Ultra par défaut — repli via preset graphique.</summary>
+	public QualiteEclairageAaa QualiteEclairage = QualiteEclairageAaa.Ultra;
 
 	public GraphicsOptionsData Clone()
 	{
@@ -66,6 +68,7 @@ public static class GraphicsOptionsService
 		options.SeuilFpsUrgenceCritique = Mathf.Clamp(options.SeuilFpsUrgenceCritique, 15, options.SeuilFpsUrgenceForte - 1);
 		options.SeuilFpsUrgenceExtreme = Mathf.Clamp(options.SeuilFpsUrgenceExtreme, 10, options.SeuilFpsUrgenceCritique);
 		options.SeuilFpsSortieUrgenceExtreme = Mathf.Clamp(options.SeuilFpsSortieUrgenceExtreme, options.SeuilFpsUrgenceForte, 90);
+		options.QualiteEclairage = (QualiteEclairageAaa)Mathf.Clamp((int)options.QualiteEclairage, 0, (int)QualiteEclairageAaa.Ultra);
 		return options;
 	}
 
@@ -98,6 +101,7 @@ public static class GraphicsOptionsService
 		baseOptions.SeuilFpsUrgenceCritique = (int)config.GetValue(SectionOptions, "fps_urgence_critique", baseOptions.SeuilFpsUrgenceCritique);
 		baseOptions.SeuilFpsUrgenceExtreme = (int)config.GetValue(SectionOptions, "fps_urgence_extreme", baseOptions.SeuilFpsUrgenceExtreme);
 		baseOptions.SeuilFpsSortieUrgenceExtreme = (int)config.GetValue(SectionOptions, "fps_sortie_extreme", baseOptions.SeuilFpsSortieUrgenceExtreme);
+		baseOptions.QualiteEclairage = (QualiteEclairageAaa)(int)config.GetValue(SectionOptions, "qualite_eclairage", (int)baseOptions.QualiteEclairage);
 		return Normaliser(baseOptions);
 	}
 
@@ -126,6 +130,7 @@ public static class GraphicsOptionsService
 		config.SetValue(SectionOptions, "fps_urgence_critique", safe.SeuilFpsUrgenceCritique);
 		config.SetValue(SectionOptions, "fps_urgence_extreme", safe.SeuilFpsUrgenceExtreme);
 		config.SetValue(SectionOptions, "fps_sortie_extreme", safe.SeuilFpsSortieUrgenceExtreme);
+		config.SetValue(SectionOptions, "qualite_eclairage", (int)safe.QualiteEclairage);
 		Error err = config.Save(CheminConfig);
 		if (err != Error.Ok)
 			GD.PrintErr($"ZERO-K : Impossible de sauvegarder {CheminConfig} ({err}).");
@@ -230,7 +235,8 @@ public static class GraphicsOptionsService
 				p.Preset = PresetGraphique.Personnalise;
 				break;
 		}
-		// À distance de rendu élevée, l’horizon LOD évite le vide noir pendant le streaming (Faible reste souvent sous 18 chunks).
+		p.QualiteEclairage = ProfilEclairageAAA.DepuisPresetGraphique(preset);
+		// À distance de rendu élevée, l'horizon LOD évite le vide noir pendant le streaming (Faible reste souvent sous 18 chunks).
 		if (p.RenderDistance >= 18)
 			p.ActiverHorizonLod = true;
 		return Normaliser(p);

@@ -399,10 +399,26 @@ public partial class ItemPhysique : RigidBody3D
 		return null;
 	}
 
+	private void ActiverOmbresMeshesEnfants()
+	{
+		var pile = new System.Collections.Generic.List<Node> { this };
+		for (int i = 0; i < pile.Count; i++)
+		{
+			Node noeud = pile[i];
+			if (noeud is MeshInstance3D mi)
+				mi.CastShadow = GeometryInstance3D.ShadowCastingSetting.On;
+			foreach (Node enfant in noeud.GetChildren())
+				pile.Add(enfant);
+		}
+	}
+
 	public override void _Ready()
 	{
 		if (IsInGroup("BlocsPoses"))
+		{
 			Callable.From(NotifierEnregistrementOcclusionObjetPose).CallDeferred();
+			Callable.From(ActiverOmbresMeshesEnfants).CallDeferred();
+		}
 
 		// CORRECTION CRITIQUE : Chercher dans THIS, pas dans GetParent()
 		MeshInstance3D visuel = null;
@@ -866,7 +882,16 @@ public partial class ItemPhysique : RigidBody3D
 			bool estRoche = ID_Objet == Joueur.IdObjetPitFeuRoche;
 			double resteSec = estRoche ? _pitFeuRocheResteSec : _pitFeuResteSec;
 			if (resteSec <= 0.001d)
+			{
+				// Garde-fou : un feu NON allumé ne doit jamais afficher de flammes ni de lumière.
+				// L'animation des flammes ci-dessous ne tourne que feu allumé : si un visuel restait actif
+				// (re-pose, état résiduel, ordre d'init), les flammes paraissaient « figées » et la lumière restait allumée.
+				if ((_pitFlammeCroix != null && GodotObject.IsInstanceValid(_pitFlammeCroix) && _pitFlammeCroix.Visible)
+					|| (_pitFlammeLight != null && GodotObject.IsInstanceValid(_pitFlammeLight) && _pitFlammeLight.Visible)
+					|| (_pitFlammeParticles != null && GodotObject.IsInstanceValid(_pitFlammeParticles) && _pitFlammeParticles.Visible))
+					ActiverVisuelPitFeu(false);
 				return;
+			}
 			if (estRoche)
 				TraiterCuissonPitFeuRoche(delta);
 			resteSec -= delta;

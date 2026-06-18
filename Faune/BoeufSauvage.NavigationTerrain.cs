@@ -1,4 +1,4 @@
-﻿using Godot;
+using Godot;
 using System;
 using System.Collections.Generic;
 
@@ -377,6 +377,11 @@ public partial class BoeufSauvage : CharacterBody3D
 			return false;
 		if (GlobalPosition.DistanceTo(_positionDernierSaut) < Mathf.Max(0.4f, DistanceMiniEntreDeuxSauts))
 			return false;
+		// Anti-lag : PeutSauterObstacleDevant fait 3 raycasts. Sans ce throttle ils tournaient CHAQUE frame
+		// pour tout bovin qui marche au sol. ~7 Hz suffisent largement pour repérer un obstacle à escalader.
+		if (_cooldownVerifEscalade > 0f)
+			return false;
+		_cooldownVerifEscalade = 0.14f;
 		if (!PeutSauterObstacleDevant(direction))
 			return false;
 

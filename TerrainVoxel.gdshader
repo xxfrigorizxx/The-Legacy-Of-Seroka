@@ -1,5 +1,6 @@
 shader_type spatial;
-render_mode blend_mix, depth_draw_opaque, cull_back;
+// Soleil + torches : light() standard (ATTENUATION = ombres Godot). Pas de skylight voxel.
+render_mode blend_mix, depth_draw_opaque, cull_back, specular_disabled;
 uniform sampler2DArray texture_array : source_color, filter_linear_mipmap, repeat_enable;
 uniform float triplanar_scale = 0.2;
 uniform float lod_texture_start = 140.0;
@@ -8,8 +9,8 @@ uniform float lod_far_mip = 4.0;
 uniform float lod_steps = 8.0;
 uniform float lod_step_blend = 0.75;
 uniform float lod_start_jitter = 32.0;
-uniform float lumiere_ambiante = 0.08;
-uniform float douceur_ombre = 0.50;
+uniform float lumiere_ambiante = 0.04;
+uniform float douceur_ombre = 0.35;
 uniform float neutralisation_sable = 0.48;
 uniform float herbe_saturation_boost = 1.0;
 uniform float herbe_value_boost = 1.0;
@@ -23,12 +24,10 @@ varying vec3 world_pos;
 varying float v_temperature;
 varying float v_humidite;
 
-// Fonction mathématique de pseudo-aléatoire très légère
 float random(vec2 st) {
 	return fract(sin(dot(st.xy, vec2(12.9898,78.233))) * 43758.5453123);
 }
 
-// Bruit de Valeur (Value Noise) 2D ultra-rapide pour le GPU
 float noise(vec2 st) {
 	vec2 i = floor(st);
 	vec2 f = fract(st);
@@ -59,14 +58,11 @@ void vertex() {
 	vec3 normal = abs(NORMAL);
 	normal = pow(normal, vec3(4.0));
 	uv1_power_normal = normal / dot(normal, vec3(1.0));
-
-	// Récupération de la position globale pour le calcul mathématique
 	world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	uv1_triplanar_pos = world_pos * triplanar_scale;
-	// On garde l'ID brut sans l'arrondir ici
 	raw_id = COLOR.r * 255.0;
-	v_temperature = (COLOR.g * 2.0) - 1.0; // Retour à -1.0 -> 1.0
-	v_humidite = (COLOR.b * 2.0) - 1.0;    // Retour à -1.0 -> 1.0
+	v_temperature = (COLOR.g * 2.0) - 1.0;
+	v_humidite = (COLOR.b * 2.0) - 1.0;
 }
 
 void fragment() {
@@ -76,7 +72,6 @@ void fragment() {
 	float end_d = lod_texture_end + jitter;
 	float lod_t_base = clamp((cam_dist - start_d) / max(1.0, end_d - start_d), 0.0, 1.0);
 
-	// Progression multi-étapes (10-12+) avec fondu entre étapes pour masquer tout "pop".
 	float steps = max(2.0, floor(lod_steps + 0.5));
 	float idx = lod_t_base * (steps - 1.0);
 	float i0 = floor(idx);
@@ -87,24 +82,18 @@ void fragment() {
 	float lod_t = mix(t0, t1, step_soft);
 	float detail_t = 1.0 - lod_t * 0.50;
 
-	// 1. PERTURBATION DES TRANSITIONS (Bruit à haute fréquence)
-	// On crée un chaos de +/- 0.4 sur l'ID aux frontières des matériaux
 	float edge_noise = (noise(world_pos.xz * 4.0) - 0.5) * 0.8 * detail_t;
 	float material_id = round(raw_id + edge_noise);
-	// Étendu à 48 pour supporter les minerais (10..29, 32..48) sans recâblage shader.
 	material_id = clamp(material_id, 0.0, 49.0);
 
-	// Tronc (30) et Feuilles (31) : couleurs fixes.
-	// Important: test exact pour éviter que les IDs minerais >= 32 soient pris comme feuillage.
 	bool is_bois = abs(material_id - 30.0) < 0.5;
 	bool is_feuilles = abs(material_id - 31.0) < 0.5;
 	bool est_sable_quartz = (material_id == 49.0);
 	float tex_layer = clamp(material_id, 0.0, 49.0);
 	if (est_sable_quartz) {
-		tex_layer = 3.0; // Même grain que le sable classique
+		tex_layer = 3.0;
 	}
 
-	// Projection Triplanaire standard
 	vec2 uv_x = uv1_triplanar_pos.zy;
 	vec2 uv_y = uv1_triplanar_pos.xz;
 	vec2 uv_z = uv1_triplanar_pos.xy;
@@ -112,13 +101,6 @@ void fragment() {
 	vec4 tex_y = texture(texture_array, vec3(uv_y, tex_layer));
 	vec4 tex_z = texture(texture_array, vec3(uv_z, tex_layer));
 	vec4 tex_triplanar = tex_x * uv1_power_normal.x + tex_y * uv1_power_normal.y + tex_z * uv1_power_normal.z;
-
-	vec2 uv_dom = uv_y;
-	float max_axis = uv1_power_normal.y;
-	if (uv1_power_normal.x > max_axis) { max_axis = uv1_power_normal.x; uv_dom = uv_x; }
-	if (uv1_power_normal.z > max_axis) { uv_dom = uv_z; }
-	// Compat launcher/export: textureLod en fragment peut casser selon backend GPU/driver.
-	// On garde un échantillonnage triplanaire robuste pour éviter le fallback magenta.
 	vec4 albedo_tex = tex_triplanar;
 
 	if (is_bois) albedo_tex.rgb = vec3(0.4, 0.28, 0.18);
@@ -131,14 +113,12 @@ void fragment() {
 	bool est_aride = (material_id == 6.0);
 	bool est_sable = (material_id == 3.0);
 
-	// Sable classique : neutralise la dominante orange vers une teinte plus beige naturelle.
 	if (est_sable) {
 		vec3 hsv_sable = rgb2hsv(final_color);
 		hsv_sable.y = clamp(hsv_sable.y * (1.0 - neutralisation_sable), 0.0, 1.0);
 		hsv_sable.x = mix(hsv_sable.x, 0.135, neutralisation_sable * 0.42);
 		final_color = hsv2rgb(hsv_sable);
 	}
-	// Sable de quartz (ID 49) : même texture, teinte blanche cassée pilotée par la luminosité du grain.
 	if (est_sable_quartz) {
 		float lum = dot(final_color, vec3(0.299, 0.587, 0.114));
 		float micro = noise(world_pos.xz * 0.11 + vec2(19.7, -8.4)) - 0.5;
@@ -146,23 +126,14 @@ void fragment() {
 		final_color = teinte * (0.70 + lum * 0.56 + micro * 0.04 * detail_t);
 	}
 
-	// Loin: on coupe presque tous les coûts de détail shader.
 	if (detail_t > 0.01) {
-		// 2. MACRO-VARIATION ANTI-DAMIER (Bruit à basse fréquence)
-		// Crée des zones d'ombres et de lumières géantes sur le terrain
-		float macro_noise = noise(world_pos.xz * 0.05);
-		final_color *= (0.65 + macro_noise * 0.5 * detail_t); // Modulation atténuée au loin
-
 		float facteur_humidite = 0.0;
 		if (est_herbe || est_boue || est_aride) {
-			// --- MUTATION SÉMANTIQUE (FERTILITÉ & CLIMAT) —---
 			float facteur_humidite_macro = clamp((v_humidite + 1.0) * 0.5, 0.0, 1.0);
-			// Micro-variation mondiale (pas liée aux chunks) pour casser l'uniformité visuelle.
 			float humidite_micro = noise(world_pos.xz * 0.012 + vec2(73.1, -21.7));
 			facteur_humidite = clamp(facteur_humidite_macro * 0.82 + humidite_micro * 0.18 * detail_t, 0.0, 1.0);
 		}
 
-		// Herbe (ID 1) : palette pilotée par climat (texture base N/B ou colorée).
 		if (est_herbe) {
 			vec3 base = final_color;
 			float h = facteur_humidite;
@@ -170,14 +141,11 @@ void fragment() {
 			float jungle = smoothstep(0.58, 0.92, t) * smoothstep(0.55, 0.95, h);
 			float micro = noise(world_pos.xz * 0.08 + vec2(11.3, -6.9)) - 0.5;
 			vec3 hsvBase = rgb2hsv(base);
-			// Si la texture est N/B (saturation faible), on applique la palette plus fortement.
 			float forceNB = 1.0 - smoothstep(0.10, 0.30, hsvBase.y);
 			float forcePalette = mix(0.30, 0.82, forceNB);
-			// Teintes cibles: sec -> jaune, normal -> vert, jungle -> vert vif.
 			float hueBiome = mix(0.16, mix(0.30, 0.36, jungle), h);
 			float satBiome = mix(0.36, 0.80, h);
 			satBiome = mix(satBiome, satBiome * 1.08, jungle);
-
 			vec3 hsvOut = hsvBase;
 			hsvOut.x = mix(hsvBase.x, hueBiome, forcePalette);
 			hsvOut.y = clamp(mix(hsvBase.y, satBiome, forcePalette), 0.0, 1.0);
@@ -185,13 +153,10 @@ void fragment() {
 			vMul = mix(vMul, vMul * 0.95, jungle);
 			hsvOut.z = clamp(hsvBase.z * vMul + micro * 0.045 * detail_t, 0.0, 1.0);
 			vec3 couleurBiome = hsv2rgb(hsvOut);
-
-			// Conserve le relief: la texture pilote encore les hautes/basses fréquences.
 			float lum = dot(base, vec3(0.299, 0.587, 0.114));
 			float detailLum = clamp((lum - 0.5) * 1.22 + 0.5, 0.0, 1.0);
 			vec3 coloreRelief = couleurBiome * (0.72 + detailLum * 0.54);
 			final_color = mix(base, coloreRelief, forcePalette);
-			// Ajustement ciblé ID 1: un peu plus vivant en launcher, sans toucher les autres matériaux.
 			vec3 hsvHerbeFinal = rgb2hsv(final_color);
 			hsvHerbeFinal.y = clamp(hsvHerbeFinal.y * herbe_saturation_boost, 0.0, 1.0);
 			hsvHerbeFinal.z = clamp(hsvHerbeFinal.z * herbe_value_boost, 0.0, 1.0);
@@ -203,22 +168,18 @@ void fragment() {
 			hsvEauFinal.z = clamp(hsvEauFinal.z * eau_value_boost, 0.0, 1.0);
 			final_color = hsv2rgb(hsvEauFinal);
 		}
-		// Boue (ID 7) : sec = grisâtre, humide = de plus en plus brun
 		if (est_boue) {
-			// Logique demandée: humide => plus gris (pas brun foncé).
 			vec3 hsv = rgb2hsv(final_color);
 			float h = facteur_humidite;
 			float micro = noise(world_pos.xz * 0.09 + vec2(-17.2, 8.6)) - 0.5;
 			hsv.x = fract(hsv.x + mix(0.012, -0.006, h) + micro * 0.006 * detail_t);
-			hsv.y = clamp(hsv.y * mix(0.75, 0.28, h), 0.0, 1.0); // Plus humide => plus désaturé (gris)
+			hsv.y = clamp(hsv.y * mix(0.75, 0.28, h), 0.0, 1.0);
 			hsv.z = clamp(hsv.z * mix(1.02, 0.72, h), 0.0, 1.0);
 			vec3 teinte_boue = hsv2rgb(hsv);
 			vec3 gris_humide = vec3(dot(teinte_boue, vec3(0.299, 0.587, 0.114)));
 			final_color = mix(teinte_boue, gris_humide, h * 0.55);
 		}
-		// Terre aride (ID 6) : sec = grisâtre, humide = assombri
 		if (est_aride) {
-			// Même logique: humide => plus gris, sans virer brun.
 			vec3 hsv = rgb2hsv(final_color);
 			float h = facteur_humidite;
 			float micro = noise(world_pos.xz * 0.07 + vec2(5.4, 14.9)) - 0.5;
@@ -232,21 +193,12 @@ void fragment() {
 	}
 
 	ALBEDO = final_color;
-	ROUGHNESS = 0.85;
+	ROUGHNESS = 0.92;
+	METALLIC = 0.0;
 }
 
 void light() {
 	float ndotl = max(dot(NORMAL, LIGHT), 0.0);
-	float half_lambert = ndotl * 0.5 + 0.5;
-	float diffus_lisse = smoothstep(0.12 - douceur_ombre * 0.18, 0.96, half_lambert);
-	float diffus = max(lumiere_ambiante, diffus_lisse);
-	// Atténuation adoucie pour les omni (torche) : transition plus longue vers l'obscurité.
-	float att = pow(clamp(ATTENUATION, 0.0, 1.0), 0.78);
-
-	// Garde une lumière majoritairement neutre pour éviter la dérive orange du sable.
-	float lum_light = dot(LIGHT_COLOR, vec3(0.2126, 0.7152, 0.0722));
-	vec3 lumiere_rgb = mix(vec3(lum_light), LIGHT_COLOR, 0.22);
-	DIFFUSE_LIGHT += ALBEDO * lumiere_rgb * diffus * att;
-
-	// Sol/roche/sable volontairement mats : aucun reflet speculaire.
+	// Formule Godot standard : LIGHT_COLOR inclut déjà énergie * PI.
+	DIFFUSE_LIGHT += ALBEDO * ndotl * ATTENUATION * LIGHT_COLOR * (1.0 / 3.14159265);
 }

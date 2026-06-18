@@ -106,7 +106,12 @@ public partial class Monde_Client : Node3D
 		if (_cooldownLogPerfFps <= 0f && _fpsMoyenneAuto > 1f && _fpsMoyenneAuto < 52f)
 		{
 			_cooldownLogPerfFps = 8f;
-			GD.Print($"ZERO-K PERF: fpsMoy={_fpsMoyenneAuto:0} gate={_gateStreamingGele} graceBootstrap={_timerGraceStreamingBootstrap:0.0}s urgence={_niveauUrgencePerf}");
+			// Diagnostic fuite : si "noeuds"/"orphelins"/"memMo" grimpent continûment au fil de la partie,
+			// c'est une fuite (nœuds retirés de l'arbre mais jamais Free()). Sinon le lag vient du rendu/scène.
+			double nbNoeuds = Performance.GetMonitor(Performance.Monitor.ObjectNodeCount);
+			double nbOrphelins = Performance.GetMonitor(Performance.Monitor.ObjectOrphanNodeCount);
+			double memMo = OS.GetStaticMemoryUsage() / (1024.0 * 1024.0);
+			GD.Print($"ZERO-K PERF: fpsMoy={_fpsMoyenneAuto:0} gate={_gateStreamingGele} graceBootstrap={_timerGraceStreamingBootstrap:0.0}s urgence={_niveauUrgencePerf} noeuds={nbNoeuds:0} orphelins={nbOrphelins:0} memMo={memMo:0}");
 		}
 
 		// === Gate FPS strict : ralentit le lointain si FPS bas — pas pendant bootstrap / monde incomplet. ===

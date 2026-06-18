@@ -1,4 +1,4 @@
-﻿using Godot;
+using Godot;
 using System;
 using System.Buffers;
 using System.Collections.Generic;
@@ -75,6 +75,12 @@ public partial class Chunk_Client : Node3D
 			data.InventaireFlore = new Dictionary<Vector3I, byte>(donnees.InventaireFlore);
 	}
 
+	private static void ConfigurerOmbresFlore(GeometryInstance3D noeud)
+	{
+		if (noeud != null)
+			noeud.CastShadow = GeometryInstance3D.ShadowCastingSetting.On;
+	}
+
 	/// <summary>Crée le nœud MultiMeshInstance3D de gazon pour un ChunkData (architecture AAA). À ajouter au monde et à libérer dans data.LibérerRids.</summary>
 	public static MultiMeshInstance3D CreerNoeudGazonPourChunkData(ChunkData data, Vector3 positionObservation, int tailleChunk)
 	{
@@ -89,6 +95,9 @@ public partial class Chunk_Client : Node3D
 		node.MaterialOverride = ObtenirMaterielGazonSymbiotique();
 		node.Position = new Vector3(data.Coordonnees.X * tailleChunk, data.ObtenirOffsetYMonde(), data.Coordonnees.Y * tailleChunk);
 		node.Visible = true;
+		// Gazon : reçoit les ombres (s'assombrit sous la montagne) mais ne les PROJETTE pas.
+		// Des milliers de brins en cull_disabled dans la shadow map = coût GPU énorme pour un gain visuel nul.
+		node.CastShadow = GeometryInstance3D.ShadowCastingSetting.Off;
 		return node;
 	}
 
@@ -164,7 +173,11 @@ public partial class Chunk_Client : Node3D
 		{
 			groupe = new Node3D { Name = "BuissonPleinGroup" };
 			for (int i = 0; i < Joueur.BaieNombreCouleurs; i++)
-				groupe.AddChild(new MultiMeshInstance3D { Name = $"c{i}" });
+			{
+				var mmiCouleur = new MultiMeshInstance3D { Name = $"c{i}" };
+				ConfigurerOmbresFlore(mmiCouleur);
+				groupe.AddChild(mmiCouleur);
+			}
 			root.AddChild(groupe);
 		}
 		var parCouleur = new List<Transform3D>[Joueur.BaieNombreCouleurs];
@@ -196,6 +209,7 @@ public partial class Chunk_Client : Node3D
 		mmi.Multimesh = mm;
 		mmi.MaterialOverride = mat;
 		mmi.Visible = true;
+		ConfigurerOmbresFlore(mmi);
 	}
 
 	/// <summary>Architecture AAA (RID) : gazon + buissons procéduraux sous un Node3D à la position du chunk.</summary>

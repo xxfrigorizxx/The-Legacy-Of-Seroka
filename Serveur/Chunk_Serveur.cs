@@ -1111,7 +1111,7 @@ public partial class Chunk_Serveur : RefCounted
 			writer.Write(donnees.Length);
 			writer.Write(donnees);
 		}
-		if (OS.IsDebugBuild())
+		if (Monde_Serveur.JournaliserChunksVerbeux)
 			GD.Print($"ZERO-K : Cicatrice mémorisée. Chunk {ChunkOffsetX}_{ChunkOffsetZ} gravé sur le disque.");
 		_estModifie = false;
 	}

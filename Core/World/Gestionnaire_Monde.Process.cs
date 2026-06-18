@@ -28,7 +28,7 @@ public partial class Gestionnaire_Monde : Node3D
 		}
 
 		// Verrou anti-chute : tant que le spawn n'est pas aligné au sol, ancrer le joueur (sans snap visible si déjà au bon endroit).
-		if (_spawnDoitEtreAligneAuSol && !_spawnAligneAuSol && _joueur != null)
+		if (_spawnDoitEtreAligneAuSol && !_spawnAligneAuSol && JoueurReferenceValide())
 		{
 			if (_joueur.GlobalPosition.DistanceSquaredTo(_spawnInitialEnAttente) > 0.12f * 0.12f)
 				_joueur.GlobalPosition = _spawnInitialEnAttente;
@@ -36,7 +36,7 @@ public partial class Gestionnaire_Monde : Node3D
 			_joueur.Visible = false;
 		}
 		// Anti-traversée : mesh visible sans collision sous les pieds → pas de chute libre en attendant la solidification.
-		else if (_joueur != null && _joueur.Visible && UseArchitectureReseau && _mondeClient != null
+		else if (JoueurReferenceValide() && _joueur.Visible && UseArchitectureReseau && _mondeClient != null
 			&& _dimensionLocaleActive != (int)DimensionJeu.Abysse && _joueur.Velocity.Y < -0.2f)
 		{
 			Vector2I chunkPieds = WorldToChunkCoord(_joueur.GlobalPosition, TailleChunk);
@@ -45,7 +45,7 @@ public partial class Gestionnaire_Monde : Node3D
 		}
 
 		// Garde-fou profondeur extrême Abysse : stabilise l'état physique au fond absolu.
-		if (_joueur != null && _dimensionLocaleActive == (int)DimensionJeu.Abysse)
+		if (JoueurReferenceValide() && _dimensionLocaleActive == (int)DimensionJeu.Abysse)
 		{
 			const float fondAbsolu = ConstantesDimensionAbysse.FondAbsolu;
 			float y = _joueur.GlobalPosition.Y;

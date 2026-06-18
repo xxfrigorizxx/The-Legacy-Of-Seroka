@@ -1,4 +1,4 @@
-﻿using Godot;
+using Godot;
 using System;
 using System.Collections.Generic;
 
@@ -759,6 +759,7 @@ public partial class Joueur
         {
             if (n is MeshInstance3D mi)
             {
+                PreparerMeshInstancePourRendu(mi);
                 string nom = mi.Name.ToString().ToLowerInvariant();
                 bool estLigature = nom.Contains("corde")
                     || nom.Contains("cord")
@@ -766,22 +767,34 @@ public partial class Joueur
                     || nom.Contains("ligature")
                     || nom.Contains("liane")
                     || nom.Contains("ficelle");
-                bool estBranche = nom.Contains("branche")
-                    || nom.Contains("baton")
-                    || nom.Contains("stick")
-                    || nom.Contains("shaft");
                 if (estLigature)
                 {
                     RemplacerMeshParNormalesFacettes(mi);
-                    int idLigature = varianteLigature == Joueur.TagVarianteLiane ? 16 : 20;
-                    AppliquerMaterielObjet(mi, idLigature, slot.IndexChimique, slot.IndexMorphologique, slot.NiveauFracture, varianteLigature);
-                }
-                else if (estBranche)
-                {
-                    mi.MaterialOverride = matBoisCoffre;
+                    int matA = varianteLigature == Joueur.TagVarianteLiane ? 16 : 20;
+                    int matB = slot.IndexMorphologique;
+                    int niveauAspect = slot.NiveauFracture;
+                    if (varianteLigature == Joueur.TagVarianteHerbeSolide)
+                    {
+                        matA = 15;
+                        matB = 15;
+                        niveauAspect = Mathf.Max(niveauAspect, 2);
+                    }
+                    else if (varianteLigature == Joueur.TagVarianteLiane)
+                    {
+                        matA = 16;
+                        matB = 16;
+                    }
+                    else if (varianteLigature == Joueur.TagVarianteIntestin || varianteLigature == Joueur.TagVarianteIntestinSolide)
+                    {
+                        matA = 17;
+                        matB = 17;
+                        if (varianteLigature == Joueur.TagVarianteIntestinSolide)
+                            niveauAspect = Mathf.Max(niveauAspect, 2);
+                    }
+                    AppliquerMaterielSecurise(mi, Atlas_Matiere.ObtenirMaterielCorde(matA, matB, niveauAspect));
                 }
                 else
-                    mi.MaterialOverride = matBoisCoffre;
+                    AppliquerMaterielSecurise(mi, matBoisCoffre);
             }
             foreach (Node c in n.GetChildren())
                 ParcourirMeshesCoffre(c);

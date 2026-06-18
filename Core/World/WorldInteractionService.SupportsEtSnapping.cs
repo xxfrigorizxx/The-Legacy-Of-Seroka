@@ -313,6 +313,85 @@ public partial class Joueur
     }
 
     /// <summary>
+    /// Plancher sous un point de pose (grotte / base creusée) : ignore toits chaume et surfaces au-dessus du joueur.
+    /// </summary>
+    private bool EssayerTrouverPlancherPourPose(Vector3 positionApprox, CollisionObject3D corpsExclu, out float hitY)
+    {
+        hitY = 0f;
+        var espace = GetWorld3D()?.DirectSpaceState;
+        if (espace == null)
+            return false;
+
+        Vector3 debut = positionApprox + Vector3.Up * 0.25f;
+        Vector3 fin = positionApprox - Vector3.Up * 8f;
+        var q = PhysicsRayQueryParameters3D.Create(debut, fin);
+        q.CollisionMask = 1;
+        q.CollideWithAreas = false;
+        var excludes = new Godot.Collections.Array<Rid>();
+        if (corpsExclu != null && GodotObject.IsInstanceValid(corpsExclu))
+            excludes.Add(corpsExclu.GetRid());
+        if (GetRid().IsValid)
+            excludes.Add(GetRid());
+        q.Exclude = excludes;
+
+        float yPlafondAcceptable = Mathf.Max(positionApprox.Y + 0.55f, GlobalPosition.Y + 0.55f);
+        for (int essai = 0; essai < 8; essai++)
+        {
+            Godot.Collections.Dictionary hit = espace.IntersectRay(q);
+            if (hit == null || hit.Count == 0 || !hit.ContainsKey("position"))
+                return false;
+            if (EstImpactToitChaumePose(hit))
+            {
+                if (hit.ContainsKey("rid"))
+                {
+                    excludes.Add((Rid)hit["rid"]);
+                    q.Exclude = excludes;
+                }
+                continue;
+            }
+            float y = ((Vector3)hit["position"]).Y;
+            if (y > yPlafondAcceptable)
+            {
+                if (hit.ContainsKey("rid"))
+                {
+                    excludes.Add((Rid)hit["rid"]);
+                    q.Exclude = excludes;
+                }
+                continue;
+            }
+            hitY = y;
+            return true;
+        }
+        return false;
+    }
+
+    private static bool EstImpactToitChaumePose(Godot.Collections.Dictionary hit)
+    {
+        if (hit == null || !hit.ContainsKey("collider"))
+            return false;
+        Node n = NoeudDepuisColliderRaycast(hit["collider"].AsGodotObject());
+        for (Node cur = n; cur != null; cur = cur.GetParent())
+        {
+            if (cur is ItemPhysique ip && ip.IsInGroup("BlocsPoses"))
+                return EstIdToitChaume(ip.ID_Objet);
+        }
+        return false;
+    }
+
+    private void AppliquerSnapPlancherLocalStructure(Node3D corps, Vector3 pointReference, bool decalFondation = false)
+    {
+        if (corps == null || !GodotObject.IsInstanceValid(corps))
+            return;
+        if (!EssayerTrouverPlancherPourPose(pointReference, corps as CollisionObject3D, out float hitY))
+            return;
+        if (!EssayerCalculerMinYMondeMeshes(corps, out float minYMonde))
+            return;
+        corps.GlobalPosition += Vector3.Up * (hitY - minYMonde + 0.005f);
+        if (decalFondation)
+            corps.GlobalPosition += Vector3.Down * 0.02f;
+    }
+
+    /// <summary>
     /// Recale un objet lançable posé pour que le bas visuel de son mesh touche le sol.
     /// Ne s'applique qu'au placement (pas au lancer), afin d'éviter les modèles semi-enterrés.
     /// </summary>
@@ -322,23 +401,8 @@ public partial class Joueur
             return;
         if (!EssayerCalculerMinYMondeMeshes(objetPose, out float minYMonde))
             return;
-
-        var espace = GetWorld3D()?.DirectSpaceState;
-        if (espace == null)
+        if (!EssayerTrouverPlancherPourPose(objetPose.GlobalPosition, objetPose as CollisionObject3D, out float hitY))
             return;
-
-        Vector3 origine = objetPose.GlobalPosition + Vector3.Up * 4f;
-        Vector3 dest = objetPose.GlobalPosition + Vector3.Down * 8f;
-        var q = PhysicsRayQueryParameters3D.Create(origine, dest);
-        q.CollideWithAreas = false;
-        if (objetPose is CollisionObject3D co)
-            q.Exclude = new Godot.Collections.Array<Rid> { co.GetRid() };
-
-        Godot.Collections.Dictionary hit = espace.IntersectRay(q);
-        if (hit == null || hit.Count == 0 || !hit.ContainsKey("position"))
-            return;
-
-        float hitY = ((Vector3)hit["position"]).Y;
         objetPose.GlobalPosition += Vector3.Up * (hitY - minYMonde + 0.004f);
     }
 

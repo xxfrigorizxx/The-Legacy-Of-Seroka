@@ -368,6 +368,22 @@ public partial class Joueur
         return resultat;
     }
 
+    /// <summary>Active les ombres portées (soleil) sur tous les MeshInstance3D d'un modèle instancié.
+    /// À appeler après (ré)instanciation pour que roches/stations/structures projettent une ombre naturelle sur le terrain.</summary>
+    public static void ActiverOmbresMeshes(Node racine)
+    {
+        if (racine == null) return;
+        var pile = new List<Node> { racine };
+        for (int i = 0; i < pile.Count; i++)
+        {
+            Node noeud = pile[i];
+            if (noeud is MeshInstance3D mi)
+                mi.CastShadow = GeometryInstance3D.ShadowCastingSetting.On;
+            foreach (Node c in noeud.GetChildren())
+                pile.Add(c);
+        }
+    }
+
     private static MeshInstance3D TrouverMeshParMots(Node racine, params string[] mots)
     {
         if (racine == null || mots == null || mots.Length == 0) return null;
@@ -466,7 +482,8 @@ public partial class Joueur
             {
                 if (uvValidesPourTangentes)
                 {
-                    try { st.GenerateTangents(); } catch { }
+                    try { st.GenerateTangents(); }
+                    catch { /* tangentes optionnelles */ }
                 }
                 st.Commit(output);
             }
@@ -474,12 +491,101 @@ public partial class Joueur
         return output.GetSurfaceCount() > 0 ? output : null;
     }
 
+    private static bool TextureRenduValide(Texture2D tex)
+        => tex != null && GodotObject.IsInstanceValid(tex);
+
+    /// <summary>Retire les textures invalides / non prêtes avant assignation (évite crash RD texture_replace).</summary>
+    private static StandardMaterial3D AssainirMaterielStandard(StandardMaterial3D mat)
+    {
+        if (mat == null)
+            return null;
+        var safe = (StandardMaterial3D)mat.Duplicate(true);
+        if (!TextureRenduValide(safe.AlbedoTexture))
+            safe.AlbedoTexture = null;
+        if (!TextureRenduValide(safe.NormalTexture))
+        {
+            safe.NormalTexture = null;
+            safe.NormalEnabled = false;
+        }
+        if (!TextureRenduValide(safe.RimTexture))
+            safe.RimTexture = null;
+        if (!TextureRenduValide(safe.ClearcoatTexture))
+            safe.ClearcoatTexture = null;
+        return safe;
+    }
+
+    private static void AppliquerMaterielSecurise(MeshInstance3D mi, Material mat)
+    {
+        if (mi == null || mat == null)
+            return;
+        if (mat is StandardMaterial3D std)
+            mi.MaterialOverride = AssainirMaterielStandard(std);
+        else
+            mi.MaterialOverride = mat;
+    }
+
+    /// <summary>Régénère les tangentes manquantes (GLB coffre, meshes facetés, etc.).</summary>
+    private static Mesh AssurerTangentsSurMesh(Mesh mesh)
+    {
+        if (mesh is not ArrayMesh source || source.GetSurfaceCount() == 0)
+            return mesh;
+
+        bool manqueTangentes = false;
+        for (int s = 0; s < source.GetSurfaceCount(); s++)
+        {
+            Godot.Collections.Array arrays = source.SurfaceGetArrays(s);
+            Variant tVar = arrays[(int)Mesh.ArrayType.Tangent];
+            if (tVar.VariantType == Variant.Type.Nil)
+            {
+                manqueTangentes = true;
+                break;
+            }
+            Color[] tangents = tVar.AsColorArray();
+            if (tangents == null || tangents.Length == 0)
+            {
+                manqueTangentes = true;
+                break;
+            }
+        }
+        if (!manqueTangentes)
+            return mesh;
+
+        var output = new ArrayMesh();
+        for (int s = 0; s < source.GetSurfaceCount(); s++)
+        {
+            Godot.Collections.Array arrays = source.SurfaceGetArrays(s);
+            Variant uvVar = arrays[(int)Mesh.ArrayType.TexUV];
+            bool aDesUv = uvVar.VariantType != Variant.Type.Nil
+                && uvVar.AsVector2Array() is { Length: > 0 };
+
+            var st = new SurfaceTool();
+            st.CreateFrom(source, s);
+            st.GenerateNormals();
+            if (aDesUv)
+            {
+                try { st.GenerateTangents(); }
+                catch { /* tangentes optionnelles */ }
+            }
+            st.Commit(output);
+        }
+        return output.GetSurfaceCount() > 0 ? output : mesh;
+    }
+
+    private static void PreparerMeshInstancePourRendu(MeshInstance3D mi)
+    {
+        if (mi?.Mesh == null)
+            return;
+        Mesh corrige = AssurerTangentsSurMesh(mi.Mesh);
+        if (corrige != null)
+            mi.Mesh = corrige;
+    }
+
     private static void RemplacerMeshParNormalesFacettes(MeshInstance3D mi)
     {
         if (mi?.Mesh == null) return;
         Mesh plat = ForcerMeshNormalesParFacette(mi.Mesh);
         if (plat != null)
-            mi.Mesh = plat;
+            mi.Mesh = AssurerTangentsSurMesh(plat);
     }
 
 

@@ -227,7 +227,7 @@ public partial class BoeufSauvage : CharacterBody3D
 		{
 			if (EstClipSystemeOuVide(nomComplet)) continue;
 			string n = nomComplet.ToLowerInvariant();
-			if (string.IsNullOrEmpty(_clipIdle) && !NomClipSembleMort(n) && (n.Contains("idle") || n.Contains("stand") || n.Contains("repos") || n.Contains("survey")))
+			if (string.IsNullOrEmpty(_clipIdle) && !NomClipSembleMort(n) && !NomClipSembleReactionOuNonAmbiant(n) && (n.Contains("idle") || n.Contains("stand") || n.Contains("repos") || n.Contains("survey")))
 				_clipIdle = nomComplet;
 			if (string.IsNullOrEmpty(_clipMarche) && !NomClipSembleMort(n) && (n.Contains("walk") || n.Contains("marche") || n.Contains("locomotion") || n.Contains("cycle")))
 				_clipMarche = nomComplet;
@@ -476,6 +476,11 @@ public partial class BoeufSauvage : CharacterBody3D
 	private void AjouterClipAuPool(string categorie, string clip)
 	{
 		if (string.IsNullOrWhiteSpace(clip) || _animationPlayer == null || !_animationPlayer.HasAnimation(clip))
+			return;
+		// Le pool "idle" se cycle automatiquement quand le bovin est calme (et alimente le point de blend 0 de l'état Déplacement).
+		// On en exclut donc tout clip de réaction/combat/saut (ex. Idle_HitReact1/2, Jump_toIdle) : sinon le bovin
+		// joue un sursaut / coup de tête / saut « sans raison » au repos ou à faible vitesse. C'est la source des « animations parasites ».
+		if (string.Equals(categorie, "idle", StringComparison.OrdinalIgnoreCase) && NomClipSembleReactionOuNonAmbiant(clip))
 			return;
 		InitialiserPoolCategorie(categorie);
 		List<string> pool = _poolsAnimationsEvolutives[categorie];
@@ -1802,13 +1807,38 @@ public partial class BoeufSauvage : CharacterBody3D
 			|| n.Contains("bite") || n.Contains("hit");
 	}
 
+	/// <summary>
+	/// Clip de réaction (sursaut, dégâts) ou non-ambiant : à NE JAMAIS mettre dans le pool idle qui se cycle tout seul,
+	/// sinon le bovin « sursaute / baisse la tête / joue un combat » sans raison quand il est calme (et, via le point de blend 0
+	/// de l'état Déplacement, aussi quand il marche lentement). Ex. Quaternius : Idle_HitReact1/2, Jump_toIdle.
+	/// </summary>
+	private static bool NomClipSembleReactionOuNonAmbiant(string nomComplet)
+	{
+		if (string.IsNullOrWhiteSpace(nomComplet)) return false;
+		string n = nomComplet.ToLowerInvariant();
+		if (n.Contains("react") || n.Contains("flinch") || n.Contains("hurt") || n.Contains("hit")
+			|| n.Contains("stagger") || n.Contains("stun") || n.Contains("damage") || n.Contains("impact"))
+			return true;
+		return NomClipSembleCombatOuSaut(n);
+	}
+
 	private static string PremierClipLocomotionUtileNonMortel(List<string> tous)
 	{
+		// 1) Idéal : un clip ni système, ni mort, ni combat/saut.
+		// CRITIQUE : sans l'exclusion combat/saut, « marche » (et par cascade idle/course/trot/broutage)
+		// pouvait tomber sur le premier clip de la liste = souvent l'attaque → le bovin fait des coups de tête au lieu de marcher.
+		foreach (string c in tous)
+		{
+			if (!EstClipSystemeOuVide(c) && !NomClipSembleMort(c) && !NomClipSembleCombatOuSaut(c))
+				return c;
+		}
+		// 2) Repli : ni système, ni mort (peut être un saut/attaque seulement si le modèle n'a vraiment rien d'autre).
 		foreach (string c in tous)
 		{
 			if (!EstClipSystemeOuVide(c) && !NomClipSembleMort(c))
 				return c;
 		}
+		// 3) Dernier recours : au moins pas un clip système.
 		foreach (string c in tous)
 		{
 			if (!EstClipSystemeOuVide(c))

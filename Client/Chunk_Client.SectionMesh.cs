@@ -1,4 +1,4 @@
-﻿using Godot;
+using Godot;
 using System;
 using System.Buffers;
 using System.Collections.Generic;
@@ -122,7 +122,7 @@ public partial class Chunk_Client : Node3D
 						Vector3 v0 = vertList[triTable[cubeIndex, i]];
 						Vector3 v1 = vertList[triTable[cubeIndex, i + 1]];
 						Vector3 v2 = vertList[triTable[cubeIndex, i + 2]];
-						Vector3 n = (v1 - v0).Cross(v2 - v0).Normalized();
+						Vector3 n = (v2 - v0).Cross(v1 - v0).Normalized();
 						st.SetNormal(n);
 						st.SetColor(couleurId);
 						st.AddVertex(v0);
@@ -191,7 +191,7 @@ public partial class Chunk_Client : Node3D
 						for (int i = 0; triTable[ci, i] != -1; i += 3)
 						{
 							Vector3 v0 = vl[triTable[ci, i]], v1 = vl[triTable[ci, i + 1]], v2 = vl[triTable[ci, i + 2]];
-							Vector3 n = (v1 - v0).Cross(v2 - v0).Normalized();
+							Vector3 n = (v2 - v0).Cross(v1 - v0).Normalized();
 							stEau.SetNormal(n);
 							stEau.AddVertex(v0);
 							stEau.SetNormal(n);
@@ -349,7 +349,7 @@ public partial class Chunk_Client : Node3D
 							Vector3 v0 = vertList[triTable[cubeIndex, i]];
 							Vector3 v1 = vertList[triTable[cubeIndex, i + 1]];
 							Vector3 v2 = vertList[triTable[cubeIndex, i + 2]];
-							Vector3 n = (v1 - v0).Cross(v2 - v0).Normalized();
+							Vector3 n = (v2 - v0).Cross(v1 - v0).Normalized();
 							vertsT.Add(v0); vertsT.Add(v1); vertsT.Add(v2);
 							normsT.Add(n); normsT.Add(n); normsT.Add(n);
 							colsT.Add(couleurId); colsT.Add(couleurId); colsT.Add(couleurId);
@@ -407,7 +407,7 @@ public partial class Chunk_Client : Node3D
 							for (int i = 0; triTable[ci, i] != -1; i += 3)
 							{
 								Vector3 v0 = vl[triTable[ci, i]], v1 = vl[triTable[ci, i + 1]], v2 = vl[triTable[ci, i + 2]];
-								Vector3 n = (v1 - v0).Cross(v2 - v0).Normalized();
+								Vector3 n = (v2 - v0).Cross(v1 - v0).Normalized();
 								vertsE.Add(v0); vertsE.Add(v1); vertsE.Add(v2);
 								normsE.Add(n); normsE.Add(n); normsE.Add(n);
 							}

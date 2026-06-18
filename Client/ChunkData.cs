@@ -44,6 +44,8 @@ public class ChunkData
 	public float[] DensitiesFlat { get; set; }
 	public byte[] MaterialsFlat { get; set; }
 	public float[] DensitiesEauFlat { get; set; }
+	/// <summary>Lumière ciel propagée (0..15 par voxel). Indépendante de la caméra — grottes sombres, entrées éclairées.</summary>
+	public byte[] SkylightFlat { get; set; }
 	public int Tx { get; set; }
 	public int Ty { get; set; }
 	public int Tz { get; set; }
@@ -187,6 +189,7 @@ public class ChunkData
 		DensitiesFlat = null;
 		MaterialsFlat = null;
 		DensitiesEauFlat = null;
+		SkylightFlat = null;
 		InventaireFlore = null;
 		EmpreinteDonneesServeur = 0;
 		CoutureVoxelAppliquee = false;

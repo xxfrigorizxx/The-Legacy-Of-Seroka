@@ -48,7 +48,9 @@ public partial class Joueur
 		/// <summary>Rondin court cylindre entier (IndexTaille 3, IndexMorphologique 0) — bol en bois.</summary>
 		BucheRondinCourt = 1L << 34,
 		/// <summary>Intestin de bœuf brut (118) ou nettoyé (119) — corde d'intestin (distinct de la fibre d'herbe).</summary>
-		IntestinBoeuf = 1L << 35
+		IntestinBoeuf = 1L << 35,
+		/// <summary>Voxel terre aride (ID terrain 6) — ingrédient de la boue (bol d'eau + terre aride).</summary>
+		VoxelTerreAride = 1L << 36
 	}
 
 	private sealed class RecetteAnalysable
@@ -295,6 +297,15 @@ public partial class Joueur
 		},
 		new RecetteAnalysable
 		{
+			CleCraft = "id_7",
+			IdResultat = 7,
+			Masque = CategorieAnalyse.BolEau | CategorieAnalyse.VoxelTerreAride,
+			Titre = "Voxel de boue",
+			LegendeSymboles = new[] { "Be = Bol rempli d'eau", "Ta = Voxel terre aride (ID terrain 6)" },
+			PatronCraft = new[] { "Grille craft : 1 Be + 1 Ta -> 1 voxel boue (le bol est vide apres craft)." }
+		},
+		new RecetteAnalysable
+		{
 			CleCraft = "id_156",
 			IdResultat = IdObjetTorchie,
 			Masque = CategorieAnalyse.ArgileHumidifiee | CategorieAnalyse.Fibre | CategorieAnalyse.VoxelBoue,
@@ -398,7 +409,7 @@ public partial class Joueur
 			IdResultat = IdObjetRackBuches,
 			Masque = CategorieAnalyse.DemiBuche | CategorieAnalyse.Ligature,
 			Titre = "Rack a buches",
-			LegendeSymboles = new[] { "D = Demi-buche", "L = Ligature", "d = Demi-buche courte" },
+			LegendeSymboles = new[] { "D = Demi-buche standard fendue en 2", "L = Ligature (corde ou liane)", "d = Demi-buche courte" },
 			PatronCraft = new[] { "(D)(  )(D)", "(D)(  )(D)", "(L)(d)(L)" }
 		},
 		new RecetteAnalysable
@@ -1133,6 +1144,7 @@ public partial class Joueur
 		if (s.ID == IdObjetTorchie) c |= CategorieAnalyse.Torchie;
 		if (Atlas_Matiere.EstSlotVoxelArgile(s)) c |= CategorieAnalyse.VoxelArgile;
 		if (Atlas_Matiere.EstSlotVoxelBoue(s)) c |= CategorieAnalyse.VoxelBoue;
+		if (Atlas_Matiere.EstSlotVoxelTerreAride(s)) c |= CategorieAnalyse.VoxelTerreAride;
 		if (s.ID == IdObjetMortierPilonBois) c |= CategorieAnalyse.MortierPilonBois;
 		if (s.ID == IdObjetOsBoeuf) c |= CategorieAnalyse.OsBoeuf;
 		if (s.ID == IdObjetPinceOs) c |= CategorieAnalyse.PinceOs;
@@ -1239,6 +1251,19 @@ public partial class Joueur
 				else return false;
 			}
 			return bolEau && argile;
+		}
+		if (r.CleCraft == "id_7" && grilleAnalyse != null)
+		{
+			bool bolEau = false, terreAride = false;
+			for (int i = 0; i < grilleAnalyse.Length; i++)
+			{
+				SlotInventaire s = grilleAnalyse[i];
+				if (s.EstVide) continue;
+				if (s.ID == IdObjetBolEau) bolEau = true;
+				else if (Atlas_Matiere.EstSlotVoxelTerreAride(s)) terreAride = true;
+				else return false;
+			}
+			return bolEau && terreAride;
 		}
 		if (r.CleCraft == "id_156" && grilleAnalyse != null)
 		{

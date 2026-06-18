@@ -47,7 +47,31 @@ function Get-Sha256OrThrow([string]$path) {
     return (Get-FileHash -Path $path -Algorithm SHA256).Hash.ToLowerInvariant()
 }
 
+function Resolve-ReleaseBinDir([string]$repoRoot) {
+    $releaseBinDirCandidates = @(
+        (Join-Path $repoRoot ".godot\mono\temp\bin\Release\win-x64"),
+        (Join-Path $repoRoot ".godot\mono\temp\bin\Release")
+    )
+    $releaseDllName = "Zero-K - Frozen Legacy.dll"
+    $releaseDirInfos = @()
+    foreach ($candidate in $releaseBinDirCandidates) {
+        $candidateDll = Join-Path $candidate $releaseDllName
+        if (Test-Path $candidateDll) {
+            $fi = Get-Item $candidateDll
+            $releaseDirInfos += [PSCustomObject]@{
+                Dir = $candidate
+                LastWriteTimeUtc = $fi.LastWriteTimeUtc
+            }
+        }
+    }
+    if ($releaseDirInfos.Count -eq 0) {
+        throw "Sortie C# Release introuvable. Dossiers testes: $($releaseBinDirCandidates -join ', ')"
+    }
+    return ($releaseDirInfos | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1).Dir
+}
+
 $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+$csprojPath = Join-Path $repoRoot "Zero-K - Frozen Legacy.csproj"
 $payloadDir = Join-Path $repoRoot "artifacts\release_payload_alpha"
 $manifestPath = Join-Path $repoRoot "Distribution\manifest.alpha.json"
 $gameExePath = Join-Path $repoRoot "SEROKAFrozenLegacy.exe"
@@ -55,34 +79,6 @@ $gamePckPath = Join-Path $repoRoot "SEROKAFrozenLegacy.pck"
 $dotnetDataDirName = "data_Zero-K - Frozen Legacy_windows_x86_64"
 $dotnetDataDir = Join-Path $repoRoot $dotnetDataDirName
 $payloadDataDir = Join-Path $payloadDir $dotnetDataDirName
-$debugBinDirCandidates = @(
-    (Join-Path $repoRoot ".godot\mono\temp\bin\Debug\win-x64"),
-    (Join-Path $repoRoot ".godot\mono\temp\bin\Debug")
-)
-$debugDllName = "Zero-K - Frozen Legacy.dll"
-$debugDirInfos = @()
-foreach ($candidate in $debugBinDirCandidates) {
-    $candidateDll = Join-Path $candidate $debugDllName
-    if (Test-Path $candidateDll) {
-        $fi = Get-Item $candidateDll
-        $debugDirInfos += [PSCustomObject]@{
-            Dir = $candidate
-            LastWriteTimeUtc = $fi.LastWriteTimeUtc
-        }
-    }
-}
-if ($debugDirInfos.Count -gt 0) {
-    $debugBinDir = ($debugDirInfos | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1).Dir
-} else {
-    $debugBinDir = $null
-}
-if ([string]::IsNullOrWhiteSpace($debugBinDir)) {
-    throw "Sortie C# debug introuvable. Dossiers testes: $($debugBinDirCandidates -join ', ')"
-}
-$debugDllPath = Join-Path $debugBinDir $debugDllName
-$debugPdbPath = Join-Path $debugBinDir "Zero-K - Frozen Legacy.pdb"
-$debugDepsPath = Join-Path $debugBinDir "Zero-K - Frozen Legacy.deps.json"
-$debugRuntimeConfigPath = Join-Path $debugBinDir "Zero-K - Frozen Legacy.runtimeconfig.json"
 
 if ([string]::IsNullOrWhiteSpace($Version)) {
     throw "Version obligatoire. Exemple: -Version 0.1.0-alpha.16"
@@ -100,9 +96,22 @@ if (-not (Test-Path $B2ExePath)) {
     throw "CLI B2 introuvable: $B2ExePath"
 }
 
-Run-CheckedCommand -Label "Build C# (Godot --build-solutions)" -Action {
-    & $GodotExePath --headless --path $repoRoot --build-solutions --quit
+Run-CheckedCommand -Label "Build C# Release (dotnet build -c Release)" -Action {
+    & dotnet build $csprojPath -c Release --no-restore
+    if ($LASTEXITCODE -ne 0) {
+        & dotnet restore $csprojPath
+        & dotnet build $csprojPath -c Release
+    }
 }
+
+$releaseBinDir = Resolve-ReleaseBinDir $repoRoot
+$releaseDllPath = Join-Path $releaseBinDir "Zero-K - Frozen Legacy.dll"
+$releaseDepsPath = Join-Path $releaseBinDir "Zero-K - Frozen Legacy.deps.json"
+$releaseRuntimeConfigPath = Join-Path $releaseBinDir "Zero-K - Frozen Legacy.runtimeconfig.json"
+
+if (-not (Test-Path $releaseDllPath)) { throw "DLL Release introuvable: $releaseDllPath" }
+if (-not (Test-Path $releaseDepsPath)) { throw "deps Release introuvable: $releaseDepsPath" }
+if (-not (Test-Path $releaseRuntimeConfigPath)) { throw "runtimeconfig Release introuvable: $releaseRuntimeConfigPath" }
 
 Run-CheckedCommand -Label "Export release Godot" -Action {
     & $GodotExePath --headless --path $repoRoot --export-release "Windows Desktop" $gameExePath
@@ -111,22 +120,20 @@ Run-CheckedCommand -Label "Export release Godot" -Action {
 if (-not (Test-Path $gameExePath)) { throw "Export manquant: $gameExePath" }
 if (-not (Test-Path $gamePckPath)) { throw "Export manquant: $gamePckPath" }
 if (-not (Test-Path $dotnetDataDir)) { throw "Export data manquant: $dotnetDataDir" }
-if (-not (Test-Path $debugDllPath)) { throw "DLL debug introuvable: $debugDllPath" }
-if (-not (Test-Path $debugPdbPath)) { throw "PDB debug introuvable: $debugPdbPath" }
-if (-not (Test-Path $debugDepsPath)) { throw "deps debug introuvable: $debugDepsPath" }
-if (-not (Test-Path $debugRuntimeConfigPath)) { throw "runtimeconfig debug introuvable: $debugRuntimeConfigPath" }
 
 Step "Preflight verrous fichiers"
 Assert-FileWritable $gameExePath
 Assert-FileWritable $gamePckPath
 Assert-FileWritable (Join-Path $dotnetDataDir "Zero-K - Frozen Legacy.dll")
-Assert-FileWritable (Join-Path $dotnetDataDir "Zero-K - Frozen Legacy.pdb")
 
-Step "Alignement runtime C# (debug -> data)"
-Copy-Item -Force $debugDllPath (Join-Path $dotnetDataDir "Zero-K - Frozen Legacy.dll")
-Copy-Item -Force $debugPdbPath (Join-Path $dotnetDataDir "Zero-K - Frozen Legacy.pdb")
-Copy-Item -Force $debugDepsPath (Join-Path $dotnetDataDir "Zero-K - Frozen Legacy.deps.json")
-Copy-Item -Force $debugRuntimeConfigPath (Join-Path $dotnetDataDir "Zero-K - Frozen Legacy.runtimeconfig.json")
+Step "Alignement runtime C# (Release -> data, sans symboles debug)"
+Copy-Item -Force $releaseDllPath (Join-Path $dotnetDataDir "Zero-K - Frozen Legacy.dll")
+Copy-Item -Force $releaseDepsPath (Join-Path $dotnetDataDir "Zero-K - Frozen Legacy.deps.json")
+Copy-Item -Force $releaseRuntimeConfigPath (Join-Path $dotnetDataDir "Zero-K - Frozen Legacy.runtimeconfig.json")
+$pdbInData = Join-Path $dotnetDataDir "Zero-K - Frozen Legacy.pdb"
+if (Test-Path $pdbInData) {
+    Remove-Item -Force $pdbInData
+}
 
 Step "Synchronisation payload local"
 New-Item -ItemType Directory -Force -Path $payloadDir | Out-Null
@@ -136,6 +143,9 @@ if (Test-Path $payloadDataDir) {
     Remove-Item -Recurse -Force $payloadDataDir
 }
 Copy-Item -Recurse -Force $dotnetDataDir $payloadDataDir
+Get-ChildItem -Path $payloadDataDir -Filter "*.pdb" -Recurse -File | ForEach-Object {
+    Remove-Item -Force $_.FullName
+}
 
 Run-CheckedCommand -Label "Generation manifest launcher" -Action {
     & powershell -ExecutionPolicy Bypass -File (Join-Path $repoRoot "Distribution\New-LauncherManifest.ps1") `
@@ -159,6 +169,10 @@ if ($manifestObj.buildId -ne $BuildId) {
 if ($manifestObj.entryExecutable -ne "SEROKAFrozenLegacy.exe") {
     throw "entryExecutable invalide dans manifest: $($manifestObj.entryExecutable)"
 }
+$pdbInManifest = @($manifestObj.files | Where-Object { $_.path -like "*.pdb" })
+if ($pdbInManifest.Count -gt 0) {
+    throw "Le manifest ne doit pas contenir de fichiers .pdb (joueurs): $($pdbInManifest.path -join ', ')"
+}
 
 Run-CheckedCommand -Label "Upload payload vers Backblaze (sync complet)" -Action {
     # compare-versions none : re-uploade tous les fichiers du payload, pas seulement les plus recents.
@@ -175,7 +189,8 @@ $hashPck = Get-Sha256OrThrow (Join-Path $payloadDir "SEROKAFrozenLegacy.pck")
 $hashDll = Get-Sha256OrThrow (Join-Path $payloadDataDir "Zero-K - Frozen Legacy.dll")
 Write-Host "SHA256 EXE: $hashExe" -ForegroundColor DarkGreen
 Write-Host "SHA256 PCK: $hashPck" -ForegroundColor DarkGreen
-Write-Host "SHA256 DLL: $hashDll" -ForegroundColor DarkGreen
+Write-Host "SHA256 DLL (Release): $hashDll" -ForegroundColor DarkGreen
+Write-Host "Configuration C#: Release (pas de PDB dans le payload)" -ForegroundColor DarkGreen
 
 Step "Termine"
 Write-Host "Version publiee: $Version" -ForegroundColor Green

@@ -1,4 +1,4 @@
-﻿using Godot;
+using Godot;
 using System;
 using System.Buffers;
 using System.Collections.Generic;
@@ -131,7 +131,11 @@ public partial class Chunk_Client : Node3D
 
 		for (int i = 0; i < NB_SECTIONS_MAX; i++)
 		{
-			var miTerrain = new MeshInstance3D { Name = $"TerrainSection_{i}" };
+			var miTerrain = new MeshInstance3D
+			{
+				Name = $"TerrainSection_{i}",
+				CastShadow = GeometryInstance3D.ShadowCastingSetting.On
+			};
 			AddChild(miTerrain);
 			_sectionsTerrain[i] = miTerrain;
 
@@ -145,16 +149,21 @@ public partial class Chunk_Client : Node3D
 			AddChild(miEau);
 			_sectionsEau[i] = miEau;
 		}
-		_mmGazon = new MultiMeshInstance3D { Name = "Gazon" };
+		// Gazon : reçoit les ombres mais ne les projette pas (shadow pass herbe = coût GPU majeur, gain visuel nul).
+		_mmGazon = new MultiMeshInstance3D { Name = "Gazon", CastShadow = GeometryInstance3D.ShadowCastingSetting.Off };
 		var racineBuissonsPleins = new Node3D { Name = "BuissonPleinParCouleur" };
 		_mmBuissonPleinParCouleur = new MultiMeshInstance3D[Joueur.BaieNombreCouleurs];
 		for (int i = 0; i < Joueur.BaieNombreCouleurs; i++)
 		{
-			_mmBuissonPleinParCouleur[i] = new MultiMeshInstance3D { Name = $"BuissonPlein_c{i}" };
+			_mmBuissonPleinParCouleur[i] = new MultiMeshInstance3D
+			{
+				Name = $"BuissonPlein_c{i}",
+				CastShadow = GeometryInstance3D.ShadowCastingSetting.On
+			};
 			racineBuissonsPleins.AddChild(_mmBuissonPleinParCouleur[i]);
 		}
-		_mmBuissonVide = new MultiMeshInstance3D { Name = "BuissonVide" };
-		_mmAloeVera = new MultiMeshInstance3D { Name = "AloeVera" };
+		_mmBuissonVide = new MultiMeshInstance3D { Name = "BuissonVide", CastShadow = GeometryInstance3D.ShadowCastingSetting.On };
+		_mmAloeVera = new MultiMeshInstance3D { Name = "AloeVera", CastShadow = GeometryInstance3D.ShadowCastingSetting.On };
 		AddChild(_mmGazon);
 		AddChild(racineBuissonsPleins);
 		AddChild(_mmBuissonVide);
@@ -1103,7 +1112,7 @@ private static Texture2D _cacheTextureFeuilleBuisson;
 		var shader = new Shader();
 		shader.Code = @"
 shader_type spatial;
-render_mode cull_disabled, depth_draw_opaque;
+render_mode cull_disabled, depth_draw_opaque, specular_disabled;
 
 uniform vec3 couleur_pointe = vec3(0.38, 0.52, 0.18);
 uniform vec3 contact_pos_0 = vec3(0.0, -99999.0, 0.0);
@@ -1198,7 +1207,15 @@ void fragment() {
 	ALBEDO = couleur_finale;
 	ROUGHNESS = mix(0.96, 0.90, nervure);
 	SPECULAR = 0.0;
-	BACKLIGHT = couleur_finale * 0.20;
+}
+
+void light() {
+	// Même modèle d'éclairage que le terrain : Lambert pur × ATTENUATION (shadow maps Godot).
+	// Conséquence : un brin d'herbe dans l'ombre de la montagne s'assombrit comme le sol.
+	float ndotl = max(dot(NORMAL, LIGHT), 0.0);
+	// Translucidité douce du brin (la lumière traverse la feuille), coupée elle aussi par l'ombre.
+	float trans = (1.0 - ndotl) * 0.22;
+	DIFFUSE_LIGHT += ALBEDO * (ndotl + trans) * ATTENUATION * LIGHT_COLOR * (1.0 / 3.14159265);
 }
 ";
 		var mat = new ShaderMaterial { Shader = shader };

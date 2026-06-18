@@ -42,6 +42,8 @@ public partial class ArbreVivant : StaticBody3D
 	private MeshInstance3D _visuelFeuillage;
 	private CollisionShape3D _hitbox;
 	private Node3D _observationRef;
+	// Cache partagé du Gestionnaire_Monde : évite une recherche de nœud par chaîne à chaque frame ET par arbre.
+	private static Gestionnaire_Monde _gestionnaireMondeCacheStatic;
 	private int _lodActuel = -1;
 	private bool _maillageInitialGenere;
 	private float _attenteGeneration;
@@ -335,10 +337,13 @@ public partial class ArbreVivant : StaticBody3D
 
 	public override void _Ready()
 	{
-		_visuelBois = new MeshInstance3D { Name = "Bois" };
-		_visuelFeuillage = new MeshInstance3D { Name = "Feuillage" };
+		_visuelBois = new MeshInstance3D { Name = "Bois", CastShadow = GeometryInstance3D.ShadowCastingSetting.On };
+		_visuelFeuillage = new MeshInstance3D
+		{
+			Name = "Feuillage",
+			CastShadow = GeometryInstance3D.ShadowCastingSetting.DoubleSided
+		};
 		_hitbox = new CollisionShape3D { Name = "Hitbox" };
-		_visuelFeuillage.CastShadow = GeometryInstance3D.ShadowCastingSetting.Off;
 
 		AddChild(_visuelBois);
 		AddChild(_visuelFeuillage);
@@ -823,12 +828,17 @@ public partial class ArbreVivant : StaticBody3D
 
 	private bool EstEnDimensionApisara()
 	{
-		var gm = GetTree()?.CurrentScene?.GetNodeOrNull<Gestionnaire_Monde>("Gestionnaire_Monde");
+		var gm = ObtenirGestionnaireMonde();
 		return gm != null && gm.ObtenirDimensionLocaleActiveId() == (int)DimensionJeu.Abysse;
 	}
 
 	private Gestionnaire_Monde ObtenirGestionnaireMonde()
-		=> GetTree()?.CurrentScene?.GetNodeOrNull<Gestionnaire_Monde>("Gestionnaire_Monde");
+	{
+		if (_gestionnaireMondeCacheStatic != null && GodotObject.IsInstanceValid(_gestionnaireMondeCacheStatic))
+			return _gestionnaireMondeCacheStatic;
+		_gestionnaireMondeCacheStatic = GetTree()?.CurrentScene?.GetNodeOrNull<Gestionnaire_Monde>("Gestionnaire_Monde");
+		return _gestionnaireMondeCacheStatic;
+	}
 
 	/// <summary>Distance max d'affichage des arbres = slider « distance de rendu » (+ 1 chunk de marge).</summary>
 	private float ObtenirDistanceMaxVisibiliteArbre()

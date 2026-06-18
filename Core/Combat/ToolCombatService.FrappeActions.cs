@@ -150,14 +150,19 @@ public partial class Joueur
             0.76f,
             0.88f);
         intensiteRigid *= multiplicateurDegatsBras;
-        if (rbCible is ItemPhysique ipCible && (ipCible.Freeze || ipCible.EstEnReposAuSolOptimise))
-            ipCible.ReveillerPhysiqueAuSol();
-        else if (rbCible.Freeze)
+        bool cibleStatiquePose = rbCible is ItemPhysique ipStatique
+            && ItemPhysique.EstMeublePoseStatique(ipStatique.ID_Objet);
+        if (!cibleStatiquePose)
         {
-            rbCible.Freeze = false;
-            rbCible.Sleeping = false;
+            if (rbCible is ItemPhysique ipCible && (ipCible.Freeze || ipCible.EstEnReposAuSolOptimise))
+                ipCible.ReveillerPhysiqueAuSol();
+            else if (rbCible.Freeze)
+            {
+                rbCible.Freeze = false;
+                rbCible.Sleeping = false;
+            }
+            rbCible.ApplyCentralImpulse(dirFrappeObj.Normalized() * Mathf.Clamp(intensiteRigid * 0.16f, 0.35f, 4.6f));
         }
-        rbCible.ApplyCentralImpulse(dirFrappeObj.Normalized() * Mathf.Clamp(intensiteRigid * 0.16f, 0.35f, 4.6f));
 
         var item = rbCible as ItemPhysique ?? rbCible.GetNodeOrNull<ItemPhysique>("ItemPhysique");
         if (item == null)

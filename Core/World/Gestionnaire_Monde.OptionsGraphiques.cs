@@ -45,7 +45,8 @@ public partial class Gestionnaire_Monde : Node3D
 			SeuilFpsUrgenceForte = _mondeClient?.SeuilFpsUrgenceForte ?? 42,
 			SeuilFpsUrgenceCritique = _mondeClient?.SeuilFpsUrgenceCritique ?? 30,
 			SeuilFpsUrgenceExtreme = _mondeClient?.SeuilFpsUrgenceExtreme ?? 24,
-			SeuilFpsSortieUrgenceExtreme = _mondeClient?.SeuilFpsSortieUrgenceExtreme ?? 56
+			SeuilFpsSortieUrgenceExtreme = _mondeClient?.SeuilFpsSortieUrgenceExtreme ?? 56,
+			QualiteEclairage = _optionsGraphiquesActuelles?.QualiteEclairage ?? QualiteEclairageAaa.Ultra
 		});
 	}
 
@@ -157,6 +158,7 @@ public partial class Gestionnaire_Monde : Node3D
 
 		var cycleSolaire = GetParent()?.GetNodeOrNull<Cycle_Solaire>("CycleSolaire");
 		cycleSolaire?.ConfigurerDistanceBrouillardProgressive(RenderDistance, TailleChunk, 2);
+		AppliquerProfilEclairageAaa(o.QualiteEclairage);
 		if (_mondeServeurAbysse is Gestionnaire_Abysse gestionnaireAbysseDistance)
 			gestionnaireAbysseDistance.ConfigurerDistanceBrouillardProgressive(RenderDistance, TailleChunk, 2);
 
@@ -172,6 +174,16 @@ public partial class Gestionnaire_Monde : Node3D
 			GraphicsOptionsService.Sauvegarder(_optionsGraphiquesActuelles);
 			_optionsGraphiquesChargeesUtilisateur = true;
 		}
+	}
+
+	/// <summary>SSAO / SSIL / SDFGI sur le WorldEnvironment racine (surface).</summary>
+	private void AppliquerProfilEclairageAaa(QualiteEclairageAaa qualite)
+	{
+		var we = GetParent()?.GetNodeOrNull<WorldEnvironment>("WorldEnvironment");
+		if (we?.Environment == null)
+			return;
+		ProfilEclairageAAA.Appliquer(we.Environment, qualite);
+		GD.Print($"SEROKA ÉCLAIRAGE : profil AAA {qualite} appliqué (SSAO/SSIL/SDFGI selon niveau).");
 	}
 
 	private void LancerAutoHybrideGraphique()

@@ -195,6 +195,30 @@ public partial class Joueur
                 estCraftArgileHumidifiee = false;
         }
 
+        // Boue : bol d'eau + voxel terre aride -> voxel boue (bol vide après craft, comme l'argile humidifiée).
+        int indexBolEauBoue = -1;
+        int indexTerreAride = -1;
+        bool estCraftBoue = Atlas_Matiere.EstSlotVoxelBoue(SlotResultatCraft);
+        if (estCraftBoue)
+        {
+            for (int i = 0; i < n && i < g.Length; i++)
+            {
+                SlotInventaire s = g[i];
+                if (s.EstVide) continue;
+                if (s.ID == IdObjetBolEau)
+                    indexBolEauBoue = i;
+                else if (Atlas_Matiere.EstSlotVoxelTerreAride(s))
+                    indexTerreAride = i;
+                else
+                {
+                    estCraftBoue = false;
+                    break;
+                }
+            }
+            if (indexBolEauBoue < 0 || indexTerreAride < 0)
+                estCraftBoue = false;
+        }
+
         for (int i = 0; i < n && i < g.Length; i++)
         {
             if (g[i].EstVide) continue;
@@ -236,6 +260,38 @@ public partial class Joueur
                     NiveauFracture = g[i].NiveauFracture,
                     GenomeAssemblage = g[i].GenomeAssemblage,
                     Quantite = qArgile
+                };
+                continue;
+            }
+            if (estCraftBoue && i == indexBolEauBoue)
+            {
+                SlotInventaire bolEau = g[i];
+                g[i] = new SlotInventaire
+                {
+                    ID = IdObjetBolBois,
+                    IndexBotanique = bolEau.IndexBotanique,
+                    IndexChimique = bolEau.IndexChimique,
+                    IndexMorphologique = bolEau.IndexMorphologique,
+                    Quantite = ObtenirQuantiteSlot(bolEau)
+                };
+                continue;
+            }
+            if (estCraftBoue && i == indexTerreAride)
+            {
+                int qTerre = ObtenirQuantiteSlot(g[i]) - 1;
+                g[i] = qTerre <= 0 ? new SlotInventaire() : new SlotInventaire
+                {
+                    ID = g[i].ID,
+                    IndexBotanique = g[i].IndexBotanique,
+                    IndexChimique = g[i].IndexChimique,
+                    IndexMorphologique = g[i].IndexMorphologique,
+                    IndexTaille = g[i].IndexTaille,
+                    ScaleEclat = g[i].ScaleEclat,
+                    EstUnEclat = g[i].EstUnEclat,
+                    MeshEclat = g[i].MeshEclat,
+                    NiveauFracture = g[i].NiveauFracture,
+                    GenomeAssemblage = g[i].GenomeAssemblage,
+                    Quantite = qTerre
                 };
                 continue;
             }
