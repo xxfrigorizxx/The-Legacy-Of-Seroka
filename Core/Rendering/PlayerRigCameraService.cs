@@ -599,6 +599,9 @@ public partial class Joueur
         // RÃ©fÃ©rence visage : lÃ©gÃ¨rement en avant et un peu sous la ligne des yeux (proche bouche).
         if (_cameraFps.GetParent() != this)
             _cameraFps.Reparent(this);
+        // AvanceCameraFpsMetres = 0 : camera sur l'axe du corps a hauteur des yeux, SANS poussee vers l'avant.
+        // Tete/cou/cheveux etant masques pour la camera FPS (CalqueRenduTeteFpsCachee), inutile de la pousser
+        // devant le visage : elle reste derriere la capsule (~0.19 m) -> on ne voit plus a travers les murs.
         float avanceCamera = Mathf.Max(0f, AvanceCameraFpsMetres);
         _cameraFps.Position = new Vector3(
             _positionLocaleBaseCameraFps.X,
@@ -607,7 +610,8 @@ public partial class Joueur
         _pitchCameraBaseRad = 0f;
         _yawCorrectionCameraFpsRad = 0f;
         _cameraFps.Rotation = new Vector3(_pitchCameraBaseRad + _pitchCamera, _yawCorrectionCameraFpsRad, 0f);
-        _cameraFps.Near = 0.12f;
+        // Near reduit : marge anti-clipping en plus contre les murs (Forward+/reverse-Z gere bien un near faible).
+        _cameraFps.Near = 0.05f;
     }
 
     private static T TrouverPremierNoeudDeType<T>(Node racine) where T : Node

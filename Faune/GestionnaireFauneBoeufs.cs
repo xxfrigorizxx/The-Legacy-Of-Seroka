@@ -496,6 +496,71 @@ public partial class GestionnaireFauneBoeufs : Node3D
 		}
 	}
 
+	/// <summary>
+	/// DEBUG/CRÉATIF : fait apparaître de force un troupeau de bovins autour du joueur, en contournant
+	/// le gate FPS, la restriction « plaine ID1 » et l'évaluation par chunk. Utilisé par la commande chat
+	/// <c>/INVOCA BOVA</c> pour observer la faune même quand le spawn naturel est bloqué (FPS bas, biome non-plaine).
+	/// Retourne le nombre de bovins réellement apparus.
+	/// </summary>
+	public int ForcerApparitionTroupeauAuJoueur(int taille)
+	{
+		if (_gestionnaireMonde == null || !GodotObject.IsInstanceValid(_gestionnaireMonde))
+			return 0;
+		_joueur = _gestionnaireMonde.ObtenirJoueurSiValide();
+		if (_joueur == null || !GodotObject.IsInstanceValid(_joueur))
+			return 0;
+		if (ResoudreSceneFemelle() == null && SceneTaureau == null)
+			return 0;
+		if (_gestionnaireMonde.EstDimensionLocaleAbysse())
+			return 0; // Pas de faune bovine en Abysse/APISARA.
+
+		taille = Mathf.Clamp(taille, 1, 24);
+		Vector3 centre = _joueur.GlobalPosition;
+		Vector3 ancre = centre;
+		int nbFemelles = 0;
+		int nbMales = 0;
+		int spawnes = 0;
+		int tentatives = 0;
+		int budget = Mathf.Max(taille * 10, taille + 8);
+
+		while (spawnes < taille && tentatives < budget)
+		{
+			tentatives++;
+			// Anneau autour du joueur : assez proche pour observer, assez loin pour ne pas spawner sur lui.
+			float angle = _rng.RandfRange(0f, Mathf.Tau);
+			float dist = _rng.RandfRange(3.5f, 9f);
+			Vector3 approx = centre + new Vector3(Mathf.Cos(angle), 0f, Mathf.Sin(angle)) * dist;
+			if (!EssayerTrouverSolParRaycast(new Vector3(approx.X, centre.Y + 6f, approx.Z), out Vector3 sol)
+				&& !EssayerTrouverSolParRaycast(new Vector3(approx.X, centre.Y + HauteurRaycast, approx.Z), out sol))
+				continue;
+			if (TropProcheAutreBoeuf(sol))
+				continue;
+
+			PackedScene sceneSpawn = ChoisirSceneSpawn(nbFemelles, nbMales);
+			if (sceneSpawn == null)
+				break;
+			Node instance = sceneSpawn.Instantiate();
+			if (instance is not BoeufSauvage boeuf)
+			{
+				instance.QueueFree();
+				continue;
+			}
+
+			AddChild(boeuf);
+			boeuf.GlobalPosition = sol + Vector3.Up * 0.2f;
+			boeuf.Configurer(_gestionnaireMonde, _joueur, _gestionnaireMonde.SeedTerrain, ancre);
+			_boeufs.Add(boeuf);
+			EnregistrerProfilActifDansBanque(boeuf);
+			if (boeuf is VacheSauvage) nbFemelles++;
+			else nbMales++;
+			spawnes++;
+		}
+
+		if (spawnes > 0)
+			GD.Print($"ZERO-K Faune : troupeau forcé ({spawnes} bovin(s)) apparu autour du joueur.");
+		return spawnes;
+	}
+
 	private void NettoyerBoeufsActifsInvalides()
 	{
 		for (int i = _boeufs.Count - 1; i >= 0; i--)
@@ -539,6 +604,20 @@ public partial class GestionnaireFauneBoeufs : Node3D
 		if (profil.TryGetValue("cadavre_loot_distribue", out Variant lootV) && lootV.AsBool())
 			return true;
 		return BoeufSauvage.EstProfilCadavreExpire(profil, dureeCadavreSec);
+	}
+
+	/// <summary>
+	/// Enregistre un veau qui vient de naître (via reproduction) dans la population suivie et la banque de persistance.
+	/// Sans cela, les nouveau-nés ne seraient ni comptés (troupeau/repro/cohésion) ni persistés au streaming et
+	/// disparaîtraient à la sortie de zone. Garantit donc que les veaux — mâles comme femelles — perdurent.
+	/// </summary>
+	public void EnregistrerNouveauNe(BoeufSauvage bebe)
+	{
+		if (bebe == null || !IsInstanceValid(bebe) || !bebe.IsInsideTree())
+			return;
+		if (!_boeufs.Contains(bebe))
+			_boeufs.Add(bebe);
+		EnregistrerProfilActifDansBanque(bebe);
 	}
 
 	private void EnregistrerProfilActifDansBanque(BoeufSauvage boeuf)
@@ -704,6 +783,9 @@ public partial class GestionnaireFauneBoeufs : Node3D
 				_idsActifs.Add(idActif);
 		}
 
+		// Estime de position : avance les bovins en exode alimentaire déchargés selon le temps écoulé.
+		AvancerMigrationProfilsBanque();
+
 		_scratchIdsProfilsExpires.Clear();
 		_scratchIdsARecharger.Clear();
 		foreach (var kv in _banqueFaune)
@@ -731,6 +813,59 @@ public partial class GestionnaireFauneBoeufs : Node3D
 			if (boeuf == null) continue;
 			_boeufs.Add(boeuf);
 			recharges++;
+		}
+	}
+
+	/// <summary>
+	/// Estime de position des bovins en migration alimentaire pendant qu'ils sont déchargés (hors champ du joueur).
+	/// Avance la position enregistrée le long du cap de migration selon le temps réel écoulé, afin qu'ils
+	/// réapparaissent là où ils « devraient » être arrivés. Lecture seule du terrain : aucune génération de chunk.
+	/// </summary>
+	private void AvancerMigrationProfilsBanque()
+	{
+		if (_gestionnaireMonde == null || !GodotObject.IsInstanceValid(_gestionnaireMonde))
+			return;
+		double now = Time.GetUnixTimeFromSystem();
+		int seed = _gestionnaireMonde.SeedTerrain;
+		foreach (var kv in _banqueFaune)
+		{
+			if (_idsActifs.Contains(kv.Key)) continue;
+			Godot.Collections.Dictionary p = kv.Value?.Profil;
+			if (p == null) continue;
+			if (!p.TryGetValue("migration_active", out Variant maV) || !maV.AsBool()) continue;
+			if (!p.TryGetValue("migration_dir_x", out Variant dxV) || !p.TryGetValue("migration_dir_z", out Variant dzV)) continue;
+			float dirX = dxV.AsSingle();
+			float dirZ = dzV.AsSingle();
+			if (Mathf.Abs(dirX) < 0.0001f && Mathf.Abs(dirZ) < 0.0001f) continue;
+
+			float reste = p.TryGetValue("migration_reste_m", out Variant rV) ? rV.AsSingle() : 0f;
+			float vit = p.TryGetValue("migration_vitesse", out Variant vV) ? vV.AsSingle() : 1.5f;
+			double ts = p.TryGetValue("migration_horodatage_unix", out Variant tV) ? tV.AsDouble() : now;
+			double elapsed = now - ts;
+			if (elapsed <= 0.0 || !EssayerLirePositionProfil(p, out Vector3 pos))
+			{
+				p["migration_horodatage_unix"] = now;
+				continue;
+			}
+
+			float step = Mathf.Min(Mathf.Max(0f, reste), (float)elapsed * Mathf.Max(0f, vit));
+			if (step <= 0.05f)
+			{
+				p["migration_horodatage_unix"] = now;
+				continue;
+			}
+
+			float nx = pos.X + dirX * step;
+			float nz = pos.Z + dirZ * step;
+			int h = Generateur_Voxel.ObtenirHauteurTerrainMonde(Mathf.FloorToInt(nx), Mathf.FloorToInt(nz), seed);
+			p["x"] = nx;
+			p["z"] = nz;
+			p["y"] = h + 0.2f;
+			reste = Mathf.Max(0f, reste - step);
+			p["migration_reste_m"] = reste;
+			p["migration_horodatage_unix"] = now;
+			if (reste <= 0f)
+				p["migration_active"] = false; // étape terminée : l'animal « est arrivé », il redécidera au rechargement
 		}
 	}
 

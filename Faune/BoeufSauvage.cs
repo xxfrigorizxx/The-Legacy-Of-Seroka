@@ -50,6 +50,28 @@ public partial class BoeufSauvage : CharacterBody3D
 	[Export(PropertyHint.Range, "2,40,0.5")] public float RayonRechercheHerbeVisible = 14f;
 	[Export(PropertyHint.Range, "4,64,1")] public int EssaisRechercheHerbe = 20;
 	[Export(PropertyHint.Range, "0.1,2,0.05")] public float DureeImmobilePendantMorsure = 0.6f;
+	[ExportGroup("Migration alimentaire (exode troupeau)")]
+	/// <summary>Quand aucune herbe n'est trouvée dans le rayon de recherche, l'animal part en ligne droite (hors champ de vision) chercher un nouveau pâturage.</summary>
+	[Export] public bool ActiverMigrationHerbe = true;
+	[Export(PropertyHint.Range, "20,400,1")] public float DistanceMigrationHerbeMin = 50f;
+	[Export(PropertyHint.Range, "30,600,1")] public float DistanceMigrationHerbeMax = 130f;
+	/// <summary>Rayon (m) de détection d'herbe pendant la migration : si on croise un pâturage en chemin, on s'arrête pour brouter.</summary>
+	[Export(PropertyHint.Range, "2,60,0.5")] public float RayonDetectionHerbeMigration = 18f;
+	/// <summary>Vitesse (m/s) utilisée pour l'estime de position pendant que l'animal est déchargé (hors champ). Recalée sur la marche réelle au départ.</summary>
+	[Export(PropertyHint.Range, "0.4,6,0.1")] public float VitesseEstimeMigrationDefaut = 1.5f;
+	/// <summary>Avant de partir en exode aveugle, l'animal balaie TOUT autour de lui (toutes directions, jusqu'à ce rayon en m) pour repérer le pâturage le PLUS PROCHE — même derrière lui — au lieu de foncer dans une zone aride/montagneuse.</summary>
+	[Export(PropertyHint.Range, "20,160,1")] public float RayonObservationHerbeAvantMigration = 64f;
+	[ExportGroup("Cohésion troupeau (meute)")]
+	[Export] public bool ActiverCohesionTroupeau = true;
+	/// <summary>Au-delà de ce rayon (m) du centre du troupeau, l'animal revient se regrouper au lieu d'errer seul. Plus bas = troupeau plus serré.</summary>
+	[Export(PropertyHint.Range, "4,120,0.5")] public float RayonCohesionTroupeau = 18f;
+	/// <summary>Le mâle s'interpose entre la menace (joueur) et le troupeau ; femelles et veaux se replient au centre.</summary>
+	[Export] public bool ActiverFormationProtectrice = true;
+	[Export(PropertyHint.Range, "4,80,0.5")] public float RayonMenaceTroupeau = 22f;
+	/// <summary>Quand une bête trouve de l'herbe, elle « appelle » le troupeau pendant ce délai (s) : les autres affamés la rejoignent.</summary>
+	[Export(PropertyHint.Range, "1,30,0.5")] public float DureeAppelHerbeTroupeau = 9f;
+	/// <summary>Portée (m) de l'appel « j'ai trouvé de l'herbe » vers les congénères.</summary>
+	[Export(PropertyHint.Range, "8,200,1")] public float RayonAppelHerbeTroupeau = 70f;
 	/// <summary>Durée réelle (secondes) avant disparition d'un cadavre non dépecé — 24 h par défaut, compte hors ligne.</summary>
 	[Export] public float DureeCadavreAvantSuppression = 86400f;
 	[Export] public float ForceBase = 10f;
@@ -123,7 +145,7 @@ public partial class BoeufSauvage : CharacterBody3D
 	[Export(PropertyHint.Range, "10,1200,1")] public float DureeGestationSecondes = 180f;
 	[Export(PropertyHint.Range, "1,5,0.1")] public float MultiplicateurFaimGestation = 2.0f;
 	[Export(PropertyHint.Range, "5,1200,1")] public float CooldownReproductionSecondes = 120f;
-	[Export(PropertyHint.Range, "0,1,0.01")] public float ProbabiliteNaissanceMale = 0.45f;
+	[Export(PropertyHint.Range, "0,1,0.01")] public float ProbabiliteNaissanceMale = 0.5f;
 	[Export(PropertyHint.File, "*.tscn,*.glb,*.gltf")] public string CheminSceneNaissanceFemelle = "res://Scenes/Faune/VacheSauvage.tscn";
 	[Export(PropertyHint.File, "*.tscn,*.glb,*.gltf")] public string CheminSceneNaissanceMale = "res://Scenes/Faune/BoeufSauvage.tscn";
 	[Export(PropertyHint.File, "*.tscn,*.glb,*.gltf")] public string CheminSceneVeauFemelle = "res://Scenes/Faune/VeauFemelleSauvage.tscn";
@@ -198,6 +220,11 @@ public partial class BoeufSauvage : CharacterBody3D
 	[Export(PropertyHint.File, "*.ogg,*.wav,*.mp3")] public string CheminSonCriDegats = "res://Audio/Faune/cow_moo_hit.wav";
 	[Export(PropertyHint.Range, "0.05,2,0.01")] public float CooldownCriDegatsSecondes = 0.35f;
 	[Export(PropertyHint.Range, "-24,6,0.1")] public float VolumeCriDegatsDb = -4.5f;
+	[ExportSubgroup("Meuglement d'appel (herbe trouvée)")]
+	/// <summary>Son joué quand une bête trouve de l'herbe et appelle le troupeau. Si le fichier est absent, on rejoue l'échantillon de cri à un pitch plus grave/calme (≠ son de coup).</summary>
+	[Export(PropertyHint.File, "*.ogg,*.wav,*.mp3")] public string CheminSonMeuglementAppel = "res://Audio/Faune/cow_moo_appel.mp3";
+	[Export(PropertyHint.Range, "0.2,10,0.1")] public float CooldownMeuglementAppelSecondes = 2.5f;
+	[Export(PropertyHint.Range, "-30,6,0.1")] public float VolumeMeuglementAppelDb = -7f;
 
 	[ExportGroup("Dépeçage cadavre")]
 	/// <summary>Nombre de coups de dague (lame) valides sur le cadavre avant la distribution du loot. Au-delà de 3 pour ralentir le dépeçage.</summary>
@@ -281,6 +308,23 @@ public partial class BoeufSauvage : CharacterBody3D
 	private float _cooldownMorsure;
 	private int _echecsMorsureConsecutifs;
 	private float _verrouMouvementMorsure;
+	/// <summary>Exode alimentaire : l'animal a quitté une zone sans herbe et marche en ligne droite vers un nouveau pâturage.</summary>
+	private bool _enMigrationHerbe;
+	private Vector3 _migrationDirection = Vector3.Zero;
+	/// <summary>Distance restante (m) de l'étape de migration en cours.</summary>
+	private float _migrationResteM;
+	/// <summary>Vitesse (m/s) figée au départ de la migration, pour l'estime de position hors champ.</summary>
+	private float _migrationVitesse = 1.5f;
+	/// <summary>Horodatage Unix (s) de la dernière mise à jour de position de migration (estime de position au rechargement).</summary>
+	private double _migrationHorodatageUnixSec;
+	private float _cooldownVerifHerbeMigration;
+	private float _cooldownCentreTroupeau;
+	private Vector3 _centreTroupeauCache;
+	private int _nbVoisinsTroupeauCache;
+	/// <summary>Position d'herbe trouvée diffusée au troupeau (« appel ») ; lue par les congénères affamés.</summary>
+	private Vector3 _beaconHerbePosition;
+	/// <summary>Temps restant (s) de diffusion de l'appel d'herbe ; &gt; 0 = appel actif.</summary>
+	private float _beaconHerbeRestant;
 	private float _tempsGestationRestant;
 	private float _tempsFuite;
 	private float _tempsCharge;
@@ -328,6 +372,10 @@ public partial class BoeufSauvage : CharacterBody3D
 	private readonly Dictionary<ulong, double> _horodatageDernierDegatParSource = new();
 	private AudioStreamPlayer3D _audioCriDegats;
 	private double _horodatageDernierCriDegats = -999.0;
+	private AudioStreamPlayer3D _audioMeuglementAppel;
+	private double _horodatageDernierMeuglementAppel = -999.0;
+	/// <summary>Vrai si l'appel réutilise l'échantillon de cri (pas de fichier dédié) : on le joue alors à un pitch plus grave pour le distinguer.</summary>
+	private bool _meuglementAppelUtiliseFallback;
 	private int _niveau = 1;
 	private int _seedTerrain;
 	private bool _initialise;
@@ -447,6 +495,11 @@ public partial class BoeufSauvage : CharacterBody3D
 	private readonly Dictionary<string, StringName> _cacheStringNameAnimations = new(StringComparer.Ordinal);
 	private float _dernierBlendAnimation = float.NaN;
 	private float _derniereVitesseAnimation = float.NaN;
+	// Vitesse horizontale RÉELLE (déplacement effectif, pas la Velocity résiduelle de MoveAndSlide) lissée :
+	// pilote l'animation de locomotion pour éviter le « marche sur place » quand le bovin est coincé/poussé/glisse contre le terrain.
+	private Vector3 _positionAnimFramePrecedente;
+	private bool _positionAnimFramePrecedenteValide;
+	private float _vitesseHorizReelleLissee;
 	private readonly List<BoeufSauvage> _scratchCandidatsReproduction = new();
 	private readonly Dictionary<string, List<string>> _poolsAnimationsEvolutives = new(StringComparer.OrdinalIgnoreCase);
 	private readonly List<ShaderMaterial> _materiauxPelageInstances = new();
@@ -459,12 +512,16 @@ public partial class BoeufSauvage : CharacterBody3D
 	private Vector3 _dirImpactChargePlanifie;
 	private int _indiceFormeImpactChargePlanifie = -1;
 	private const float DelaiDegatsApresDebutAnimationCharge = 0.24f;
-	private const float DistanceMaxDeclenchementAttaqueCharge = 2.05f;
-	private const float DistanceMaxImpactChargeApresDelai = 2.35f;
+	/// <summary>Le taureau ne déclenche le coup qu'en contact (≤ impact, pour qu'il plante les pattes ET touche réellement).</summary>
+	private const float DistanceMaxDeclenchementAttaqueCharge = 1.6f;
+	/// <summary>Corps-à-corps : le coup ne porte plus au-delà de cette distance au moment de l'impact (avant : 2.35 + 0.35).</summary>
+	private const float DistanceMaxImpactChargeApresDelai = 1.8f;
+	/// <summary>Bout portant devant soi : autorise le coup même si le rayon de contact échoue (hitbox au ras du corps).</summary>
+	private const float DistanceContactBoutPortantCharge = 1.25f;
 	/// <summary>À cette distance, le taureau engage la charge (plus de simple regard).</summary>
 	private const float DistanceDeclenchementEngagementCharge = 2.35f;
 	/// <summary>Seuil « face à face » : animation d’attaque puis dégâts (pas de RNG).</summary>
-	private const float DistanceAttaqueChargeFaceAFace = 2.05f;
+	private const float DistanceAttaqueChargeFaceAFace = 1.6f;
 	/// <summary>Pas de dégâts de charge si le bovin est trop au-dessus du joueur (saut / écrasement tête).</summary>
 	private const float DeltaYMaxDegatsChargeSurJoueur = 0.72f;
 	/// <summary>Pause après une charge (réussie ou ratée) pour éviter charge → fuite → charge en boucle.</summary>
@@ -660,6 +717,53 @@ public partial class BoeufSauvage : CharacterBody3D
 			if (stream != null)
 				_audioCriDegats.Stream = stream;
 		}
+		InitialiserAudioAppelTroupeau();
+	}
+
+	private void InitialiserAudioAppelTroupeau()
+	{
+		_audioMeuglementAppel = GetNodeOrNull<AudioStreamPlayer3D>("AudioMeuglementAppel");
+		if (_audioMeuglementAppel == null)
+		{
+			_audioMeuglementAppel = new AudioStreamPlayer3D { Name = "AudioMeuglementAppel" };
+			AddChild(_audioMeuglementAppel);
+		}
+		_audioMeuglementAppel.MaxDistance = 48f; // l'appel porte un peu plus loin que le cri de coup.
+		_audioMeuglementAppel.UnitSize = 1f;
+		_audioMeuglementAppel.VolumeDb = VolumeMeuglementAppelDb;
+
+		_meuglementAppelUtiliseFallback = false;
+		if (_audioMeuglementAppel.Stream == null && !string.IsNullOrWhiteSpace(CheminSonMeuglementAppel)
+			&& ResourceLoader.Exists(CheminSonMeuglementAppel))
+		{
+			AudioStream dedie = GD.Load<AudioStream>(CheminSonMeuglementAppel);
+			if (dedie != null)
+				_audioMeuglementAppel.Stream = dedie;
+		}
+		if (_audioMeuglementAppel.Stream == null)
+		{
+			// Pas de fichier dédié : on réutilise l'échantillon de cri, mais joué plus grave/calme (≠ son de coup).
+			_audioMeuglementAppel.Stream = _audioCriDegats?.Stream;
+			_meuglementAppelUtiliseFallback = true;
+		}
+	}
+
+	/// <summary>Meuglement d'appel au troupeau quand une bête trouve de l'herbe (timbre distinct du cri de coup).</summary>
+	private void JouerMeuglementAppel()
+	{
+		if (_audioMeuglementAppel == null || !GodotObject.IsInstanceValid(_audioMeuglementAppel) || _audioMeuglementAppel.Stream == null)
+			return;
+		double maintenant = Time.GetTicksMsec() / 1000.0;
+		if ((maintenant - _horodatageDernierMeuglementAppel) < Mathf.Max(0.2f, CooldownMeuglementAppelSecondes))
+			return;
+		_horodatageDernierMeuglementAppel = maintenant;
+		// Fallback : pitch nettement plus grave (meuglement long/calme) pour ne pas ressembler au cri de coup (~1.0).
+		// Fichier dédié : pitch quasi naturel avec légère variation.
+		_audioMeuglementAppel.PitchScale = _meuglementAppelUtiliseFallback
+			? _rng.RandfRange(0.62f, 0.74f)
+			: _rng.RandfRange(0.92f, 1.05f);
+		_audioMeuglementAppel.VolumeDb = VolumeMeuglementAppelDb;
+		_audioMeuglementAppel.Play();
 	}
 
 	private void JouerCriDegats(float degats)
@@ -723,6 +827,8 @@ public partial class BoeufSauvage : CharacterBody3D
 		_cooldownEvaluationEnvironnement -= dt;
 		_cooldownVariationAnimation -= dt;
 		_cooldownCohesionAnimation -= dt;
+		_cooldownCentreTroupeau = Mathf.Max(0f, _cooldownCentreTroupeau - dt);
+		_beaconHerbeRestant = Mathf.Max(0f, _beaconHerbeRestant - dt);
 		_cooldownImpactChargeJoueur -= dt;
 		_cooldownReengagementChargeJoueur = Mathf.Max(0f, _cooldownReengagementChargeJoueur - dt);
 		MettreAJourImpactChargeJoueurPlanifie(dt);
@@ -840,6 +946,9 @@ public partial class BoeufSauvage : CharacterBody3D
 		}
 		if (_verrouMouvementMorsure > 0f)
 			vitesseCible = 0f;
+		// Pendant l'animation d'attaque (coup de tête / ruade), planter les pattes : supprime le « marche + coup de tête dans le vide ».
+		if (_tempsVerrouAnimationCombat > 0.01f || !string.IsNullOrEmpty(_noeudAnimationCombatVerrou))
+			vitesseCible = 0f;
 		Vector3 vHoriz = new Vector3(Velocity.X, 0f, Velocity.Z);
 		Vector3 vCible = direction * vitesseCible;
 		float facteur = direction == Vector3.Zero ? FreinageHorizontal : AccelerationHorizontale;
@@ -904,12 +1013,34 @@ public partial class BoeufSauvage : CharacterBody3D
 		}
 
 		float vitesseHoriz = new Vector3(Velocity.X, 0f, Velocity.Z).Length();
+
+		// Vitesse RÉELLE = déplacement effectif depuis la frame précédente (capte aussi l'enjambement et les blocages),
+		// par opposition à la Velocity résiduelle de MoveAndSlide qui reste non nulle quand le bovin glisse/pousse contre
+		// le terrain ou est tassé par le troupeau sans avancer. C'est ELLE qui pilote l'animation de locomotion :
+		// plus de « marche/galop sur place » quand le corps ne se déplace pas physiquement.
+		float vitesseHorizReelle;
+		if (_positionAnimFramePrecedenteValide && dt > 0.0001f)
+		{
+			Vector3 deltaReel = GlobalPosition - _positionAnimFramePrecedente;
+			deltaReel.Y = 0f;
+			float distReel = deltaReel.Length();
+			// Garde anti-téléportation (spawn, changement de dimension, repositionnement de chunk) : on ignore les sauts énormes.
+			vitesseHorizReelle = distReel <= 6f ? distReel / dt : _vitesseHorizReelleLissee;
+		}
+		else
+			vitesseHorizReelle = vitesseHoriz;
+		_positionAnimFramePrecedente = GlobalPosition;
+		_positionAnimFramePrecedenteValide = true;
+		_vitesseHorizReelleLissee = Mathf.Lerp(_vitesseHorizReelleLissee, vitesseHorizReelle, Mathf.Clamp(dt * 14f, 0f, 1f));
+		// En nage, le corps se déplace réellement mais la détection sol/glisse n'est pas en cause : on garde la Velocity.
+		float vitesseHorizAnim = _dansEau ? vitesseHoriz : _vitesseHorizReelleLissee;
+
 		MettreAJourApprentissageNavigation(dt, direction, vitesseHoriz);
 		MettreAJourCycleIdleMultiples(dt, vitesseHorizActuelle);
-		MettreAJourAnimation(dt, vitesseHoriz);
+		MettreAJourAnimation(dt, vitesseHorizAnim);
 		MettreAJourCompensationEnfoncementSol(dt);
 		if (EstFallbackLocomotionBobSeulement())
-			AppliquerLocomotionSquelettiqueProcedural(dt, vitesseHoriz);
+			AppliquerLocomotionSquelettiqueProcedural(dt, vitesseHorizAnim);
 		OrienteCorpsVersDirectionDeplacement(dt, vitesseHoriz);
 		if (_etat != EtatBoeuf.Mort
 			&& _reconfigurationArbreAnimationEnAttente

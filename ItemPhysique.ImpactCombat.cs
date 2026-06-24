@@ -1,4 +1,4 @@
-﻿using Godot;
+using Godot;
 using System;
 using System.Collections.Generic;
 
@@ -64,6 +64,7 @@ public partial class ItemPhysique : RigidBody3D
 	/// <summary>Appelé à chaque contact physique. body peut être null (terrain PhysicsServer3D bas-niveau) → traité comme sol.</summary>
 	private void SurImpactPhysique(Node body)
 	{
+		GameState.MarquerPhasePrincipale("impact_roche");
 		if (EstIdRocheMatiere(ID_Objet) && _frameFinGraceImpactLancer != 0 && Engine.GetPhysicsFrames() < _frameFinGraceImpactLancer)
 			return;
 
@@ -98,6 +99,9 @@ public partial class ItemPhysique : RigidBody3D
 				if (perforant && vitesseImpact > 4.9f)
 					TenterPlanterDansBovin(boeufTouche);
 			}
+			// Impact sur un animal : dégâts de combat uniquement. On NE passe PAS à la section fracture
+			// (pas de cassure/mesh-cut sur de la chair, et coupe tout traitement lourd sur un corps mou).
+			return;
 		}
 
 		// Objets légers/petits: au contact joueur, on les réveille et on les repousse légèrement

@@ -1,4 +1,4 @@
-﻿using Godot;
+using Godot;
 using System;
 using System.Collections.Generic;
 using System.Text.Json;
@@ -233,7 +233,7 @@ public partial class BoeufSauvage : CharacterBody3D
 				_clipMarche = nomComplet;
 			if (string.IsNullOrEmpty(_clipSautGalop) && NomClipSembleSautGalop(n))
 				_clipSautGalop = nomComplet;
-			if (string.IsNullOrEmpty(_clipSaut) && n.Contains("jump") && !NomClipSembleSautGalop(n) && !NomClipSembleMort(n))
+			if (string.IsNullOrEmpty(_clipSaut) && n.Contains("jump") && !n.Contains("toidle") && !NomClipSembleSautGalop(n) && !NomClipSembleMort(n))
 				_clipSaut = nomComplet;
 			if (string.IsNullOrEmpty(_clipAttaqueKick) && !NomClipSembleMort(n) && ResoudreClipSembleAttaqueDerriere(n))
 				_clipAttaqueKick = nomComplet;
@@ -316,6 +316,57 @@ public partial class BoeufSauvage : CharacterBody3D
 				}
 			}
 		}
+
+		AppliquerNomsClipsExactsBovins(tous);
+	}
+
+	/// <summary>
+	/// Liaison EXACTE des clips du pack bovin (Bull/Cow Quaternius) : garantit que les Strings envoyés à
+	/// <see cref="AnimationNodeStateMachinePlayback.Travel"/> pointent sur le bon clip, sans dépendre uniquement
+	/// des heuristiques de nom (source du « coup de tête à la place du repas »). Priorité finale sur la résolution floue.
+	/// </summary>
+	private void AppliquerNomsClipsExactsBovins(List<string> tous)
+	{
+		if (_animationPlayer == null || tous == null || tous.Count == 0)
+			return;
+
+		string TrouverParNomCourt(string nomCourtCible)
+		{
+			foreach (string nomComplet in tous)
+			{
+				if (EstClipSystemeOuVide(nomComplet))
+					continue;
+				if (string.Equals(ExtraireNomCourtClip(nomComplet), nomCourtCible, StringComparison.OrdinalIgnoreCase))
+					return nomComplet;
+			}
+			return "";
+		}
+
+		void Lier(ref string cible, string nomCourt)
+		{
+			string trouve = TrouverParNomCourt(nomCourt);
+			if (!string.IsNullOrEmpty(trouve) && _animationPlayer.HasAnimation(trouve))
+				cible = trouve;
+		}
+
+		Lier(ref _clipMarche, "Walk");
+		Lier(ref _clipCourse, "Gallop");
+		Lier(ref _clipManger, "Eating");
+		Lier(ref _clipMort, "Death");
+		Lier(ref _clipSautGalop, "Gallop_Jump");
+		Lier(ref _clipAttaqueTete, ClipAttaqueTeteCanonique); // Attack_Headbutt
+		Lier(ref _clipAttaqueKick, ClipAttaqueKickCanonique); // Attack_Kick
+
+		// Idle ambiant uniquement : Idle > Idle_Headlow > Idle_2. Jamais HitReact ni Jump_toIdle (clips parasites).
+		string idle = TrouverParNomCourt("Idle");
+		if (string.IsNullOrEmpty(idle)) idle = TrouverParNomCourt("Idle_Headlow");
+		if (string.IsNullOrEmpty(idle)) idle = TrouverParNomCourt("Idle_2");
+		if (!string.IsNullOrEmpty(idle) && _animationPlayer.HasAnimation(idle))
+			_clipIdle = idle;
+
+		// « Jump_toIdle » est une transition (atterrissage), pas un saut : ne jamais l'employer comme clip de saut.
+		if (!string.IsNullOrEmpty(_clipSaut) && _clipSaut.ToLowerInvariant().Contains("toidle"))
+			_clipSaut = "";
 	}
 
 	private static bool NomClipSembleSautGalop(string n)
@@ -448,7 +499,7 @@ public partial class BoeufSauvage : CharacterBody3D
 					AjouterClipAuPool("swim", c);
 				if (n.Contains("death") || n.Contains("dead") || n.Contains("die") || n.Contains("mort"))
 					AjouterClipAuPool("death", c);
-				if (!NomClipSembleMort(n) && n.Contains("jump") && !NomClipSembleSautGalop(n))
+				if (!NomClipSembleMort(n) && n.Contains("jump") && !n.Contains("toidle") && !NomClipSembleSautGalop(n))
 					AjouterClipAuPool("jump", c);
 				if (!NomClipSembleMort(n) && NomClipSembleSautGalop(n))
 					AjouterClipAuPool("gallop_jump", c);
@@ -1100,8 +1151,9 @@ public partial class BoeufSauvage : CharacterBody3D
 			string etatVoulu = NomNoeudDeplacement;
 			if (_dansEau && _machineAPorteNage)
 				etatVoulu = "Nage";
-			else if (!_dansEau && _etat == EtatBoeuf.Broutage && _machineAPorteBroutage)
-				etatVoulu = NomNoeudBroutage;
+			else if (!_dansEau && _etat == EtatBoeuf.Broutage && _machineAPorteBroutage
+				&& (vitesseHoriz <= seuilMarche || _verrouMouvementMorsure > 0f))
+				etatVoulu = NomNoeudBroutage; // Tête baissée seulement à l'arrêt ; en route vers l'herbe → locomotion (plus de « glisse en mangeant »).
 			else if (_tempsVerrouAnimationCombat > 0f && !string.IsNullOrEmpty(_noeudAnimationCombatVerrou))
 			{
 				if (_noeudAnimationCombatVerrou == NomNoeudAttaqueKick
@@ -1189,7 +1241,7 @@ public partial class BoeufSauvage : CharacterBody3D
 			cible = !string.IsNullOrEmpty(_clipNage) ? _clipNage : (!string.IsNullOrEmpty(_clipCourse) ? _clipCourse : (!string.IsNullOrEmpty(_clipMarche) ? _clipMarche : _clipIdle));
 			speedDirect = Mathf.Clamp(vitesseHoriz / Mathf.Max(0.1f, VitesseNageHorizontale), 0.75f, 1.25f);
 		}
-		else if (_etat == EtatBoeuf.Broutage)
+		else if (_etat == EtatBoeuf.Broutage && (vitesseHoriz <= seuilMarche || _verrouMouvementMorsure > 0f))
 		{
 			cible = !string.IsNullOrEmpty(_clipManger) ? _clipManger : _clipIdle;
 			speedDirect = 0.9f;

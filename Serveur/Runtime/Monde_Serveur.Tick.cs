@@ -42,6 +42,7 @@ public partial class Monde_Serveur : Node
 		TickSpawnProgressif(out int nArbres, out int nPierres);
 		if (prof) { PerfBudgetMonitor.End("Serveur/Spawn", tProf); tProf = PerfBudgetMonitor.Begin(); }
 		TickDechargement(delta);
+		TickScanTerrainFlottant();
 		if (prof) { PerfBudgetMonitor.End("Serveur/Dechargement", tProf); tProf = PerfBudgetMonitor.Begin(); }
 		_ = _waterSimulationService.TickRuntime();
 		if (prof)
@@ -242,6 +243,8 @@ public partial class Monde_Serveur : Node
 			DefinirChunkRuntime(chunkCible, coordYCible, chunkActuel);
 			SynchroniserFrontieresAvecVoisinsCharges(chunkCible, chunkActuel);
 			RepousserBorduresChunkDisqueVersVoisinsProceduraux(chunkCible, chunkActuel);
+			if (chunkActuel.EstChargeDepuisDisque && chunkActuel.EstModifie)
+				EnfilerScanTerrainFlottant(chunkCible, coordYCible);
 			_spawnPipelineService.SpawnerArbresChunkAvecPrioriteSauvegarde(chunkCible, chunkActuel);
 			if (!_pierrePersistenceService.ChargerEtSpawnerPierresChunk(chunkCible, coordYCible))
 			{

@@ -191,7 +191,13 @@ public partial class BoeufSauvage : CharacterBody3D
 			{ "z", GlobalPosition.Z },
 			{ "ancre_x", _ancreTroupeau.X },
 			{ "ancre_y", _ancreTroupeau.Y },
-			{ "ancre_z", _ancreTroupeau.Z }
+			{ "ancre_z", _ancreTroupeau.Z },
+			{ "migration_active", _enMigrationHerbe },
+			{ "migration_dir_x", _migrationDirection.X },
+			{ "migration_dir_z", _migrationDirection.Z },
+			{ "migration_reste_m", _migrationResteM },
+			{ "migration_vitesse", _migrationVitesse },
+			{ "migration_horodatage_unix", _migrationHorodatageUnixSec }
 		};
 	}
 
@@ -242,6 +248,25 @@ public partial class BoeufSauvage : CharacterBody3D
 		double horodatageMortUnix = data.TryGetValue("cadavre_heure_mort_unix", out Variant hmV) ? hmV.AsDouble() : 0.0;
 		if (data.TryGetValue("ancre_x", out Variant ax) && data.TryGetValue("ancre_y", out Variant ay) && data.TryGetValue("ancre_z", out Variant az))
 			_ancreTroupeau = new Vector3(ax.AsSingle(), ay.AsSingle(), az.AsSingle());
+		// Exode alimentaire : restaure l'état de migration. La position a déjà été avancée par l'estime
+		// du gestionnaire pendant le déchargement ; on repart d'ici avec l'horloge remise à maintenant.
+		bool migrationActive = data.TryGetValue("migration_active", out Variant maV) && maV.AsBool();
+		if (migrationActive
+			&& data.TryGetValue("migration_dir_x", out Variant mdxV)
+			&& data.TryGetValue("migration_dir_z", out Variant mdzV))
+		{
+			Vector3 dirMig = new Vector3(mdxV.AsSingle(), 0f, mdzV.AsSingle());
+			if (dirMig.LengthSquared() > 0.0001f)
+			{
+				_migrationDirection = dirMig.Normalized();
+				_migrationResteM = data.TryGetValue("migration_reste_m", out Variant mrV) ? Mathf.Max(0f, mrV.AsSingle()) : 0f;
+				_migrationVitesse = data.TryGetValue("migration_vitesse", out Variant mvV)
+					? Mathf.Max(0.4f, mvV.AsSingle())
+					: Mathf.Max(0.4f, VitesseEstimeMigrationDefaut);
+				_migrationHorodatageUnixSec = Time.GetUnixTimeFromSystem();
+				_enMigrationHerbe = _migrationResteM > 0.01f;
+			}
+		}
 		MettreAJourStatsDerivees();
 		bool etatMortSauvegarde = etatSauvegarde == (int)EtatBoeuf.Mort;
 		if (etatMortSauvegarde || _vieCourante <= 0.0001f)

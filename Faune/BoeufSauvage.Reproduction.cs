@@ -306,6 +306,12 @@ public partial class BoeufSauvage : CharacterBody3D
 		if (NaissanceSousFormeVeau)
 			bebe.ConfigurerCommeVeau();
 
+		// Inscrit le nouveau-né dans la population suivie + la banque de persistance : sinon les veaux (mâles comme
+		// femelles) ne seraient ni comptés ni sauvegardés et disparaîtraient au déchargement de la zone.
+		if (_gestionnaireFaune == null || !GodotObject.IsInstanceValid(_gestionnaireFaune))
+			_gestionnaireFaune = GetParent() as GestionnaireFauneBoeufs;
+		_gestionnaireFaune?.EnregistrerNouveauNe(bebe);
+
 		_maleGestationReference = null;
 		AjouterExperience(2.6f, "naissance");
 	}

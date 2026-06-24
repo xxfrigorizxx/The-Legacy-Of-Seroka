@@ -5,6 +5,10 @@ using System.Collections.Generic;
 public partial class Joueur
 {
     private float _tempsAttenteSpawn;
+    /// <summary>Dernier état « corps dans l'eau » (≥50% immergé) calculé en physique : réutilisé pour le filtre sous-marin.</summary>
+    private bool _dernierEtatDansEau;
+    /// <summary>Dernière hauteur de surface d'eau LOCALE (gère lacs en altitude) : réutilisée pour le filtre sous-marin.</summary>
+    private float _derniereSurfaceEau = 103.35f;
     private bool _verrouSpawnActif = true;
     private bool _verrouAntiChuteAbysseActif;
     private float _cooldownSortieVerrouAbysse;
@@ -281,6 +285,8 @@ public partial class Joueur
         }
 
         bool estDansEau = EvaluerEtatEauJoueur(out float surfaceEau);
+        _dernierEtatDansEau = estDansEau;
+        _derniereSurfaceEau = surfaceEau;
         bool sautMaintenu = !uiBloquanteOuverte && (Input.IsActionPressed("ui_accept") || Input.IsActionPressed("jump"));
 
         if (IsOnFloor())

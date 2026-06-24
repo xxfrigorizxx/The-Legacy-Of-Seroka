@@ -50,10 +50,18 @@ public partial class Monde_Client : Node3D
 		foreach (var p in payloads)
 			if (p?.SommetsVisuels != null)
 				totalTerrainVertices += p.SommetsVisuels.Length;
+		// Chunk SANS terrain : avant on abandonnait toujours ici. Mais un chunk peut être 100 % EAU (cœur d'un
+		// lac/océan : le sol ne remonte pas dans ce chunk) → il a une nappe d'eau mais ZÉRO sommet de terrain.
+		// Abandonner ici ne créait jamais l'eau → eau invisible alors qu'on peut nager dedans (« nager dans le vide »).
+		// On bascule donc sur un chemin EAU-SEULE quand de l'eau est présente.
 		if (totalTerrainVertices <= 0)
 		{
-			if (remplacerVisuelExistant)
-				return;
+			int totalEauVertices = 0;
+			foreach (var p in payloads)
+				if (p?.SommetsEau != null)
+					totalEauVertices += p.SommetsEau.Length;
+			if (totalEauVertices > 0)
+				IntegrerChunkEauSeule(data, payloads);
 			return;
 		}
 
@@ -258,7 +266,48 @@ public partial class Monde_Client : Node3D
 			}
 		}
 		SolidifierCollisionPrioritaireSiProcheJoueur(data);
-		// 4. Eau : SurfaceTool (matériau eau existant).
+		// 4. Eau : construite/intégrée via le helper partagé (aussi utilisé par le chemin eau-seule).
+		ConstruireEtIntegrerEauChunk(data, payloads, transformChunk, world);
+
+		// Fade-in d'émergence (anti pop-in) : on démarre le chunk en transparence totale
+		// et on l'anime vers opaque en DureeFonduEmergenceChunk secondes. Purement visuel.
+		if (!remplacerVisuelExistant && DureeFonduEmergenceChunk > 0.01f && data.VisualInstanceRID.IsValid)
+		{
+			try
+			{
+				RenderingServer.Singleton.InstanceGeometrySetTransparency(data.VisualInstanceRID, 1f);
+				if (data.WaterInstanceRID.IsValid)
+					RenderingServer.Singleton.InstanceGeometrySetTransparency(data.WaterInstanceRID, 1f);
+				_animsEmergence.Add(new AnimEmergenceChunk
+				{
+					VisualRid = data.VisualInstanceRID,
+					WaterRid = data.WaterInstanceRID,
+					FloreNodeRid = default,
+					TempsEcoule = 0f,
+					Duree = DureeFonduEmergenceChunk
+				});
+			}
+			catch { /* InstanceGeometrySetTransparency requiert un material supportant la transparence ; si ça échoue, on laisse le chunk opaque direct (pas de pop-in au moins lissé par le streaming). */ }
+		}
+
+		SynchroniserProxyChunkProfondeur(data.Coordonnees);
+		RestaurerCollisionImmediateSiSousJoueur(data);
+		data.CachePayloadsSections = new List<SectionPayload>(payloads);
+		if (recoudreVoisinsVertical && ModeProfondeurTranchesActif())
+			RecoudreVoisinsVerticalApresIntegration(data);
+		if (_voxelsModifiesEnAttente.Count > 0
+			&& EstRemeshPrioritaireMinage(new Vector3I(data.Coordonnees.X, data.CoordChunkY, data.Coordonnees.Y)))
+			AppliquerVoxelsEnAttente();
+		if (ActiverOcclusionVisuelle)
+			AppliquerVisibiliteRenduFinaleChunk(data, ObtenirPositionObservation(), replanifierFloreSiVisible: false);
+	}
+
+	/// <summary>
+	/// Construit le mesh d'eau (SurfaceTool) puis crée/MAJ l'instance d'eau RenderingServer avec le matériau eau.
+	/// Extrait d'<see cref="IntegrerChunkDataRIDs"/> pour être partagé avec le chemin « chunk eau-seule ».
+	/// </summary>
+	private void ConstruireEtIntegrerEauChunk(ChunkData data, List<SectionPayload> payloads, Transform3D transformChunk, World3D world)
+	{
 		var stEau = new SurfaceTool();
 		stEau.Begin(Mesh.PrimitiveType.Triangles);
 		foreach (var p in payloads)
@@ -305,36 +354,32 @@ public partial class Monde_Client : Node3D
 			data._meshEauRef?.Dispose();
 			data._meshEauRef = null;
 		}
+	}
 
-		// Fade-in d'émergence (anti pop-in) : on démarre le chunk en transparence totale
-		// et on l'anime vers opaque en DureeFonduEmergenceChunk secondes. Purement visuel.
-		if (!remplacerVisuelExistant && DureeFonduEmergenceChunk > 0.01f && data.VisualInstanceRID.IsValid)
+	/// <summary>
+	/// Chunk SANS terrain mais AVEC une nappe d'eau (cœur d'un lac/océan). <see cref="IntegrerChunkDataRIDs"/>
+	/// abandonnait sur ces chunks (totalTerrainVertices &lt;= 0) → l'eau n'était jamais créée → eau invisible
+	/// alors qu'on peut nager dedans (« nager dans le vide »). Ici on crée UNIQUEMENT l'eau (ni mesh, ni
+	/// physique, ni flore terrain). Le culling gère ensuite la visibilité comme pour tout chunk.
+	/// </summary>
+	private void IntegrerChunkEauSeule(ChunkData data, List<SectionPayload> payloads)
+	{
+		World3D world = GetWorld3D();
+		if (world == null) return;
+		// Terrain résiduel (ex. chunk dont tout le sol vient d'être miné sous l'eau) : libérer le visuel/physique terrain.
+		if (data.VisualInstanceRID.IsValid)
 		{
-			try
-			{
-				RenderingServer.Singleton.InstanceGeometrySetTransparency(data.VisualInstanceRID, 1f);
-				if (data.WaterInstanceRID.IsValid)
-					RenderingServer.Singleton.InstanceGeometrySetTransparency(data.WaterInstanceRID, 1f);
-				_animsEmergence.Add(new AnimEmergenceChunk
-				{
-					VisualRid = data.VisualInstanceRID,
-					WaterRid = data.WaterInstanceRID,
-					FloreNodeRid = default,
-					TempsEcoule = 0f,
-					Duree = DureeFonduEmergenceChunk
-				});
-			}
-			catch { /* InstanceGeometrySetTransparency requiert un material supportant la transparence ; si ça échoue, on laisse le chunk opaque direct (pas de pop-in au moins lissé par le streaming). */ }
+			LibererPhysiqueChunk(data);
+			RenderingServer.Singleton.FreeRid(data.VisualInstanceRID);
+			data.VisualInstanceRID = default;
+			data._meshRef?.Dispose();
+			data._meshRef = null;
 		}
-
+		Vector3 origineChunkLocale = data.ObtenirOrigineMonde(TailleChunk);
+		Transform3D transformChunk = new Transform3D(Basis.Identity, GlobalPosition + origineChunkLocale);
+		ConstruireEtIntegrerEauChunk(data, payloads, transformChunk, world);
 		SynchroniserProxyChunkProfondeur(data.Coordonnees);
-		RestaurerCollisionImmediateSiSousJoueur(data);
 		data.CachePayloadsSections = new List<SectionPayload>(payloads);
-		if (recoudreVoisinsVertical && ModeProfondeurTranchesActif())
-			RecoudreVoisinsVerticalApresIntegration(data);
-		if (_voxelsModifiesEnAttente.Count > 0
-			&& EstRemeshPrioritaireMinage(new Vector3I(data.Coordonnees.X, data.CoordChunkY, data.Coordonnees.Y)))
-			AppliquerVoxelsEnAttente();
 		if (ActiverOcclusionVisuelle)
 			AppliquerVisibiliteRenduFinaleChunk(data, ObtenirPositionObservation(), replanifierFloreSiVisible: false);
 	}

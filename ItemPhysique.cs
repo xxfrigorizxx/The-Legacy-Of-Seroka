@@ -215,6 +215,8 @@ public partial class ItemPhysique : RigidBody3D
 	private Gestionnaire_Monde _gestionnaireMondeCache;
 	private readonly Vector3[] _echantillonsImmersionObjet = new Vector3[7];
 	private double _tempsImmersionIntestin;
+	/// <summary>Roche dans l'eau : temps écoulé quasi immobile au fond, pour déclencher le figeage anti-« danse ».</summary>
+	private float _tempsImmobileEauRoche;
 	private const double DureeCombustionPitFeuSec = 300.0;
 	private const double DureeCuissonPitFeuRocheSteakSec = 60.0;
 	private const int PitFeuRocheSlotCombustible = 0;
@@ -983,10 +985,32 @@ public partial class ItemPhysique : RigidBody3D
 			// Hors eau : on laisse friction/rebond du PhysicsMaterial (moteur) — pas de forces « magiques ».
 			if (dansEau)
 			{
+				// CCD COUPÉ sous l'eau : les sweeps continus d'une roche rapide contre le maillage CONCAVE
+				// (marching-cubes) du fond sont une cause connue de gel/crash natif Jolt. L'eau freine assez la
+				// roche pour éviter tout tunneling sans CCD. Rétabli en revenant à l'air (section plus bas).
+				if (ContinuousCd)
+					ContinuousCd = false;
+				// Roche quasi immobile au fond : NE PAS ré-appliquer de force chaque frame, sinon le corps reste
+				// éveillé en permanence et micro-rebondit sur le maillage marching-cubes du terrain (« danse » +
+				// dérive qui « gagne de la vitesse »). Après un court délai immobile, on FIGE via le repos optimisé
+				// (coupe aussi le CCD, principal amplificateur du jitter de contact). Réveil géré au ramassage/coup.
+				if (LinearVelocity.LengthSquared() < 0.20f && AngularVelocity.LengthSquared() < 0.30f)
+				{
+					_tempsImmobileEauRoche += (float)delta;
+					if (_tempsImmobileEauRoche >= 0.35f && !EstEnReposAuSolOptimise)
+						PasserEnReposAuSolOptimise();
+					return;
+				}
+				_tempsImmobileEauRoche = 0f;
+				// En mouvement réel dans l'eau : traînée (ralentit la chute et le tournoiement).
 				ApplyCentralForce(-LinearVelocity * Mass * 2.2f);
 				ApplyTorque(-AngularVelocity * Mass * 1.25f);
 				return;
 			}
+			// Retour à l'air (roche éveillée, hors repos) : on rétablit le CCD coupé sous l'eau — utile en
+			// chute/lancer pour ne pas traverser le terrain.
+			if (!ContinuousCd && !EstEnReposAuSolOptimise && !Freeze)
+				ContinuousCd = true;
 			// Roche plate à l’air : léger couple pour retomber sur la face large (stabilité réaliste).
 			if (m == 1)
 			{

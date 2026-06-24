@@ -1,4 +1,4 @@
-﻿using Godot;
+using Godot;
 using System;
 using System.Collections.Generic;
 
@@ -25,6 +25,7 @@ public partial class ItemPhysique : RigidBody3D
 
 	private void Fracturer(Vector3? directionVueMonde, Vector3? pointImpactMonde)
 	{
+		GameState.MarquerPhasePrincipale("fracture_roche");
 		MeshInstance3D monVisuel = null;
 		foreach (Node child in this.GetChildren())
 		{

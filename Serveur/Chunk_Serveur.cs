@@ -93,6 +93,9 @@ public partial class Chunk_Serveur : RefCounted
 	/// <summary>Registre flore: 0=gazon, puis couples buisson (impair=plein, pair=vide) pour variantes futures.</summary>
 	public Dictionary<Vector3I, byte> InventaireFlore { get; } = new Dictionary<Vector3I, byte>();
 
+	/// <summary>Emplacements de gazon broutés (faune ou joueur), candidats à une repousse lente ~1×/jour. Runtime uniquement.</summary>
+	private readonly HashSet<Vector3I> _gazonBroutePourRepousse = new HashSet<Vector3I>();
+
 	public const byte FloreTypeGazon = 0;
 	public const byte FloreTypeBuissonRougePlein = 1;
 	public const byte FloreTypeBuissonRougeVide = 2;
@@ -121,6 +124,10 @@ public partial class Chunk_Serveur : RefCounted
 	private Action<Vector3, byte, bool, byte> _callbackBlocChutant;
 	private Func<Vector2I, bool> _chunkEstCharge;
 	private Action<Vector3> _reveillerEau;
+	private Action _demarrerBatchStabilite;
+	private Action<Vector3I> _propagerStabiliteGlobal;
+	private Func<Vector3I, bool> _estSolideGlobal;
+	private Func<bool> _consommerBudgetStabilite;
 	private Action<Vector3I, byte> _onVoxelModifie;
 	private Action<Vector2I, int, Dictionary<Vector3I, byte>> _onFlorePurgée;
 
@@ -156,6 +163,21 @@ public partial class Chunk_Serveur : RefCounted
 
 	public void SetOnVoxelModifie(Action<Vector3I, byte> callback) => _onVoxelModifie = callback;
 	public void SetOnFlorePurgée(Action<Vector2I, int, Dictionary<Vector3I, byte>> callback) => _onFlorePurgée = callback;
+
+	public void ConfigurerStabiliteGlobale(
+		Action demarrerBatch,
+		Action<Vector3I> propagerGlobal,
+		Func<Vector3I, bool> estSolideGlobal,
+		Func<bool> consommerBudget)
+	{
+		_demarrerBatchStabilite = demarrerBatch;
+		_propagerStabiliteGlobal = propagerGlobal;
+		_estSolideGlobal = estSolideGlobal;
+		_consommerBudgetStabilite = consommerBudget;
+	}
+
+	public Vector3I LocalVersGlobalVoxel(int lx, int ly, int lz) =>
+		new Vector3I(ChunkOffsetX * TailleChunk + lx, ChunkOffsetY * HauteurMax + ly, ChunkOffsetZ * TailleChunk + lz);
 
 	public Chunk_Serveur(int chunkOffsetX, int chunkOffsetY, int chunkOffsetZ, int tailleChunk, int hauteurMax, int seed,
 		Action<Vector3, byte, bool, byte> callbackBlocChutant, Func<Vector2I, bool> chunkEstCharge, Action<Vector3> reveillerEau,
@@ -1020,8 +1042,9 @@ public partial class Chunk_Serveur : RefCounted
 		if (climatJungleArgile && bordEau && bruitArgileRive > 0.83f) return 8;
 		if (climatJungleArgile && fondEau && bruitArgileFond > 0.965f) return 8;
 		float bruitSableQuartz = _noiseHumiditeDetail.GetNoise2D(xGlobal * 2.75f + 5100f, zGlobal * 2.75f - 3900f);
-		if (fondEau && bruitSableQuartz > 0.86f) return Atlas_Matiere.IdVoxelSableQuartz;
-		if (bordEau && bruitSableQuartz > 0.93f) return Atlas_Matiere.IdVoxelSableQuartz;
+		// Seuils abaissés (0.86/0.93 étaient quasi inatteignables → le sable de quartz n'apparaissait jamais).
+		if (fondEau && bruitSableQuartz > 0.55f) return Atlas_Matiere.IdVoxelSableQuartz;
+		if (bordEau && bruitSableQuartz > 0.75f) return Atlas_Matiere.IdVoxelSableQuartz;
 		if (globalY <= NiveauPlage) return (humidite > 0.2f) ? (byte)7 : (byte)3;  // Plage : seuil doux
 		// Pilotage climat demandé (température × humidité), avec une légère variation organique locale.
 		float detailHumide = _noiseHumiditeDetail.GetNoise2D(xGlobal * 1.55f + 1400f, zGlobal * 1.55f + 1400f);

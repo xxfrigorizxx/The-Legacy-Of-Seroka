@@ -168,6 +168,8 @@ public partial class Gestionnaire_Monde : Node3D
 		// Pile dense (os, intestins, cuir…) : une fois quasi immobile et appuyé, geler pour stopper la rotation infinie.
 		if (!structureStatique && EstRigidBodyQuasiImmobile(rb) && EstRigidBodyAppuyeSurSupport(rb))
 		{
+			if (EssayerRefusionnerBlocChutantTerrain(rb))
+				return;
 			if (!rb.Freeze)
 				FigerRigidBodyDormance(rb);
 			return;
@@ -249,5 +251,24 @@ public partial class Gestionnaire_Monde : Node3D
 	{
 		if (_joueur == null) return Vector2I.Zero;
 		return WorldToChunkCoord(_joueur.GlobalPosition, TailleChunk);
+	}
+
+	private bool EssayerRefusionnerBlocChutantTerrain(RigidBody3D rb)
+	{
+		if (!UseArchitectureReseau || _mondeServeur == null || rb is not BlocChutant)
+			return false;
+		if (!rb.HasMeta("ID_Matiere"))
+			return false;
+		if (rb.HasMeta("DimensionId") && rb.GetMeta("DimensionId").AsInt32() != _mondeServeur.ObtenirDimensionServeurId())
+			return false;
+		byte mat = (byte)Mathf.Clamp(rb.GetMeta("ID_Matiere").AsInt32(), 0, 255);
+		if (!Monde_Serveur.EstMateriauTerrainRefusionnable(mat))
+			return false;
+		if (!_mondeServeur.PeutRefusionnerMaintenant())
+			return false;
+		if (!_mondeServeur.RefusionnerVoxelTerrain(rb.GlobalPosition, mat))
+			return false;
+		rb.QueueFree();
+		return true;
 	}
 }

@@ -12,6 +12,7 @@ config_version=5
 
 config/name="SEROKA"
 run/main_scene="res://menu_principal.tscn"
+run/flush_stdout_on_print=true
 config/features=PackedStringArray("4.6", "C#", "Forward Plus")
 config/icon="res://icon.svg"
 
@@ -22,6 +23,9 @@ GameState="*res://GameState.cs"
 [debug]
 
 settings/profiler/max_timestamp_query_elements=4096
+file_logging/enable_file_logging=true
+file_logging/log_path="user://logs/godot.log"
+file_logging/max_log_files=20
 
 [display]
 
@@ -141,5 +145,5 @@ occlusion_culling/bvh_build_quality=1
 rendering_device/driver.windows="d3d12"
 lights_and_shadows/directional_shadow/size=8192
 lights_and_shadows/directional_shadow/soft_shadow_filter_quality=0
-lights_and_shadows/positional_shadow/atlas_size=8192
 lights_and_shadows/positional_shadow/soft_shadow_filter_quality=3
+lights_and_shadows/positional_shadow/atlas_size=8192

@@ -28,6 +28,26 @@ public partial class GameState : Node
 	public static GameState Instance { get; private set; }
 	private static bool _empreinteRuntimeJournalisee;
 
+	// --- Chien de garde anti-gel (thread de fond) ---
+	// Détecte un blocage du thread principal (boucle infinie / gel) et l'écrit dans user://logs/seroka_watchdog.log,
+	// MÊME quand le jeu est totalement figé. Un crash natif (GPU/Jolt) tue tout le process → aucune ligne "GEL" = crash natif.
+	private System.Threading.Thread _threadChienDeGarde;
+	private volatile bool _chienDeGardeActif;
+	private long _horodatageBattementMs;
+	private volatile string _phasePrincipaleCourante = "demarrage";
+	private int _gelDejaSignale;
+	private string _cheminLogChienDeGarde;
+	private readonly object _verrouLogChienDeGarde = new object();
+	private static readonly System.Diagnostics.Stopwatch _chronoChienDeGarde = System.Diagnostics.Stopwatch.StartNew();
+	private const long SeuilGelChienDeGardeMs = 5000;
+
+	/// <summary>Marque la phase courante du thread principal (affichée dans le log si un gel est détecté). Coût négligeable.</summary>
+	public static void MarquerPhasePrincipale(string phase)
+	{
+		if (Instance != null)
+			Instance._phasePrincipaleCourante = phase ?? "";
+	}
+
 	/// <summary>Nom du monde actuel (dossier dans user://saves/). TOUJOURS utilisé pour chunks.</summary>
 	public string NomMondeActuel { get; private set; } = "MonMonde";
 
@@ -37,12 +57,94 @@ public partial class GameState : Node
 	public override void _Ready()
 	{
 		Instance = this;
+		DemarrerChienDeGardeAntiGel();
 		UserDataMigrationService.ExecuterMigrationAuDemarrageSiBesoin();
 		JournaliserEmpreinteRuntime();
 		// Godot 4 : SceneTree n’expose pas le signal « tree_exiting » (Godot 3). Fermeture via fenêtre racine + notification WM.
 		Window fenetre = GetWindow();
 		if (fenetre != null)
 			fenetre.CloseRequested += ExecuterSauvegardeFiletAvantFermetureApplication;
+	}
+
+	public override void _Process(double delta)
+	{
+		// Base par frame : si un gel survient hors d'une phase marquée, le log affichera "frame_normale"
+		// (=> chercher côté boucle/streaming) plutôt qu'un marqueur périmé d'une opération roche.
+		_phasePrincipaleCourante = "frame_normale";
+		// Battement de cœur pour le chien de garde anti-gel (écriture atomique, coût négligeable).
+		System.Threading.Interlocked.Exchange(ref _horodatageBattementMs, _chronoChienDeGarde.ElapsedMilliseconds);
+	}
+
+	public override void _ExitTree()
+	{
+		ArreterChienDeGarde();
+		base._ExitTree();
+	}
+
+	private void DemarrerChienDeGardeAntiGel()
+	{
+		if (Engine.IsEditorHint())
+			return;
+		try
+		{
+			_cheminLogChienDeGarde = ProjectSettings.GlobalizePath("user://logs/seroka_watchdog.log");
+			string dossier = Path.GetDirectoryName(_cheminLogChienDeGarde);
+			if (!string.IsNullOrEmpty(dossier))
+				Directory.CreateDirectory(dossier);
+			System.Threading.Interlocked.Exchange(ref _horodatageBattementMs, _chronoChienDeGarde.ElapsedMilliseconds);
+			EcrireLigneChienDeGarde($"=== Session demarree {DateTime.Now:yyyy-MM-dd HH:mm:ss} (dll={Assembly.GetExecutingAssembly().GetName().Version}) ===");
+		}
+		catch { /* le chien de garde ne doit JAMAIS casser le jeu */ }
+
+		_chienDeGardeActif = true;
+		_threadChienDeGarde = new System.Threading.Thread(BoucleChienDeGarde)
+		{
+			IsBackground = true,
+			Name = "SerokaChienDeGarde"
+		};
+		_threadChienDeGarde.Start();
+	}
+
+	/// <summary>Thread de fond : surveille le battement de cœur du thread principal et journalise tout gel ≥ seuil.</summary>
+	private void BoucleChienDeGarde()
+	{
+		while (_chienDeGardeActif)
+		{
+			System.Threading.Thread.Sleep(1000);
+			long dernier = System.Threading.Interlocked.Read(ref _horodatageBattementMs);
+			long ecart = _chronoChienDeGarde.ElapsedMilliseconds - dernier;
+			if (ecart >= SeuilGelChienDeGardeMs)
+			{
+				if (System.Threading.Interlocked.Exchange(ref _gelDejaSignale, 1) == 0)
+					EcrireLigneChienDeGarde(
+						$"[{DateTime.Now:HH:mm:ss}] GEL DETECTE : thread principal bloque depuis {ecart} ms " +
+						$"(derniere phase='{_phasePrincipaleCourante}'). Boucle infinie / gel cote code. " +
+						"Si AUCUNE autre ligne ensuite et que le jeu s'est ferme => crash natif (GPU/SDFGI/physique).");
+			}
+			else
+			{
+				System.Threading.Interlocked.Exchange(ref _gelDejaSignale, 0);
+			}
+		}
+	}
+
+	private void EcrireLigneChienDeGarde(string ligne)
+	{
+		if (string.IsNullOrEmpty(_cheminLogChienDeGarde))
+			return;
+		try
+		{
+			lock (_verrouLogChienDeGarde)
+				File.AppendAllText(_cheminLogChienDeGarde, ligne + System.Environment.NewLine);
+		}
+		catch { /* ignore : la journalisation ne doit jamais planter le jeu */ }
+	}
+
+	private void ArreterChienDeGarde()
+	{
+		_chienDeGardeActif = false;
+		try { _threadChienDeGarde?.Join(200); } catch { }
+		_threadChienDeGarde = null;
 	}
 
 	/// <summary>

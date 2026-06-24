@@ -4,6 +4,9 @@ using System.Collections.Generic;
 
 public partial class BoeufSauvage : CharacterBody3D
 {
+	/// <summary>Décalage horizontal (m) du point d'échantillonnage d'herbe devant le corps (museau / tête baissée).</summary>
+	private const float DecalageMuseauHerbeM = 0.5f;
+
 	private bool FaimCritiquePrioritaire() => RatioFaimCourant() <= 0.25f;
 
 	private bool DoitEntrerBroutageSelonSeuils()
@@ -15,6 +18,11 @@ public partial class BoeufSauvage : CharacterBody3D
 
 	private void ForcerEtatBroutageSiBesoin(bool prioriteAbsolue)
 	{
+		// Déjà en exode alimentaire : la migration gère la recherche d'un nouveau pâturage.
+		// On évite de relancer une recherche coûteuse et de rebasculer en broutage sur place chaque tick.
+		if (_enMigrationHerbe)
+			return;
+
 		if (_etat != EtatBoeuf.Broutage)
 		{
 			_etat = EtatBoeuf.Broutage;
@@ -27,15 +35,48 @@ public partial class BoeufSauvage : CharacterBody3D
 			_tempsBroutage = Mathf.Max(_tempsBroutage, DureeBroutage * 1.25f);
 			_cooldownMorsure = Mathf.Min(_cooldownMorsure, 0.15f);
 		}
-		if (!TrouverPointHerbeProche(out Vector3 herbe))
-			herbe = GlobalPosition;
-		_cibleCourante = herbe;
+		if (TrouverPointHerbeProche(out Vector3 herbe))
+		{
+			_cibleCourante = herbe;
+			return;
+		}
+		// Un congénère a trouvé de l'herbe et appelle : on le rejoint en priorité.
+		if (EssayerRejoindreAppelHerbe())
+			return;
+		// Aucune herbe à portée ni d'appel : au lieu de brouter dans le vide sur place (et mourir de faim),
+		// partir en ligne droite chercher un nouveau pâturage hors de la zone.
+		if (ActiverMigrationHerbe)
+			DemarrerMigrationHerbe(forcerNouvelleEtape: false);
+		else
+			_cibleCourante = GlobalPosition;
 	}
 
 	private bool HerbeDisponibleAutour(Vector3 point, float rayon)
 	{
 		if (_gestionnaire == null) return false;
 		return _gestionnaire.ExisteGazonFauneGlobal(point, rayon);
+	}
+
+	/// <summary>
+	/// Point d'échantillonnage de l'herbe « sous la tête » (museau, devant le corps, au niveau du sol).
+	/// Le gazon étant un MultiMesh sans collider, on n'utilise pas de RayCast3D physique : la requête de flore
+	/// de chunk (<see cref="HerbeDisponibleAutour"/>) est la source réelle de nourriture (décision de conception).
+	/// </summary>
+	private Vector3 PointDetectionHerbeSousTete()
+	{
+		Vector3 avant = -GlobalTransform.Basis.Z;
+		avant.Y = 0f;
+		avant = avant.LengthSquared() > 1e-4f ? avant.Normalized() : Vector3.Forward;
+		return GlobalPosition + avant * DecalageMuseauHerbeM + Vector3.Down * 0.2f;
+	}
+
+	/// <summary>Oriente l'errance vers l'herbe la plus proche si on en trouve une ; sinon errance normale.</summary>
+	private void ChoisirCibleVersHerbeOuErrance()
+	{
+		if (TrouverPointHerbeProche(out Vector3 herbe))
+			_cibleCourante = herbe;
+		else
+			ChoisirNouvelleCible(false);
 	}
 
 	private bool TrouverPointHerbeProche(out Vector3 cibleHerbe)
@@ -46,7 +87,10 @@ public partial class BoeufSauvage : CharacterBody3D
 		if (HerbeDisponibleAutour(GlobalPosition, RayonMangerHerbe))
 			return true;
 
-		float rayonMax = Mathf.Max(RayonMangerHerbe + 1f, RayonRechercheHerbeVisible);
+		// Élargit modérément la recherche quand l'animal a faim. Les requêtes d'herbe ne génèrent JAMAIS de chunk
+		// (lecture seule des chunks chargés, cf. ExisteGazonFauneGlobal), et le nombre d'essais reste borné : coût FPS maîtrisé.
+		float facteurFaim = FaimCritiquePrioritaire() ? 2f : (DoitEntrerBroutageSelonSeuils() ? 1.5f : 1f);
+		float rayonMax = Mathf.Max(RayonMangerHerbe + 1f, RayonRechercheHerbeVisible * facteurFaim);
 		int essais = Mathf.Max(6, EssaisRechercheHerbe);
 		for (int i = 0; i < essais; i++)
 		{

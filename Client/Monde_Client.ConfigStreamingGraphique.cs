@@ -180,7 +180,9 @@ public partial class Monde_Client : Node3D
 			_tempsEtatGate = DureeMinEtatOuvertSec + 1f;
 			int minRayon = ObtenirRayonMinRequetesReseau();
 			int cible = RayonChargementChunksActif();
-			_rayonRequetesActuel = Mathf.Clamp(Mathf.Max(_rayonRequetesActuel, cible - 1), minRayon, cible);
+			// Borne haute = Max(minRayon, cible) : la cible de chargement peut être plafonnée SOUS le plancher réseau/spawn
+		// (ex. vol créatif en mode tranches → cible 8 alors que le plancher = 10) ; sans ce Max, Clamp(min>max) plantait.
+		_rayonRequetesActuel = Mathf.Clamp(Mathf.Max(_rayonRequetesActuel, cible - 1), minRayon, Mathf.Max(minRayon, cible));
 		}
 
 		Vector3 posObs = ObtenirPositionObservation();
@@ -205,7 +207,7 @@ public partial class Monde_Client : Node3D
 			Mathf.Min(DureeGraceStreamingReglageUtilisateurSec, DureeGraceStreamingBootstrapNouveauMondeSec * 0.65f));
 		int minRayon = ObtenirRayonMinRequetesReseau();
 		int cible = RayonChargementChunksActif();
-		_rayonRequetesActuel = Mathf.Clamp(Mathf.Max(_rayonRequetesActuel, minRayon), minRayon, cible);
+		_rayonRequetesActuel = Mathf.Clamp(Mathf.Max(_rayonRequetesActuel, minRayon), minRayon, Mathf.Max(minRayon, cible));
 		_timerExpansionRequetes = 0f;
 		_timerProgressionForceeRayon = 0f;
 	}
@@ -231,7 +233,7 @@ public partial class Monde_Client : Node3D
 			return;
 		float frac = Mathf.Clamp(FractionImpulsionHausseRenderDistance, 0.05f, 0.95f);
 		int saut = Mathf.Max(1, Mathf.RoundToInt(gap * frac));
-		_rayonRequetesActuel = Mathf.Clamp(_rayonRequetesActuel + saut, minRayon, cible);
+		_rayonRequetesActuel = Mathf.Clamp(_rayonRequetesActuel + saut, minRayon, Mathf.Max(minRayon, cible));
 	}
 
 	public void ForcerRafraichissementStreamingGraphique(bool microReload)
@@ -240,7 +242,9 @@ public partial class Monde_Client : Node3D
 
 		int minRayon = ObtenirRayonMinRequetesReseau();
 		int cible = RayonChargementChunksActif();
-		_rayonRequetesActuel = Mathf.Clamp(Mathf.Max(_rayonRequetesActuel, cible - 1), minRayon, cible);
+		// Borne haute = Max(minRayon, cible) : la cible de chargement peut être plafonnée SOUS le plancher réseau/spawn
+		// (ex. vol créatif en mode tranches → cible 8 alors que le plancher = 10) ; sans ce Max, Clamp(min>max) plantait.
+		_rayonRequetesActuel = Mathf.Clamp(Mathf.Max(_rayonRequetesActuel, cible - 1), minRayon, Mathf.Max(minRayon, cible));
 		_timerExpansionRequetes = 0f;
 		_timerProgressionForceeRayon = 0f;
 		_timerRafraichissementRadarImmobile = 0f;

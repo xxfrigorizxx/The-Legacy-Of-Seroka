@@ -1792,6 +1792,17 @@ public partial class Gestionnaire_Monde : Node3D
 		return EstPointDansEau(positionGlobale) || ObtenirMatiereExacte(positionGlobale) == 4;
 	}
 
+	/// <summary>Voxel EXACT (sans voisinage 3³) : true si le point précis est dans l'eau. Pour la détection « caméra/yeux sous l'eau ».</summary>
+	public bool EstPointDansEauExact(Vector3 positionGlobale)
+	{
+		if (UseArchitectureReseau && _mondeServeur != null)
+			return _mondeServeur.EstVoxelEauExact(positionGlobale);
+		return EstVoxelEauLegacy(new Vector3I(
+			Mathf.FloorToInt(positionGlobale.X),
+			Mathf.FloorToInt(positionGlobale.Y),
+			Mathf.FloorToInt(positionGlobale.Z)));
+	}
+
 	/// <summary>Calcule le ratio d'immersion d'un corps via des offsets locaux (0..1).</summary>
 	public float CalculerRatioImmersion(Vector3 origineGlobale, Vector3[] offsetsLocaux)
 	{

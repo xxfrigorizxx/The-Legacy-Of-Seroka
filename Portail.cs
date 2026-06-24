@@ -71,6 +71,10 @@ public partial class Portail : Node3D
 	{
 		_visibiliteDemandeeParGestionnaireDimension = dimensionEstActivePourCeRacine;
 		RafraichirVisibiliteCombinee();
+		// Espace physique partagé entre dimensions : on coupe la détection (Area3D) des portails hors dimension active
+		// pour qu'ils ne puissent même pas « voir » le joueur (anti-TP fantôme, et zéro callback physique inutile).
+		if (_zone != null && GodotObject.IsInstanceValid(_zone))
+			_zone.Monitoring = dimensionEstActivePourCeRacine;
 	}
 
 	/// <summary>Vrai si le serveur a envoyé une surface voxel (hint remblai / repli) — n’affiche pas le portail seul.</summary>
@@ -135,7 +139,9 @@ public partial class Portail : Node3D
 			if (_zone.GetNodeOrNull<CollisionShape3D>("FormeTriggerPortail") == null && _zone.GetChildCount() > 0 && _zone.GetChild(0) is CollisionShape3D csLegacy)
 				csLegacy.Name = "FormeTriggerPortail";
 		}
-		_zone.Monitoring = true;
+		// Détection active uniquement si ce portail appartient à la dimension active (cohérent avec
+		// DefinirVisibiliteSelonDimensionActive). MettreAJourVisibilitePortailsParDimension recale juste après l'init.
+		_zone.Monitoring = _visibiliteDemandeeParGestionnaireDimension;
 		_zone.Monitorable = false;
 		_zone.BodyEntered += SurCorpsEntreDansTrigger;
 		_zone.BodyExited += SurCorpsSortiDuTrigger;
@@ -374,7 +380,11 @@ public partial class Portail : Node3D
 			float epaisseur = Mathf.Max(echelleRef * 0.14f, 7f);
 			float largeur = Mathf.Max(TailleMembraneMetres.X * 1.05f, echelleRef * 0.42f);
 			float hauteur = Mathf.Max(TailleMembraneMetres.Y * 1.05f, echelleRef * 0.55f);
-			cs.Shape = new BoxShape3D { Size = new Vector3(epaisseur, hauteur, largeur) };
+			// La membrane est un QuadMesh : largeur sur X local, hauteur sur Y local, normale (axe de traversée) sur Z local.
+			// La zone partage la MÊME RotationMembraneDegres : la boîte doit donc copier cette orientation locale —
+			// large sur X, haute sur Y, FINE sur Z. (Avant : épaisseur sur X / largeur sur Z → boîte tournée de 90°,
+			// dalle de détection débordant sur les côtés du portail → téléportation en passant À CÔTÉ de l'arche.)
+			cs.Shape = new BoxShape3D { Size = new Vector3(largeur, hauteur, epaisseur) };
 		}
 		else
 		{
@@ -473,6 +483,13 @@ public partial class Portail : Node3D
 		if (_cooldownRestant > 0.0) return;
 		Gestionnaire_Monde gm = ObtenirGestionnaireMonde();
 		if (gm == null) return;
+		// GARDE-FOU DIMENSION (anti-TP fantôme) : toutes les dimensions cohabitent dans le MÊME World3D (espace
+		// physique partagé) et chaque portail garde son Area3D actif en permanence. Pire, les portails APISARA
+		// s'alignent sur le terrain de la dimension ACTIVE (seul à avoir des collisions), donc ils se posent sur le
+		// sol du monde courant à (±1280,0)/(0,±1280). Sans ce test, marcher sur ces coordonnées (à >1000 m du
+		// vrai portail (0,0)) déclenchait un transfert vers un autre monde. Un portail ne doit agir QUE pour la
+		// dimension réellement occupée par le joueur.
+		if (gm.ObtenirDimensionLocaleActiveId() != IdDimensionConteneur) return;
 		if (gm.EstVerrouSecuriteAbysseActif()) return;
 
 		// Sécurité anti-softlock : un portail "vers APISARA" ne doit pas téléporter
@@ -542,6 +559,14 @@ public partial class Portail : Node3D
 		}
 
 		if (gm.EstVerrouSecuriteAbysseActif())
+		{
+			_joueurStationnaireDansZone = null;
+			return;
+		}
+
+		// Re-contrôle dimension : la dimension active a pu changer pendant l'assombrissement (autre TP).
+		// On ne transfère jamais via un portail qui n'appartient pas à la dimension courante du joueur.
+		if (gm.ObtenirDimensionLocaleActiveId() != IdDimensionConteneur)
 		{
 			_joueurStationnaireDansZone = null;
 			return;

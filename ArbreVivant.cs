@@ -337,7 +337,7 @@ public partial class ArbreVivant : StaticBody3D
 
 	public override void _Ready()
 	{
-		_visuelBois = new MeshInstance3D { Name = "Bois", CastShadow = GeometryInstance3D.ShadowCastingSetting.On };
+		_visuelBois = new MeshInstance3D { Name = "Bois", CastShadow = GeometryInstance3D.ShadowCastingSetting.DoubleSided };
 		_visuelFeuillage = new MeshInstance3D
 		{
 			Name = "Feuillage",

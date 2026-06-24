@@ -11,6 +11,7 @@ public partial class Joueur
     private static readonly string[] CommandesChatConnues =
     {
         "/ADIUTO",
+        "/INVOCA BOVA",
         "/MODUSA RUDI 0",
         "/MODUSA RUDI 1",
         "/MODUSA RUDI 3",
@@ -216,6 +217,17 @@ public partial class Joueur
             }
             return;
         }
+        if (t.StartsWith("/INVOCA", StringComparison.OrdinalIgnoreCase))
+        {
+            TraiterCommandeInvocationFaune(t);
+            MasquerSuggestionsCommandesChat();
+            if (_ligneSaisieChat != null && GodotObject.IsInstanceValid(_ligneSaisieChat))
+            {
+                _ligneSaisieChat.Text = "";
+                _ligneSaisieChat.CaretColumn = 0;
+            }
+            return;
+        }
         PousserLigneChatHistorique("[Moi] " + t, prefixerSquelette: false);
         GD.Print($"ZERO-K Chat joueur : {t}");
         MasquerSuggestionsCommandesChat();
@@ -230,6 +242,7 @@ public partial class Joueur
     {
         PousserLigneChatHistorique("[Aide] Commandes chat:", prefixerSquelette: false);
         PousserLigneChatHistorique("[Aide] /ADIUTO -> affiche cette aide.", prefixerSquelette: false);
+        PousserLigneChatHistorique("[Aide] /INVOCA BOVA [n] -> fait apparaitre un troupeau de bovins autour de toi (defaut 6, max 24).", prefixerSquelette: false);
         PousserLigneChatHistorique("[Aide] /MODUSA RUDI 0 -> desactive mode creatif + noclip.", prefixerSquelette: false);
         PousserLigneChatHistorique("[Aide] /MODUSA RUDI 1 -> active mode creatif.", prefixerSquelette: false);
         PousserLigneChatHistorique("[Aide] /MODUSA RUDI 3 -> active mode creatif + noclip.", prefixerSquelette: false);
@@ -238,6 +251,58 @@ public partial class Joueur
         PousserLigneChatHistorique($"[Aide] /DIMANASIO PETA -> transfert vers {ConstantesDimensions.NomBeta} (meme seed que {ConstantesDimensions.NomAlpha}, fuseau +6h).", prefixerSquelette: false);
         PousserLigneChatHistorique($"[Aide] /DIMANASIO OMEGA -> transfert vers {ConstantesDimensions.NomOmega} (meme seed que {ConstantesDimensions.NomAlpha}, fuseau +12h).", prefixerSquelette: false);
         PousserLigneChatHistorique($"[Aide] /DIMANASIO DERATA -> transfert vers {ConstantesDimensions.NomDelta} (meme seed que {ConstantesDimensions.NomAlpha}, fuseau +18h).", prefixerSquelette: false);
+    }
+
+    /// <summary>/INVOCA BOVA [n] : fait apparaitre un troupeau de bovins autour du joueur (debug/creatif, contourne le gate FPS et la restriction plaine).</summary>
+    private void TraiterCommandeInvocationFaune(string commande)
+    {
+        string[] parties = (commande ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        bool cibleBovins = parties.Length >= 2 && parties[1].StartsWith("BOVA", StringComparison.OrdinalIgnoreCase);
+        if (!cibleBovins)
+        {
+            PousserLigneChatHistorique("[Invoca] Usage : /INVOCA BOVA [nombre] -> fait apparaitre un troupeau de bovins.", prefixerSquelette: false);
+            return;
+        }
+        int taille = 6;
+        if (parties.Length >= 3 && int.TryParse(parties[2], out int n))
+            taille = Mathf.Clamp(n, 1, 24);
+
+        GestionnaireFauneBoeufs faune = TrouverGestionnaireFauneBoeufs();
+        if (faune == null)
+        {
+            PousserLigneChatHistorique("[Invoca] Erreur : gestionnaire de faune introuvable.", prefixerSquelette: false);
+            return;
+        }
+        int spawnes = faune.ForcerApparitionTroupeauAuJoueur(taille);
+        if (spawnes > 0)
+            PousserLigneChatHistorique($"[Invoca] Troupeau invoque : {spawnes} bovin(s) autour de toi.", prefixerSquelette: false);
+        else
+            PousserLigneChatHistorique("[Invoca] Aucun bovin n'a pu apparaitre (sol introuvable, ou dimension sans faune bovine).", prefixerSquelette: false);
+    }
+
+    private GestionnaireFauneBoeufs TrouverGestionnaireFauneBoeufs()
+    {
+        Node scene = GetTree()?.CurrentScene;
+        GestionnaireFauneBoeufs direct = scene?.GetNodeOrNull<GestionnaireFauneBoeufs>("GestionnaireFauneBoeufs");
+        if (direct != null && GodotObject.IsInstanceValid(direct))
+            return direct;
+        GestionnaireFauneBoeufs viaParent = GetParent()?.GetNodeOrNull<GestionnaireFauneBoeufs>("GestionnaireFauneBoeufs");
+        if (viaParent != null && GodotObject.IsInstanceValid(viaParent))
+            return viaParent;
+        return scene != null ? TrouverPremierNoeudDeTypeChat<GestionnaireFauneBoeufs>(scene) : null;
+    }
+
+    private static T TrouverPremierNoeudDeTypeChat<T>(Node racine) where T : Node
+    {
+        if (racine is T t)
+            return t;
+        foreach (Node enfant in racine.GetChildren())
+        {
+            T trouve = TrouverPremierNoeudDeTypeChat<T>(enfant);
+            if (trouve != null)
+                return trouve;
+        }
+        return null;
     }
 
     private void OnTexteChatModifie(string texte)

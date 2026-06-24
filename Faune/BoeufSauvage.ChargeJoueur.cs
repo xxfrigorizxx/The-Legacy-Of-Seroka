@@ -7,6 +7,7 @@ public partial class BoeufSauvage : CharacterBody3D
 	private bool EssayerAppliquerImpactChargeJoueur()
 	{
 		if (_joueur == null || !GodotObject.IsInstanceValid(_joueur)) return false;
+		if (JoueurEnModeCreatif()) return false; // joueur créatif ignoré : pas d'impact de charge.
 		if (_cooldownImpactChargeJoueur > 0f || _impactChargeJoueurPlanifie) return false;
 		if (!PeutEngagerChargeContreJoueur())
 			return false;
@@ -28,10 +29,13 @@ public partial class BoeufSauvage : CharacterBody3D
 
 		bool joueurDevant = JoueurDevantPourAttaqueCharge();
 		bool impactResolu = EssayerResoudreImpactChargeSurJoueur(joueurDevant, out Vector3 pointImpact, out int shapeIdx);
+		// Corps-à-corps strict : on ne déclenche l'attaque que sur contact réel (rayon touchant le joueur)
+		// ou à bout portant devant soi. Plus d'animation de coup de tête « dans le vide » à distance.
+		bool contactBoutPortant = distJoueur <= DistanceContactBoutPortantCharge && joueurDevant;
+		if (!impactResolu && !contactBoutPortant)
+			return false;
 		if (!impactResolu)
 		{
-			if (distJoueur > DistanceMaxDeclenchementAttaqueCharge)
-				return false;
 			pointImpact = _joueur.GlobalPosition + Vector3.Up * (joueurDevant ? 1.0f : 0.55f);
 			shapeIdx = -1;
 		}
@@ -76,13 +80,21 @@ public partial class BoeufSauvage : CharacterBody3D
 
 		Vector3 versJoueur = _joueur.GlobalPosition - GlobalPosition;
 		versJoueur.Y = 0f;
-		if (versJoueur.Length() > DistanceMaxImpactChargeApresDelai + 0.35f)
+		float distImpact = versJoueur.Length();
+		// Corps-à-corps : le coup ne porte qu'au contact réel (rayon frais touchant le joueur) et à courte distance.
+		// Sinon « coup dans le vide » : aucun dégât et fin d'engagement (évite de toucher le joueur de loin).
+		bool contactFrais = EssayerResoudreImpactChargeSurJoueur(_impactChargeCoupDeTetePlanifie, out Vector3 pointFrais, out int shapeFrais);
+		bool boutPortant = distImpact <= DistanceContactBoutPortantCharge && JoueurDevantPourAttaqueCharge();
+		if (distImpact > DistanceMaxImpactChargeApresDelai || (!contactFrais && !boutPortant))
+		{
+			MarquerFinEngagementChargeJoueur(apresImpactReussi: false);
 			return;
+		}
 
 		float impulsion = Mathf.Max(0.1f, ImpulsionChargeSurJoueur);
 		Vector3 pointImpact = _pointImpactChargePlanifie;
 		int shapeImpact = shapeIdx;
-		if (EssayerResoudreImpactChargeSurJoueur(_impactChargeCoupDeTetePlanifie, out Vector3 pointFrais, out int shapeFrais))
+		if (contactFrais)
 		{
 			pointImpact = pointFrais;
 			shapeImpact = shapeFrais;
@@ -109,6 +121,72 @@ public partial class BoeufSauvage : CharacterBody3D
 			_joueur.Velocity = v;
 		}
 		MarquerFinEngagementChargeJoueur(apresImpactReussi: true);
+	}
+
+	/// <summary>
+	/// Choisit le point visé d'une charge selon une pondération réaliste des zones du joueur.
+	/// Coup de tête (face) : surtout torse/bras, parfois jambes, rarement la tête.
+	/// Ruade (côté/arrière) : surtout jambes/torse, jamais la tête.
+	/// </summary>
+	private Vector3 ChoisirPointCibleZoneCharge(Joueur j, bool coupDeTete)
+	{
+		float pTorse, pBras, pJambes; // (la tête prend le reste)
+		if (coupDeTete)
+		{
+			pTorse = 0.42f; pBras = 0.28f; pJambes = 0.18f; // tête = 0.12
+		}
+		else
+		{
+			pTorse = 0.34f; pBras = 0.16f; pJambes = 0.50f; // tête = 0 (ruade basse)
+		}
+
+		float r = _rng.Randf();
+		string zone;
+		if (r < pTorse)
+			zone = "torse";
+		else if (r < pTorse + pBras)
+			zone = _rng.Randf() < 0.5f ? "bras_gauche" : "bras_droit";
+		else if (r < pTorse + pBras + pJambes)
+			zone = _rng.Randf() < 0.5f ? "jambe_gauche" : "jambe_droite";
+		else
+			zone = "tete";
+
+		return j.ObtenirCentreHitboxMonde(zone);
+	}
+
+	/// <summary>
+	/// Compte les taureaux adultes réellement hostiles au joueur dans le voisinage (soi inclus).
+	/// Sert à doser le « 1 coup puis fuite » : seul/duo = pression continue, meute = harcèlement tournant.
+	/// </summary>
+	private int CompterTaureauxHostilesProches()
+	{
+		if (_joueur == null || !GodotObject.IsInstanceValid(_joueur))
+			return 1;
+		IReadOnlyList<BoeufSauvage> pop = ObtenirPopulationLocale();
+		if (pop == null)
+			return 1;
+
+		Vector3 pj = _joueur.GlobalPosition;
+		const float rayon2 = 16f * 16f;
+		int compte = 1; // soi-même
+		for (int i = 0; i < pop.Count; i++)
+		{
+			BoeufSauvage b = pop[i];
+			if (b == this || b == null || !GodotObject.IsInstanceValid(b))
+				continue;
+			if (!b.EstTaureau || b._estVeauActif || b._etat == EtatBoeuf.Mort)
+				continue;
+			if (b.GlobalPosition.DistanceSquaredTo(pj) > rayon2)
+				continue;
+			// Hostile = en approche/charge, en soutien, impact planifié, ou vient d'attaquer (cooldown actif).
+			bool hostile = b._etat == EtatBoeuf.Charge
+				|| b._etat == EtatBoeuf.Soutien
+				|| b._impactChargeJoueurPlanifie
+				|| b._cooldownReengagementChargeJoueur > 0f;
+			if (hostile)
+				compte++;
+		}
+		return compte;
 	}
 
 	private bool JoueurDevantPourAttaqueCharge()
@@ -181,33 +259,24 @@ public partial class BoeufSauvage : CharacterBody3D
 
 		Vector3 origine;
 		Vector3 cible;
-		if (coupDeTete)
+		if (_joueur is Joueur jCible)
 		{
-			origine = GlobalPosition + Vector3.Up * 1.1f;
-			if (_joueur is Joueur j)
-			{
-				Vector3 tete = j.ObtenirCentreHitboxMonde("tete");
-				Vector3 torse = j.ObtenirCentreHitboxMonde("torse");
-				cible = tete.Lerp(torse, 0.28f);
-			}
-			else
-				cible = _joueur.GlobalPosition + Vector3.Up * 1.02f;
+			// Zone visée PONDÉRÉE : surtout torse/bras, parfois jambes, rarement la tête (réaliste : la tête/cornes
+			// d'un bovin arrivent à hauteur du tronc humain, pas du visage). Fini le « toujours la tête ».
+			cible = ChoisirPointCibleZoneCharge(jCible, coupDeTete);
+			// Léger décalage horizontal vers le bovin : on vise la face avant de la hitbox (impact crédible).
+			Vector3 versBovin = GlobalPosition - _joueur.GlobalPosition;
+			versBovin.Y = 0f;
+			if (versBovin.LengthSquared() > 1e-6f)
+				cible += versBovin.Normalized() * 0.22f;
+			// Origine à hauteur de la zone visée (corne qui pique le torse / encornement bas vers les jambes).
+			float hCible = cible.Y - GlobalPosition.Y;
+			origine = GlobalPosition + Vector3.Up * Mathf.Clamp(hCible + 0.12f, 0.55f, 1.2f);
 		}
 		else
 		{
-			origine = GlobalPosition + Vector3.Up * 0.78f;
-			if (_joueur is Joueur j)
-			{
-				Vector3 torse = j.ObtenirCentreHitboxMonde("torse");
-				Vector3 versBovin = GlobalPosition - _joueur.GlobalPosition;
-				versBovin.Y = 0f;
-				if (versBovin.LengthSquared() > 1e-6f)
-					cible = torse + versBovin.Normalized() * 0.28f + Vector3.Up * 0.08f;
-				else
-					cible = torse + Vector3.Up * 0.2f;
-			}
-			else
-				cible = _joueur.GlobalPosition + Vector3.Up * 0.52f;
+			origine = GlobalPosition + Vector3.Up * (coupDeTete ? 1.1f : 0.78f);
+			cible = _joueur.GlobalPosition + Vector3.Up * (coupDeTete ? 1.02f : 0.52f);
 		}
 
 		if (EssayerRayVersCible(origine, cible, out pointImpact, out indiceFormeJoueur, out _))
@@ -215,9 +284,11 @@ public partial class BoeufSauvage : CharacterBody3D
 
 		float meilleurDist2 = float.MaxValue;
 		bool trouve = false;
+		// Hauteurs de repli (offsets au-dessus de l'origine joueur ≈ taille). Torse ~0.12, tête ~0.55, jambes ~-0.3.
+		// On ne vise PLUS au-dessus de la tête : front = torse/haut-torse, ruade = jambes/bas.
 		float[] hauteurs = coupDeTete
-			? new[] { 1.08f, 0.92f, 0.78f }
-			: new[] { 0.48f, 0.62f, 0.78f };
+			? new[] { 0.12f, 0.30f, 0.52f }
+			: new[] { -0.28f, -0.05f, 0.12f };
 		foreach (float h in hauteurs)
 		{
 			Vector3 o = GlobalPosition + Vector3.Up * Mathf.Max(0.5f, h - 0.14f);

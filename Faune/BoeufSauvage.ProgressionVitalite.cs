@@ -49,8 +49,21 @@ public partial class BoeufSauvage : CharacterBody3D
 	{
 		_etat = EtatBoeuf.Fuite;
 		_tempsCharge = 0f;
-		_tempsFuite = apresImpactReussi ? 2.2f : 3.5f;
-		_cooldownReengagementChargeJoueur = CooldownReengagementChargeJoueurSec;
+
+		// Dose le « 1 coup puis fuite » selon la taille de la meute hostile.
+		// Seul ou à deux : le repli systématique est ridicule -> on reste pressant (recul minime, ré-engage vite).
+		// En meute (≥5) : harcèlement tournant classique -> chacun frappe puis cède la place.
+		int nbHostiles = CompterTaureauxHostilesProches();
+		float facteurMeute = Mathf.Clamp((nbHostiles - 1) / 4f, 0f, 1f); // 1 hostile=0 … 5+ hostiles=1
+
+		float fuitePleine = apresImpactReussi ? 2.2f : 3.5f;
+		float fuiteSolo = apresImpactReussi ? 0.35f : 0.9f;
+		_tempsFuite = Mathf.Lerp(fuiteSolo, fuitePleine, facteurMeute);
+		_cooldownReengagementChargeJoueur = Mathf.Lerp(
+			CooldownReengagementChargeJoueurSec * 0.25f,
+			CooldownReengagementChargeJoueurSec,
+			facteurMeute);
+
 		_impactChargeJoueurPlanifie = false;
 		_indiceFormeImpactChargePlanifie = -1;
 		if (_joueur != null && GodotObject.IsInstanceValid(_joueur))
@@ -58,7 +71,11 @@ public partial class BoeufSauvage : CharacterBody3D
 			Vector3 fuite = GlobalPosition - _joueur.GlobalPosition;
 			fuite.Y = 0f;
 			if (fuite.LengthSquared() > 0.001f)
-				_cibleCourante = GlobalPosition + fuite.Normalized() * _rng.RandfRange(12f, 20f);
+			{
+				// Solo : court recul pour se replacer face au joueur ; meute : vrai décrochage.
+				float distRecul = Mathf.Lerp(3.5f, _rng.RandfRange(12f, 20f), facteurMeute);
+				_cibleCourante = GlobalPosition + fuite.Normalized() * distRecul;
+			}
 		}
 	}
 

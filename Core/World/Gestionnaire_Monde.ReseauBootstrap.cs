@@ -144,6 +144,7 @@ public partial class Gestionnaire_Monde : Node3D
 					if (kv.Value == null || kv.Value.EstSimulationSuspendue)
 						continue;
 					kv.Value.FairePousserArbresDuJour();
+					kv.Value.FaireRepousserGazonDuJour();
 				}
 			}));
 		}

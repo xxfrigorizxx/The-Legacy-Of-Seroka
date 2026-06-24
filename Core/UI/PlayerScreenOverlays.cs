@@ -159,6 +159,130 @@ void fragment()
         _materiauOverlayVisionTete.SetShaderParameter("vignette_strength", severite * 0.85f);
     }
 
+    private ColorRect _overlayEauImmersion;
+    private ShaderMaterial _materiauOverlayEauImmersion;
+    private CanvasLayer _calqueEauImmersion;
+    private float _intensiteFiltreEau;
+
+    private void AssurerOverlayEauImmersion()
+    {
+        if (_overlayEauImmersion != null && GodotObject.IsInstanceValid(_overlayEauImmersion))
+            return;
+
+        // Calque DÉDIÉ (Layer très haut), enfant du joueur : aucune dépendance au HUD (qui pouvait être introuvable
+        // ou dont l'overlay finissait 0×0). Un CanvasLayer rend toujours par-dessus la 3D.
+        if (_calqueEauImmersion == null || !GodotObject.IsInstanceValid(_calqueEauImmersion))
+        {
+            // Layer 10 : au-dessus de la 3D, SOUS le HUD (15) pour ne pas teinter la barre d'inventaire.
+            _calqueEauImmersion = new CanvasLayer { Name = "CalqueEauImmersion", Layer = 10 };
+            AddChild(_calqueEauImmersion);
+        }
+
+        _overlayEauImmersion = new ColorRect
+        {
+            Name = "OverlayEauImmersion",
+            Color = Colors.White,
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+            Visible = false
+        };
+        _calqueEauImmersion.AddChild(_overlayEauImmersion);
+        // Anchors ET offsets en plein écran (une fois dans l'arbre) : garantit une taille = viewport (pas un rect 0×0).
+        _overlayEauImmersion.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
+        GD.Print($"ZERO-K [FiltreEau] overlay créé : taille={_overlayEauImmersion.Size} dansArbre={_overlayEauImmersion.IsInsideTree()} calqueLayer={_calqueEauImmersion.Layer}");
+
+        _materiauOverlayEauImmersion = _overlayEauImmersion.Material as ShaderMaterial;
+        if (_materiauOverlayEauImmersion == null)
+        {
+            var shader = new Shader();
+            // Volontairement SANS screen_texture : teinte bleue procedurale = rendu garanti (aucune dependance
+            // a la texture d'ecran ni back-buffer copy, qui peuvent silencieusement ne rien afficher).
+            shader.Code = @"
+shader_type canvas_item;
+
+uniform vec4 teinte_profonde : source_color = vec4(0.09, 0.28, 0.46, 1.0);
+uniform float intensite : hint_range(0.0, 1.0) = 0.0;
+uniform float temps = 0.0;
+
+void fragment()
+{
+    // Vignette : bords plus denses (lumiere qui baisse en profondeur).
+    float d = distance(SCREEN_UV, vec2(0.5));
+    float vig = 0.5 + 0.6 * smoothstep(0.20, 0.98, d);
+    // Caustiques discretes : l'eau bouge.
+    float caustic = 0.05 * (sin(SCREEN_UV.x * 36.0 + temps * 1.4) + sin(SCREEN_UV.y * 28.0 - temps * 1.1));
+    float a = clamp((vig + caustic) * intensite, 0.0, 0.92);
+    COLOR = vec4(teinte_profonde.rgb, a);
+}
+";
+            _materiauOverlayEauImmersion = new ShaderMaterial { Shader = shader };
+            _overlayEauImmersion.Material = _materiauOverlayEauImmersion;
+        }
+
+        _materiauOverlayEauImmersion.SetShaderParameter("intensite", 0f);
+    }
+
+    private bool _etatCameraSousLeauPrecedent;
+    private ulong _dernierLogFiltreEauMs;
+
+    /// <summary>True si la caméra active (les yeux) est sous l'eau : déclenche le filtre sous-marin.</summary>
+    private bool CameraEstSousLeau()
+    {
+        if (_gestionnaireMonde == null)
+            return false;
+        Camera3D cam = _camera != null && GodotObject.IsInstanceValid(_camera) ? _camera : _cameraFps;
+        if (cam == null || !GodotObject.IsInstanceValid(cam) || !cam.IsInsideTree())
+            return false;
+
+        Vector3 p = cam.GlobalPosition;
+        // Présence d'eau au niveau des yeux (voxel exact OU voisinage immédiat).
+        bool exact = _gestionnaireMonde.EstPointDansEauExact(p);
+        bool immerge = _gestionnaireMonde.EstPointImmergeEau(p);
+        float surfaceOcean = _gestionnaireMonde.ObtenirNiveauSurfaceEau();
+        // Surface de référence : locale si le corps nage (lacs en altitude), sinon le niveau d'océan.
+        float surfaceRef = _dernierEtatDansEau ? _derniereSurfaceEau : surfaceOcean;
+
+        // Les YEUX sont sous l'eau seulement si (a) de l'eau est présente ici ET (b) la caméra est NETTEMENT sous
+        // la surface RÉELLE. On n'utilise PLUS le voxel « exact » seul comme déclencheur : il devient vrai dès que
+        // les yeux entrent dans la cellule d'eau (jusqu'à ~0,6 m AU-DESSUS de la surface marching-cubes), ce qui
+        // déclenchait le filtre bien trop tôt (tête encore hors de l'eau).
+        bool eauPresente = exact || immerge;
+        bool sousLeau = eauPresente && p.Y <= surfaceRef - 0.06f;
+
+        // Diagnostic : transition immédiate + rappel périodique tant qu'on est près de l'eau (à retirer après).
+        ulong now = Time.GetTicksMsec();
+        bool transition = sousLeau != _etatCameraSousLeauPrecedent;
+        bool procheEau = _dernierEtatDansEau || immerge || p.Y <= surfaceOcean + 3f;
+        if (transition || (procheEau && now - _dernierLogFiltreEauMs >= 800))
+        {
+            _etatCameraSousLeauPrecedent = sousLeau;
+            _dernierLogFiltreEauMs = now;
+            GD.Print($"ZERO-K [FiltreEau] sousLeau={sousLeau} | camY={p.Y:0.00} surfOcean={surfaceOcean:0.00} surfLocale={_derniereSurfaceEau:0.00} exact={exact} immerge={immerge} nageCorps={_dernierEtatDansEau} intensite={_intensiteFiltreEau:0.00}");
+        }
+        return sousLeau;
+    }
+
+    /// <summary>Filtre bleu plein écran quand les yeux passent sous la surface (fondu doux à l'entrée/sortie).</summary>
+    private void MettreAJourFiltreEauImmersion(float dt)
+    {
+        float cible = (!_mortJoueurEnCours && CameraEstSousLeau()) ? 1f : 0f;
+        _intensiteFiltreEau = Mathf.MoveToward(_intensiteFiltreEau, cible, dt * 4.5f);
+
+        if (_intensiteFiltreEau <= 0.001f)
+        {
+            if (_overlayEauImmersion != null && GodotObject.IsInstanceValid(_overlayEauImmersion))
+                _overlayEauImmersion.Visible = false;
+            return;
+        }
+
+        AssurerOverlayEauImmersion();
+        if (_overlayEauImmersion == null || !GodotObject.IsInstanceValid(_overlayEauImmersion) || _materiauOverlayEauImmersion == null)
+            return;
+
+        _overlayEauImmersion.Visible = true;
+        _materiauOverlayEauImmersion.SetShaderParameter("intensite", _intensiteFiltreEau);
+        _materiauOverlayEauImmersion.SetShaderParameter("temps", (float)Time.GetTicksMsec() * 0.001f);
+    }
+
     private void JouerFlashDegatsBovin()
     {
         AssurerOverlayDegatsRouge();

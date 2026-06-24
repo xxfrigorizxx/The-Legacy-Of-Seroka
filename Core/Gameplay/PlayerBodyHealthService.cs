@@ -609,6 +609,8 @@ public partial class Joueur
 
     private void AppliquerRisquesChuteOsJambes(float hauteurChuteMetres)
     {
+        if (ModeCreatifActif)
+            return; // Mode créatif : pas de fracture osseuse à la réception de chute.
         float chanceFissure = CalculerChanceFissureChute(hauteurChuteMetres);
         float chanceCasse = CalculerChanceCasseChute(hauteurChuteMetres);
         if (chanceFissure <= 0f && chanceCasse <= 0f)
@@ -778,6 +780,8 @@ public partial class Joueur
     /// </summary>
     public void AppliquerRisqueAttaqueBovinSurOsSection(string sectionCorps, float chancePct = 5f)
     {
+        if (ModeCreatifActif)
+            return; // Mode créatif : pas de fracture osseuse infligée par les bovins.
         string section = NormaliserCleSectionCorps(sectionCorps);
         if (!SectionPeutRecevoirFractureOsAttaqueBovin(section))
             return;
@@ -810,6 +814,8 @@ public partial class Joueur
         float chanceFractureOsPct = 5f,
         int indiceFormeImpactPhysique = -1)
     {
+        if (ModeCreatifActif)
+            return; // Mode créatif : aucun dégât/fracture/poussée d'une charge bovine.
         string section = ResoudreSectionCorpsDepuisImpactCharge(pointImpactMonde, indiceFormeImpactPhysique, estCoupDeTete);
         int degatsZone = estCoupDeTete ? DegatsChargeBovinCoupDeTete : DegatsChargeBovinCoupDeSabot;
         bool peutFracturerOs = SectionPeutRecevoirFractureOsAttaqueBovin(section);
@@ -874,6 +880,8 @@ public partial class Joueur
     {
         if (degats <= 0)
             return;
+        if (ModeCreatifActif)
+            return; // Mode créatif : invulnérable (chute, faim, poison, explosion, charge bovine… aucun dégât corporel).
         float multiplicateurDegats = ObtenirMultiplicateurDegatsConsommationBaies();
         if (multiplicateurDegats < 0.9999f)
             degats = Mathf.Max(1, Mathf.RoundToInt(degats * multiplicateurDegats));

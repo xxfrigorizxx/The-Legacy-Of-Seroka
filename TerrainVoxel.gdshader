@@ -1,6 +1,11 @@
 shader_type spatial;
 // Soleil + torches : light() standard (ATTENUATION = ombres Godot). Pas de skylight voxel.
-render_mode blend_mix, depth_draw_opaque, cull_back, specular_disabled;
+// OPAQUE (pas de blend_mix) : le terrain est plein (ALPHA toujours = 1.0). En blend_mix il était classé
+// « transparent » → rendu dans la passe transparente SANS écrire la profondeur, donc trié par objet avec
+// l'eau (elle aussi transparente). Résultat : un chunk de terrain cerné d'eau passait DERRIÈRE les nappes
+// d'eau dans l'ordre de tri → le terrain « disparaissait » sous l'eau (voxels qui semblaient transparents).
+// En opaque il écrit la profondeur, occulte correctement l'eau, et c'est aussi bien moins coûteux (passe opaque).
+render_mode depth_draw_opaque, cull_back, specular_disabled;
 uniform sampler2DArray texture_array : source_color, filter_linear_mipmap, repeat_enable;
 uniform float triplanar_scale = 0.2;
 uniform float lod_texture_start = 140.0;

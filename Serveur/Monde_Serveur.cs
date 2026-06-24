@@ -27,6 +27,8 @@ public partial class Monde_Serveur : Node
 
 	/// <summary>Fuseau horaire de la dimension en heures. Monde 1 = 0, Monde 2 = +6, Monde 3 = +12, Monde 4 = +18.</summary>
 	[Export] public double FuseauHoraireHeures = 0.0;
+	/// <summary>Probabilité qu'un emplacement de gazon brouté repousse à chaque nouveau jour (hook anti-famine, lent).</summary>
+	[Export(PropertyHint.Range, "0,1,0.01")] public float ChanceRepousseGazonParJour = 0.12f;
 
 	private Dictionary<Vector2I, Chunk_Serveur> _chunks = new Dictionary<Vector2I, Chunk_Serveur>();
 	private readonly Dictionary<int, Dictionary<Vector2I, Chunk_Serveur>> _chunksAbysseParStage2D = new Dictionary<int, Dictionary<Vector2I, Chunk_Serveur>>();
@@ -1687,6 +1689,7 @@ public partial class Monde_Serveur : Node
 			// l’état flore ne part sur disque qu’au prochain passage de l’autosauvegarde progressive (potentiellement très tard).
 			SauvegarderFloreChunk(c, chunk);
 		});
+		ConfigurerCallbacksStabiliteChunk(chunk);
 		return chunk;
 	}
 
@@ -1869,6 +1872,26 @@ public partial class Monde_Serveur : Node
 		GD.Print("ZERO-K : Croissance des arbres du jour appliquée.");
 	}
 
+	/// <summary>Repousse lente du gazon brouté sur les chunks chargés (hook nouveau jour, anti-famine du troupeau).</summary>
+	public void FaireRepousserGazonDuJour()
+	{
+		if (_simulationSuspendue)
+			return;
+		if (ActiverGenerationAbysse)
+			return; // Le gazon alpha-like ne pousse pas dans les dimensions Abysse.
+		float chance = Mathf.Clamp(ChanceRepousseGazonParJour, 0f, 1f);
+		if (chance <= 0f)
+			return;
+		int total = 0;
+		foreach (var chunk in _chunks.Values)
+		{
+			if (chunk != null)
+				total += chunk.FaireRepousserGazonJournalier(chance);
+		}
+		if (total > 0)
+			GD.Print($"ZERO-K : repousse du gazon du jour — {total} brin(s) régénéré(s).");
+	}
+
 	public DonneesChunk ObtenirDonneesChunkPourClient(Vector2I coord)
 	{
 		var chunk = ObtenirOuCreerChunk(coord);
@@ -1954,6 +1977,15 @@ public partial class Monde_Serveur : Node
 					if (EstVoxelEau(new Vector3I(gx + dx, gy + dy, gz + dz)))
 						return true;
 		return false;
+	}
+
+	/// <summary>Voxel EXACT (sans voisinage) : true si le point précis est dans l'eau. Pour « caméra sous l'eau ».</summary>
+	public bool EstVoxelEauExact(Vector3 positionGlobale)
+	{
+		return EstVoxelEau(new Vector3I(
+			Mathf.FloorToInt(positionGlobale.X),
+			Mathf.FloorToInt(positionGlobale.Y),
+			Mathf.FloorToInt(positionGlobale.Z)));
 	}
 
 	private bool EstVoxelAir(Vector3I pos)

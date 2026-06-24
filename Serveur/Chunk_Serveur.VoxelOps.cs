@@ -65,7 +65,8 @@ public partial class Chunk_Serveur : RefCounted
 			if (!modifie) return;
 			_estModifie = true; // Joueur a miné → sauvegarde obligatoire au déchargement.
 			_contenuChangeDepuisEnvoiClient = true;
-			foreach (var pos in positionsDetruites) VerifierStabilite(pos);
+			_demarrerBatchStabilite?.Invoke();
+			foreach (var pos in positionsDetruites) VerifierStabiliteLocal(pos);
 		}
 
 		int baseX = ChunkOffsetX * TailleChunk;
@@ -150,8 +151,12 @@ public partial class Chunk_Serveur : RefCounted
 		return new Vector2I(ChunkOffsetX + dx, ChunkOffsetZ + dz);
 	}
 
-	private bool EstSolide(int x, int y, int z) =>
-		EstDansLimitesChunk(x, y, z) && _densities[x, y, z] > Isolevel;
+	private bool EstSolide(int x, int y, int z)
+	{
+		if (EstDansLimitesChunk(x, y, z))
+			return _densities[x, y, z] > Isolevel;
+		return _estSolideGlobal?.Invoke(LocalVersGlobalVoxel(x, y, z)) ?? false;
+	}
 
 	/// <summary>Lecture directe de l'ADN : retourne l'ID matière exact du voxel (aligné avec le Shader). 1 si air ou hors limites. CÉCITÉ HYDRIQUE : jamais 4 (eau).</summary>
 	public byte ObtenirMatiereAtLocal(int lx, int ly, int lz)
@@ -186,36 +191,52 @@ public partial class Chunk_Serveur : RefCounted
 		return false;
 	}
 
-	private void VerifierStabilite(Vector3I pos)
+	private void PropagerStabiliteDepuis(int lxSous, int lySous, int lzSous)
 	{
-		int xu = pos.X, yu = pos.Y + 1, zu = pos.Z;
+		if (_propagerStabiliteGlobal != null)
+			_propagerStabiliteGlobal(LocalVersGlobalVoxel(lxSous, lySous, lzSous));
+		else
+			VerifierStabiliteLocal(new Vector3I(lxSous, lySous, lzSous));
+	}
+
+	/// <summary>
+	/// Vérifie si le voxel au-dessus de <paramref name="posLocalSousBloc"/> est soutenu ; sinon effondrement + propagation.
+	/// </summary>
+	public void VerifierStabiliteLocal(Vector3I posLocalSousBloc)
+	{
+		int xu = posLocalSousBloc.X, yu = posLocalSousBloc.Y + 1, zu = posLocalSousBloc.Z;
 		if (yu < 0 || yu > HauteurMax) return;
 		if (!EstDansLimitesChunk(xu, yu, zu))
 		{
-			var v = ObtenirChunkVoisinSiHorsLimites(xu, yu, zu);
-			if (v == null || _chunkEstCharge == null || !_chunkEstCharge(v.Value)) return;
+			_propagerStabiliteGlobal?.Invoke(LocalVersGlobalVoxel(posLocalSousBloc.X, posLocalSousBloc.Y, posLocalSousBloc.Z));
 			return;
 		}
 		if (!EstSolide(xu, yu, zu)) return;
 		byte mat = _materials[xu, yu, zu];
 		if (mat == 0) mat = 2;
 		if (AUnSupport(xu, yu, zu, mat)) return;
+		if (_consommerBudgetStabilite != null && !_consommerBudgetStabilite())
+			return;
 
 		lock (_verrouVoxel)
 		{
 			_densities[xu, yu, zu] = -10.0f;
 			if (_densitiesEau != null) _densitiesEau[xu, yu, zu] = -1.0f;
+			_materials[xu, yu, zu] = 0;
 		}
 
+		_estModifie = true;
+		_contenuChangeDepuisEnvoiClient = true;
+		_onVoxelModifie?.Invoke(LocalVersGlobalVoxel(xu, yu, zu), 0);
 		_reveillerEau?.Invoke(PositionMonde + new Vector3(xu, yu, zu));
 		_callbackBlocChutant?.Invoke(PositionMonde + new Vector3(xu + 0.5f, yu + 0.5f, zu + 0.5f), mat, false, 0);
 
 		AuditerGraviteFlore();
-		VerifierStabilite(new Vector3I(xu, yu, zu));
-		VerifierStabilite(new Vector3I(xu - 1, yu - 1, zu));
-		VerifierStabilite(new Vector3I(xu + 1, yu - 1, zu));
-		VerifierStabilite(new Vector3I(xu, yu - 1, zu - 1));
-		VerifierStabilite(new Vector3I(xu, yu - 1, zu + 1));
+		PropagerStabiliteDepuis(xu, yu, zu);
+		PropagerStabiliteDepuis(xu - 1, yu - 1, zu);
+		PropagerStabiliteDepuis(xu + 1, yu - 1, zu);
+		PropagerStabiliteDepuis(xu, yu - 1, zu - 1);
+		PropagerStabiliteDepuis(xu, yu - 1, zu + 1);
 	}
 
 	public bool EstVoxelEau(int x, int y, int z)
@@ -400,6 +421,7 @@ public partial class Chunk_Serveur : RefCounted
 		foreach (var kv in floreDetruite)
 		{
 			InventaireFlore.Remove(kv.Key);
+			_gazonBroutePourRepousse.Add(kv.Key); // Candidat à la repousse lente (~1×/jour).
 			if (creerLoot)
 			{
 				Vector3 posSpawn = new Vector3(kv.Key.X + 0.5f, kv.Key.Y + 0.5f, kv.Key.Z + 0.5f);
@@ -408,5 +430,45 @@ public partial class Chunk_Serveur : RefCounted
 		}
 		_onFlorePurgée?.Invoke(new Vector2I(ChunkOffsetX, ChunkOffsetZ), ChunkOffsetY, new Dictionary<Vector3I, byte>(InventaireFlore));
 		return true;
+	}
+
+	/// <summary>
+	/// Repousse lente du gazon brouté : chaque emplacement brouté a une probabilité <paramref name="chance"/> de
+	/// redevenir un brin d'herbe. Hook léger (appelé au nouveau jour) destiné à être relié à d'autres systèmes
+	/// (humidité, saisons…) plus tard. Retourne le nombre de brins régénérés.
+	/// </summary>
+	public int FaireRepousserGazonJournalier(float chance)
+	{
+		if (_gazonBroutePourRepousse.Count == 0)
+			return 0;
+		chance = Mathf.Clamp(chance, 0f, 1f);
+		if (chance <= 0f)
+			return 0;
+
+		int regeneres = 0;
+		var aRetirer = new List<Vector3I>();
+		foreach (Vector3I pos in _gazonBroutePourRepousse)
+		{
+			if (InventaireFlore.ContainsKey(pos))
+			{
+				aRetirer.Add(pos); // Déjà réoccupé (régénération/autre flore) : ne plus suivre.
+				continue;
+			}
+			if (GD.Randf() > chance)
+				continue;
+			InventaireFlore[pos] = FloreTypeGazon;
+			aRetirer.Add(pos);
+			regeneres++;
+		}
+		foreach (Vector3I pos in aRetirer)
+			_gazonBroutePourRepousse.Remove(pos);
+
+		if (regeneres > 0)
+		{
+			_estModifie = true;
+			_contenuChangeDepuisEnvoiClient = true;
+			_onFlorePurgée?.Invoke(new Vector2I(ChunkOffsetX, ChunkOffsetZ), ChunkOffsetY, new Dictionary<Vector3I, byte>(InventaireFlore));
+		}
+		return regeneres;
 	}
 }

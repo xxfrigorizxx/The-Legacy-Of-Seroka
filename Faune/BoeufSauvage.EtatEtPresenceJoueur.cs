@@ -36,8 +36,17 @@ public partial class BoeufSauvage : CharacterBody3D
 		}
 	}
 
+	/// <summary>Vrai si le joueur ciblé est en mode créatif : la faune l'ignore totalement (ni peur, ni charge, ni formation protectrice déclenchée par lui).</summary>
+	private bool JoueurEnModeCreatif() =>
+		_joueur is Joueur j && GodotObject.IsInstanceValid(j) && j.ModeCreatifActif;
+
 	private void GererPresenceJoueur()
 	{
+		if (JoueurEnModeCreatif())
+		{
+			_memoireDetectionJoueur = 0f; // on oublie immédiatement le joueur (au cas où il vient de passer en créatif).
+			return;
+		}
 		if (!EssayerObtenirPositionJoueur(out Vector3 posJoueur))
 			return;
 		if (FaimCritiquePrioritaire())
@@ -112,6 +121,19 @@ public partial class BoeufSauvage : CharacterBody3D
 		else if (DoitEntrerBroutageSelonSeuils())
 			ForcerEtatBroutageSiBesoin(prioriteAbsolue: false);
 
+		// Exode alimentaire : pilote le déplacement tant qu'on n'a pas retrouvé d'herbe,
+		// sauf si une menace déclenche la fuite/charge (gérées juste après).
+		if (_enMigrationHerbe)
+		{
+			if (!DoitEntrerBroutageSelonSeuils())
+				TerminerMigrationHerbe();
+			else if (_tempsFuite <= 0f && _etat != EtatBoeuf.Charge)
+			{
+				MettreAJourMigrationHerbe(dt);
+				return;
+			}
+		}
+
 		if (_etat == EtatBoeuf.Charge && !PeutEngagerChargeContreJoueur())
 		{
 			_etat = EtatBoeuf.Fuite;
@@ -160,34 +182,55 @@ public partial class BoeufSauvage : CharacterBody3D
 		{
 			_tempsBroutage -= dt;
 			_cooldownMorsure -= dt;
-			float seuilHerbe = Mathf.Max(1.0f, RayonMangerHerbe * 0.9f);
-			if (GlobalPosition.DistanceSquaredTo(_cibleCourante) > seuilHerbe * seuilHerbe)
-			{
-				// Se déplace vers une zone réellement couverte en mesh herbe.
-				if (!HerbeDisponibleAutour(_cibleCourante, RayonMangerHerbe) && TrouverPointHerbeProche(out Vector3 h2))
-					_cibleCourante = h2;
-			}
+
+			// Toutes les requêtes d'herbe (capteur + recherche) sont throttlées sur la cadence de morsure
+			// (~0,6–0,85 s) pour ne pas alourdir les FPS quand un troupeau broute.
 			if (_cooldownMorsure <= 0f)
 			{
-				_cooldownMorsure = 0.85f;
-				bool aMange = ConsommerHerbeSousPattes();
-				if (!aMange)
+				// CAPTEUR : y a-t-il réellement de l'herbe sous le museau ?
+				if (HerbeDisponibleAutour(PointDetectionHerbeSousTete(), RayonMangerHerbe))
 				{
-					_echecsMorsureConsecutifs++;
-					_cooldownMorsure = 0.65f;
-					if (TrouverPointHerbeProche(out Vector3 h3))
-						_cibleCourante = h3;
-					else if (_echecsMorsureConsecutifs >= 3)
+					SignalerHerbeTrouveeAuTroupeau(GlobalPosition); // appelle le troupeau vers ce pâturage.
+					_cooldownMorsure = 0.85f;
+					bool aMange = ConsommerHerbeSousPattes();
+					if (aMange)
 					{
-						// Évite le spam statique sans herbe: repart chercher ailleurs.
-						_etat = EtatBoeuf.Errance;
-						ChoisirNouvelleCible(false);
-						return;
+						_echecsMorsureConsecutifs = 0;
+					}
+					else
+					{
+						_echecsMorsureConsecutifs++;
+						_cooldownMorsure = 0.5f;
+						if (TrouverPointHerbeProche(out Vector3 h3))
+							_cibleCourante = h3;
+						else if (_echecsMorsureConsecutifs >= 2)
+						{
+							// Plus d'herbe ici ni dans le rayon : rejoindre l'appel d'un congénère, sinon exode.
+							if (!EssayerRejoindreAppelHerbe())
+								DemarrerMigrationHerbe(forcerNouvelleEtape: false);
+							return;
+						}
 					}
 				}
 				else
 				{
-					_echecsMorsureConsecutifs = 0;
+					// Pas d'herbe ici : aller la chercher (sans figer ni jouer l'anim de broutage) au lieu de spammer sur place.
+					_cooldownMorsure = 0.6f;
+					if (TrouverPointHerbeProche(out Vector3 versHerbe))
+					{
+						_cibleCourante = versHerbe;
+						// Prolonge la fenêtre de broutage le temps d'atteindre l'herbe localisée.
+						if (_tempsBroutage <= 0f && _faimCourante < _faimMaxActuelle - 2f)
+							_tempsBroutage = DureeBroutage;
+					}
+					else
+					{
+						// Aucune herbe dans le rayon : rejoindre l'appel d'un congénère, sinon exode (ligne droite hors zone).
+						_echecsMorsureConsecutifs++;
+						if (!EssayerRejoindreAppelHerbe())
+							DemarrerMigrationHerbe(forcerNouvelleEtape: false);
+						return;
+					}
 				}
 			}
 			if (_tempsBroutage <= 0f || _faimCourante >= _faimMaxActuelle - 2f)
@@ -196,6 +239,14 @@ public partial class BoeufSauvage : CharacterBody3D
 				ChoisirNouvelleCible(false);
 			}
 			return;
+		}
+
+		// Formation protectrice : sous menace, le mâle s'interpose, femelles et veaux se replient au centre.
+		// (Ignoré en famine critique : l'animal doit alors trouver à manger en priorité.)
+		if (ActiverFormationProtectrice && !FaimCritiquePrioritaire() && EvaluerMenaceTroupeau(out Vector3 posMenace))
+		{
+			if (AppliquerFormationProtectrice(posMenace))
+				return;
 		}
 
 		if (_peutAider && TrouverAllieEnDetresse(out BoeufSauvage allie))
@@ -238,6 +289,11 @@ public partial class BoeufSauvage : CharacterBody3D
 				return;
 			}
 		}
+
+		// Cohésion de meute : si l'animal s'est trop éloigné du centre du troupeau, il revient se regrouper
+		// (anti-dispersion) au lieu d'errer seul de son côté.
+		if (AppliquerCohesionTroupeau())
+			return;
 
 		_etat = EtatBoeuf.Errance;
 		if (_tempsIdleErrance > 0f)

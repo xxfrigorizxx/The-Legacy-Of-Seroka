@@ -145,7 +145,9 @@ public partial class Monde_Serveur : Node
 					Vector2I coord = new Vector2I(cx, cz);
 					foreach (int coordY in coordYImpactes)
 					{
-						var chunk = ObtenirOuCreerChunk(coord, coordY);
+						// Faune : lecture seule (jamais de génération synchrone pour une requête animale).
+						if (!TryGetChunkRuntime(coord, coordY, out var chunk) || chunk == null)
+							continue;
 						if (chunk.FaucherFloreSansLoot(pointImpact, rayon))
 							aFauche = true;
 					}
@@ -156,7 +158,9 @@ public partial class Monde_Serveur : Node
 		for (int cx = cxMin; cx <= cxMax; cx++)
 			for (int cz = czMin; cz <= czMax; cz++)
 			{
-				var chunk = ObtenirOuCreerChunk(new Vector2I(cx, cz));
+				// Faune : ne JAMAIS générer un chunk pour une requête animale (sinon génération synchrone en rafale = freeze/crash).
+				if (!_chunks.TryGetValue(new Vector2I(cx, cz), out var chunk) || chunk == null)
+					continue;
 				if (chunk.FaucherFloreSansLoot(pointImpact, rayon))
 					aFauche = true;
 			}
@@ -196,7 +200,9 @@ public partial class Monde_Serveur : Node
 					Vector2I coord = new Vector2I(cx, cz);
 					foreach (int coordY in coordYImpactes)
 					{
-						var chunk = ObtenirOuCreerChunk(coord, coordY);
+						// Faune : lecture seule (jamais de génération synchrone pour une requête animale).
+						if (!TryGetChunkRuntime(coord, coordY, out var chunk) || chunk == null)
+							continue;
 						if (chunk.ExisteGazonDansRayon(pointImpact, rayon))
 							return true;
 					}
@@ -206,7 +212,9 @@ public partial class Monde_Serveur : Node
 		for (int cx = cxMin; cx <= cxMax; cx++)
 			for (int cz = czMin; cz <= czMax; cz++)
 			{
-				var chunk = ObtenirOuCreerChunk(new Vector2I(cx, cz));
+				// Faune : lecture seule des chunks déjà chargés (jamais de génération synchrone pour une requête animale).
+				if (!_chunks.TryGetValue(new Vector2I(cx, cz), out var chunk) || chunk == null)
+					continue;
 				if (chunk.ExisteGazonDansRayon(pointImpact, rayon))
 					return true;
 			}

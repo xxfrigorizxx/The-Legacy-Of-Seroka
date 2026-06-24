@@ -38,14 +38,24 @@ public partial class BoeufSauvage : CharacterBody3D
 	{
 		int x = Mathf.FloorToInt(p.X);
 		int z = Mathf.FloorToInt(p.Z);
-		int h = Generateur_Voxel.ObtenirHauteurTerrainMonde(x, z, _seedTerrain);
+		int pente = CalculerPenteTerrain(x, z, out int h);
 		if (h < 80 || h > 320) return false;
+		return pente <= 56;
+	}
+
+	/// <summary>
+	/// Pente locale approchée du terrain (somme des dénivelés ±5 sur 4 directions) à partir de la fonction de hauteur
+	/// procédurale — donc disponible même hors des chunks chargés. Sert à valider une position et à orienter la migration
+	/// vers le terrain le plus plat (éviter montagnes/falaises). Plus le résultat est bas, plus c'est plat.
+	/// </summary>
+	private int CalculerPenteTerrain(int x, int z, out int hauteur)
+	{
+		hauteur = Generateur_Voxel.ObtenirHauteurTerrainMonde(x, z, _seedTerrain);
 		int hE = Generateur_Voxel.ObtenirHauteurTerrainMonde(x + 5, z, _seedTerrain);
 		int hW = Generateur_Voxel.ObtenirHauteurTerrainMonde(x - 5, z, _seedTerrain);
 		int hN = Generateur_Voxel.ObtenirHauteurTerrainMonde(x, z - 5, _seedTerrain);
 		int hS = Generateur_Voxel.ObtenirHauteurTerrainMonde(x, z + 5, _seedTerrain);
-		int pente = Mathf.Abs(h - hE) + Mathf.Abs(h - hW) + Mathf.Abs(h - hN) + Mathf.Abs(h - hS);
-		return pente <= 56;
+		return Mathf.Abs(hauteur - hE) + Mathf.Abs(hauteur - hW) + Mathf.Abs(hauteur - hN) + Mathf.Abs(hauteur - hS);
 	}
 
 	private bool TrouverAllieEnDetresse(out BoeufSauvage allie)
@@ -204,11 +214,13 @@ public partial class BoeufSauvage : CharacterBody3D
 		Vector3 versCible = _cibleCourante - GlobalPosition;
 		versCible.Y = 0f;
 		float distCible = versCible.Length();
-		float vitesseHoriz = new Vector3(Velocity.X, 0f, Velocity.Z).Length();
 
 		bool devraitAvancer = distCible > Mathf.Max(0.5f, DistanceCibleMinPourDetectionCoincage);
 		bool peuDeProgres = progression < Mathf.Max(0.02f, ProgressionMinAvantCoincage);
-		bool quasiImmobile = vitesseHoriz < 0.85f;
+		// Vitesse RÉELLE (déplacement effectif) et non la Velocity résiduelle de MoveAndSlide : un bovin tassé contre un
+		// obstacle ou le troupeau garde une Velocity tangentielle > 0 alors qu'il n'avance pas. Sans ça, le coincage
+		// « marche sur place » échappait à la détection (donc pas de re-route → bovin figé qui anime la marche dans le vide).
+		bool quasiImmobile = _vitesseHorizReelleLissee < 0.85f;
 
 		if (devraitAvancer && peuDeProgres && quasiImmobile)
 		{
@@ -423,11 +435,16 @@ public partial class BoeufSauvage : CharacterBody3D
 	private bool ConsommerHerbeSousPattes()
 	{
 		if (_gestionnaire == null) return false;
+		// CAPTEUR : confirmer la présence réelle de brins d'herbe AVANT de figer le mouvement et de jouer l'anim.
+		// (Corrige le « spam manger sur place » sans herbe qui menait à la mort de faim.)
+		Vector3 pointMuseau = PointDetectionHerbeSousTete();
+		if (!_gestionnaire.ExisteGazonFauneGlobal(pointMuseau, RayonMangerHerbe))
+			return false; // Pas de brin d'herbe ici : l'IA bascule en recherche (WANDER) au lieu de brouter dans le vide.
+
 		_verrouMouvementMorsure = Mathf.Max(_verrouMouvementMorsure, DureeImmobilePendantMorsure);
 		DeclencherAnimationMorsureHerbe();
-		Vector3 cible = GlobalPosition + Vector3.Down * 0.2f;
 		// Variante "faune" : retire l'herbe visuelle sans générer de loot au sol.
-		bool aMangeHerbe3D = _gestionnaire.AppliquerFauchageFauneGlobal(cible, RayonMangerHerbe);
+		bool aMangeHerbe3D = _gestionnaire.AppliquerFauchageFauneGlobal(pointMuseau, RayonMangerHerbe);
 		if (!aMangeHerbe3D)
 			return false; // Sans mesh 3D d'herbe a portée, pas de nutrition.
 		float gainFaim = Mathf.Max(0.1f, _faimMaxActuelle * 0.10f);

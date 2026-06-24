@@ -126,10 +126,15 @@ public partial class Cycle_Solaire : Node
 	/// <summary>Ombres directionnelles soleil/lune (shadow maps natives Godot — PBR standard sur le terrain).</summary>
 	private void ConfigurerOmbresDirectionnelles()
 	{
-		// normalBias modéré : trop élevé = ombres des arbres/roches invisibles sur le sol.
-		// Distance courte (200 m) = forte densité de texels = ombres nettes près du joueur.
-		AppliquerProfilOmbresDirectionnelles(_soleil, distanceMax: 200f, bias: 0.02f, normalBias: 0.6f);
-		AppliquerProfilOmbresDirectionnelles(_lune, distanceMax: 200f, bias: 0.03f, normalBias: 0.7f);
+		// reverse_cull = FALSE (voir AppliquerProfil...) sinon la coque mince du terrain marching
+		// cubes s'auto-ombre en noir et noie toutes les ombres portées.
+		// normalBias TRÈS BAS (0.20) : le normalBias provoque une FUITE de lumière qui traverse les
+		// ombres ÉTROITES. Un gros occludeur (colline) garde son cœur d'ombre plein, mais une branche
+		// FINE est « mangée » sur toute sa largeur → demi-ombre pâle. En le baissant, les ombres fines
+		// (arbres) atteignent le plein noir comme la colline. Le bias de PROFONDEUR est remonté en
+		// compensation pour garder l'acné d'auto-ombrage du terrain sous contrôle.
+		AppliquerProfilOmbresDirectionnelles(_soleil, distanceMax: 200f, bias: 0.04f, normalBias: 0.20f);
+		AppliquerProfilOmbresDirectionnelles(_lune, distanceMax: 200f, bias: 0.05f, normalBias: 0.25f);
 	}
 
 	private static void AppliquerProfilOmbresDirectionnelles(DirectionalLight3D lumiere, float distanceMax, float bias, float normalBias)
@@ -137,6 +142,10 @@ public partial class Cycle_Solaire : Node
 		if (lumiere == null)
 			return;
 		lumiere.ShadowEnabled = true;
+		// reverse cull = FAUX (config alpha.57). Sur la coque MINCE du terrain marching cubes,
+		// reverse_cull=true rendait la face INFÉRIEURE dans la shadow map → la surface supérieure
+		// s'auto-ombrait en noir et noyait toutes les ombres portées (arbres compris). On garde donc
+		// le culling standard ; l'acné est gérée par normalBias + bias de profondeur.
 		lumiere.ShadowReverseCullFace = false;
 		lumiere.DirectionalShadowMode = DirectionalLight3D.ShadowMode.Parallel4Splits;
 		lumiere.DirectionalShadowBlendSplits = true;
@@ -321,7 +330,11 @@ public partial class Cycle_Solaire : Node
 		else
 		{
 			// Jour : soleil fort, lune éteinte (sinon elle remplit les ombres du soleil).
-			float energieSoleilCible = Mathf.Clamp(hauteurSoleil * 2.4f, 0.25f, 2.35f);
+			// Golden hour : plancher ÉLEVÉ (0.95) pour que le soleil bas (lever/coucher = heure de jeu
+			// réelle la plus fréquente) éclaire FRANCHEMENT le sol → le sol au soleil reste bien plus
+			// lumineux que le sol à l'ombre, donc les longues ombres portées ressortent nettement
+			// au lieu de se noyer dans un sol crépusculaire terne.
+			float energieSoleilCible = Mathf.Clamp(0.95f + hauteurSoleil * 1.50f, 0.95f, 2.35f);
 			_soleil.LightEnergy = LisserVers(_soleil.LightEnergy, energieSoleilCible, delta, VitesseLissageLumiere);
 			_soleil.ShadowEnabled = true; // Jour : soleil dominant, ombres directionnelles actives.
 			_soleil.Set("sky_mode", 0); // LightAndSky (soleil visible via les nodes existants)
@@ -356,16 +369,21 @@ public partial class Cycle_Solaire : Node
 		float intensiteJour = Mathf.Clamp(hauteurSoleil + 0.11f, 0f, 1f); // 0 = nuit, 1 = jour
 		// Courbe rééquilibrée : nuit plus sombre qu'avant, mais ciel encore lisible.
 		float intensiteJourLisse = Mathf.Pow(intensiteJour, 1.35f);
-		bool crepuscule = hauteurSoleil > -0.15f && hauteurSoleil < 0.35f; // Lever/coucher
-		float intensiteCrepuscule = crepuscule ? 1f - Mathf.Abs(hauteurSoleil - 0.1f) / 0.45f : 0f;
 
 		Color couleurBrouillardJour = new Color(0.6f, 0.7f, 0.8f);
 		Color couleurBrouillardNuit = new Color(0.01f, 0.01f, 0.03f);
 
 		// Ambiance ciel = fill léger (pas un second soleil qui efface les ombres directionnelles).
+		// ÉQUILIBRE CRITIQUE pour les ombres :
+		//   - Trop HAUT (ex. ciel 0.82) → l'ambiant rebouche les ombres = elles disparaissent (« brouillard »).
+		//   - Trop BAS (ex. énergie 0.07) → les zones à l'ombre deviennent un TROU NOIR sans détail
+		//     (on ne distingue plus le sol ; impossible de lire « soleil vs ombre »).
+		// Cible : ombre = sol nettement plus SOMBRE que le plein soleil, mais avec son relief/texture
+		// encore visibles (~15-20 % de la luminosité plein soleil). Indispensable pour cadrans solaires
+		// & détection soleil/ombre : on voit qu'on est à l'ombre, sans que ce soit du noir absolu.
 		envGlobal.AmbientLightSource = Godot.Environment.AmbientSource.Sky;
-		float ambientEnergyCible = Mathf.Lerp(0.03f, 0.14f, intensiteJourLisse);
-		float ambientSkyCible = Mathf.Lerp(0.55f, 0.82f, intensiteJourLisse);
+		float ambientEnergyCible = Mathf.Lerp(0.05f, 0.12f, intensiteJourLisse);
+		float ambientSkyCible = Mathf.Lerp(0.45f, 0.52f, intensiteJourLisse);
 		envGlobal.AmbientLightEnergy = LisserVers(envGlobal.AmbientLightEnergy, ambientEnergyCible, delta, VitesseLissageLumiere);
 		envGlobal.AmbientLightSkyContribution = LisserVers(envGlobal.AmbientLightSkyContribution, ambientSkyCible, delta, VitesseLissageLumiere);
 		if (envGlobal.VolumetricFogEnabled)
@@ -409,30 +427,20 @@ public partial class Cycle_Solaire : Node
 		Color cielHorizonNuit = new Color(0.06f, 0.065f, 0.18f);
 		Color solHorizonNuit = new Color(0.07f, 0.07f, 0.2f);
 
-		// Interpolation : nuit → crépuscule → jour
-		Color cielHaut, cielHorizon, solHorizon;
-		if (intensiteJour > 0.5f)
-		{
-			// Jour ou fin de crépuscule
-			float t = Mathf.Clamp((intensiteJour - 0.5f) * 2f, 0f, 1f);
-			cielHaut = cielHautCrepuscule.Lerp(cielHautJour, t);
-			cielHorizon = cielHorizonCrepuscule.Lerp(cielHorizonJour, t);
-			solHorizon = solHorizonCrepuscule.Lerp(solHorizonJour, t);
-		}
-		else if (intensiteCrepuscule > 0f)
-		{
-			// Crépuscule actif
-			cielHaut = cielHautNuit.Lerp(cielHautCrepuscule, intensiteCrepuscule);
-			cielHorizon = cielHorizonNuit.Lerp(cielHorizonCrepuscule, intensiteCrepuscule);
-			solHorizon = solHorizonNuit.Lerp(solHorizonCrepuscule, intensiteCrepuscule);
-		}
-		else
-		{
-			// Nuit pure
-			cielHaut = cielHautNuit;
-			cielHorizon = cielHorizonNuit;
-			solHorizon = solHorizonNuit;
-		}
+		// Interpolation CONTINUE nuit → crépuscule → jour (aucun trou, aucun saut).
+		// ANCIEN BUG : pour hauteurSoleil ∈ [0.35, 0.39] (≈ 16h30), ni la branche « jour » (intensiteJour>0.5,
+		// soit hauteurSoleil>0.39) ni la branche « crépuscule » (hauteurSoleil<0.35) ne s'appliquaient → on
+		// retombait sur « Nuit pure » → ciel nuit noir EN PLEIN JOUR. On remplace les branches par deux fondus
+		// continus : (1) base nuit→jour selon la hauteur du soleil, (2) calque crépuscule qui culmine à l'horizon
+		// et s'efface vers le jour COMME vers la nuit. Toute valeur de hauteurSoleil est désormais couverte.
+		float jourCiel = Mathf.Clamp((hauteurSoleil + 0.10f) / 0.40f, 0f, 1f); // 0 = nuit, 1 = plein jour (h≥0.30)
+		jourCiel = jourCiel * jourCiel * (3f - 2f * jourCiel);                  // smoothstep (transition douce)
+		float crepCiel = Mathf.Clamp(1f - Mathf.Abs(hauteurSoleil - 0.05f) / 0.30f, 0f, 1f); // pic à l'horizon
+		crepCiel *= crepCiel;                                                   // resserre le crépuscule sur l'horizon
+
+		Color cielHaut = cielHautNuit.Lerp(cielHautJour, jourCiel).Lerp(cielHautCrepuscule, crepCiel);
+		Color cielHorizon = cielHorizonNuit.Lerp(cielHorizonJour, jourCiel).Lerp(cielHorizonCrepuscule, crepCiel);
+		Color solHorizon = solHorizonNuit.Lerp(solHorizonJour, jourCiel).Lerp(solHorizonCrepuscule, crepCiel);
 
 		skyMat.SkyTopColor = cielHaut;
 		skyMat.SkyHorizonColor = cielHorizon;

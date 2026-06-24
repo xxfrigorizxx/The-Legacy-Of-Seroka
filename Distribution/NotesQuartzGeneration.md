@@ -32,8 +32,10 @@ bruitSableQuartz = noise2D(x * 2.75 + 5100, z * 2.75 - 3900)
 
 | Zone | Condition bruit | Fréquence approx. |
 |------|-----------------|-------------------|
-| **Fond d'eau / rivière** | `fondEau` **et** `bruitSableQuartz > 0.86` | ~14 % des colonnes fond |
-| **Bord d'eau** | `bordEau` **et** `bruitSableQuartz > 0.93` | ~3,5 % des colonnes bord |
+| **Fond d'eau / rivière** | `fondEau` **et** `bruitSableQuartz > 0.55` | bandes blanches visibles au fond |
+| **Bord d'eau** | `bordEau` **et** `bruitSableQuartz > 0.75` | plus rare sur les berges |
+
+> Seuils abaissés depuis 0.86/0.93 (valeurs quasi inatteignables sur un bruit Perlin FBM → le sable de quartz n'apparaissait jamais en jeu).
 
 Pas de filon 3D : c'est de la **croûte de surface** (comme sable / argile), pas une veine dans la pierre.
 

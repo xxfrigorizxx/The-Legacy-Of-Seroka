@@ -522,6 +522,7 @@ public partial class Joueur
     private void ExecuterRamassageObjet()
     {
         if (!_rayon.IsColliding()) return;
+        GameState.MarquerPhasePrincipale("ramassage_objet");
 
         Node objetTouche = NoeudDepuisColliderRaycast(_rayon.GetCollider());
         if (objetTouche == null) return;

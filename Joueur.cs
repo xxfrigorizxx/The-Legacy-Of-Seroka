@@ -649,7 +649,10 @@ public partial class Joueur : CharacterBody3D
     [Export] public Texture2D TexturePeauHumain { get; set; }
     [Export] public Color CouleurSousVetementHumain { get; set; } = new Color(0.19f, 0.22f, 0.27f, 1f);
     [Export] public Texture2D TextureSousVetementHumain { get; set; }
-    [Export] public float AvanceCameraFpsMetres { get; set; } = 0.25f;
+    // 0 = camera sur l'axe du corps (derriere la capsule HitboxCorps r=0.19 m) : evite de voir a travers
+    // les murs quand on s'y colle. L'ancienne avancee (0.25 m) sortait la camera de la tete ; devenu inutile
+    // car tete/cou/cheveux sont masques pour la camera FPS (CalqueRenduTeteFpsCachee).
+    [Export] public float AvanceCameraFpsMetres { get; set; } = 0f;
     [Export] public Vector3 OffsetCeintureEquipeLocal { get; set; } = new Vector3(0f, -0.04f, -0.01f);
     [Export] public Vector3 RotationCeintureEquipeDeg { get; set; } = Vector3.Zero;
     [Export] public Vector3 OffsetSacDosEquipeLocal { get; set; } = new Vector3(0f, 0.18f, -0.22f);
@@ -1107,6 +1110,7 @@ public partial class Joueur : CharacterBody3D
     {
         float dt = (float)delta;
         AppliquerVisibiliteCorpsLocalSelonVue();
+        MettreAJourFiltreEauImmersion(dt);
         if (ActiverDiagnosticVisuelsFpsAuto && !_vueTroisiemePersonne)
         {
             _cooldownDiagnosticVisuelsFps -= dt;
