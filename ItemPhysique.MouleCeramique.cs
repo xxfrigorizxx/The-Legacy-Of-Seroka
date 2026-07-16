@@ -40,10 +40,26 @@ public partial class ItemPhysique
 	{
 		if (!EssayerLireEtatMouleCeramiqueSlot(s, out int chi, out double refroidSec))
 			return 0f;
-		if (chi != FourTorchieThermodynamique.FlagBolCeramiqueChaudIndexChimique)
+		if (chi != FourTorchieThermodynamique.FlagBolCeramiqueChaudIndexChimique
+			&& chi != FourTorchieThermodynamique.FlagMouleEtainFonduChaudIndexChimique)
 			return 0f;
 		float prog = (float)(refroidSec / FourTorchieThermodynamique.DureeRefroidissementBolCeramiqueSec);
 		return FourTorchieThermodynamique.ObtenirFacteurChaleurBolCeramique(prog);
+	}
+
+	public static SlotInventaire CreerSlotMouleEtainFonduChaud()
+	{
+		var slot = new SlotInventaire
+		{
+			ID = Joueur.IdObjetMouleCeramique,
+			Quantite = 1,
+			IndexChimique = FourTorchieThermodynamique.FlagMouleEtainFonduChaudIndexChimique,
+			IndexMorphologique = 0,
+			IndexTaille = 0,
+			EstUnEclat = false
+		};
+		EcrireEtatMouleCeramiqueSlot(ref slot, FourTorchieThermodynamique.FlagMouleEtainFonduChaudIndexChimique, 0d);
+		return slot;
 	}
 
 	public static SlotInventaire CreerSlotMouleCeramiqueChaud()
@@ -66,7 +82,8 @@ public partial class ItemPhysique
 
 	private bool EstMouleCeramiqueChaudPose() =>
 		ID_Objet == Joueur.IdObjetMouleCeramique
-		&& IndexChimique == FourTorchieThermodynamique.FlagBolCeramiqueChaudIndexChimique;
+		&& (IndexChimique == FourTorchieThermodynamique.FlagBolCeramiqueChaudIndexChimique
+			|| IndexChimique == FourTorchieThermodynamique.FlagMouleEtainFonduChaudIndexChimique);
 
 	public float ObtenirFacteurBrulureMouleCeramique()
 	{
@@ -96,7 +113,13 @@ public partial class ItemPhysique
 
 	private void TraiterRefroidissementMouleCeramiqueAuSoleil(double delta)
 	{
-		if (!EstMouleCeramiqueChaudPose())
+		if (ID_Objet != Joueur.IdObjetMouleCeramique)
+			return;
+		if (IndexChimique == FourTorchieThermodynamique.FlagMouleEtainSolidifieIndexChimique)
+			return;
+
+		if (IndexChimique != FourTorchieThermodynamique.FlagBolCeramiqueChaudIndexChimique
+			&& IndexChimique != FourTorchieThermodynamique.FlagMouleEtainFonduChaudIndexChimique)
 			return;
 
 		Cycle_Solaire soleil = GetTree()?.CurrentScene?.GetNodeOrNull<Cycle_Solaire>("CycleSolaire");
@@ -111,11 +134,16 @@ public partial class ItemPhysique
 			return;
 		}
 
-		IndexChimique = 0;
+		if (IndexChimique == FourTorchieThermodynamique.FlagMouleEtainFonduChaudIndexChimique)
+			IndexChimique = FourTorchieThermodynamique.FlagMouleEtainSolidifieIndexChimique;
+		else
+			IndexChimique = 0;
 		_mouleCeramiqueRefroidissementSec = 0d;
 		MettreAJourVisuelMouleCeramiquePose();
 		SynchroniserGenomeMouleCeramique();
-		GD.Print("SEROKA : Moule en céramique refroidi au soleil.");
+		GD.Print(IndexChimique == FourTorchieThermodynamique.FlagMouleEtainSolidifieIndexChimique
+			? "SEROKA : Moule étain solidifié au soleil."
+			: "SEROKA : Moule en céramique refroidi au soleil.");
 	}
 
 	private void SynchroniserGenomeMouleCeramiquePeriodique(double delta)
@@ -171,5 +199,22 @@ public partial class ItemPhysique
 			IndexChimique = IndexChimique
 		};
 		Joueur.InstancierModeleMouleCeramique(meshRoot, slot, 0.42f, false, facteurChaleur);
+	}
+
+	public void AppliquerMouleEtainFonduChaudPose()
+	{
+		if (ID_Objet != Joueur.IdObjetMouleCeramique)
+			return;
+		IndexChimique = FourTorchieThermodynamique.FlagMouleEtainFonduChaudIndexChimique;
+		_mouleCeramiqueRefroidissementSec = 0d;
+		var slot = new SlotInventaire
+		{
+			ID = Joueur.IdObjetMouleCeramique,
+			IndexChimique = IndexChimique
+		};
+		EcrireEtatMouleCeramiqueSlot(ref slot, IndexChimique, 0d);
+		GenomeAssemblage = slot.GenomeAssemblage;
+		SetMeta(Joueur.MetaGenomeAssemblage, GenomeAssemblage);
+		MettreAJourVisuelMouleCeramiquePose();
 	}
 }

@@ -101,7 +101,7 @@ public partial class MenuAnatomie : Control
 		{
 			Name = nom,
 			MinValue = 0,
-			MaxValue = 100,
+			MaxValue = 900,
 			ShowPercentage = false,
 			CustomMinimumSize = new Vector2(0, 14),
 			MouseFilter = Control.MouseFilterEnum.Ignore
@@ -210,11 +210,18 @@ public partial class MenuAnatomie : Control
 
 		ItemPhysique four = _joueurRef.FourTorchieOuvert;
 		float temp = four.ObtenirTemperatureFourTorchie();
+		float plafond = four.ObtenirPlafondThermiqueActifFourTorchie();
 		if (_lblFourTorchieTemperature != null)
-			_lblFourTorchieTemperature.Text = $"Température : {temp:F0} °C";
+		{
+			if (plafond > FourTorchieThermodynamique.TempAmbianteC + 5f)
+				_lblFourTorchieTemperature.Text = $"Température : {temp:F0} °C (plafond ~{plafond:F0} °C)";
+			else
+				_lblFourTorchieTemperature.Text = $"Température : {temp:F0} °C";
+		}
 		if (_barreFourTorchieTemperature != null)
 		{
 			_barreFourTorchieTemperature.Visible = true;
+			_barreFourTorchieTemperature.MaxValue = 900;
 			_barreFourTorchieTemperature.Value = temp;
 		}
 
@@ -252,7 +259,8 @@ public partial class MenuAnatomie : Control
 							float facteur = FourTorchieThermodynamique.ObtenirFacteurTeinteChauffeBolArgile(temp, prog);
 							em ^= (ulong)Mathf.RoundToInt(facteur * 80f) << 32;
 						}
-						else if (s.ID == Joueur.IdObjetBolCeramique || s.ID == Joueur.IdObjetMouleCeramique)
+						else if (s.ID == Joueur.IdObjetBolCeramique || s.ID == Joueur.IdObjetMouleCeramique
+							|| s.ID == Joueur.IdObjetBolEtainFonduChaud || s.ID == Joueur.IdObjetBolCeramiqueScorie)
 						{
 							float facteurCer = FourTorchieThermodynamique.ObtenirFacteurChaleurBolCeramiqueSlot(s);
 							em ^= (ulong)Mathf.RoundToInt(facteurCer * 80f) << 32;

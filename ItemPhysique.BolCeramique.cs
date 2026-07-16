@@ -61,6 +61,13 @@ public partial class ItemPhysique
 		EcrireEtatBolCeramiqueSlot(ref slot, FourTorchieThermodynamique.FlagBolCeramiqueChaudIndexChimique, 0d);
 		return slot;
 	}
+
+	public static SlotInventaire CreerSlotBolCeramiqueRefroidi() => new SlotInventaire
+	{
+		ID = Joueur.IdObjetBolCeramique,
+		Quantite = 1,
+		IndexChimique = 0
+	};
 	private double _bolCeramiqueRefroidissementSec;
 	private double _bolCeramiqueDernierSyncSec = -1d;
 

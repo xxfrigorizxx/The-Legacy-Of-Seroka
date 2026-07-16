@@ -791,12 +791,16 @@ public partial class Generateur_Voxel : Node3D
 
 	private static int CalculerProfondeurEau(float crevasseBrute)
 	{
-		float intensiteRiviere = Mathf.Clamp((crevasseBrute - 0.02f) / 0.90f, 0f, 1f);
+		const float seuilRiviere = 0.02f;
+		if (crevasseBrute <= seuilRiviere)
+			return 0;
+		float intensiteRiviere = Mathf.Clamp((crevasseBrute - seuilRiviere) / 0.90f, 0f, 1f);
 		float tSmooth = intensiteRiviere * intensiteRiviere * (3f - 2f * intensiteRiviere);
 		float adoucissementBerge = Mathf.Clamp((crevasseBrute + 0.08f) / 0.30f, 0f, 1f);
 		adoucissementBerge = adoucissementBerge * adoucissementBerge * (3f - 2f * adoucissementBerge);
 		float profondeurCible = Mathf.Lerp(tSmooth * 5.0f, tSmooth * 22.0f, adoucissementBerge);
-		return Mathf.RoundToInt(profondeurCible);
+		// Mares / rigoles à 1 bloc : évite profondeur 0 alors que le bruit rivière est actif.
+		return Mathf.Max(1, Mathf.RoundToInt(profondeurCible));
 	}
 
 	private static float UniformiserSelectionMacroBiome(float macroBrut)

@@ -558,7 +558,6 @@ public partial class Chunk_Serveur : RefCounted
 			: ConstantesProfondeurVerticale.RoleTrancheEauMer.Aucun;
 		bool remplissageVolume3D = roleEau == ConstantesProfondeurVerticale.RoleTrancheEauMer.Chapeau
 			|| roleEau == ConstantesProfondeurVerticale.RoleTrancheEauMer.Corps;
-		int yMinDebutColonne = remplissageVolume3D ? 0 : 3;
 		for (int x = 0; x <= TailleChunk; x++)
 		{
 			for (int z = 0; z <= TailleChunk; z++)
@@ -569,24 +568,26 @@ public partial class Chunk_Serveur : RefCounted
 				if (EstDansTrouNoirAbysseMonde(xGlobal, zGlobal))
 					continue;
 				int hauteurSurface = CalculerHauteurTerrain((int)xGlobal, (int)zGlobal);
+				bool colonneSousNiveauMer = hauteurSurface < niveauEauMonde;
 				int yDebut;
 				if (remplissageVolume3D)
 				{
 					// Tranche 100 m : eau uniquement entre la surface monde (≈103) et la mer — pas dans les grottes sous Y=0.
 					int yMondeDebutEau = hauteurSurface + 1;
-					yDebut = Mathf.Clamp(yMondeDebutEau - yBaseMonde, yMinDebutColonne, yMaxLocal);
+					yDebut = Mathf.Clamp(yMondeDebutEau - yBaseMonde, 0, yMaxLocal);
 					if (yDebut > yMaxLocal)
 						continue;
 				}
 				else
-					yDebut = Mathf.Clamp(sommetSolide[x, z] + 1, yMinDebutColonne, yMaxLocal);
+					yDebut = Mathf.Clamp(sommetSolide[x, z] + 1, 0, yMaxLocal);
 				for (int y = yDebut; y <= yMaxLocal; y++)
 				{
 					int yMonde = yBaseMonde + y;
 					if (yMonde > niveauEauMonde) continue;
 					if (yMonde <= hauteurSurface) continue;
 					if (!EstVoxelAirSansVerrou(x, y, z)) continue;
-					if (!remplissageVolume3D && !EstVoxelOuvertAuCielMonde(x, y, z, niveauEauMonde)) continue;
+					// Mares peu profondes (1 bloc) : pas de test « ciel ouvert » qui bloquait les cuvettes.
+					if (!remplissageVolume3D && !colonneSousNiveauMer && !EstVoxelOuvertAuCielMonde(x, y, z, niveauEauMonde)) continue;
 					DefinirEauSansVerrou(x, y, z);
 				}
 			}
@@ -823,7 +824,7 @@ public partial class Chunk_Serveur : RefCounted
 			float intensiteRiviera = (crevasseBrute - seuilRiviere) / Mathf.Max(0.05f, 1f - seuilRiviere);
 			float tSmooth = intensiteRiviera * intensiteRiviera * (3f - 2f * intensiteRiviera);  // Descente très douce vers l'eau
 			float profondeurMax = Mathf.Lerp(22f, 30f, tHumide);
-			profondeurEau = (int)(tSmooth * profondeurMax);
+			profondeurEau = Mathf.Max(1, (int)(tSmooth * profondeurMax));
 		}
 		return hauteurBase - profondeurEau;
 	}
@@ -1534,7 +1535,7 @@ private void FaireTomberBaiesAuSolSiPlein(Vector3I posFlore, byte typeFlore, int
 	}
 }
 
-private bool EssayerTrouverBuissonLePlusProche(Vector3 pointImpactGlobal, float rayon, out Vector3I posFlore, out byte typeFlore)
+private bool EssayerTrouverBuissonLePlusProche(Vector3 pointImpactGlobal, float rayon, out Vector3I posFlore, out byte typeFlore, bool pleinSeulement = false)
 {
 	posFlore = default;
 	typeFlore = 0;
@@ -1545,6 +1546,7 @@ private bool EssayerTrouverBuissonLePlusProche(Vector3 pointImpactGlobal, float 
 	foreach (var kv in InventaireFlore)
 	{
 		if (!EstTypeBuisson(kv.Value)) continue;
+		if (pleinSeulement && !EstBuissonPlein(kv.Value)) continue;
 		float dx = (kv.Key.X + 0.5f) - pointImpactGlobal.X;
 		float dz = (kv.Key.Z + 0.5f) - pointImpactGlobal.Z;
 		float d2 = dx * dx + dz * dz;
@@ -1563,11 +1565,11 @@ private bool EssayerTrouverBuissonLePlusProche(Vector3 pointImpactGlobal, float 
 }
 
 /// <summary>Détection locale d’un buisson sous la visée (sans le récolter).</summary>
-public bool EssayerDetecterBuisson(Vector3 pointImpactGlobal, float rayon, out Vector3 posBuisson, out byte typeFlore)
+public bool EssayerDetecterBuisson(Vector3 pointImpactGlobal, float rayon, out Vector3 posBuisson, out byte typeFlore, bool pleinSeulement = false)
 {
 	posBuisson = Vector3.Zero;
 	typeFlore = 0;
-	if (!EssayerTrouverBuissonLePlusProche(pointImpactGlobal, rayon, out Vector3I pos, out byte type))
+	if (!EssayerTrouverBuissonLePlusProche(pointImpactGlobal, rayon, out Vector3I pos, out byte type, pleinSeulement))
 		return false;
 	posBuisson = new Vector3(pos.X + 0.5f, pos.Y + 0.5f, pos.Z + 0.5f);
 	typeFlore = type;

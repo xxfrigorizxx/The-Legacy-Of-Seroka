@@ -50,7 +50,11 @@ public partial class Joueur
 		/// <summary>Intestin de bœuf brut (118) ou nettoyé (119) — corde d'intestin (distinct de la fibre d'herbe).</summary>
 		IntestinBoeuf = 1L << 35,
 		/// <summary>Voxel terre aride (ID terrain 6) — ingrédient de la boue (bol d'eau + terre aride).</summary>
-		VoxelTerreAride = 1L << 36
+		VoxelTerreAride = 1L << 36,
+		/// <summary>Bol en céramique (159) — refroidi ou chaud.</summary>
+		BolCeramique = 1L << 37,
+		/// <summary>Minerai d'étain recolté (166).</summary>
+		Etain = 1L << 38
 	}
 
 	private sealed class RecetteAnalysable
@@ -339,6 +343,15 @@ public partial class Joueur
 			Titre = "Moule en argile",
 			LegendeSymboles = new[] { "A = Argile humidifiee" },
 			PatronCraft = new[] { "(A)( )(A)", "(A)(A)(A)" }
+		},
+		new RecetteAnalysable
+		{
+			CleCraft = "id_167",
+			IdResultat = IdObjetBolCeramiqueEtain,
+			Masque = CategorieAnalyse.BolCeramique | CategorieAnalyse.Etain,
+			Titre = "Bol en ceramique etain",
+			LegendeSymboles = new[] { "Bc = Bol en ceramique (refroidi)", "Et = Minerai d'etain" },
+			PatronCraft = new[] { "Grille craft : 1 Bc + 1 Et, positions libres sur la grille 2x2." }
 		},
 		new RecetteAnalysable
 		{
@@ -1142,6 +1155,10 @@ public partial class Joueur
 		if (s.ID == IdObjetBolArgile) c |= CategorieAnalyse.ArgileHumidifiee;
 		if (s.ID == IdObjetMouleArgile) c |= CategorieAnalyse.ArgileHumidifiee;
 		if (s.ID == IdObjetTorchie) c |= CategorieAnalyse.Torchie;
+		if (FourTorchieThermodynamique.EstBolCeramiqueRefroidi(s) || FourTorchieThermodynamique.EstBolCeramiqueChaud(s))
+			c |= CategorieAnalyse.BolCeramique;
+		if (s.ID == IdObjetBolCeramiqueEtain) c |= CategorieAnalyse.BolCeramique;
+		if (EstIdEtainRecolte(s.ID)) c |= CategorieAnalyse.Etain;
 		if (Atlas_Matiere.EstSlotVoxelArgile(s)) c |= CategorieAnalyse.VoxelArgile;
 		if (Atlas_Matiere.EstSlotVoxelBoue(s)) c |= CategorieAnalyse.VoxelBoue;
 		if (Atlas_Matiere.EstSlotVoxelTerreAride(s)) c |= CategorieAnalyse.VoxelTerreAride;
@@ -1314,6 +1331,22 @@ public partial class Joueur
 				else return false;
 			}
 			return aArgileHumid;
+		}
+		if (r.CleCraft == "id_167" && grilleAnalyse != null)
+		{
+			bool bolCer = false, etain = false;
+			for (int i = 0; i < grilleAnalyse.Length; i++)
+			{
+				SlotInventaire s = grilleAnalyse[i];
+				if (s.EstVide) continue;
+				if (FourTorchieThermodynamique.EstBolCeramiqueRefroidi(s)
+					|| FourTorchieThermodynamique.EstBolCeramiqueChaud(s))
+					bolCer = true;
+				else if (EstIdEtainRecolte(s.ID))
+					etain = true;
+				else return false;
+			}
+			return bolCer && etain;
 		}
 		if (r.CleCraft == "id_160" && grilleAnalyse != null)
 		{

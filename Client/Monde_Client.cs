@@ -218,6 +218,8 @@ public partial class Monde_Client : Node3D
 	private readonly List<Vector2I> _chunksATuerTemp = new List<Vector2I>();
 	private readonly List<Vector3I> _clesChunksAbysseARetirerTemp = new List<Vector3I>();
 	private bool _radarEnCours;
+	private bool _remeshSectionsEnCours;
+	private readonly List<(int cx, int coordY, int cz, int section)> _sectionsRemeshAjoutsDifferees = new List<(int, int, int, int)>();
 	private HashSet<(int cx, int coordY, int cz, int section)> _sectionsAReconstruire = new HashSet<(int, int, int, int)>();
 	private CharacterBody3D _joueur;
 	/// <summary>CoordY joueur lue sur le thread principal (_PhysicsProcess) — safe pour workers MC.</summary>
@@ -469,9 +471,27 @@ public partial class Monde_Client : Node3D
 		base._ExitTree();
 	}
 
+	private void IntegrerSectionsRemeshDifferees()
+	{
+		if (_sectionsRemeshAjoutsDifferees.Count == 0)
+			return;
+		foreach (var s in _sectionsRemeshAjoutsDifferees)
+			_sectionsAReconstruire.Add(s);
+		_sectionsRemeshAjoutsDifferees.Clear();
+	}
+
+	private void AjouterSectionAReconstruire((int cx, int coordY, int cz, int section) cle)
+	{
+		if (_remeshSectionsEnCours)
+			_sectionsRemeshAjoutsDifferees.Add(cle);
+		else
+			_sectionsAReconstruire.Add(cle);
+	}
+
 	public override void _PhysicsProcess(double delta)
 	{
 		if (!IsInsideTree() || _mondeClientSortieEnCours) return; // GARROT SPATIAL : pas de manipulation de chunks si l'arbre s'effondre.
+		IntegrerSectionsRemeshDifferees();
 		float dt = (float)delta;
 		ulong debutFramePerfUs = ActiverProfilagePerfMondeClient ? PerfBudgetMonitor.Begin() : 0UL;
 		_cooldownRebuildRadar = Mathf.Max(0f, _cooldownRebuildRadar - dt);
@@ -1099,11 +1119,14 @@ public partial class Monde_Client : Node3D
 		// Voxels RPC reçus avant chargement tranche : appliquer AVANT le remesh (sinon déchirure 1–N frames).
 		AppliquerVoxelsEnAttente();
 
-		bool hadModifications = _sectionsAReconstruire.Count > 0;
+		IntegrerSectionsRemeshDifferees();
+		bool hadModifications = _sectionsAReconstruire.Count > 0 || _sectionsRemeshAjoutsDifferees.Count > 0;
 
 		// PRIORITÉ ABSOLUE : remesh partiel (sections) au minage — synchrone près du joueur.
 		if (hadModifications)
 		{
+			IntegrerSectionsRemeshDifferees();
+			_remeshSectionsEnCours = true;
 			_sectionsParChunkRemeshTemp.Clear();
 			foreach (var cible in _sectionsAReconstruire)
 			{
@@ -1173,6 +1196,8 @@ public partial class Monde_Client : Node3D
 				_sectionsAReconstruire.RemoveWhere(s =>
 					_sectionsRemeshTraiteesTemp.Contains((s.cx, s.coordY, s.cz, s.section)));
 			}
+			_remeshSectionsEnCours = false;
+			IntegrerSectionsRemeshDifferees();
 		}
 		if (_sectionsAReconstruire.Count == 0)
 			_modificationEnCours = false;

@@ -12,6 +12,8 @@ public partial class Joueur
     {
         "/ADIUTO",
         "/INVOCA BOVA",
+        "/INVOCA HOMINA",
+        "/TP HOMINA",
         "/MODUSA RUDI 0",
         "/MODUSA RUDI 1",
         "/MODUSA RUDI 3",
@@ -217,6 +219,17 @@ public partial class Joueur
             }
             return;
         }
+        if (t.StartsWith("/TP", StringComparison.OrdinalIgnoreCase))
+        {
+            TraiterCommandeTeleportation(t);
+            MasquerSuggestionsCommandesChat();
+            if (_ligneSaisieChat != null && GodotObject.IsInstanceValid(_ligneSaisieChat))
+            {
+                _ligneSaisieChat.Text = "";
+                _ligneSaisieChat.CaretColumn = 0;
+            }
+            return;
+        }
         if (t.StartsWith("/INVOCA", StringComparison.OrdinalIgnoreCase))
         {
             TraiterCommandeInvocationFaune(t);
@@ -243,6 +256,8 @@ public partial class Joueur
         PousserLigneChatHistorique("[Aide] Commandes chat:", prefixerSquelette: false);
         PousserLigneChatHistorique("[Aide] /ADIUTO -> affiche cette aide.", prefixerSquelette: false);
         PousserLigneChatHistorique("[Aide] /INVOCA BOVA [n] -> fait apparaitre un troupeau de bovins autour de toi (defaut 6, max 24).", prefixerSquelette: false);
+        PousserLigneChatHistorique("[Aide] /INVOCA HOMINA [n] -> fait apparaitre des humains (PNJ) autour de toi (defaut 6, max 24).", prefixerSquelette: false);
+        PousserLigneChatHistorique("[Aide] /TP HOMINA [nom] -> te teleporte vers un PNJ (physique ou en route virtuelle).", prefixerSquelette: false);
         PousserLigneChatHistorique("[Aide] /MODUSA RUDI 0 -> desactive mode creatif + noclip.", prefixerSquelette: false);
         PousserLigneChatHistorique("[Aide] /MODUSA RUDI 1 -> active mode creatif.", prefixerSquelette: false);
         PousserLigneChatHistorique("[Aide] /MODUSA RUDI 3 -> active mode creatif + noclip.", prefixerSquelette: false);
@@ -253,19 +268,45 @@ public partial class Joueur
         PousserLigneChatHistorique($"[Aide] /DIMANASIO DERATA -> transfert vers {ConstantesDimensions.NomDelta} (meme seed que {ConstantesDimensions.NomAlpha}, fuseau +18h).", prefixerSquelette: false);
     }
 
-    /// <summary>/INVOCA BOVA [n] : fait apparaitre un troupeau de bovins autour du joueur (debug/creatif, contourne le gate FPS et la restriction plaine).</summary>
+    /// <summary>/TP HOMINA [nom] : téléporte le joueur vers un PNJ humain (physique ou virtuel sur sa route).</summary>
+    private void TraiterCommandeTeleportation(string commande)
+    {
+        string[] parties = (commande ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parties.Length < 2 || !parties[1].StartsWith("HOMINA", StringComparison.OrdinalIgnoreCase))
+        {
+            PousserLigneChatHistorique("[TP] Usage : /TP HOMINA [nom] (nom partiel optionnel).", prefixerSquelette: false);
+            return;
+        }
+        string filtre = parties.Length >= 3 ? string.Join(' ', parties, 2, parties.Length - 2) : "";
+        if (!TeleporterVersPnjHumain(filtre, out string message))
+            PousserLigneChatHistorique("[TP] " + message, prefixerSquelette: false);
+        else
+            PousserLigneChatHistorique("[TP] " + message, prefixerSquelette: false);
+    }
+
+    /// <summary>/INVOCA BOVA|HOMINA [n] : fait apparaitre des bovins ou des PNJ humains autour du joueur (debug/creatif).</summary>
     private void TraiterCommandeInvocationFaune(string commande)
     {
         string[] parties = (commande ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        bool cibleBovins = parties.Length >= 2 && parties[1].StartsWith("BOVA", StringComparison.OrdinalIgnoreCase);
-        if (!cibleBovins)
-        {
-            PousserLigneChatHistorique("[Invoca] Usage : /INVOCA BOVA [nombre] -> fait apparaitre un troupeau de bovins.", prefixerSquelette: false);
-            return;
-        }
+        string cible = parties.Length >= 2 ? parties[1].ToUpperInvariant() : "";
         int taille = 6;
         if (parties.Length >= 3 && int.TryParse(parties[2], out int n))
             taille = Mathf.Clamp(n, 1, 24);
+
+        if (cible.StartsWith("HOMINA", StringComparison.OrdinalIgnoreCase))
+        {
+            int spawnesPnj = FaireApparaitrePnjHumains(taille);
+            if (spawnesPnj > 0)
+                PousserLigneChatHistorique($"[Invoca] {spawnesPnj} humain(s) invoque(s) autour de toi.", prefixerSquelette: false);
+            else
+                PousserLigneChatHistorique("[Invoca] Aucun humain n'a pu apparaitre (sol introuvable).", prefixerSquelette: false);
+            return;
+        }
+        if (!cible.StartsWith("BOVA", StringComparison.OrdinalIgnoreCase))
+        {
+            PousserLigneChatHistorique("[Invoca] Usage : /INVOCA BOVA [n] (bovins) ou /INVOCA HOMINA [n] (humains).", prefixerSquelette: false);
+            return;
+        }
 
         GestionnaireFauneBoeufs faune = TrouverGestionnaireFauneBoeufs();
         if (faune == null)
@@ -672,7 +713,8 @@ public partial class Joueur
         return (_modelisateur != null && _modelisateur.EstOuvert)
             || (_menuFutureState != null && _menuFutureState.EstOuvert)
             || (_menuAnatomie != null && _menuAnatomie.EstOuvert)
-            || CarnetSavoirOuvert();
+            || CarnetSavoirOuvert()
+            || InspectionPnjOuverte;
     }
 
     private bool SaisieTexteUiEnCours()

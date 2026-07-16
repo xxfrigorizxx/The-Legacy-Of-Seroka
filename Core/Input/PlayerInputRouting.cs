@@ -113,6 +113,16 @@ public partial class Joueur
             return;
         }
 
+        if (InspectionPnjOuverte)
+        {
+            if (@event.IsActionPressed("ui_cancel"))
+            {
+                FermerInspectionPnj();
+                GetViewport().SetInputAsHandled();
+            }
+            return;
+        }
+
         if (EstModePlacementGhostActif()
             && (@event.IsActionPressed("ui_cancel")
                 || (@event is InputEventKey ekEscPlacement && ekEscPlacement.Pressed && !ekEscPlacement.Echo && ekEscPlacement.Keycode == Key.Escape)))
@@ -231,6 +241,12 @@ public partial class Joueur
         }
         else if (@event.IsActionPressed("clic_droit"))
         {
+            // Priorité : viser un PNJ humain -> ouvre son panneau (inventaire/stats) au lieu de l'action en main.
+            if (EssayerInspecterPnjSousVisee())
+            {
+                GetViewport().SetInputAsHandled();
+                return;
+            }
             SlotInventaire mainActive = MainGaucheEstActive ? MainGauche : MainDroite;
             if (!mainActive.EstVide)
             {

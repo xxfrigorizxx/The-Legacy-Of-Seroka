@@ -749,6 +749,108 @@ public partial class Joueur
             }
             corps = item;
         }
+        else if (id == IdObjetBolCeramiqueEtain)
+        {
+            var item = new ItemPhysique
+            {
+                ID_Objet = id,
+                IndexBotanique = mainActive.IndexBotanique,
+                IndexChimique = mainActive.IndexChimique,
+                IndexCacheMemoire = mainActive.IndexMorphologique,
+                Name = "ItemPhysique",
+                ContinuousCd = true
+            };
+            var meshRoot = new Node3D { Name = "MeshInstance3D" };
+            InstancierModeleBolCeramiqueEtain(meshRoot, mainActive, 0.42f, false);
+            item.AddChild(meshRoot);
+            if (AjouterCollisionsConvexesDepuisMeshesSousRacineItem(item, meshRoot) == 0)
+            {
+                item.AddChild(new CollisionShape3D
+                {
+                    Name = "CollisionShape3D",
+                    Shape = new BoxShape3D { Size = new Vector3(0.18f, 0.08f, 0.18f) },
+                    Position = new Vector3(0f, 0.04f, 0f)
+                });
+            }
+            corps = item;
+        }
+        else if (id == IdObjetBolEtainFonduChaud)
+        {
+            var item = new ItemPhysique
+            {
+                ID_Objet = id,
+                IndexBotanique = mainActive.IndexBotanique,
+                IndexChimique = mainActive.IndexChimique,
+                IndexCacheMemoire = mainActive.IndexMorphologique,
+                Name = "ItemPhysique",
+                ContinuousCd = true,
+                GenomeAssemblage = mainActive.GenomeAssemblage
+            };
+            var meshRoot = new Node3D { Name = "MeshInstance3D" };
+            InstancierModeleBolEtainFonduChaud(meshRoot, mainActive, 0.42f, true);
+            item.AddChild(meshRoot);
+            if (AjouterCollisionsConvexesDepuisMeshesSousRacineItem(item, meshRoot) == 0)
+            {
+                item.AddChild(new CollisionShape3D
+                {
+                    Name = "CollisionShape3D",
+                    Shape = new BoxShape3D { Size = new Vector3(0.18f, 0.08f, 0.18f) },
+                    Position = new Vector3(0f, 0.04f, 0f)
+                });
+            }
+            corps = item;
+        }
+        else if (id == IdObjetBolEtainSolidifie)
+        {
+            var item = new ItemPhysique
+            {
+                ID_Objet = id,
+                IndexBotanique = mainActive.IndexBotanique,
+                IndexChimique = mainActive.IndexChimique,
+                IndexCacheMemoire = mainActive.IndexMorphologique,
+                Name = "ItemPhysique",
+                ContinuousCd = true
+            };
+            var meshRoot = new Node3D { Name = "MeshInstance3D" };
+            InstancierModeleBolEtainSolidifie(meshRoot, mainActive, 0.42f, true);
+            item.AddChild(meshRoot);
+            if (AjouterCollisionsConvexesDepuisMeshesSousRacineItem(item, meshRoot) == 0)
+            {
+                item.AddChild(new CollisionShape3D
+                {
+                    Name = "CollisionShape3D",
+                    Shape = new BoxShape3D { Size = new Vector3(0.18f, 0.08f, 0.18f) },
+                    Position = new Vector3(0f, 0.04f, 0f)
+                });
+            }
+            corps = item;
+        }
+        else if (id == IdObjetBolCeramiqueScorie)
+        {
+            var item = new ItemPhysique
+            {
+                ID_Objet = id,
+                IndexBotanique = mainActive.IndexBotanique,
+                IndexChimique = mainActive.IndexChimique,
+                IndexCacheMemoire = mainActive.IndexMorphologique,
+                Name = "ItemPhysique",
+                ContinuousCd = true,
+                GenomeAssemblage = mainActive.GenomeAssemblage
+            };
+            var meshRoot = new Node3D { Name = "MeshInstance3D" };
+            InstancierModeleBolCeramiqueScorie(meshRoot, mainActive, 0.42f, true);
+            item.AddChild(meshRoot);
+            if (AjouterCollisionsConvexesDepuisMeshesSousRacineItem(item, meshRoot) == 0)
+            {
+                item.AddChild(new CollisionShape3D
+                {
+                    Name = "CollisionShape3D",
+                    Shape = new BoxShape3D { Size = new Vector3(0.18f, 0.08f, 0.18f) },
+                    Position = new Vector3(0f, 0.04f, 0f)
+                });
+            }
+            corps = item;
+        }
         else if (id == IdObjetMouleArgile)
         {
             var item = new ItemPhysique
@@ -1659,21 +1761,7 @@ public partial class Joueur
             }
         }
         else if (id == IdObjetBaie)
-        {
-            var item = new ItemPhysique
-            {
-                ID_Objet = id,
-                IndexChimique = mainActive.IndexChimique,
-                IndexCacheMemoire = 0,
-                Name = "ItemPhysique",
-                ContinuousCd = true
-            };
-            var meshRoot = new Node3D { Name = "MeshInstance3D" };
-            InstancierModeleBaie(meshRoot, mainActive, 0.22f);
-            item.AddChild(meshRoot);
-            item.AddChild(new CollisionShape3D { Shape = new SphereShape3D { Radius = 0.08f } });
-            corps = item;
-        }
+            corps = CreerItemPhysiqueBaie(mainActive);
         else if (id == IdObjetSteakCru)
         {
             var item = new ItemPhysique

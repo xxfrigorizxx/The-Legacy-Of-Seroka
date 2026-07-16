@@ -12,8 +12,8 @@ config_version=5
 
 config/name="SEROKA"
 run/main_scene="res://menu_principal.tscn"
-run/flush_stdout_on_print=true
 config/features=PackedStringArray("4.6", "C#", "Forward Plus")
+run/flush_stdout_on_print=true
 config/icon="res://icon.svg"
 
 [autoload]
@@ -24,7 +24,6 @@ GameState="*res://GameState.cs"
 
 settings/profiler/max_timestamp_query_elements=4096
 file_logging/enable_file_logging=true
-file_logging/log_path="user://logs/godot.log"
 file_logging/max_log_files=20
 
 [display]

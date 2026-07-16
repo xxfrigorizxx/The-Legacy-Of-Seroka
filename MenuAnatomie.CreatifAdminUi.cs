@@ -249,6 +249,10 @@ public partial class MenuAnatomie : Control
 		Ajouter(new SlotInventaire { ID = Joueur.IdObjetArgileHumidifiee, Quantite = 20 }, CategorieCreatifAdmin.Consommables, "Stack max");
 		Ajouter(new SlotInventaire { ID = Joueur.IdObjetBolArgile, Quantite = 10 }, CategorieCreatifAdmin.Consommables, "Stack max");
 		Ajouter(new SlotInventaire { ID = Joueur.IdObjetBolCeramique, Quantite = 10 }, CategorieCreatifAdmin.Consommables, "Stack max");
+		Ajouter(new SlotInventaire { ID = Joueur.IdObjetBolCeramiqueEtain, Quantite = 10 }, CategorieCreatifAdmin.Consommables, "Stack max");
+		Ajouter(new SlotInventaire { ID = Joueur.IdObjetBolEtainFonduChaud, Quantite = 1, IndexChimique = FourTorchieThermodynamique.FlagBolCeramiqueChaudIndexChimique }, CategorieCreatifAdmin.Consommables, "Étain fondu chaud");
+		Ajouter(new SlotInventaire { ID = Joueur.IdObjetBolEtainSolidifie, Quantite = 10 }, CategorieCreatifAdmin.Consommables, "Stack max");
+		Ajouter(new SlotInventaire { ID = Joueur.IdObjetBolCeramiqueScorie, Quantite = 10 }, CategorieCreatifAdmin.Consommables, "Stack max");
 		Ajouter(new SlotInventaire { ID = Joueur.IdObjetMouleArgile, Quantite = 10 }, CategorieCreatifAdmin.Consommables, "Stack max");
 		Ajouter(new SlotInventaire { ID = Joueur.IdObjetMouleCeramique, Quantite = 10 }, CategorieCreatifAdmin.Consommables, "Stack max");
 		Ajouter(new SlotInventaire { ID = Joueur.IdObjetChamotte, Quantite = 5 }, CategorieCreatifAdmin.Consommables, "Stack max");

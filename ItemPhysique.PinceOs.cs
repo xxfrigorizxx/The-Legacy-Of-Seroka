@@ -6,7 +6,11 @@ public partial class ItemPhysique
 	public const string PrefixGenomePinceOsCharge = "PINCEOS:";
 
 	public static bool EstPinceOsPeutSaisirResultat(SlotInventaire s) =>
-		!s.EstVide && (s.ID == Joueur.IdObjetBolCeramique || s.ID == Joueur.IdObjetMouleCeramique);
+		!s.EstVide && (s.ID == Joueur.IdObjetBolCeramique
+			|| s.ID == Joueur.IdObjetMouleCeramique
+			|| s.ID == Joueur.IdObjetBolEtainFonduChaud
+			|| s.ID == Joueur.IdObjetBolCeramiqueScorie
+			|| (s.ID == Joueur.IdObjetBolEtainSolidifie && FourTorchieThermodynamique.ObtenirFacteurChaleurBolCeramiqueSlot(s) > 0.04f));
 
 	public static bool EstPinceOsPorteObjet(SlotInventaire pince) =>
 		!pince.EstVide
@@ -30,6 +34,7 @@ public partial class ItemPhysique
 		if (!g.StartsWith(PrefixGenomePinceOsCharge, StringComparison.Ordinal))
 			return false;
 		objet = DecoderSlotCompactPinceOs(g.Substring(PrefixGenomePinceOsCharge.Length));
+		EssayerFinaliserBolEtainFonduRefroidi(ref objet);
 		return !objet.EstVide;
 	}
 
@@ -38,6 +43,14 @@ public partial class ItemPhysique
 		if (pince.ID != Joueur.IdObjetPinceOs || objet.EstVide || !EstPinceOsPeutSaisirResultat(objet))
 			return;
 		if (EstPinceOsPorteObjet(pince))
+			return;
+		RemplacerChargePinceOs(ref pince, objet);
+	}
+
+	/// <summary>Remplace l'objet porté (versement étain → bol vide, etc.).</summary>
+	public static void RemplacerChargePinceOs(ref SlotInventaire pince, SlotInventaire objet)
+	{
+		if (pince.ID != Joueur.IdObjetPinceOs || objet.EstVide || !EstPinceOsPeutSaisirResultat(objet))
 			return;
 		SlotInventaire copie = objet;
 		copie.Quantite = 1;
@@ -85,6 +98,18 @@ public partial class ItemPhysique
 			&& string.IsNullOrEmpty(genome))
 		{
 			genome = $"{PrefixGenomeMouleCeramique}{chi}:0";
+		}
+		if (id == Joueur.IdObjetBolEtainFonduChaud
+			&& chi == FourTorchieThermodynamique.FlagBolCeramiqueChaudIndexChimique
+			&& string.IsNullOrEmpty(genome))
+		{
+			genome = $"{PrefixGenomeBolEtainFondu}{chi}:0";
+		}
+		if (id == Joueur.IdObjetBolCeramiqueScorie
+			&& chi == FourTorchieThermodynamique.FlagBolCeramiqueChaudIndexChimique
+			&& string.IsNullOrEmpty(genome))
+		{
+			genome = $"{PrefixGenomeBolScorie}{chi}:0";
 		}
 		return new SlotInventaire
 		{

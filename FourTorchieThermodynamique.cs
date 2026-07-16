@@ -41,12 +41,19 @@ public static class FourTorchieThermodynamique
 	public const float FourHpMax = 100f;
 	public const int FlagSteakBruleIndexChimique = 1;
 	public const int FlagBolCeramiqueChaudIndexChimique = 2;
+	public const int FlagMouleEtainFonduChaudIndexChimique = 3;
+	public const int FlagMouleEtainSolidifieIndexChimique = 4;
+	public const float SeuilFonteEtainMinC = 230f;
+	public const float SeuilFonteEtainMaxC = 399f;
+	public const float SeuilFonteEtainScorieC = 400f;
+	public const double DureeFonteEtainSec = 30.0;
 	public const double DureeCuissonSteakSec = 45.0;
 	public const double DureeCuissonBolArgileSec = 150.0;
 	public const double DureeRefroidissementBolCeramiqueSec = 60.0;
 	public const float SeuilFacteurBrulureBolChaud = 0.12f;
 
-	private const float FacteurMonteeThermique = 0.38f;
+	/// <summary>Calibré pour que chaque combustible atteigne ~98 % de son plafond avant d'être consumé.</summary>
+	private const float FacteurMonteeThermique = 0.17f;
 
 	public static bool EstCombustibleFourTorchie(SlotInventaire s)
 	{
@@ -112,6 +119,14 @@ public static class FourTorchieThermodynamique
 		}
 	}
 
+	/// <summary>Plafond thermique effectif (°C) pour un combustible, après malus d'encrassement.</summary>
+	public static float ObtenirPlafondThermiqueCombustible(SlotInventaire s, float encrassementMalusC = 0f)
+	{
+		if (!ResoudreProfilCombustible(s, out ProfilCombustibleFourTorchie profil))
+			return 0f;
+		return Mathf.Max(TempAmbianteC, profil.TempMaxC - encrassementMalusC);
+	}
+
 	private static ProfilCombustibleFourTorchie CreerProfilBois(float tempMax, double dureeSec, string nom, bool encrasseFour = false)
 	{
 		float vitesse = CalculerVitesseChauffeBase(tempMax, dureeSec);
@@ -175,6 +190,39 @@ public static class FourTorchieThermodynamique
 	public static bool EstObjetArgileCuissableFour(int id) =>
 		id == Joueur.IdObjetBolArgile || id == Joueur.IdObjetMouleArgile;
 
+	public static bool EstObjetFonteEtainCuissableFour(int id) =>
+		id == Joueur.IdObjetBolCeramiqueEtain;
+
+	public static bool TemperatureDansPlageFonteEtain(float tempC) =>
+		tempC >= SeuilFonteEtainMinC && tempC <= SeuilFonteEtainMaxC;
+
+	/// <summary>La fusion démarre dès 230 °C (pas de plafond : au-delà de 400 °C → scorie).</summary>
+	public static bool TemperatureSuffisanteFonteEtain(float tempC) =>
+		tempC >= SeuilFonteEtainMinC;
+
+	public static bool EstBolEtainFonduChaud(SlotInventaire s) =>
+		!s.EstVide && s.ID == Joueur.IdObjetBolEtainFonduChaud
+		&& s.IndexChimique == FlagBolCeramiqueChaudIndexChimique;
+
+	public static bool EstBolEtainFonduLiquide(SlotInventaire s) =>
+		EstBolEtainFonduChaud(s) && ObtenirFacteurChaleurBolEtainFonduSlot(s) > 0.04f;
+
+	public static bool EstBolCeramiqueScorieChaud(SlotInventaire s) =>
+		!s.EstVide && s.ID == Joueur.IdObjetBolCeramiqueScorie
+		&& s.IndexChimique == FlagBolCeramiqueChaudIndexChimique;
+
+	public static bool EstMouleCeramiqueVideRefroidi(SlotInventaire s) =>
+		!s.EstVide && s.ID == Joueur.IdObjetMouleCeramique
+		&& s.IndexChimique == 0;
+
+	public static bool EstMouleEtainFonduChaud(SlotInventaire s) =>
+		!s.EstVide && s.ID == Joueur.IdObjetMouleCeramique
+		&& s.IndexChimique == FlagMouleEtainFonduChaudIndexChimique;
+
+	public static bool EstMouleEtainSolidifie(SlotInventaire s) =>
+		!s.EstVide && s.ID == Joueur.IdObjetMouleCeramique
+		&& s.IndexChimique == FlagMouleEtainSolidifieIndexChimique;
+
 	public static bool EstSlotChamotteFour(SlotInventaire s) =>
 		!s.EstVide && s.ID == Joueur.IdObjetChamotte;
 
@@ -189,6 +237,8 @@ public static class FourTorchieThermodynamique
 			return DureeCuissonBolArgileSec;
 		if (!s.EstVide && s.ID == Joueur.IdObjetSteakCru)
 			return DureeCuissonSteakSec;
+		if (!s.EstVide && s.ID == Joueur.IdObjetBolCeramiqueEtain)
+			return DureeFonteEtainSec;
 		return DureeCuissonSteakSec;
 	}
 
@@ -213,8 +263,15 @@ public static class FourTorchieThermodynamique
 			return ItemPhysique.ObtenirFacteurChaleurBolCeramiqueDepuisSlot(s);
 		if (s.ID == Joueur.IdObjetMouleCeramique)
 			return ItemPhysique.ObtenirFacteurChaleurMouleCeramiqueDepuisSlot(s);
+		if (s.ID == Joueur.IdObjetBolEtainFonduChaud)
+			return ItemPhysique.ObtenirFacteurChaleurBolEtainFonduDepuisSlot(s);
+		if (s.ID == Joueur.IdObjetBolCeramiqueScorie)
+			return ItemPhysique.ObtenirFacteurChaleurBolScorieDepuisSlot(s);
 		return 0f;
 	}
+
+	public static float ObtenirFacteurChaleurBolEtainFonduSlot(SlotInventaire s)
+		=> ObtenirFacteurChaleurBolCeramiqueSlot(s);
 
 	public static bool EstSlotBolBrulant(SlotInventaire s)
 		=> EstFacteurBolAssezChaudPourBruler(ObtenirFacteurChaleurBolCeramiqueSlot(s));

@@ -58,6 +58,34 @@ public partial class Monde_Serveur : Node
 			}
 	}
 
+	/// <summary>Creusage PNJ : retire un bloc de terrain sans détruire la flore voisine.</summary>
+	public void AppliquerCreusageTerrainSansFlore(Vector3 pointImpact, float rayon)
+	{
+		_modificationEnCours = true;
+		int cxMin = Gestionnaire_Monde.WorldToChunkCoord(pointImpact.X - rayon, pointImpact.Z, TailleChunk).X;
+		int cxMax = Gestionnaire_Monde.WorldToChunkCoord(pointImpact.X + rayon, pointImpact.Z, TailleChunk).X;
+		int czMin = Gestionnaire_Monde.WorldToChunkCoord(pointImpact.X, pointImpact.Z - rayon, TailleChunk).Y;
+		int czMax = Gestionnaire_Monde.WorldToChunkCoord(pointImpact.X, pointImpact.Z + rayon, TailleChunk).Y;
+
+		if (ActiverGenerationAbysse || ModeProfondeurActive)
+			return;
+
+		for (int cx = cxMin; cx <= cxMax; cx++)
+			for (int cz = czMin; cz <= czMax; cz++)
+			{
+				Vector2I coord = new Vector2I(cx, cz);
+				var chunk = ObtenirOuCreerChunk(coord);
+				chunk.CreuserTerrainSansFlore(pointImpact, rayon);
+			}
+	}
+
+	public void SpawnBaieCampAuSol(Vector3 position, byte indexCouleur)
+	{
+		if (_parentPourBlocsChutants == null)
+			return;
+		SpawnBlocChutant(position, BlocChutant.ID_BAIE, false, indexCouleur);
+	}
+
 	public void AppliquerFauchageGlobal(Vector3 pointImpact, float rayon)
 	{
 		int cxMin = Gestionnaire_Monde.WorldToChunkCoord(pointImpact.X - rayon, pointImpact.Z, TailleChunk).X;
@@ -273,7 +301,7 @@ public partial class Monde_Serveur : Node
 	}
 
 	/// <summary>Détection d’un buisson sous la visée (sans mutation), utile pour le minage maintenu.</summary>
-	public bool EssayerDetecterBuissonGlobal(Vector3 pointImpact, float rayon, out Vector3 posBuisson, out byte typeFlore)
+	public bool EssayerDetecterBuissonGlobal(Vector3 pointImpact, float rayon, out Vector3 posBuisson, out byte typeFlore, bool pleinSeulement = false)
 	{
 		posBuisson = Vector3.Zero;
 		typeFlore = 0;
@@ -294,7 +322,7 @@ public partial class Monde_Serveur : Node
 					foreach (int coordY in coordYImpactes)
 					{
 						var chunk = ObtenirOuCreerChunk(coord, coordY);
-						if (!chunk.EssayerDetecterBuisson(pointImpact, rayon, out Vector3 pos, out byte type))
+						if (!chunk.EssayerDetecterBuisson(pointImpact, rayon, out Vector3 pos, out byte type, pleinSeulement))
 							continue;
 						float d2 = pos.DistanceSquaredTo(pointImpact);
 						if (!trouve || d2 < meilleureDist2)
@@ -318,7 +346,7 @@ public partial class Monde_Serveur : Node
 					foreach (int coordY in coordYImpactes)
 					{
 						var chunk = ObtenirOuCreerChunk(coord, coordY);
-						if (!chunk.EssayerDetecterBuisson(pointImpact, rayon, out Vector3 pos, out byte type))
+						if (!chunk.EssayerDetecterBuisson(pointImpact, rayon, out Vector3 pos, out byte type, pleinSeulement))
 							continue;
 						float d2 = pos.DistanceSquaredTo(pointImpact);
 						if (!trouve || d2 < meilleureDist2)
@@ -337,7 +365,7 @@ public partial class Monde_Serveur : Node
 				for (int cz = czMin; cz <= czMax; cz++)
 				{
 					var chunk = ObtenirOuCreerChunk(new Vector2I(cx, cz));
-					if (!chunk.EssayerDetecterBuisson(pointImpact, rayon, out Vector3 pos, out byte type))
+					if (!chunk.EssayerDetecterBuisson(pointImpact, rayon, out Vector3 pos, out byte type, pleinSeulement))
 						continue;
 					float d2 = pos.DistanceSquaredTo(pointImpact);
 					if (!trouve || d2 < meilleureDist2)
@@ -350,6 +378,59 @@ public partial class Monde_Serveur : Node
 				}
 		}
 		return trouve;
+	}
+
+	/// <summary>Assure que le chunk a un inventaire flore (oracle procédural) avant détection PNJ.</summary>
+	private static void AssurerFloreDetectableSurChunk(Chunk_Serveur chunk)
+	{
+		if (chunk == null || !chunk.EstPret)
+			return;
+		if (chunk.InventaireFlore.Count > 0)
+			return;
+		chunk.RegenererInventaireFloreDepuisSurface();
+	}
+
+	/// <summary>Détection buisson pour PNJ : reconstitue la flore serveur si besoin, sans dépendre du rendu client.</summary>
+	public bool EssayerDetecterBuissonPourPnj(Vector3 pointImpact, float rayon, out Vector3 posBuisson, out byte typeFlore, bool pleinSeulement = false)
+	{
+		posBuisson = Vector3.Zero;
+		typeFlore = 0;
+		int cxMin = Gestionnaire_Monde.WorldToChunkCoord(pointImpact.X - rayon, pointImpact.Z, TailleChunk).X;
+		int cxMax = Gestionnaire_Monde.WorldToChunkCoord(pointImpact.X + rayon, pointImpact.Z, TailleChunk).X;
+		int czMin = Gestionnaire_Monde.WorldToChunkCoord(pointImpact.X, pointImpact.Z - rayon, TailleChunk).Y;
+		int czMax = Gestionnaire_Monde.WorldToChunkCoord(pointImpact.X, pointImpact.Z + rayon, TailleChunk).Y;
+		for (int cx = cxMin; cx <= cxMax; cx++)
+			for (int cz = czMin; cz <= czMax; cz++)
+				AssurerFloreDetectableSurChunk(ObtenirOuCreerChunk(new Vector2I(cx, cz)));
+
+		if (EssayerDetecterBuissonGlobal(pointImpact, rayon, out posBuisson, out typeFlore, pleinSeulement))
+			return true;
+
+		// Balayage local si le buisson est « invisible » côté client mais présent en data serveur.
+		for (float dist = 2f; dist <= rayon; dist += 2.5f)
+		{
+			for (int i = 0; i < 8; i++)
+			{
+				float angle = i * (Mathf.Tau / 8f);
+				Vector3 probe = pointImpact + new Vector3(Mathf.Cos(angle), 0f, Mathf.Sin(angle)) * dist;
+				if (EssayerDetecterBuissonGlobal(probe, 2.8f, out posBuisson, out typeFlore, pleinSeulement))
+					return true;
+			}
+		}
+		return false;
+	}
+
+	/// <summary>Cueillette baies PNJ : flore procédurale serveur assurée avant récolte.</summary>
+	public bool RecolterBaiesBuissonPourPnj(Vector3 pointImpact, float rayon, out int quantiteBaies, out byte indexCouleurBaie)
+	{
+		int cxMin = Gestionnaire_Monde.WorldToChunkCoord(pointImpact.X - rayon, pointImpact.Z, TailleChunk).X;
+		int cxMax = Gestionnaire_Monde.WorldToChunkCoord(pointImpact.X + rayon, pointImpact.Z, TailleChunk).X;
+		int czMin = Gestionnaire_Monde.WorldToChunkCoord(pointImpact.X, pointImpact.Z - rayon, TailleChunk).Y;
+		int czMax = Gestionnaire_Monde.WorldToChunkCoord(pointImpact.X, pointImpact.Z + rayon, TailleChunk).Y;
+		for (int cx = cxMin; cx <= cxMax; cx++)
+			for (int cz = czMin; cz <= czMax; cz++)
+				AssurerFloreDetectableSurChunk(ObtenirOuCreerChunk(new Vector2I(cx, cz)));
+		return RecolterBaiesBuissonGlobal(pointImpact, rayon, out quantiteBaies, out indexCouleurBaie);
 	}
 
 	/// <summary>Plante un buisson au point visé (terre plate). Retourne false si la zone n'est pas valide.</summary>

@@ -345,17 +345,28 @@ public partial class Joueur
         Godot.Collections.Array<Node> candidats = arbre.GetNodesInGroup("BlocsPoses");
         for (int i = 0; i < candidats.Count; i++)
         {
-            if (candidats[i] is not ItemPhysique item
-                || (item.ID_Objet != IdObjetBolCeramique && item.ID_Objet != IdObjetMouleCeramique))
+            if (candidats[i] is not ItemPhysique item)
                 continue;
-            float facteur = item.ID_Objet == IdObjetMouleCeramique
-                ? item.ObtenirFacteurBrulureMouleCeramique()
-                : item.ObtenirFacteurBrulureBolCeramique();
+            float facteur = 0f;
+            if (item.ID_Objet == IdObjetMouleCeramique)
+                facteur = item.ObtenirFacteurBrulureMouleCeramique();
+            else if (item.ID_Objet == IdObjetBolCeramique)
+                facteur = item.ObtenirFacteurBrulureBolCeramique();
+            else if (item.ID_Objet == IdObjetBolEtainFonduChaud)
+                facteur = item.ObtenirFacteurBrulureBolEtainFondu();
+            else if (item.ID_Objet == IdObjetBolCeramiqueScorie)
+                facteur = item.ObtenirFacteurBrulureBolScorie();
+            else
+                continue;
             if (!FourTorchieThermodynamique.EstFacteurBolAssezChaudPourBruler(facteur))
                 continue;
             bool zoneOk = item.ID_Objet == IdObjetMouleCeramique
                 ? item.EssayerObtenirZoneContactChaleurMouleMonde(out Vector3 point, out float rayon)
-                : item.EssayerObtenirZoneContactChaleurBolMonde(out point, out rayon);
+                : item.ID_Objet == IdObjetBolEtainFonduChaud
+                    ? item.EssayerObtenirZoneContactChaleurBolEtainMonde(out point, out rayon)
+                    : item.ID_Objet == IdObjetBolCeramiqueScorie
+                        ? item.EssayerObtenirZoneContactChaleurBolScorieMonde(out point, out rayon)
+                        : item.EssayerObtenirZoneContactChaleurBolMonde(out point, out rayon);
             if (!zoneOk)
                 continue;
             Vector3 pieds = GlobalPosition;

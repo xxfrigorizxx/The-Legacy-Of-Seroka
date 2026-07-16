@@ -135,6 +135,10 @@ public partial class Joueur
         if (node.HasMeta(MetaSignatureBolBois129)) node.RemoveMeta(MetaSignatureBolBois129);
         if (node.HasMeta(MetaSignatureBolArgile158)) node.RemoveMeta(MetaSignatureBolArgile158);
         if (node.HasMeta(MetaSignatureBolCeramique159)) node.RemoveMeta(MetaSignatureBolCeramique159);
+        if (node.HasMeta(MetaSignatureBolCeramiqueEtain167)) node.RemoveMeta(MetaSignatureBolCeramiqueEtain167);
+        if (node.HasMeta(MetaSignatureBolEtainFondu168)) node.RemoveMeta(MetaSignatureBolEtainFondu168);
+        if (node.HasMeta(MetaSignatureBolEtainSolidifie169)) node.RemoveMeta(MetaSignatureBolEtainSolidifie169);
+        if (node.HasMeta(MetaSignatureBolScorie170)) node.RemoveMeta(MetaSignatureBolScorie170);
         if (node.HasMeta(MetaSignatureMouleArgile161)) node.RemoveMeta(MetaSignatureMouleArgile161);
         if (node.HasMeta(MetaSignatureMouleCeramique162)) node.RemoveMeta(MetaSignatureMouleCeramique162);
         if (node.HasMeta(MetaSignatureChamotte163)) node.RemoveMeta(MetaSignatureChamotte163);
@@ -717,6 +721,72 @@ public partial class Joueur
                 NettoyerModelesEnfants(_objetEnMain);
                 InstancierModeleBolCeramique(_objetEnMain, main, 0.24f, false, facteurChaleur);
                 _objetEnMain.SetMeta(MetaSignatureBolCeramique159, sig);
+            }
+            _objetEnMain.Scale = Vector3.One;
+            _objetEnMain.RotationDegrees = new Vector3(-6f + _rotationManuelleX, 40f + _rotationManuelleY, 2f + _rotationManuelleZ);
+            return;
+        }
+        if (main.ID == IdObjetBolCeramiqueEtain)
+        {
+            _objetEnMain.Mesh = null;
+            _objetEnMain.MaterialOverride = null;
+            bool manqueModele = _objetEnMain.FindChild("ModeleArme", true, false) == null;
+            if (manqueModele || !_objetEnMain.HasMeta(MetaSignatureBolCeramiqueEtain167))
+            {
+                NettoyerModelesEnfants(_objetEnMain);
+                InstancierModeleBolCeramiqueEtain(_objetEnMain, main, 0.24f, false);
+                _objetEnMain.SetMeta(MetaSignatureBolCeramiqueEtain167, 1);
+            }
+            _objetEnMain.Scale = Vector3.One;
+            _objetEnMain.RotationDegrees = new Vector3(-6f + _rotationManuelleX, 40f + _rotationManuelleY, 2f + _rotationManuelleZ);
+            return;
+        }
+        if (main.ID == IdObjetBolEtainFonduChaud)
+        {
+            _objetEnMain.Mesh = null;
+            _objetEnMain.MaterialOverride = null;
+            float facteurChaleur = FourTorchieThermodynamique.ObtenirFacteurChaleurBolEtainFonduSlot(main);
+            int sig = SignatureTeinteBolCeramique(main.ID, main.IndexChimique, facteurChaleur);
+            int prev = _objetEnMain.HasMeta(MetaSignatureBolEtainFondu168) ? (int)_objetEnMain.GetMeta(MetaSignatureBolEtainFondu168).AsInt32() : int.MinValue;
+            bool manqueModele = _objetEnMain.FindChild("ModeleArme", true, false) == null;
+            if (manqueModele || sig != prev)
+            {
+                NettoyerModelesEnfants(_objetEnMain);
+                InstancierModeleBolEtainFonduChaud(_objetEnMain, main, 0.24f, false, facteurChaleur);
+                _objetEnMain.SetMeta(MetaSignatureBolEtainFondu168, sig);
+            }
+            _objetEnMain.Scale = Vector3.One;
+            _objetEnMain.RotationDegrees = new Vector3(-6f + _rotationManuelleX, 40f + _rotationManuelleY, 2f + _rotationManuelleZ);
+            return;
+        }
+        if (main.ID == IdObjetBolEtainSolidifie)
+        {
+            _objetEnMain.Mesh = null;
+            _objetEnMain.MaterialOverride = null;
+            bool manqueModele = _objetEnMain.FindChild("ModeleArme", true, false) == null;
+            if (manqueModele || !_objetEnMain.HasMeta(MetaSignatureBolEtainSolidifie169))
+            {
+                NettoyerModelesEnfants(_objetEnMain);
+                InstancierModeleBolEtainSolidifie(_objetEnMain, main, 0.24f, false);
+                _objetEnMain.SetMeta(MetaSignatureBolEtainSolidifie169, 1);
+            }
+            _objetEnMain.Scale = Vector3.One;
+            _objetEnMain.RotationDegrees = new Vector3(-6f + _rotationManuelleX, 40f + _rotationManuelleY, 2f + _rotationManuelleZ);
+            return;
+        }
+        if (main.ID == IdObjetBolCeramiqueScorie)
+        {
+            _objetEnMain.Mesh = null;
+            _objetEnMain.MaterialOverride = null;
+            float facteurChaleur = ItemPhysique.ObtenirFacteurChaleurBolScorieDepuisSlot(main);
+            int sig = SignatureTeinteBolCeramique(main.ID, main.IndexChimique, facteurChaleur);
+            int prev = _objetEnMain.HasMeta(MetaSignatureBolScorie170) ? (int)_objetEnMain.GetMeta(MetaSignatureBolScorie170).AsInt32() : int.MinValue;
+            bool manqueModele = _objetEnMain.FindChild("ModeleArme", true, false) == null;
+            if (manqueModele || sig != prev)
+            {
+                NettoyerModelesEnfants(_objetEnMain);
+                InstancierModeleBolCeramiqueScorie(_objetEnMain, main, 0.24f, false, facteurChaleur);
+                _objetEnMain.SetMeta(MetaSignatureBolScorie170, sig);
             }
             _objetEnMain.Scale = Vector3.One;
             _objetEnMain.RotationDegrees = new Vector3(-6f + _rotationManuelleX, 40f + _rotationManuelleY, 2f + _rotationManuelleZ);
@@ -1575,6 +1645,72 @@ public partial class Joueur
                 NettoyerModelesEnfants(meshNode);
                 InstancierModeleBolCeramique(meshNode, slot, 0.20f, false, facteurChaleur);
                 meshNode.SetMeta(MetaSignatureBolCeramique159, sigCer);
+            }
+            meshNode.Scale = Vector3.One;
+            meshNode.RotationDegrees = new Vector3(-6f, 48f, 2f);
+            return;
+        }
+        if (slot.ID == IdObjetBolCeramiqueEtain)
+        {
+            meshNode.Mesh = null;
+            meshNode.MaterialOverride = null;
+            bool manqueEtain = meshNode.FindChild("ModeleArme", true, false) == null;
+            if (manqueEtain || !meshNode.HasMeta(MetaSignatureBolCeramiqueEtain167))
+            {
+                NettoyerModelesEnfants(meshNode);
+                InstancierModeleBolCeramiqueEtain(meshNode, slot, 0.20f, false);
+                meshNode.SetMeta(MetaSignatureBolCeramiqueEtain167, 1);
+            }
+            meshNode.Scale = Vector3.One;
+            meshNode.RotationDegrees = new Vector3(-6f, 48f, 2f);
+            return;
+        }
+        if (slot.ID == IdObjetBolEtainFonduChaud)
+        {
+            meshNode.Mesh = null;
+            meshNode.MaterialOverride = null;
+            float facteurChaleur = FourTorchieThermodynamique.ObtenirFacteurChaleurBolEtainFonduSlot(slot);
+            int sig = SignatureTeinteBolCeramique(slot.ID, slot.IndexChimique, facteurChaleur);
+            int prev = meshNode.HasMeta(MetaSignatureBolEtainFondu168) ? (int)meshNode.GetMeta(MetaSignatureBolEtainFondu168).AsInt32() : int.MinValue;
+            bool manque = meshNode.FindChild("ModeleArme", true, false) == null;
+            if (manque || sig != prev)
+            {
+                NettoyerModelesEnfants(meshNode);
+                InstancierModeleBolEtainFonduChaud(meshNode, slot, 0.20f, false, facteurChaleur);
+                meshNode.SetMeta(MetaSignatureBolEtainFondu168, sig);
+            }
+            meshNode.Scale = Vector3.One;
+            meshNode.RotationDegrees = new Vector3(-6f, 48f, 2f);
+            return;
+        }
+        if (slot.ID == IdObjetBolEtainSolidifie)
+        {
+            meshNode.Mesh = null;
+            meshNode.MaterialOverride = null;
+            bool manque = meshNode.FindChild("ModeleArme", true, false) == null;
+            if (manque || !meshNode.HasMeta(MetaSignatureBolEtainSolidifie169))
+            {
+                NettoyerModelesEnfants(meshNode);
+                InstancierModeleBolEtainSolidifie(meshNode, slot, 0.20f, false);
+                meshNode.SetMeta(MetaSignatureBolEtainSolidifie169, 1);
+            }
+            meshNode.Scale = Vector3.One;
+            meshNode.RotationDegrees = new Vector3(-6f, 48f, 2f);
+            return;
+        }
+        if (slot.ID == IdObjetBolCeramiqueScorie)
+        {
+            meshNode.Mesh = null;
+            meshNode.MaterialOverride = null;
+            float facteurChaleur = ItemPhysique.ObtenirFacteurChaleurBolScorieDepuisSlot(slot);
+            int sig = SignatureTeinteBolCeramique(slot.ID, slot.IndexChimique, facteurChaleur);
+            int prev = meshNode.HasMeta(MetaSignatureBolScorie170) ? (int)meshNode.GetMeta(MetaSignatureBolScorie170).AsInt32() : int.MinValue;
+            bool manque = meshNode.FindChild("ModeleArme", true, false) == null;
+            if (manque || sig != prev)
+            {
+                NettoyerModelesEnfants(meshNode);
+                InstancierModeleBolCeramiqueScorie(meshNode, slot, 0.20f, false, facteurChaleur);
+                meshNode.SetMeta(MetaSignatureBolScorie170, sig);
             }
             meshNode.Scale = Vector3.One;
             meshNode.RotationDegrees = new Vector3(-6f, 48f, 2f);

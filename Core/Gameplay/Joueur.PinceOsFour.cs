@@ -32,11 +32,15 @@ public partial class Joueur
 	/// <summary>Clic droit monde : dépose le bol (four ouvert → slot résultat, sinon au sol). Les pinces restent en main.</summary>
 	public bool EssayerDeposerChargePinceEnMain(bool mainGauchePince)
 	{
+		if (EssayerVerserEtainFonduDepuisPince(mainGauchePince))
+			return true;
+
 		ref SlotInventaire pince = ref RefMainPinceOs(mainGauchePince);
 		if (!ItemPhysique.EstPinceOsPorteObjet(pince))
 			return false;
 		if (!ItemPhysique.EssayerLireObjetPortePinceOs(pince, out SlotInventaire objet))
 			return false;
+		ItemPhysique.EssayerFinaliserBolEtainFonduRefroidi(ref objet);
 
 		if (FourTorchieOuvertValide() && EssayerDeposerDepuisPinceSurPremierSlotResultatFour(mainGauchePince))
 			return true;
@@ -66,6 +70,7 @@ public partial class Joueur
 			return false;
 		if (!ItemPhysique.EssayerLireObjetPortePinceOs(pince, out SlotInventaire objet))
 			return false;
+		ItemPhysique.EssayerFinaliserBolEtainFonduRefroidi(ref objet);
 
 		if (slotFour.EstVide)
 		{
@@ -95,6 +100,7 @@ public partial class Joueur
 
 		SlotInventaire prise = slotFour;
 		prise.Quantite = 1;
+		ItemPhysique.EssayerFinaliserBolEtainFonduRefroidi(ref prise);
 		int q = ObtenirQuantiteSlot(slotFour);
 		if (q <= 1)
 			slotFour = new SlotInventaire();
@@ -103,5 +109,57 @@ public partial class Joueur
 
 		ItemPhysique.ChargerObjetSurPinceOs(ref pince, prise);
 		return true;
+	}
+
+	/// <summary>Clic droit : verse l'étain fondu liquide d'un bol chaud dans un moule céramique vide au sol.</summary>
+	public bool EssayerVerserEtainFonduDepuisPince(bool mainGauchePince)
+	{
+		ref SlotInventaire pince = ref RefMainPinceOs(mainGauchePince);
+		if (!ItemPhysique.EstPinceOsPorteObjet(pince))
+			return false;
+		if (!ItemPhysique.EssayerLireObjetPortePinceOs(pince, out SlotInventaire bol))
+			return false;
+		if (!FourTorchieThermodynamique.EstBolEtainFonduLiquide(bol))
+			return false;
+
+		_rayon.ForceRaycastUpdate();
+		if (!_rayon.IsColliding())
+			return false;
+
+		ItemPhysique moule = ObtenirItemPhysiqueDepuisRayon();
+		if (moule == null || moule.ID_Objet != IdObjetMouleCeramique)
+			return false;
+
+		var slotMoule = new SlotInventaire
+		{
+			ID = moule.ID_Objet,
+			IndexChimique = moule.IndexChimique,
+			GenomeAssemblage = moule.GenomeAssemblage ?? ""
+		};
+		if (!FourTorchieThermodynamique.EstMouleCeramiqueVideRefroidi(slotMoule))
+			return false;
+
+		Vector3 pointImpact = _rayon.GetCollisionPoint();
+		if (GlobalPosition.DistanceTo(pointImpact) > 2.8f)
+			return false;
+
+		moule.AppliquerMouleEtainFonduChaudPose();
+		ItemPhysique.RemplacerChargePinceOs(ref pince, ItemPhysique.CreerSlotBolCeramiqueRefroidi());
+		if (!Engine.IsEditorHint())
+			SauvegarderEtatPersistantMonde(GetTree());
+		GD.Print("SEROKA : Étain fondu versé dans le moule en céramique.");
+		return true;
+	}
+
+	private ItemPhysique ObtenirItemPhysiqueDepuisRayon()
+	{
+		Node collider = _rayon.GetCollider() as Node;
+		while (collider != null)
+		{
+			if (collider is ItemPhysique item)
+				return item;
+			collider = collider.GetParent();
+		}
+		return null;
 	}
 }

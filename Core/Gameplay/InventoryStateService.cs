@@ -20,6 +20,10 @@ public partial class Joueur
         if (s.ID == Joueur.IdObjetArgileHumidifiee) return 20;
         if (s.ID == Joueur.IdObjetBolArgile) return 10;
         if (s.ID == Joueur.IdObjetBolCeramique) return 10;
+        if (s.ID == Joueur.IdObjetBolCeramiqueEtain) return 10;
+        if (s.ID == Joueur.IdObjetBolEtainFonduChaud) return 10;
+        if (s.ID == Joueur.IdObjetBolEtainSolidifie) return 10;
+        if (s.ID == Joueur.IdObjetBolCeramiqueScorie) return 10;
         if (s.ID == Joueur.IdObjetMouleArgile) return 10;
         if (s.ID == Joueur.IdObjetMouleCeramique) return 10;
         if (s.ID == Joueur.IdObjetChamotte) return 5;

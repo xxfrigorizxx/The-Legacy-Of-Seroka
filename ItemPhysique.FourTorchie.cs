@@ -25,6 +25,7 @@ public partial class ItemPhysique
 	private ProfilCombustibleFourTorchie _fourTorchieProfilActif;
 	private bool _fourTorchieProfilActifValide;
 	private readonly double[] _fourTorchieProgressCuissonSec = new double[FourTorchieNbCuisson];
+	private readonly bool[] _fourTorchieEtainMarqueScorie = new bool[FourTorchieNbCuisson];
 	private double _fourTorchieDernierSyncFourSec = -1d;
 
 	public SlotInventaire[] GrilleFourTorchie = new SlotInventaire[FourTorchieNbSlots];
@@ -39,6 +40,20 @@ public partial class ItemPhysique
 		ID_Objet == Joueur.IdObjetFourTorchie
 		&& (_fourTorchieAllume && (_fourTorchieResteCombSec > 0.001d || _fourTorchieAnomalieAnthracite)
 			|| _fourTorchieTemperature > FourTorchieThermodynamique.TempAmbianteC + 8f);
+
+	/// <summary>Plafond thermique du combustible en cours ou du slot combustible (0 si aucun).</summary>
+	public float ObtenirPlafondThermiqueActifFourTorchie()
+	{
+		if (ID_Objet != Joueur.IdObjetFourTorchie)
+			return 0f;
+		AssurerGrilleFourTorchie();
+		if (_fourTorchieProfilActifValide)
+			return Mathf.Max(FourTorchieThermodynamique.TempAmbianteC, _fourTorchieProfilActif.TempMaxC - _fourTorchieEncrassementMalusC);
+		SlotInventaire comb = GrilleFourTorchie[FourTorchieSlotCombustible];
+		if (!EstSlotCombustibleFourTorchie(comb))
+			return 0f;
+		return FourTorchieThermodynamique.ObtenirPlafondThermiqueCombustible(comb, _fourTorchieEncrassementMalusC);
+	}
 
 	public float ObtenirProgressionCombustionFourTorchie()
 	{
@@ -66,6 +81,9 @@ public partial class ItemPhysique
 		if (cuisson.ID == Joueur.IdObjetSteakCru
 			&& _fourTorchieTemperature < FourTorchieThermodynamique.SeuilCuissonMinC)
 			return -1f;
+		if (cuisson.ID == Joueur.IdObjetBolCeramiqueEtain
+			&& !FourTorchieThermodynamique.TemperatureSuffisanteFonteEtain(_fourTorchieTemperature))
+			return -1f;
 		return Mathf.Clamp((float)(_fourTorchieProgressCuissonSec[indexCuisson] / duree), 0f, 1f);
 	}
 
@@ -73,7 +91,9 @@ public partial class ItemPhysique
 		FourTorchieThermodynamique.EstCombustibleFourTorchie(s);
 
 	public static bool EstObjetCuissableFourTorchie(SlotInventaire s) =>
-		!s.EstVide && (s.ID == Joueur.IdObjetSteakCru || FourTorchieThermodynamique.EstObjetArgileCuissableFour(s.ID));
+		!s.EstVide && (s.ID == Joueur.IdObjetSteakCru
+			|| FourTorchieThermodynamique.EstObjetArgileCuissableFour(s.ID)
+			|| FourTorchieThermodynamique.EstObjetFonteEtainCuissableFour(s.ID));
 
 	public static bool EstSlotCuissonFourTorchie(SlotInventaire s) => EstObjetCuissableFourTorchie(s);
 
@@ -84,6 +104,12 @@ public partial class ItemPhysique
 			|| FourTorchieThermodynamique.EstBolCeramiqueRefroidi(s)
 			|| FourTorchieThermodynamique.EstMouleCeramiqueChaud(s)
 			|| FourTorchieThermodynamique.EstMouleCeramiqueRefroidi(s)
+			|| FourTorchieThermodynamique.EstMouleEtainFonduChaud(s)
+			|| FourTorchieThermodynamique.EstMouleEtainSolidifie(s)
+			|| FourTorchieThermodynamique.EstBolEtainFonduChaud(s)
+			|| FourTorchieThermodynamique.EstBolCeramiqueScorieChaud(s)
+			|| s.ID == Joueur.IdObjetBolEtainSolidifie
+			|| (s.ID == Joueur.IdObjetBolCeramiqueScorie && s.IndexChimique == 0)
 			|| FourTorchieThermodynamique.EstSlotChamotteFour(s));
 
 	public static bool SontResultatsFourTorchieCompatibles(SlotInventaire cuisson, SlotInventaire resultat)
@@ -103,6 +129,11 @@ public partial class ItemPhysique
 			return FourTorchieThermodynamique.EstMouleCeramiqueChaud(resultat)
 				|| FourTorchieThermodynamique.EstMouleCeramiqueRefroidi(resultat)
 				|| FourTorchieThermodynamique.EstSlotChamotteFour(resultat);
+		if (cuisson.ID == Joueur.IdObjetBolCeramiqueEtain)
+			return FourTorchieThermodynamique.EstBolEtainFonduChaud(resultat)
+				|| FourTorchieThermodynamique.EstBolCeramiqueScorieChaud(resultat)
+				|| resultat.ID == Joueur.IdObjetBolEtainSolidifie
+				|| (resultat.ID == Joueur.IdObjetBolCeramiqueScorie && resultat.IndexChimique == 0);
 		return false;
 	}
 
@@ -273,6 +304,12 @@ public partial class ItemPhysique
 
 		if (_fourTorchieAllume && _fourTorchieResteCombSec > 0.001d)
 		{
+			if (!_fourTorchieProfilActifValide)
+			{
+				ref SlotInventaire comb = ref GrilleFourTorchie[FourTorchieSlotCombustible];
+				_fourTorchieProfilActifValide = EstSlotCombustibleFourTorchie(comb)
+					&& FourTorchieThermodynamique.ResoudreProfilCombustible(comb, out _fourTorchieProfilActif);
+			}
 			_fourTorchieResteCombSec -= delta;
 			if (_fourTorchieProfilActifValide)
 			{
@@ -323,10 +360,6 @@ public partial class ItemPhysique
 		for (int i = 0; i < FourTorchieNbSlots; i++)
 		{
 			ref SlotInventaire slot = ref GrilleFourTorchie[i];
-			if (!FourTorchieThermodynamique.EstBolCeramiqueChaud(slot)
-				&& !FourTorchieThermodynamique.EstMouleCeramiqueChaud(slot))
-				continue;
-
 			if (FourTorchieThermodynamique.EstBolCeramiqueChaud(slot))
 			{
 				EssayerLireEtatBolCeramiqueSlot(slot, out _, out double progSecBol);
@@ -338,8 +371,49 @@ public partial class ItemPhysique
 						ref slot,
 						FourTorchieThermodynamique.FlagBolCeramiqueChaudIndexChimique,
 						progSecBol);
+				modifie = true;
+				continue;
 			}
-			else
+
+			if (FourTorchieThermodynamique.EstBolEtainFonduChaud(slot))
+			{
+				EssayerLireEtatBolEtainFonduSlot(slot, out _, out double progEtain);
+				progEtain += dtBol;
+				if (progEtain >= FourTorchieThermodynamique.DureeRefroidissementBolCeramiqueSec)
+				{
+					slot.ID = Joueur.IdObjetBolEtainSolidifie;
+					slot.IndexChimique = 0;
+					slot.GenomeAssemblage = "";
+				}
+				else
+					EcrireEtatBolEtainFonduSlot(
+						ref slot,
+						FourTorchieThermodynamique.FlagBolCeramiqueChaudIndexChimique,
+						progEtain);
+				modifie = true;
+				continue;
+			}
+
+			if (FourTorchieThermodynamique.EstBolCeramiqueScorieChaud(slot))
+			{
+				EssayerLireEtatBolScorieSlot(slot, out _, out double progScorie);
+				progScorie += dtBol;
+				if (progScorie >= FourTorchieThermodynamique.DureeRefroidissementBolCeramiqueSec)
+					EcrireEtatBolScorieSlot(ref slot, 0, 0d);
+				else
+					EcrireEtatBolScorieSlot(
+						ref slot,
+						FourTorchieThermodynamique.FlagBolCeramiqueChaudIndexChimique,
+						progScorie);
+				modifie = true;
+				continue;
+			}
+
+			if (!FourTorchieThermodynamique.EstMouleCeramiqueChaud(slot)
+				&& !FourTorchieThermodynamique.EstMouleEtainFonduChaud(slot))
+				continue;
+
+			if (FourTorchieThermodynamique.EstMouleCeramiqueChaud(slot))
 			{
 				EssayerLireEtatMouleCeramiqueSlot(slot, out _, out double progSecMoule);
 				progSecMoule += dtBol;
@@ -350,6 +424,21 @@ public partial class ItemPhysique
 						ref slot,
 						FourTorchieThermodynamique.FlagBolCeramiqueChaudIndexChimique,
 						progSecMoule);
+			}
+			else
+			{
+				EssayerLireEtatMouleCeramiqueSlot(slot, out _, out double progEtainMoule);
+				progEtainMoule += dtBol;
+				if (progEtainMoule >= FourTorchieThermodynamique.DureeRefroidissementBolCeramiqueSec)
+					EcrireEtatMouleCeramiqueSlot(
+						ref slot,
+						FourTorchieThermodynamique.FlagMouleEtainSolidifieIndexChimique,
+						0d);
+				else
+					EcrireEtatMouleCeramiqueSlot(
+						ref slot,
+						FourTorchieThermodynamique.FlagMouleEtainFonduChaudIndexChimique,
+						progEtainMoule);
 			}
 			modifie = true;
 		}
@@ -458,9 +547,11 @@ public partial class ItemPhysique
 
 		if (!EstSlotCuissonFourTorchie(cuisson))
 		{
-			if (_fourTorchieProgressCuissonSec[indexCuisson] > 0.001d)
+			if (_fourTorchieProgressCuissonSec[indexCuisson] > 0.001d
+				|| _fourTorchieEtainMarqueScorie[indexCuisson])
 			{
 				_fourTorchieProgressCuissonSec[indexCuisson] = 0d;
+				_fourTorchieEtainMarqueScorie[indexCuisson] = false;
 				return true;
 			}
 			return false;
@@ -483,6 +574,8 @@ public partial class ItemPhysique
 
 		if (FourTorchieThermodynamique.EstObjetArgileCuissableFour(cuisson.ID))
 			return EssayerAvancerCuissonArgileFourTorchie(indexCuisson, delta, ref cuisson, ref resultat);
+		if (FourTorchieThermodynamique.EstObjetFonteEtainCuissableFour(cuisson.ID))
+			return EssayerAvancerCuissonEtainFourTorchie(indexCuisson, delta, ref cuisson, ref resultat);
 		return EssayerAvancerCuissonSteakFourTorchie(indexCuisson, delta, ref cuisson, ref resultat);
 	}
 
@@ -558,6 +651,39 @@ public partial class ItemPhysique
 			modifieOk = true;
 		}
 		return modifieOk;
+	}
+
+	private bool EssayerAvancerCuissonEtainFourTorchie(int indexCuisson, double delta, ref SlotInventaire cuisson, ref SlotInventaire resultat)
+	{
+		if (_fourTorchieTemperature >= FourTorchieThermodynamique.SeuilFonteEtainScorieC)
+			_fourTorchieEtainMarqueScorie[indexCuisson] = true;
+
+		if (_fourTorchieTemperature < FourTorchieThermodynamique.SeuilFonteEtainMinC)
+			return false;
+
+		double duree = FourTorchieThermodynamique.DureeFonteEtainSec;
+		_fourTorchieProgressCuissonSec[indexCuisson] += delta;
+		bool modifie = false;
+		while (_fourTorchieProgressCuissonSec[indexCuisson] >= duree
+			&& EstSlotCuissonFourTorchie(cuisson)
+			&& cuisson.ID == Joueur.IdObjetBolCeramiqueEtain)
+		{
+			SlotInventaire produit = _fourTorchieEtainMarqueScorie[indexCuisson]
+				? CreerSlotBolCeramiqueScorieChaud()
+				: CreerSlotBolEtainFonduChaud();
+
+			if (!DeposerProduitCuissonFourTorchie(ref resultat, produit))
+				break;
+
+			int qCru = Joueur.ObtenirQuantiteSlot(cuisson) - 1;
+			if (qCru <= 0) cuisson = new SlotInventaire();
+			else cuisson.Quantite = qCru;
+			ObtenirJoueurMonde()?.AjouterXpMetier("Forgeron", 2UL);
+			_fourTorchieProgressCuissonSec[indexCuisson] -= duree;
+			_fourTorchieEtainMarqueScorie[indexCuisson] = false;
+			modifie = true;
+		}
+		return modifie;
 	}
 
 	private static bool DeposerProduitCuissonFourTorchie(ref SlotInventaire resultat, SlotInventaire produit)
@@ -647,7 +773,19 @@ public partial class ItemPhysique
 		{
 			genome = $"{PrefixGenomeMouleCeramique}{chi}:0";
 		}
-		return new SlotInventaire
+		if (id == Joueur.IdObjetBolEtainFonduChaud
+			&& chi == FourTorchieThermodynamique.FlagBolCeramiqueChaudIndexChimique
+			&& string.IsNullOrEmpty(genome))
+		{
+			genome = $"{PrefixGenomeBolEtainFondu}{chi}:0";
+		}
+		if (id == Joueur.IdObjetBolCeramiqueScorie
+			&& chi == FourTorchieThermodynamique.FlagBolCeramiqueChaudIndexChimique
+			&& string.IsNullOrEmpty(genome))
+		{
+			genome = $"{PrefixGenomeBolScorie}{chi}:0";
+		}
+		var slotDecode = new SlotInventaire
 		{
 			ID = id,
 			Quantite = Mathf.Max(1, q),
@@ -656,6 +794,8 @@ public partial class ItemPhysique
 			IndexMorphologique = mor,
 			GenomeAssemblage = genome
 		};
+		EssayerFinaliserBolEtainFonduRefroidi(ref slotDecode);
+		return slotDecode;
 	}
 
 	private void ChargerEtatFourTorchieDepuisGenome()

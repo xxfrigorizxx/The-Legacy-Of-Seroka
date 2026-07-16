@@ -59,6 +59,7 @@ public partial class Gestionnaire_Monde : Node3D
 			}
 		}
 		MettreAJourEmerukedesiParotaromaStage1(delta);
+		CampPnjStructure.TickReconcilierTousLesCamps(this, SeedTerrain, (float)delta);
 
 		bool spawnPretActuel = EstSpawnPret();
 		bool spawnPretEtAligneActuel = spawnPretActuel && (!_spawnDoitEtreAligneAuSol || _spawnAligneAuSol);
@@ -341,6 +342,14 @@ FinBlocOverlay:
 				}
 			}
 		}
+		if (spawnPretEtAligneActuel)
+		{
+			PnjHumainContinuiteService.TickDematerialisationRapide(this);
+			PnjHumainContinuiteService.TickRematerialisationRapide(this);
+			PnjHumainContinuiteService.TickRematerialisationUrgente(this, (float)delta);
+			PnjHumainContinuiteService.Tick(this, (float)delta);
+		}
+
 		if (ActiverProfilagePerfGestionnaire)
 		{
 			PerfBudgetMonitor.End("GestionnaireMonde/Process", debutProcessUs);

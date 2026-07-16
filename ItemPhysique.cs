@@ -525,6 +525,21 @@ public partial class ItemPhysique : RigidBody3D
 			InitialiserBolCeramiquePose();
 			return;
 		}
+		if (ID_Objet == Joueur.IdObjetBolEtainFonduChaud)
+		{
+			InitialiserBolEtainFonduPose();
+			return;
+		}
+		if (ID_Objet == Joueur.IdObjetBolEtainSolidifie)
+		{
+			MettreAJourVisuelBolEtainSolidifiePose();
+			return;
+		}
+		if (ID_Objet == Joueur.IdObjetBolCeramiqueScorie)
+		{
+			InitialiserBolScoriePose();
+			return;
+		}
 		if (ID_Objet == Joueur.IdObjetMouleCeramique)
 		{
 			InitialiserMouleCeramiquePose();
@@ -872,6 +887,16 @@ public partial class ItemPhysique : RigidBody3D
 		if (ID_Objet == Joueur.IdObjetBolCeramique)
 		{
 			TraiterRefroidissementBolCeramiqueAuSoleil(delta);
+			return;
+		}
+		if (ID_Objet == Joueur.IdObjetBolEtainFonduChaud)
+		{
+			TraiterRefroidissementBolEtainFonduAuSoleil(delta);
+			return;
+		}
+		if (ID_Objet == Joueur.IdObjetBolCeramiqueScorie)
+		{
+			TraiterRefroidissementBolScorieAuSoleil(delta);
 			return;
 		}
 		if (ID_Objet == Joueur.IdObjetMouleCeramique)

@@ -546,6 +546,16 @@ public partial class Monde_Client : Node3D
 		}
 	}
 
+	/// <summary>Force le chargement urgent des chunks autour d'un point (TP debug / rattrapage PNJ).</summary>
+	public void ForcerStreamingPrioritaireAutour(Vector3 posMonde, int rayonXZ = 3)
+	{
+		if (!GodotObject.IsInstanceValid(this))
+			return;
+		int rayon = Mathf.Clamp(rayonXZ, 1, 5);
+		DemanderFenetreVerticaleUrgenteAutourPosition(posMonde, rayon);
+		EnfilerSolidificationUrgenteAutour(posMonde, rayon);
+	}
+
 	/// <summary>Retire la collision sans détruire le mesh (remesh minage / couture verticale).</summary>
 	private static void LibererPhysiqueChunk(ChunkData data)
 	{

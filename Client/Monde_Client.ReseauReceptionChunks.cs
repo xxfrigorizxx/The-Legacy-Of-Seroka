@@ -80,7 +80,7 @@ public partial class Monde_Client : Node3D
 				{
 					int nbSecAbysse = Chunk_Client.ObtenirNbSectionsEffectif(HauteurMax);
 					if (sec >= 0 && sec < nbSecAbysse)
-						_sectionsAReconstruire.Add((coordChunk.X, kv.Key.Y, coordChunk.Y, sec));
+						AjouterSectionAReconstruire((coordChunk.X, kv.Key.Y, coordChunk.Y, sec));
 				}
 			}
 			if (!trouve)
@@ -94,7 +94,7 @@ public partial class Monde_Client : Node3D
 		foreach (int sec in sectionsAffectees)
 		{
 			if (sec < 0 || sec >= nbSecMax) continue;
-			_sectionsAReconstruire.Add((coordChunk.X, coordChunkY, coordChunk.Y, sec));
+			AjouterSectionAReconstruire((coordChunk.X, coordChunkY, coordChunk.Y, sec));
 		}
 	}
 
@@ -103,11 +103,11 @@ public partial class Monde_Client : Node3D
 		if (!TryGetChunkDataPourCoordY(new Vector2I(chunkX, chunkZ), coordY, out var chunkCible))
 			return;
 		if (sec >= 0 && sec < nbSec)
-			_sectionsAReconstruire.Add((chunkX, chunkCible.CoordChunkY, chunkZ, sec));
+			AjouterSectionAReconstruire((chunkX, chunkCible.CoordChunkY, chunkZ, sec));
 		if (localYSection == 0 && localVoxelY > 0 && sec - 1 >= 0)
-			_sectionsAReconstruire.Add((chunkX, chunkCible.CoordChunkY, chunkZ, sec - 1));
+			AjouterSectionAReconstruire((chunkX, chunkCible.CoordChunkY, chunkZ, sec - 1));
 		if (localYSection == 15 && sec + 1 < nbSec)
-			_sectionsAReconstruire.Add((chunkX, chunkCible.CoordChunkY, chunkZ, sec + 1));
+			AjouterSectionAReconstruire((chunkX, chunkCible.CoordChunkY, chunkZ, sec + 1));
 	}
 
 	/// <summary>Micro-RPC : mise à jour voxel unique. Modifie le chunk principal ET la réplique sur le padding des voisins.</summary>
@@ -479,7 +479,7 @@ public partial class Monde_Client : Node3D
 		int nbSec = ConstantesProfondeurVerticale.ObtenirNbSections(chunk.HauteurMax);
 		if (nbSec <= 0) return;
 		int s = sectionBasse ? 0 : nbSec - 1;
-		_sectionsAReconstruire.Add((chunk.Coordonnees.X, chunk.CoordChunkY, chunk.Coordonnees.Y, s));
+		AjouterSectionAReconstruire((chunk.Coordonnees.X, chunk.CoordChunkY, chunk.Coordonnees.Y, s));
 	}
 
 	/// <summary>Remesh léger bas/haut après sync voxel (2 sections max par tranche).</summary>
@@ -519,13 +519,13 @@ public partial class Monde_Client : Node3D
 			if (TryGetChunkDataPourCoordY(new Vector2I(chunkX, chunkZ), coordY, out var cur))
 			{
 				for (int s = 0; s <= 1 && s < nbSec; s++)
-					_sectionsAReconstruire.Add((chunkX, cur.CoordChunkY, chunkZ, s));
+					AjouterSectionAReconstruire((chunkX, cur.CoordChunkY, chunkZ, s));
 			}
 			if (TryGetChunkDataPourCoordY(new Vector2I(chunkX, chunkZ), coordY - 1, out var sous))
 			{
 				for (int s = nbSec - 2; s < nbSec; s++)
 					if (s >= 0)
-						_sectionsAReconstruire.Add((chunkX, sous.CoordChunkY, chunkZ, s));
+						AjouterSectionAReconstruire((chunkX, sous.CoordChunkY, chunkZ, s));
 			}
 		}
 		if (presHaut)
@@ -534,12 +534,12 @@ public partial class Monde_Client : Node3D
 			{
 				for (int s = nbSec - 2; s < nbSec; s++)
 					if (s >= 0)
-						_sectionsAReconstruire.Add((chunkX, cur.CoordChunkY, chunkZ, s));
+						AjouterSectionAReconstruire((chunkX, cur.CoordChunkY, chunkZ, s));
 			}
 			if (TryGetChunkDataPourCoordY(new Vector2I(chunkX, chunkZ), coordY + 1, out var sur))
 			{
 				for (int s = 0; s <= 1 && s < nbSec; s++)
-					_sectionsAReconstruire.Add((chunkX, sur.CoordChunkY, chunkZ, s));
+					AjouterSectionAReconstruire((chunkX, sur.CoordChunkY, chunkZ, s));
 			}
 		}
 	}
@@ -577,7 +577,7 @@ public partial class Monde_Client : Node3D
 					AjouterRemeshJonctionVertical((ncx, ncy, ncz, nb - 1));
 			}
 			if (ncy == coordY && (ncx != cx || ncz != cz))
-				_sectionsAReconstruire.Add((ncx, ncy, ncz, sec));
+				AjouterSectionAReconstruire((ncx, ncy, ncz, sec));
 		}
 
 		MettreAJourPaddingLocalChunk(chunkCourant, localX, localY, localZ, id, tc, h);
@@ -651,7 +651,7 @@ public partial class Monde_Client : Node3D
 	/// <summary>Remesh jonction sans debounce 12 frames (évite voile gris 1–2 s à Y=100).</summary>
 	private void AjouterRemeshJonctionVertical((int cx, int coordY, int cz, int section) cle)
 	{
-		_sectionsAReconstruire.Add(cle);
+		AjouterSectionAReconstruire(cle);
 		_frameDernierRemeshBordVert.Remove(new Vector3I(cle.cx, cle.coordY, cle.cz));
 	}
 

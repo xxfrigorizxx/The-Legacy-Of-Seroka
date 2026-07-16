@@ -1,4 +1,4 @@
-﻿using Godot;
+using Godot;
 using System;
 using System.Collections.Generic;
 
@@ -258,6 +258,30 @@ public partial class Joueur
         }
 
         return minY == float.MaxValue ? -0.9f : minY;
+    }
+
+    private const float TailleJoueurCibleM = 1.85f;   // taille humaine demandée (fixe pour le joueur)
+    private const float RatioYeuxStature = 0.94f;      // hauteur des yeux ≈ 94% de la stature
+    private float _decalageCameraTailleJoueur;         // relève la caméra FPS du gain de taille du modèle
+
+    /// <summary>
+    /// Race Humain : met le rig à une taille FIXE (1,85 m) en mesurant la hauteur réelle du mesh, puis relève la caméra
+    /// FPS (placée à hauteur fixe sur le corps) du même gain de hauteur des yeux. Les pieds restent au sol. Orc inchangé.
+    /// </summary>
+    private void CalibrerTailleEtCameraJoueurHumain(bool estOrc)
+    {
+        _decalageCameraTailleJoueur = 0f;
+        if (estOrc || _rigHumain == null || !GodotObject.IsInstanceValid(_rigHumain))
+            return;
+        Aabb? combine = null;
+        AccumulerAabbMeshes(_rigHumain, Transform3D.Identity, ref combine);
+        if (!combine.HasValue)
+            return;
+        float hauteurVisuelle = combine.Value.Size.Y; // hauteur actuelle, échelle par défaut comprise
+        if (hauteurVisuelle < 0.01f)
+            return;
+        _rigHumain.Scale *= TailleJoueurCibleM / hauteurVisuelle;
+        _decalageCameraTailleJoueur = RatioYeuxStature * (TailleJoueurCibleM - hauteurVisuelle);
     }
 
     private void RetryLierPlaybackAnimationTreeHumain()
@@ -605,7 +629,7 @@ public partial class Joueur
         float avanceCamera = Mathf.Max(0f, AvanceCameraFpsMetres);
         _cameraFps.Position = new Vector3(
             _positionLocaleBaseCameraFps.X,
-            _positionLocaleBaseCameraFps.Y + 0.50f,
+            _positionLocaleBaseCameraFps.Y + 0.50f + _decalageCameraTailleJoueur, // suit la taille (1,85 m) du modèle
             _positionLocaleBaseCameraFps.Z - avanceCamera);
         _pitchCameraBaseRad = 0f;
         _yawCorrectionCameraFpsRad = 0f;
@@ -1162,6 +1186,7 @@ public partial class Joueur
         }
 
         AppliquerEchelleRigSelonRace(_rigHumain, estOrc ? RaceJoueur.Orc : RaceJoueur.Humain);
+        CalibrerTailleEtCameraJoueurHumain(estOrc); // race Humain : taille fixe 1,85 m + relève la caméra FPS d'autant
 
         _solCapsuleLocalY = CalculerBasCollisionLocalJoueur();
         float basPourPieds = CalculerBasPourAlignementPiedsDuMesh();

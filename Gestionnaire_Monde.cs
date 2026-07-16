@@ -328,6 +328,9 @@ public partial class Gestionnaire_Monde : Node3D
 		return JoueurReferenceValide() ? _joueur : null;
 	}
 
+	/// <summary>Accès lecture au client monde (rayon dormance physique, etc.).</summary>
+	public Monde_Client MondeClientReference => _mondeClient;
+
 	public Vector3 ObtenirPositionJoueurOuSpawn()
 	{
 		if (_gateTpDimensionActif)
@@ -343,6 +346,34 @@ public partial class Gestionnaire_Monde : Node3D
 			_joueur = null;
 			return _spawnInitialEnAttente;
 		}
+	}
+
+	/// <summary>Téléporte le joueur local à une position monde (debug / /TP HOMINA).</summary>
+	public bool TeleporterJoueurVers(Vector3 positionMonde)
+	{
+		if (!JoueurReferenceValide())
+			return false;
+		int seed = SeedTerrain;
+		float ySol = PnjHumainBiomeInstinct.HauteurSolMonde(positionMonde.X, positionMonde.Z, seed);
+		Vector3 pos = new Vector3(positionMonde.X, ySol, positionMonde.Z);
+		if (_joueur is Joueur jo)
+			pos.Y = jo.CalculerYOriginePourPiedsSurSurface(ySol + 0.05f);
+		else
+			pos.Y = ySol + 1.2f;
+		if (EssayerTrouverPlancherSousPieds(pos, out Vector3 surCollision))
+			pos = surCollision;
+		_joueur.GlobalPosition = pos;
+		_joueur.Velocity = Vector3.Zero;
+		ForcerPreparationZoneAutour(pos, 4);
+		PnjHumainContinuiteService.DeclencherRematerialisationUrgente(this, pos);
+		return true;
+	}
+
+	/// <summary>Demande le streaming urgent des chunks autour d'un point (réseau).</summary>
+	public void ForcerPreparationZoneAutour(Vector3 point, int rayonChunks = 4)
+	{
+		if (UseArchitectureReseau && _mondeClient != null && GodotObject.IsInstanceValid(_mondeClient))
+			_mondeClient.ForcerStreamingPrioritaireAutour(point, rayonChunks);
 	}
 
 	/// <summary>Vrai si le chunk sous les pieds du joueur a sa collision construite (évite chute libre au spawn).</summary>
@@ -364,6 +395,27 @@ public partial class Gestionnaire_Monde : Node3D
 		var ch = n as Generateur_Voxel;
 		if (ch == null) return false;
 		int sec = Mathf.FloorToInt(pos.Y / 16f);
+		return ch.SectionAPret(sec);
+	}
+
+	/// <summary>Collision du chunk sous ce point + voisins cardinaux (évite les bords de chunk sans sol).</summary>
+	public bool EstCollisionChunkEtVoisinsPretsPourPoint(Vector3 point)
+	{
+		if (UseArchitectureReseau)
+		{
+			if (_mondeClient == null)
+				return false;
+			if (_dimensionLocaleActive == (int)DimensionJeu.Abysse)
+				return _mondeClient.AbyssePretPourDeplacement(point);
+			return ChunkEtVoisinsCardinauxPretsAuPoint(point);
+		}
+		Vector2I c = WorldToChunkCoord(point, TailleChunk);
+		if (!_chunks.TryGetValue(c, out var n))
+			return false;
+		var ch = n as Generateur_Voxel;
+		if (ch == null)
+			return false;
+		int sec = Mathf.FloorToInt(point.Y / 16f);
 		return ch.SectionAPret(sec);
 	}
 
@@ -1365,7 +1417,10 @@ public partial class Gestionnaire_Monde : Node3D
 		_corpsDansOcean.Clear();
 		// Inventaire / objets : Joueur._ExitTree si encore dans l’arbre ; chunks pour toutes les dimensions ici.
 		if (IsInsideTree())
+		{
 			SauvegarderChunksVoxelToutesDimensions("Gestionnaire_Monde._ExitTree");
+			PnjHumainPersistance.Sauvegarder(this);
+		}
 		else if (UseArchitectureReseau)
 		{
 			foreach (var kv in _serveurParDimension)
@@ -1481,6 +1536,7 @@ public partial class Gestionnaire_Monde : Node3D
 				GD.Print("ZERO-K : Sauvegarde joueur différée (phase restauration joueur pas encore exécutée).");
 		}
 		SauvegarderChunksVoxelToutesDimensions(contexte);
+		PnjHumainPersistance.Sauvegarder(this);
 		GD.Print($"ZERO-K : Persistance complète monde ({contexte}).");
 	}
 
@@ -1675,6 +1731,38 @@ public partial class Gestionnaire_Monde : Node3D
 		}
 	}
 
+	/// <summary>Creuse un bloc de terrain pour un PNJ (sans herbe/buisson).</summary>
+	public void AppliquerCreusageTerrainPnj(Vector3 pointImpact, float rayon = 0.42f)
+	{
+		if (UseArchitectureReseau)
+			_mondeServeur?.AppliquerCreusageTerrainSansFlore(pointImpact, rayon);
+	}
+
+	/// <summary>Pose une baie visible au sol (stock de camp PNJ).</summary>
+	public void SpawnBaieCampAuSol(Vector3 position, byte indexCouleur)
+	{
+		if (UseArchitectureReseau)
+			_mondeServeur?.SpawnBaieCampAuSol(position, indexCouleur);
+	}
+
+	/// <summary>Ajoute un <see cref="ItemPhysique"/> posé au sol (même parent que le joueur via <see cref="CreerBlocPose"/>).</summary>
+	public bool PoserItemPhysiqueAuMonde(ItemPhysique item, Vector3 positionGlobale)
+	{
+		if (item == null || !GodotObject.IsInstanceValid(this))
+			return false;
+		Node parentPose = this;
+		Node3D racineDim = ObtenirRacineDimension(ObtenirDimensionLocaleActiveId());
+		if (racineDim != null && GodotObject.IsInstanceValid(racineDim))
+			parentPose = racineDim;
+		parentPose.AddChild(item);
+		item.GlobalPosition = positionGlobale;
+		item.AddToGroup("BlocsPoses");
+		item.CollisionLayer = 1;
+		item.CollisionMask = 1;
+		item.ContinuousCd = true;
+		return true;
+	}
+
 	public void AppliquerCreationGlobale(Vector3 pointImpact, Vector3 normale, float rayon, int idMatiere = 1)
 	{
 		if (UseArchitectureReseau)
@@ -1724,13 +1812,23 @@ public partial class Gestionnaire_Monde : Node3D
 	}
 
 	/// <summary>Détecte un buisson sous la visée sans le modifier.</summary>
-	public bool EssayerDetecterBuissonSousPoint(Vector3 pointImpact, float rayon, out Vector3 posBuisson, out byte typeFlore)
+	public bool EssayerDetecterBuissonSousPoint(Vector3 pointImpact, float rayon, out Vector3 posBuisson, out byte typeFlore, bool pleinSeulement = false)
 	{
 		posBuisson = Vector3.Zero;
 		typeFlore = 0;
 		if (UseArchitectureReseau && _mondeServeur != null)
-			return _mondeServeur.EssayerDetecterBuissonGlobal(pointImpact, rayon, out posBuisson, out typeFlore);
+			return _mondeServeur.EssayerDetecterBuissonGlobal(pointImpact, rayon, out posBuisson, out typeFlore, pleinSeulement);
 		return false;
+	}
+
+	/// <summary>Détection PNJ : oracle serveur (flore procédurale), indépendant du rendu client.</summary>
+	public bool EssayerDetecterBuissonPourPnj(Vector3 pointImpact, float rayon, out Vector3 posBuisson, out byte typeFlore, bool pleinSeulement = false)
+	{
+		posBuisson = Vector3.Zero;
+		typeFlore = 0;
+		if (UseArchitectureReseau && _mondeServeur != null)
+			return _mondeServeur.EssayerDetecterBuissonPourPnj(pointImpact, rayon, out posBuisson, out typeFlore, pleinSeulement);
+		return EssayerDetecterBuissonSousPoint(pointImpact, rayon, out posBuisson, out typeFlore, pleinSeulement);
 	}
 
 	/// <summary>Plante un buisson (type 1/2) au sol selon le point visé.</summary>
@@ -1748,6 +1846,36 @@ public partial class Gestionnaire_Monde : Node3D
 		indexCouleurBaie = 0;
 		if (!(UseArchitectureReseau && _mondeServeur != null)) return false;
 		return _mondeServeur.RecolterBaiesBuissonGlobal(pointImpact, rayon, out quantiteBaies, out indexCouleurBaie);
+	}
+
+	/// <summary>Récolte PNJ : assure la flore serveur (oracle) avant cueillette, sans mesh client requis.</summary>
+	public bool RecolterBaiesBuissonPourPnj(Vector3 pointImpact, float rayon, out int quantiteBaies, out byte indexCouleurBaie)
+	{
+		quantiteBaies = 0;
+		indexCouleurBaie = 0;
+		if (!(UseArchitectureReseau && _mondeServeur != null)) return false;
+		return _mondeServeur.RecolterBaiesBuissonPourPnj(pointImpact, rayon, out quantiteBaies, out indexCouleurBaie);
+	}
+
+	/// <summary>Détecte une roche ramassable pour PNJ (oracle serveur).</summary>
+	public bool EssayerDetecterRochePourPnj(Vector3 point, float rayon, out Vector3 posRoche, out int idObjet, out int indexMorph, out int indexTaille)
+	{
+		posRoche = Vector3.Zero;
+		idObjet = 0;
+		indexMorph = 0;
+		indexTaille = 0;
+		if (UseArchitectureReseau && _mondeServeur != null)
+			return _mondeServeur.EssayerDetecterRochePourPnj(point, rayon, out posRoche, out idObjet, out indexMorph, out indexTaille);
+		return false;
+	}
+
+	/// <summary>Ramasse une roche pour PNJ (retire stase / scène).</summary>
+	public bool RamasserRochePourPnj(Vector3 point, float rayon, out SlotInventaire slot)
+	{
+		slot = default;
+		if (UseArchitectureReseau && _mondeServeur != null)
+			return _mondeServeur.RamasserRochePourPnj(point, rayon, out slot);
+		return false;
 	}
 
 	/// <summary>Oracle géologique : lecture directe de l'ADN (_materials) depuis le Serveur. Évite la dissonance visuelle (mine terre → reçoit pierre).</summary>

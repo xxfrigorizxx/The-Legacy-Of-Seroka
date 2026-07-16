@@ -61,35 +61,66 @@ public partial class Joueur
         Parcourir(racine);
     }
 
-    /// <summary>Seuls les meshes céramique (bol / moule) reçoivent la teinte chaude — le reste reste os.</summary>
+    /// <summary>Meshes bol/moule/étain (hors os de la pince) reçoivent la teinte chaude.</summary>
     private static bool EstMeshCeramiquePinceOs(string nomMesh, SlotInventaire objetPorte)
     {
         if (string.IsNullOrEmpty(nomMesh) || objetPorte.EstVide)
             return false;
         string nom = nomMesh.ToLowerInvariant();
+        if (nom.Contains("pince") || nom.Contains("clamp") || nom.Contains("tongs"))
+            return false;
         if (objetPorte.ID == Joueur.IdObjetMouleCeramique)
-            return nom.Contains("tripo") || nom.Contains("moule") || nom.Contains("lingo");
-        if (objetPorte.ID == Joueur.IdObjetBolCeramique)
+            return nom.Contains("tripo") || nom.Contains("moule") || nom.Contains("lingo")
+                || nom.Contains("liquid") || nom.Contains("metal") || nom.Contains("etain") || nom.Contains("tin") || nom.Contains("fill");
+        if (objetPorte.ID == Joueur.IdObjetBolCeramique
+            || objetPorte.ID == Joueur.IdObjetBolCeramiqueScorie)
             return nom.Contains("bowl") || nom.Contains("bol");
+        if (objetPorte.ID == Joueur.IdObjetBolEtainFonduChaud)
+            return true;
         return false;
     }
 
     private static void AppliquerMateriauxPinceOsAvecObjetCeramique(Node3D racine, SlotInventaire objetPorte)
     {
         float facteurChaleur = FourTorchieThermodynamique.ObtenirFacteurChaleurBolCeramiqueSlot(objetPorte);
+        bool bolEtainChaud = objetPorte.ID == Joueur.IdObjetBolEtainFonduChaud;
+        bool mouleEtainChaud = objetPorte.ID == Joueur.IdObjetMouleCeramique
+            && FourTorchieThermodynamique.EstMouleEtainFonduChaud(objetPorte);
+        bool teinteArgileChaude = bolEtainChaud || mouleEtainChaud
+            || objetPorte.ID == Joueur.IdObjetBolCeramiqueScorie;
         Material matCeramique = facteurChaleur <= 0.001f
             ? CreerMaterielBolTeinteProgressive(0f, ceramique: true)
-            : CreerMaterielBolTeinteProgressive(facteurChaleur, ceramique: true);
+            : CreerMaterielBolTeinteProgressive(facteurChaleur, ceramique: !teinteArgileChaude);
+        Material matMetalChaud = facteurChaleur <= 0.001f
+            ? ObtenirMaterielEtainSolidifieArgente()
+            : CreerMaterielBolTeinteProgressive(facteurChaleur, ceramique: false);
         Material matOs = ObtenirMaterielOsBoeuf();
 
         void Parcourir(Node n)
         {
             if (n is MeshInstance3D mi)
-                mi.MaterialOverride = EstMeshCeramiquePinceOs(mi.Name, objetPorte) ? matCeramique : matOs;
+            {
+                if (!EstMeshCeramiquePinceOs(mi.Name, objetPorte))
+                    mi.MaterialOverride = matOs;
+                else if (mouleEtainChaud && EstNomMeshRemplissageMetalPinceOs(mi.Name))
+                    mi.MaterialOverride = matMetalChaud;
+                else
+                    mi.MaterialOverride = matCeramique;
+            }
             foreach (Node enfant in n.GetChildren())
                 Parcourir(enfant);
         }
         Parcourir(racine);
+    }
+
+    private static bool EstNomMeshRemplissageMetalPinceOs(string nomMesh)
+    {
+        if (string.IsNullOrEmpty(nomMesh))
+            return false;
+        string nom = nomMesh.ToLowerInvariant();
+        return nom.Contains("liquid") || nom.Contains("liquide") || nom.Contains("metal")
+            || nom.Contains("etain") || nom.Contains("tin") || nom.Contains("fill")
+            || nom.Contains("lingo") || nom.Contains("plain");
     }
 
     private static string ObtenirCheminGlbPinceOs(SlotInventaire slot, out SlotInventaire objetPorte)
@@ -99,7 +130,16 @@ public partial class Joueur
             || !ItemPhysique.EssayerLireObjetPortePinceOs(slot, out objetPorte))
             return "res://Modeles/materials/travailler/pince_os.glb";
         if (objetPorte.ID == Joueur.IdObjetMouleCeramique)
+        {
+            if (FourTorchieThermodynamique.EstMouleEtainFonduChaud(objetPorte)
+                || FourTorchieThermodynamique.EstMouleEtainSolidifie(objetPorte))
+                return "res://Modeles/materials/travailler/pince_os_Moule_lingo.glb";
             return "res://Modeles/materials/travailler/pince_os_Moule_lingo.glb";
+        }
+        if (objetPorte.ID == Joueur.IdObjetBolEtainFonduChaud)
+            return "res://Modeles/materials/travailler/pince_os_bowl_plain2.glb";
+        if (objetPorte.ID == Joueur.IdObjetBolCeramiqueScorie)
+            return "res://Modeles/materials/travailler/pince_os_bowl_ceramique_scorie.glb";
         if (objetPorte.ID == Joueur.IdObjetBolCeramique)
             return "res://Modeles/materials/travailler/pince_os_bowl.glb";
         return "res://Modeles/materials/travailler/pince_os.glb";

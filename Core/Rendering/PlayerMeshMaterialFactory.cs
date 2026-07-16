@@ -108,6 +108,10 @@ public partial class Joueur
         else if (id == IdObjetArgileHumidifiee) return null; // GLB argile humidifiée via InstancierModeleArgileHumidifiee
         else if (id == IdObjetBolArgile) return null; // GLB bol en argile via InstancierModeleBolArgile
         else if (id == IdObjetBolCeramique) return null; // GLB bol céramique via InstancierModeleBolCeramique
+        else if (id == IdObjetBolCeramiqueEtain) return null; // GLB bowl_ceramique_etain.glb via InstancierModeleBolCeramiqueEtain
+        else if (id == IdObjetBolEtainFonduChaud) return null; // GLB bowl_plain2.glb
+        else if (id == IdObjetBolEtainSolidifie) return null; // GLB bowl_ceramique_etain.glb
+        else if (id == IdObjetBolCeramiqueScorie) return null; // GLB bowl_ceramique_scorie.glb
         else if (id == IdObjetMouleArgile) return null; // GLB moule argile via InstancierModeleMouleArgile
         else if (id == IdObjetMouleCeramique) return null; // GLB moule céramique via InstancierModeleMouleCeramique
         else if (id == IdObjetChamotte) return null; // GLB chamotte via InstancierModeleChamotte

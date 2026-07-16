@@ -410,6 +410,26 @@ public partial class Joueur
         parent.AddChild(modele);
     }
 
+    /// <summary>Baie au sol : même corps physique que la pose joueur (<see cref="CreerBlocPose"/>).</summary>
+    public static ItemPhysique CreerItemPhysiqueBaie(SlotInventaire slot)
+    {
+        var item = new ItemPhysique
+        {
+            ID_Objet = IdObjetBaie,
+            IndexChimique = slot.IndexChimique,
+            IndexCacheMemoire = 0,
+            Name = "ItemPhysique",
+            ContinuousCd = true
+        };
+        var meshRoot = new Node3D { Name = "MeshInstance3D" };
+        InstancierModeleBaie(meshRoot, slot, 0.22f);
+        item.AddChild(meshRoot);
+        item.AddChild(new CollisionShape3D { Shape = new SphereShape3D { Radius = 0.08f } });
+        item.SetMeta("ID_Matiere", IdObjetBaie);
+        item.SetMeta(MetaQuantiteObjetPose, 1);
+        return item;
+    }
+
     /// <summary>Feuille arrachée (bouleau, chêne, sapin, …) : GLB dédié (sol, inventaire, main, lancer).</summary>
     public static void InstancierModeleFeuilleArrachee(Node3D parent, SlotInventaire slot, float tailleMaxMetres = 0.2f)
     {

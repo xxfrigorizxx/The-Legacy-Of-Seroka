@@ -42,6 +42,7 @@ adjustment_contrast = 1.25
 
 [node name="Gestionnaire_Monde" type="Node3D" parent="." unique_id=1912975737]
 script = ExtResource("1_gestionnaire_monde")
+FuseauHoraireHeures = -7.0
 
 [node name="Joueur" parent="." unique_id=1690833917 instance=ExtResource("2_joueur_scene")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 8, 125, -8)
@@ -74,8 +75,8 @@ directional_shadow_max_distance = 200.0
 
 [node name="Lune" type="DirectionalLight3D" parent="." unique_id=545490241]
 transform = Transform3D(0.79597723, -0.5956493, -0.10780642, 0.02965417, -0.13951197, 0.98977625, -0.6045998, -0.7910363, -0.09338486, 0, 13.034426, 0)
-light_color = Color(0.070774086, 0.07914794, 0.15849811, 1)
-light_energy = 0.29
+light_color = Color(0.35915607, 0.38448393, 0.6103067, 1)
+light_energy = 1.579
 light_angular_distance = 1.0
 shadow_enabled = true
 shadow_bias = 0.05

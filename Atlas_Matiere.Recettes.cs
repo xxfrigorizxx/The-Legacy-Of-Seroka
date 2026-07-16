@@ -368,6 +368,30 @@ public static partial class Atlas_Matiere
                 return ConstruireSlotInventaireVoxelSurface(7);
             }
 
+            static bool EstSlotBolCeramiqueRefroidiCraft(SlotInventaire s) =>
+                FourTorchieThermodynamique.EstBolCeramiqueRefroidi(s);
+            static bool EstSlotEtainCraft(SlotInventaire s) =>
+                !s.EstVide && s.ID == Joueur.IdObjetEtain;
+            bool aBolCer = EstSlotBolCeramiqueRefroidiCraft(sA);
+            bool bBolCer = EstSlotBolCeramiqueRefroidiCraft(sB);
+            bool aEtain = EstSlotEtainCraft(sA);
+            bool bEtain = EstSlotEtainCraft(sB);
+            if ((aBolCer && bEtain) || (bBolCer && aEtain))
+            {
+                return new SlotInventaire
+                {
+                    ID = Joueur.IdObjetBolCeramiqueEtain,
+                    Quantite = 1,
+                    IndexChimique = 0,
+                    IndexMorphologique = 0,
+                    IndexTaille = 0,
+                    ScaleEclat = Vector3.One,
+                    EstUnEclat = false,
+                    MeshEclat = null,
+                    NiveauFracture = 0
+                };
+            }
+
             bool aBol = sA.ID == Joueur.IdObjetBolBois;
             bool bBol = sB.ID == Joueur.IdObjetBolBois;
             bool aMaillet = sA.ID == Joueur.IdObjetMailletBois;

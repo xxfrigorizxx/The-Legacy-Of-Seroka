@@ -230,6 +230,14 @@ public partial class Joueur : CharacterBody3D
     public const int IdObjetQuartzPur = 165;
     /// <summary>Morceau de minerai d'étain miné (drop du voxel 37).</summary>
     public const int IdObjetEtain = 166;
+    /// <summary>Bol en céramique avec inclusions de minerai d'étain (craft : bol céramique refroidi + étain). Stack 10.</summary>
+    public const int IdObjetBolCeramiqueEtain = 167;
+    /// <summary>Bol céramique avec étain fondu liquide (chaud, four 230–399 °C). Nécessite pince en os.</summary>
+    public const int IdObjetBolEtainFonduChaud = 168;
+    /// <summary>Bol céramique avec étain solidifié (refroidi après fusion ou sans coulée).</summary>
+    public const int IdObjetBolEtainSolidifie = 169;
+    /// <summary>Bol céramique avec scories (échec fusion : T° ≥ 400 °C pendant la cuisson).</summary>
+    public const int IdObjetBolCeramiqueScorie = 170;
     /// <summary>Taille monde du four posé au sol (plus grande dimension du mesh normalisé).</summary>
     public const float TailleFourTorchiePoseMetres = 3.0f;
     /// <summary>Incrémenter pour régénérer texture / réinstancier les modèles torchie (GLB sans UVs).</summary>
@@ -796,6 +804,10 @@ public partial class Joueur : CharacterBody3D
     private const string MetaSignatureFourTorchie157 = "SigFourTorchie157";
     private const string MetaSignatureBolArgile158 = "SigBolArgile158";
     private const string MetaSignatureBolCeramique159 = "SigBolCeramique159";
+    private const string MetaSignatureBolCeramiqueEtain167 = "SigBolCeramiqueEtain167";
+    private const string MetaSignatureBolEtainFondu168 = "SigBolEtainFondu168";
+    private const string MetaSignatureBolEtainSolidifie169 = "SigBolEtainSolidifie169";
+    private const string MetaSignatureBolScorie170 = "SigBolScorie170";
     private const string MetaSignaturePinceOs160 = "SigPinceOs160";
     private const string MetaSignatureMouleArgile161 = "SigMouleArgile161";
     private const string MetaSignatureMouleCeramique162 = "SigMouleCeramique162";
@@ -945,15 +957,15 @@ public partial class Joueur : CharacterBody3D
     private float _distanceCumuleeMetabolisteMetres;
     private const float FaimMaxJoueur = 100f;
     private const float EnduranceMaxJoueur = 100f;
-    private const float DrainFaimPassifParSeconde = 0.018f;
-    private const float DrainFaimEffortParSeconde = 0.075f;
-    private const float DrainFaimSprintParSeconde = 0.055f;
+    public const float DrainFaimPassifParSeconde = 0.018f;
+    public const float DrainFaimEffortParSeconde = 0.075f;
+    public const float DrainFaimSprintParSeconde = 0.055f;
     private const float DrainEnduranceActionParSeconde = 1f;
     private const float DrainEnduranceSprintParSeconde = 2.2f;
     private const float RegenEnduranceParSeconde = 10f;
     private const float CoutFaimParPointEndurance = 0.0045f;
     /// <summary>Multiplicateur sur la perte de faim (passif, effort, sprint, coût lié à la régénération d'énergie).</summary>
-    private const float FacteurRalentissementDrainFaim = 0.5f;
+    public const float FacteurRalentissementDrainFaim = 0.5f;
     /// <summary>Dégâts par seconde sur le torse lorsque la faim est épuisée (affamer).</summary>
     private const float DegatsTorseParSecondeFaimNulle = 2f;
     private const float MultiplicateurVitesseSprint = 1.65f;
@@ -1267,12 +1279,18 @@ public partial class Joueur : CharacterBody3D
             || (_menuFutureState != null && _menuFutureState.EstOuvert)
             || (_menuAnatomie != null && _menuAnatomie.EstOuvert)
             || CarnetSavoirOuvert()
+            || InspectionPnjOuverte
             || ChatInGameOuvert();
     }
 
     /// <summary>Ferme les UI joueur (inventaire/craft ou CAO) via Ã‰chap et remet le contrÃ´le jeu.</summary>
     public bool FermerUIJoueurSiOuverte()
     {
+        if (InspectionPnjOuverte)
+        {
+            FermerInspectionPnj();
+            return true;
+        }
         if (_menuFutureState != null && _menuFutureState.EstOuvert)
         {
             _menuFutureState.BasculerVisibilite();

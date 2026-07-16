@@ -596,6 +596,28 @@ public static partial class Atlas_Matiere
             string etat = FourTorchieThermodynamique.ObtenirFacteurChaleurBolCeramiqueSlot(slot) > 0.04f ? " (chaud)" : "";
             return q > 1 ? $"Bol en céramique x{q}{etat}" : $"Bol en céramique{etat}";
         }
+        if (id == Joueur.IdObjetBolCeramiqueEtain)
+        {
+            int q = Joueur.ObtenirQuantiteSlot(slot);
+            return q > 1 ? $"Bol en céramique étain x{q}" : "Bol en céramique étain";
+        }
+        if (id == Joueur.IdObjetBolEtainFonduChaud)
+        {
+            int q = Joueur.ObtenirQuantiteSlot(slot);
+            string etat = FourTorchieThermodynamique.ObtenirFacteurChaleurBolEtainFonduSlot(slot) > 0.04f ? " (chaud)" : "";
+            return q > 1 ? $"Bol étain fondu x{q}{etat}" : $"Bol étain fondu{etat}";
+        }
+        if (id == Joueur.IdObjetBolEtainSolidifie)
+        {
+            int q = Joueur.ObtenirQuantiteSlot(slot);
+            return q > 1 ? $"Bol étain solidifié x{q}" : "Bol étain solidifié";
+        }
+        if (id == Joueur.IdObjetBolCeramiqueScorie)
+        {
+            int q = Joueur.ObtenirQuantiteSlot(slot);
+            string etat = ItemPhysique.ObtenirFacteurChaleurBolScorieDepuisSlot(slot) > 0.04f ? " (chaud)" : "";
+            return q > 1 ? $"Bol scorie x{q}{etat}" : $"Bol scorie{etat}";
+        }
         if (id == Joueur.IdObjetMouleArgile)
         {
             int q = Joueur.ObtenirQuantiteSlot(slot);
@@ -605,6 +627,10 @@ public static partial class Atlas_Matiere
         {
             int q = Joueur.ObtenirQuantiteSlot(slot);
             string etat = FourTorchieThermodynamique.ObtenirFacteurChaleurBolCeramiqueSlot(slot) > 0.04f ? " (chaud)" : "";
+            if (FourTorchieThermodynamique.EstMouleEtainFonduChaud(slot))
+                return q > 1 ? $"Moule étain fondu x{q}{etat}" : $"Moule étain fondu{etat}";
+            if (FourTorchieThermodynamique.EstMouleEtainSolidifie(slot))
+                return q > 1 ? $"Moule étain solidifié x{q}" : "Moule étain solidifié";
             return q > 1 ? $"Moule en céramique x{q}{etat}" : $"Moule en céramique{etat}";
         }
         if (id == Joueur.IdObjetChamotte)

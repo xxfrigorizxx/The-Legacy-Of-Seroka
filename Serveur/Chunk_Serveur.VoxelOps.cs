@@ -84,6 +84,54 @@ public partial class Chunk_Serveur : RefCounted
 		AuditerGraviteFlore();
 	}
 
+	/// <summary>Creuse le terrain sans toucher à la flore (herbe/buissons) — PNJ à main nue sur marche trop haute.</summary>
+	public bool CreuserTerrainSansFlore(Vector3 pointImpactGlobal, float rayonExplosion)
+	{
+		Vector3 pointLocal = pointImpactGlobal - PositionMonde;
+		var positionsDetruites = new List<Vector3I>();
+		lock (_verrouVoxel)
+		{
+			float rayon2 = rayonExplosion * rayonExplosion;
+			bool modifie = false;
+			for (int x = 0; x < TailleChunk; x++)
+				for (int y = 0; y < HauteurMax; y++)
+					for (int z = 0; z < TailleChunk; z++)
+					{
+						if (EstSocleIntouchableLocal(y))
+							continue;
+						float dx = pointLocal.X - x, dy = pointLocal.Y - y, dz = pointLocal.Z - z;
+						if (dx * dx + dy * dy + dz * dz > rayon2)
+							continue;
+						bool etaitSolide = _densities[x, y, z] > Isolevel;
+						_densities[x, y, z] = -10.0f;
+						_materials[x, y, z] = 0;
+						modifie = true;
+						if (etaitSolide)
+							positionsDetruites.Add(new Vector3I(x, y, z));
+					}
+			if (!modifie)
+				return false;
+			_estModifie = true;
+			_contenuChangeDepuisEnvoiClient = true;
+			_demarrerBatchStabilite?.Invoke();
+			foreach (var pos in positionsDetruites)
+				VerifierStabiliteLocal(pos);
+		}
+
+		int baseX = ChunkOffsetX * TailleChunk;
+		int baseZ = ChunkOffsetZ * TailleChunk;
+		foreach (var pos in positionsDetruites)
+		{
+			_reveillerEau?.Invoke(PositionMonde + new Vector3(pos.X, pos.Y, pos.Z));
+			int gx = baseX + pos.X;
+			int gy = ChunkOffsetY * HauteurMax + pos.Y;
+			int gz = baseZ + pos.Z;
+			_onVoxelModifie?.Invoke(new Vector3I(gx, gy, gz), 0);
+		}
+		AuditerGraviteFlore();
+		return true;
+	}
+
 	public void CreerMatiere(Vector3 pointCibleGlobal, float rayon, byte idMatiere = 1, Action<List<int>> onSectionsAffectees = null)
 	{
 		Vector3 pointLocal = pointCibleGlobal - PositionMonde;

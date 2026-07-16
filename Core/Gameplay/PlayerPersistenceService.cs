@@ -305,6 +305,7 @@ public partial class Joueur
             ChargerObjetsPosesMonde();
             ChargerBlocsChutantsMonde();
             ObtenirGestionnaireFauneCourant(null)?.ChargerFauneMonde();
+            ChargerPnjHumainsMonde();
         }
         finally
         {
@@ -329,6 +330,7 @@ public partial class Joueur
         ChargerObjetsPosesMonde();
         ChargerBlocsChutantsMonde();
         ObtenirGestionnaireFauneCourant(null)?.ChargerFauneMonde();
+        ChargerPnjHumainsMonde();
         MarquerPersistanceObjetsSolChargeeSiSucces();
         RafraichirHUD();
     }
